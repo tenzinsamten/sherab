@@ -22,6 +22,7 @@ declare global {
 			profile?:
 				| import('$lib/supabase/database.types').Database['public']['Tables']['profiles']['Row']
 				| null;
+			pendingRequestsCount?: number;
 		}
 		// interface PageState {}
 	}

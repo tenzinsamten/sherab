@@ -22,7 +22,10 @@
 	<div class="card" style="max-width: 480px;">
 		<h1 style="margin-top:0;">{m.home_welcome_title()}</h1>
 		<p>{m.home_welcome_signin_prompt()}</p>
-		<a class="btn" href={resolve('/login')}>{m.nav_sign_in()}</a>
+		<p>
+			<a class="btn" href={resolve('/login')}>{m.nav_sign_in()}</a>
+			<a class="btn btn-outline" href={resolve('/join')}>{m.nav_join()}</a>
+		</p>
 	</div>
 {:else if data.profile.role === 'admin'}
 	<div class="card">
@@ -33,6 +36,12 @@
 		<p>
 			<a class="btn" href={resolve('/admin/classes')}>{m.home_manage_classes()}</a>
 			<a class="btn btn-outline" href={resolve('/admin/teachers')}>{m.home_manage_teachers()}</a>
+			<a class="btn btn-outline" href={resolve('/admin/teams')}>{m.home_manage_teams()}</a>
+			<a class="btn btn-outline" href={resolve('/requests')}>
+				{data.pendingRequestsCount
+					? m.nav_requests_with_count({ count: data.pendingRequestsCount })
+					: m.home_review_requests()}
+			</a>
 		</p>
 	</div>
 {:else if data.profile.role === 'teacher'}
@@ -41,7 +50,14 @@
 			{m.home_teacher_greeting({ name: data.profile.display_name ?? data.profile.email })}
 		</h1>
 		<p>{m.home_teacher_subtitle()}</p>
-		<a class="btn" href={resolve('/teacher')}>{m.home_see_my_classes()}</a>
+		<p>
+			<a class="btn" href={resolve('/teacher')}>{m.home_see_my_classes()}</a>
+			<a class="btn btn-outline" href={resolve('/requests')}>
+				{data.pendingRequestsCount
+					? m.nav_requests_with_count({ count: data.pendingRequestsCount })
+					: m.home_review_requests()}
+			</a>
+		</p>
 	</div>
 {:else}
 	<div class="card">

@@ -148,7 +148,7 @@ export type Database = {
 				Returns: boolean;
 			};
 			validate_class_code: {
-				Args: { code: string };
+				Args: { p_code: string };
 				Returns: { id: string; name: string }[];
 			};
 			check_registration_available: {

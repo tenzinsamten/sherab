@@ -3,6 +3,7 @@ import {
 	generateStudentPin,
 	generateTempPassword,
 	generateUniqueStudentUsername,
+	resolveLoginIdentifierToEmail,
 	slugifyRegistrationName,
 	studentEmailToUsername,
 	studentUsernameToEmail
@@ -24,10 +25,10 @@ describe('generateTempPassword', () => {
 });
 
 describe('generateStudentPin', () => {
-	it('generates a 4-digit numeric PIN by default', () => {
+	it('generates a 6-digit numeric PIN by default (Supabase Auth requires >= 6 chars)', () => {
 		const pin = generateStudentPin();
-		expect(pin).toHaveLength(4);
-		expect(pin).toMatch(/^[0-9]{4}$/);
+		expect(pin).toHaveLength(6);
+		expect(pin).toMatch(/^[0-9]{6}$/);
 	});
 
 	it('respects a custom length', () => {
@@ -63,6 +64,28 @@ describe('slugifyRegistrationName', () => {
 
 	it('collapses a name with no Latin characters to an empty string', () => {
 		expect(slugifyRegistrationName('བསྟན་འཛིན')).toBe('');
+	});
+});
+
+describe('resolveLoginIdentifierToEmail', () => {
+	it('passes a teacher/admin email straight through unchanged', () => {
+		expect(resolveLoginIdentifierToEmail('teacher@example.com')).toBe('teacher@example.com');
+	});
+
+	it('trims a plain email before returning it', () => {
+		expect(resolveLoginIdentifierToEmail('  teacher@example.com  ')).toBe('teacher@example.com');
+	});
+
+	it('translates a bare student username (no @) into the synthesized student email', () => {
+		expect(resolveLoginIdentifierToEmail('tenzindolma')).toBe(
+			'tenzindolma@students.internal.invalid'
+		);
+	});
+
+	it('trims a username before translating it', () => {
+		expect(resolveLoginIdentifierToEmail('  tenzindolma  ')).toBe(
+			'tenzindolma@students.internal.invalid'
+		);
 	});
 });
 

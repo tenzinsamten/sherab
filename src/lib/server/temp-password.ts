@@ -26,7 +26,11 @@ export function generateTempPassword(length: number = TEMP_PASSWORD_LENGTH): str
  * teacher, is expected to type this in from memory).
  */
 const STUDENT_PIN_ALPHABET = '0123456789';
-const STUDENT_PIN_LENGTH = 4;
+// 6, not fewer: Supabase Auth's default password policy requires at least 6
+// characters, and the PIN doubles as the student's Auth password (Design
+// Notes) -- a shorter PIN would be rejected by signInWithPassword's own
+// account creation, not just "less secure".
+const STUDENT_PIN_LENGTH = 6;
 
 export function generateStudentPin(length: number = STUDENT_PIN_LENGTH): string {
 	const randomValues = new Uint32Array(length);
@@ -54,10 +58,40 @@ export function studentUsernameToEmail(username: string): string {
 	return `${username}@${STUDENT_EMAIL_DOMAIN}`;
 }
 
+/**
+ * Placeholder email for the ONE signUp() call the join wizard makes
+ * (Code Map: "one signUp() call at the end with metadata, so no
+ * partial/orphaned auth user exists mid-wizard"). The real username isn't
+ * chosen until approval (it's deduped against already-*approved* students,
+ * which a still-Pending registration isn't). The `pending-` prefix plus a
+ * UUID can never collide with a slugified-name username, which is always
+ * plain lowercase letters/digits (see slugifyRegistrationName).
+ */
+export function generatePendingRegistrationEmail(): string {
+	return `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`;
+}
+
 /** Extracts the username back out of a synthesized student email. */
 export function studentEmailToUsername(email: string): string | null {
 	const suffix = `@${STUDENT_EMAIL_DOMAIN}`;
 	return email.endsWith(suffix) ? email.slice(0, -suffix.length) : null;
+}
+
+/**
+ * (auth)/login is one shared form for every role (Design Notes: routing
+ * student sign-in through a real Supabase Auth session is what keeps every
+ * RLS policy working unmodified -- no parallel auth model, and that
+ * includes no parallel *login form*). A teacher/admin identifier is a real
+ * email and is used as-is; a student identifier is the bare username they
+ * were given at approval (never an email -- see studentUsernameToEmail),
+ * so it's translated to the synthetic email signInWithPassword actually
+ * needs. `@` is the discriminator: no legal username produced by
+ * generateUniqueStudentUsername ever contains one (slugifyRegistrationName
+ * strips everything but [a-z0-9]).
+ */
+export function resolveLoginIdentifierToEmail(identifier: string): string {
+	const trimmed = identifier.trim();
+	return trimmed.includes('@') ? trimmed : studentUsernameToEmail(trimmed);
 }
 
 /**

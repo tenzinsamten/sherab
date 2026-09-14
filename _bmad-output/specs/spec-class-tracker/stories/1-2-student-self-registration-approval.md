@@ -2,7 +2,7 @@
 title: 'Student Self-Registration & Approval'
 type: 'feature'
 created: '2026-09-14'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'NO_VCS'
@@ -58,13 +58,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `supabase/migrations/0002_student_registration.sql` -- schema + RLS + trigger + RPC per Code Map
-- [ ] `handle_new_user()` update -- read registration metadata, default `status='pending'`
-- [ ] `src/routes/admin/teams/**` -- minimal admin team creation (name only)
-- [ ] `src/routes/(auth)/join/**` -- 3-step wizard + pending receipt
-- [ ] `src/routes/requests/**` -- shared approval queue with team-picker
-- [ ] Paraglide messages for both new routes, all three locales
-- [ ] `rls.spec.ts` -- cover every I/O matrix row plus the team_id-once trigger
+- [x] `supabase/migrations/0002_student_registration.sql` -- schema + RLS + trigger + RPC per Code Map
+- [x] `handle_new_user()` update -- read registration metadata, default `status='pending'`
+- [x] `src/routes/admin/teams/**` -- minimal admin team creation (name only)
+- [x] `src/routes/(auth)/join/**` -- 3-step wizard + pending receipt
+- [x] `src/routes/requests/**` -- shared approval queue with team-picker
+- [x] Paraglide messages for both new routes, all three locales
+- [x] `rls.spec.ts` -- cover every I/O matrix row plus the team_id-once trigger
 
 **Acceptance Criteria:**
 - Given a Pending student, when any roster/leaderboard query runs, then that student never appears in results.

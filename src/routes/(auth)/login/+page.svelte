@@ -24,8 +24,8 @@
 			<input
 				id="email"
 				name="email"
-				type="email"
-				autocomplete="email"
+				type="text"
+				autocomplete="username"
 				required
 				value={form?.email ?? ''}
 			/>

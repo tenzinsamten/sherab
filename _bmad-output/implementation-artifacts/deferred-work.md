@@ -1,5 +1,17 @@
 # Deferred Work
 
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: Avatar-picker / nickname-change UI. `display_name` defaults to `registration_name` at profile-creation time (set in the `handle_new_user()` trigger) and stays editable later, but no UI to change it exists yet.
+  evidence: Explicitly named as deferred in the story's own Implementation Notes ("Do not build an avatar-picker or nickname-change flow... shipping the minimum that satisfies the acceptance criteria"). A natural follow-on once a student-facing home screen exists.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: GDPR/compliance stance beyond consent-at-registration + admin-approved deletion (CLEAR REJECTED). Data controller identity, retention limits, and breach notification are not addressed by this story.
+  evidence: Explicitly named as an open gap in the story's own Implementation Notes ("this story ships with only the documented consent-at-registration + admin-approved-deletion flow... broader obligations... remain an explicitly logged gap, matching SPEC.md's own Open Questions entry, not a resolved question").
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: The "documented admin-only override path" for changing an already-set `team_id` is not a built feature -- the `profiles_team_id_set_once` trigger (migration `0002_student_registration.sql`) rejects the change unconditionally for every client-facing path (including an admin acting through the normal approval route), per the story's own AC. Overriding a mis-assigned team today requires an out-of-band DB action (e.g. running as the table owner, or temporarily disabling the trigger), mirroring the Story 1-1 admin-bootstrap-promotion SQL precedent, but that procedure is not yet written down anywhere.
+  evidence: Direct implementation choice made to satisfy AC 2 ("when anyone (including an admin) tries to change team_id through the normal approval path again, then the update is rejected") -- the alternative reading (an is_admin() bypass inside the trigger) would have failed that AC's literal wording. Needs a documented runbook before a real mis-assignment happens in production.
+
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-1-teacher-student-account-management.md`
   summary: Student self-registration (name + class code + guardian consent) and the approval flow (teacher/admin approve or reject a Pending student, with the inline team-picker that sets `team_id`).
   evidence: Split from Story 1-1 to bring the spec back under the ~1,600-token budget. Also depends on decisions made in the narrowed Story 1-1 (classes/codes must exist, admin/teacher accounts must exist to do the approving) and on the student sign-in mechanism (username + short PIN, decided this run) being available before it can be built — a natural follow-on story, not a same-story concern.

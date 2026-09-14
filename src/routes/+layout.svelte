@@ -29,6 +29,8 @@
 		{#if data.profile.role === 'admin'}
 			{@const classesHref = resolve('/admin/classes')}
 			{@const teachersHref = resolve('/admin/teachers')}
+			{@const teamsHref = resolve('/admin/teams')}
+			{@const requestsHref = resolve('/requests')}
 			<a
 				href={classesHref}
 				class="nav-link"
@@ -45,8 +47,27 @@
 			>
 				{m.nav_teachers()}
 			</a>
+			<a
+				href={teamsHref}
+				class="nav-link"
+				class:active={isActive(teamsHref)}
+				aria-current={isActive(teamsHref) ? 'page' : undefined}
+			>
+				{m.nav_teams()}
+			</a>
+			<a
+				href={requestsHref}
+				class="nav-link"
+				class:active={isActive(requestsHref)}
+				aria-current={isActive(requestsHref) ? 'page' : undefined}
+			>
+				{data.pendingRequestsCount
+					? m.nav_requests_with_count({ count: data.pendingRequestsCount })
+					: m.nav_requests()}
+			</a>
 		{:else if data.profile.role === 'teacher'}
 			{@const teacherHref = resolve('/teacher')}
+			{@const requestsHref = resolve('/requests')}
 			<a
 				href={teacherHref}
 				class="nav-link"
@@ -54,6 +75,16 @@
 				aria-current={isActive(teacherHref) ? 'page' : undefined}
 			>
 				{m.nav_my_classes()}
+			</a>
+			<a
+				href={requestsHref}
+				class="nav-link"
+				class:active={isActive(requestsHref)}
+				aria-current={isActive(requestsHref) ? 'page' : undefined}
+			>
+				{data.pendingRequestsCount
+					? m.nav_requests_with_count({ count: data.pendingRequestsCount })
+					: m.nav_requests()}
 			</a>
 		{/if}
 		<span
@@ -66,6 +97,15 @@
 		</form>
 	{:else}
 		{@const loginHref = resolve('/login')}
+		{@const joinHref = resolve('/join')}
+		<a
+			href={joinHref}
+			class="nav-link"
+			class:active={isActive(joinHref)}
+			aria-current={isActive(joinHref) ? 'page' : undefined}
+		>
+			{m.nav_join()}
+		</a>
 		<span style="margin-left:auto;"></span>
 		<a
 			href={loginHref}

@@ -180,7 +180,7 @@ $$;
 -- wizard step 1, without a broad anon SELECT policy on classes.
 -- ---------------------------------------------------------------------------
 
-create or replace function public.validate_class_code(code text)
+create or replace function public.validate_class_code(p_code text)
 returns table (id uuid, name text)
 language sql
 security definer
@@ -189,11 +189,11 @@ stable
 as $$
   select c.id, c.name
   from public.classes c
-  where c.code = upper(btrim(code));
+  where c.code = upper(btrim(p_code));
 $$;
 
 comment on function public.validate_class_code(text) is
-  'Returns zero rows for an unknown/malformed code. SECURITY DEFINER so the join wizard can look up a class before the visitor has any session.';
+  'Returns zero rows for an unknown/malformed code. SECURITY DEFINER so the join wizard can look up a class before the visitor has any session. Parameter is p_code (not code) to avoid ambiguity with classes.code in the WHERE clause.';
 
 grant execute on function public.validate_class_code(text) to anon, authenticated;
 
