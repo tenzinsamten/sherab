@@ -1,0 +1,59 @@
+# Sprint Status — Sherab
+#
+# NOTE: built by hand, not by scripts/sprint_plan.py. Two blockers still make
+# the deterministic path inapplicable, even with `uv` now installed:
+#   1. This project has no markdown epic file (`## Epic N:` / `### Story
+#      N.M:` headings) for the script's regex parser to read — it uses the
+#      lightweight bmad-spec track instead, whose story breakdown lives in
+#      `_bmad-output/specs/spec-class-tracker/stories.yaml` (a YAML file,
+#      plus its own `spec_checkpoint`/`done_checkpoint` gate flags unrelated
+#      to this file's status vocabulary) — a format the script's regex
+#      parser was never built to read, regardless of `uv` availability.
+#   2. That YAML file's story ids/format don't match the script's expected
+#      key derivation either.
+# REFRESHED 2026-09-14 19:25: Story 1-1 went through bmad-build (implement →
+# review/patch cycle, 5 findings fixed, 3 deferred to deferred-work.md →
+# full check/eslint/test suite green) and a bmad-walkthrough human review
+# (Approve). Its spec is `status: done`; sprint-planning mirrors that here.
+# Story 2-1 (roster & skill tracking) was attempted next but blocked:
+# investigation found no student concept exists anywhere in the codebase
+# (Story 1-1 deliberately deferred self-registration/approval). The human
+# chose to build that deferred work first — registered as story `1-2` in
+# stories.yaml (Feature 1) rather than starting 2-1, so epic-1 is back to
+# `in-progress` rather than `done`.
+# All other stories: no spec file exists yet, so `backlog`.
+# Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
+
+generated: 09-13-2026 17:46
+last_updated: 09-14-2026 19:20
+project: Sherab
+project_key: NOKEY
+tracking_system: file-system
+story_location: "_bmad-output/specs/spec-class-tracker/stories"
+
+development_status:
+  epic-1: in-progress # Accounts & Roles (CAP-1)
+  1-1-teacher-student-account-management: done
+  1-2-student-self-registration-approval: in-progress
+  epic-1-retrospective: optional
+
+  epic-2: backlog # Roster & Skill Tracking (CAP-2)
+  2-1-roster-skill-status-tracking: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog # Homework (CAP-3)
+  3-1-one-off-homework-assignment-review: backlog
+  3-2-recurring-homework-assignments: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog # Gamification (CAP-4, CAP-5, CAP-6)
+  4-1-streaks: backlog
+  4-2-badges: backlog
+  4-3-team-leaderboard: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog # Admin Oversight & Privacy (CAP-7, CAP-8)
+  5-1-admin-cross-class-oversight-data-deletion: backlog
+  epic-5-retrospective: optional
+
+action_items: []

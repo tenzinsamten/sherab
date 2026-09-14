@@ -1,0 +1,152 @@
+# Feature 1: Accounts & Roles (CAP-1)
+- id: "1-1"
+  title: Teacher & student account management
+  description: >-
+    Admin creates/verifies teacher accounts and assigns them to classes
+    (many-to-many); students self-register with consent, land Pending,
+    and are approved by their class teacher(s) or the admin as backup.
+    See SPEC.md CAP-1 and roles-and-permissions.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Neither the tech stack/architecture nor the UI/UX design has been
+    decided yet — this is the first story, so it is also where the stack
+    gets chosen. Propose and document an architecture appropriate to the
+    SPEC.md constraints (low/near-free-cost PWA, no app-store install,
+    German/English/Tibetan UI, simple enough for non-technical volunteer
+    teachers) before writing feature code, rather than assuming one.
+    Do not invent visual design beyond bare-functional screens; flag
+    anywhere a real UX decision is needed instead of guessing.
+
+- id: "1-2"
+  title: Student self-registration & approval
+  description: >-
+    Student self-registers with name + class code + guardian consent and
+    lands Pending; their assigned class teacher(s), or the admin as
+    backup, approve or reject, with an inline team-picker that sets
+    `team_id` at approval time. Students sign in via username + short PIN
+    (mechanism decided, not built, in Story 1-1). See SPEC.md CAP-1 and
+    roles-and-permissions.md.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Split out of Story 1-1 to keep that spec under its token budget, not
+    because it's independent: classes/codes and admin/teacher accounts
+    already exist (Story 1-1's schema/RLS pattern — is_admin()/
+    is_teacher_of_class() — should extend to students, not be
+    reinvented). The team-picker at approval references Story 4-3's team
+    concept, which does not exist yet either; investigate whether a
+    minimal `teams` table (name only) needs to be scoped into this story
+    as prerequisite schema (mirroring how Story 1-1 itself had to
+    scaffold `classes` from nothing) or whether approval can proceed
+    without a team assignment for now — flag as an Open Question rather
+    than assuming either way. This story's completion is also what
+    unblocks Story 2-1 (roster & skill tracking), which needs students to
+    exist and currently cannot proceed without this.
+
+# Feature 2: Roster & Skill Tracking (CAP-2)
+- id: "2-1"
+  title: Roster & skill-status tracking
+  description: >-
+    Any teacher assigned to a class can mark weekly attendance and set
+    per-student per-skill-area status (language/song/dance), with full
+    history and optional notes. Class-scoped visibility. See SPEC.md CAP-2.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Build on the architecture chosen in Story 1-1. Status changes must be
+    append-to-history, never overwrite-in-place, so a substitute teacher
+    can see the full timeline.
+
+# Feature 3: Homework (CAP-3)
+- id: "3-1"
+  title: One-off homework assignment & review
+  description: >-
+    Teacher creates/assigns homework (title, skill area, targets, due
+    date, optional reference links); student self-marks Done; teacher
+    marks Reviewed; overdue items stay visible until archived. See
+    SPEC.md CAP-3 and homework-workflow.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    UI/UX for this flow is not designed yet — keep the first pass
+    functional (list, mark-done toggle, review toggle) rather than
+    polished, and flag where a real design pass would change the
+    interaction. Model the Assigned/Done/Reviewed states explicitly;
+    Done alone must be independently readable from Reviewed (Story 4-1
+    needs Done, skill-history needs Reviewed).
+
+- id: "3-2"
+  title: Recurring homework assignments
+  description: >-
+    Teacher sets a homework item to recur on a cadence (weekly by
+    default); each period auto-generates an independent instance with
+    its own Done/Reviewed status. See SPEC.md CAP-3 and
+    homework-workflow.md.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Extends Story 3-1's data model — do not special-case recurring
+    instances in a way that breaks Story 3-1's streak/review reads.
+    Editing or ending a series must never touch past instances.
+
+# Feature 4: Gamification (CAP-4, CAP-5, CAP-6)
+- id: "4-1"
+  title: Streaks
+  description: >-
+    Per-student streak of consecutive weeks with both attendance and
+    homework Done, surviving an admin-configurable grace period
+    (default 2 missed weeks). See SPEC.md CAP-4 and gamification.md.
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    The grace-period value must be a stored, admin-editable setting from
+    day one, not a hardcoded constant — retrofitting configurability
+    later means a migration. No UI/UX design yet for how the streak is
+    displayed to students; a plain number/indicator is enough for now.
+
+- id: "4-2"
+  title: Badges
+  description: >-
+    Student earns badges at configurable milestone increments of
+    attendance count and homework-done count; visible only on their own
+    profile. See SPEC.md CAP-5 and gamification.md.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Milestone step size is an open question in SPEC.md (5 vs. 10) —
+    make it a configurable value, not a hardcoded one, so the answer
+    can land later without a code change. No badge visual design exists
+    yet; placeholder icons/labels are fine for this story.
+
+- id: "4-3"
+  title: Team leaderboard
+  description: >-
+    Students belong to a fixed-for-the-year team, manually assigned by
+    their teacher at approval time (including mid-year joins); teams
+    are ranked by combined streak, visible only within the school. See
+    SPEC.md CAP-6 and gamification.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Requires a deliberate seam back into Story 1-1's approval flow (team
+    picker at the moment a teacher approves a student) — do not bolt
+    this on as a disconnected admin screen. No leaderboard visual design
+    yet; a simple ranked list is sufficient for this story.
+
+# Feature 5: Admin Oversight & Privacy (CAP-7, CAP-8)
+- id: "5-1"
+  title: Admin cross-class oversight & data deletion
+  description: >-
+    Admin gets an aggregate cross-class dashboard (all teachers,
+    students, completion) and reviews/approves student data-deletion
+    requests before any erasure. See SPEC.md CAP-7 and CAP-8, and
+    roles-and-permissions.md.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    The admin backup-approve capability shares its mechanism with Story
+    1-1's teacher-approval flow — reuse it rather than building a
+    parallel path. Deletion must never be a single click: require an
+    explicit admin confirmation step and leave an audit trail of the
+    approval.

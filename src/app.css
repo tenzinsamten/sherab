@@ -1,0 +1,320 @@
+/* Sherab design tokens -- see
+   _bmad-output/planning-artifacts/ux-designs/ux-tib-class-2026-09-14/DESIGN.md
+   (source of truth as of 2026-09-14, superseding the earlier design-tokens.md
+   palette). Bold, high-contrast, editorial/brutalist system: navy + one
+   signal blue + attention amber + error red, zero border-radius, no shadows,
+   heavy all-caps display type. Story 1-1 only builds admin/teacher (auth,
+   classes, teachers, class list) screens, so this file wires up the tokens
+   those surfaces need; the celebration/student-facing tokens land with later
+   stories that actually build student screens. */
+
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
+
+:root {
+	--color-primary: #2f5fe0;
+	--color-on-primary: #ffffff;
+	--color-secondary: #f2a71b;
+	--color-on-secondary: #1a1208;
+
+	--color-surface-inverse: #0b1330;
+	--color-on-surface-inverse: #ffffff;
+
+	--color-background: #ffffff;
+	--color-foreground: #0b1330;
+	--color-card: #ffffff;
+	--color-card-foreground: #0b1330;
+	--color-muted: #eef1f8;
+	--color-muted-foreground: #6b7280;
+	--color-border: #d8dee9;
+
+	--color-destructive: #d92d20;
+	--color-on-destructive: #ffffff;
+	--color-ring: #2f5fe0;
+
+	--font-display: 'Archivo Black', sans-serif;
+	--font-body: 'Source Sans 3', sans-serif;
+	--font-tibetan: 'Noto Serif Tibetan', serif;
+
+	--text-sm: 0.875rem;
+	--text-base: 1rem;
+	--text-lg: 1.125rem;
+	--text-xl: 1.375rem;
+	--text-2xl: 1.75rem;
+	--line-height-body: 1.5;
+	--line-height-heading: 1.1;
+
+	--radius-clay-quiet: 0px;
+	--border-clay-quiet: 1px solid var(--color-border);
+	--shadow-clay-quiet: none;
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-6: 1.5rem;
+	--space-8: 2rem;
+
+	--touch-target-min: 48px;
+	--touch-gap-min: 8px;
+	--transition-standard: 200ms ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--color-background: #0b1330;
+		--color-foreground: #f1f5fd;
+		--color-card: #151d3d;
+		--color-card-foreground: #f1f5fd;
+		--color-muted: #1c254a;
+		--color-muted-foreground: #9aa3c0;
+		--color-border: #2b3563;
+	}
+}
+:root[data-theme='dark'] {
+	--color-background: #0b1330;
+	--color-foreground: #f1f5fd;
+	--color-card: #151d3d;
+	--color-card-foreground: #f1f5fd;
+	--color-muted: #1c254a;
+	--color-muted-foreground: #9aa3c0;
+	--color-border: #2b3563;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--transition-standard: 0ms;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--color-background);
+	color: var(--color-foreground);
+	font-family: var(--font-body);
+	font-size: var(--text-base);
+	line-height: var(--line-height-body);
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-display);
+	line-height: var(--line-height-heading);
+	text-transform: uppercase;
+	letter-spacing: -0.01em;
+	font-weight: 900;
+}
+
+/* Tibetan has no uppercase concept and needs more breathing room than Latin
+   caps -- do not force the all-caps display treatment onto it (open question
+   flagged in DESIGN.md; this is the conservative default: readable weight,
+   no forced case transform). */
+[lang='bo'] {
+	font-family: var(--font-tibetan);
+}
+[lang='bo'] h1,
+[lang='bo'] h2,
+[lang='bo'] h3 {
+	font-family: var(--font-tibetan);
+	text-transform: none;
+	letter-spacing: normal;
+	font-weight: 700;
+	line-height: 1.4;
+}
+
+.section-label {
+	display: block;
+	font-family: var(--font-body);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-muted-foreground);
+	margin: 0 0 var(--space-2) 0;
+}
+
+/* Margins collapse between adjacent siblings, but only up to the larger of
+   the two -- an unstyled h1's browser-default top margin would still open a
+   bigger gap after the label on pages that don't also zero it inline. Force
+   it here once so every section-label -> heading gap is identical. */
+.section-label + h1 {
+	margin-top: 0;
+}
+
+a,
+button,
+input,
+select {
+	touch-action: manipulation;
+}
+
+button {
+	cursor: pointer;
+	font-family: inherit;
+}
+
+:focus-visible {
+	outline: 3px solid var(--color-ring);
+	outline-offset: 2px;
+}
+
+.card {
+	background: var(--color-card);
+	color: var(--color-card-foreground);
+	border: var(--border-clay-quiet);
+	border-radius: var(--radius-clay-quiet);
+	box-shadow: var(--shadow-clay-quiet);
+	padding: var(--space-6);
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	margin-bottom: var(--space-4);
+}
+
+.field label {
+	font-weight: 600;
+	font-size: 0.6875rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-muted-foreground);
+}
+
+.field input,
+.field select {
+	min-height: var(--touch-target-min);
+	padding: var(--space-2) var(--space-3);
+	border: none;
+	border-bottom: 2px solid var(--color-foreground);
+	border-radius: var(--radius-clay-quiet);
+	font-size: var(--text-base);
+	background: var(--color-muted);
+	color: var(--color-foreground);
+}
+
+.field input[aria-invalid='true'] {
+	border-bottom-color: var(--color-destructive);
+}
+
+.field-error {
+	color: var(--color-destructive);
+	font-size: var(--text-sm);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: var(--touch-target-min);
+	padding: var(--space-2) var(--space-4);
+	border-radius: var(--radius-clay-quiet);
+	border: var(--border-clay-quiet);
+	background: var(--color-primary);
+	color: var(--color-on-primary);
+	font-size: var(--text-base);
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.btn:hover {
+	filter: brightness(0.92);
+}
+
+.btn-outline {
+	background: transparent;
+	color: var(--color-foreground);
+	border: 2px solid var(--color-foreground);
+}
+
+.btn-outline:hover {
+	background: var(--color-muted);
+	filter: none;
+}
+
+.btn[aria-pressed='true'] {
+	background: var(--color-secondary);
+	color: var(--color-on-secondary);
+}
+
+.banner-error {
+	background: var(--color-card);
+	color: var(--color-destructive);
+	border: 1px solid var(--color-destructive);
+	border-radius: var(--radius-clay-quiet);
+	padding: var(--space-3) var(--space-4);
+	margin-bottom: var(--space-4);
+}
+
+.banner-success {
+	background: var(--color-card);
+	color: var(--color-primary);
+	border: 1px solid var(--color-primary);
+	border-radius: var(--radius-clay-quiet);
+	padding: var(--space-3) var(--space-4);
+	margin-bottom: var(--space-4);
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+thead th {
+	background: var(--color-surface-inverse);
+	color: var(--color-on-surface-inverse);
+	text-transform: uppercase;
+	font-size: 0.75rem;
+	letter-spacing: 0.06em;
+}
+
+th,
+td {
+	text-align: left;
+	padding: var(--space-2) var(--space-3);
+	border-bottom: 1px solid var(--color-border);
+}
+
+code {
+	font-family: var(--font-body);
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	color: var(--color-primary);
+	background: none;
+}
+
+.nav-link {
+	display: inline-flex;
+	align-items: center;
+	padding: var(--space-2) var(--space-4);
+	text-decoration: none;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-size: var(--text-sm);
+	color: var(--color-on-surface-inverse);
+	background: transparent;
+	border: none;
+	min-height: var(--touch-target-min);
+	font-family: inherit;
+	cursor: pointer;
+}
+
+.nav-link:hover {
+	background: rgba(255, 255, 255, 0.12);
+}
+
+.nav-link.active {
+	background: var(--color-primary);
+}
+
+.nav-link.active:hover {
+	filter: brightness(1.1);
+}

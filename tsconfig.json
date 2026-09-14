@@ -1,0 +1,23 @@
+{
+	"extends": "./.svelte-kit/tsconfig.json",
+	"compilerOptions": {
+		"rewriteRelativeImportExtensions": true,
+		"allowJs": true,
+		// Off deliberately: Cloudflare Workers' generated `Request<CfHostMetadata, Cf>`
+		// ambient type (worker-configuration.d.ts, via "types" below) structurally
+		// conflicts with the plain lib.dom `Request` that Paraglide's *generated*
+		// server middleware (src/lib/paraglide/server.js) is written against. TS
+		// still deep-checks that file even when tsconfig-excluded, because
+		// hooks.server.ts imports it. All hand-written source here is .ts/.svelte,
+		// so disabling checkJs only stops deep-checking generated .js output.
+		"checkJs": false,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+		"sourceMap": true,
+		"strict": true,
+		"moduleResolution": "bundler",
+		"types": ["./worker-configuration.d.ts"]
+	}
+}
