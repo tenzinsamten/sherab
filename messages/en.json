@@ -94,6 +94,7 @@
 	"teams_empty": "No teams yet.",
 	"teams_created_success": "Team \"{name}\" created.",
 	"teams_error_name_required": "Team name is required.",
+	"teams_error_create_failed": "Could not create the team.",
 	"teams_col_name": "Name",
 	"teams_col_created": "Created",
 
@@ -106,6 +107,7 @@
 	"join_continue": "Continue",
 	"join_back": "Back",
 	"join_class_confirmed": "{name} · {code}",
+	"join_step_progress": "Step {step} of 3",
 	"join_name_label": "Full name",
 	"join_name_note": "You can choose a nickname later, once you're approved.",
 	"join_consent_notice": "We store your name, class, and progress so your teacher can track it. Nothing is shown publicly, and you can ask for it to be deleted at any time.",

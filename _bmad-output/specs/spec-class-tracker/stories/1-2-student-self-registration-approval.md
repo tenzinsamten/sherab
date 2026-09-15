@@ -2,7 +2,7 @@
 title: 'Student Self-Registration & Approval'
 type: 'feature'
 created: '2026-09-14'
-status: 'in-review'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'NO_VCS'
@@ -81,7 +81,30 @@ None yet.
 
 ## Review Triage Log
 
-Not yet run.
+Reviewed via `bmad-build` step-04 (blind-hunter, edge-case-hunter, verification-gap layers) against a best-effort diff (repo has no VCS at the time of this run, so the diff was staged file-by-file against `/dev/null` over all files touched by this story, including the login-identifier fix).
+
+| # | Verdict | Route | Finding & evidence |
+|---|---------|-------|---------------------|
+| 1 | medium | patch | `requests/+page.server.ts`'s `approve` action sets `profiles.email` but no test (real or the RLS test's hand-rolled mirror) asserts it — a regression reverting that line would leave every approved student's `profiles.email` at its placeholder forever, undetected. Filed pre-verified by the verification-gap layer. |
+| 2 | medium | patch | The nav "pending requests" badge count (`+layout.server.ts`) has zero test coverage for its RLS-scoping (teacher sees only their classes' pending count, admin sees all) — a scoping regression would ship silently. Filed pre-verified by the verification-gap layer. |
+| 3 | medium | patch | The username-collision retry loop in `approve` (two same-slugging registration names) is only unit-tested at the pure-helper level, never through the real retry branch against live Supabase Auth — a one-line regression (dropping `existingUsernames.add(username)`) would permanently block approving a second same-named student with no test catching it. Filed pre-verified by the verification-gap layer. |
+| 4 | low | patch | `admin/teams/+page.server.ts`'s `create` action returns the raw Postgres `error.message` to the UI instead of a translated `m.*` string, unlike every other create action in this diff — confirmed independently by both the blind-hunter and edge-case-hunter layers. |
+| 5 | low | patch | `requests/+page.server.ts`'s `reject` action skips the RLS-scoped pre-check that `approve`/`clearRejected` both do, so an unauthorized/already-decided reject attempt gets the generic `requests_error_reject_failed` instead of the more specific `requests_error_not_found` used everywhere else for that condition — RLS still blocks the actual mutation either way, this is a message-consistency gap, not a security gap. Confirmed by direct read. |
+| 6 | low | patch | `join/+page.server.ts`'s `register` action collapses every `signUp` failure — including the rare unique-index race for a duplicate `(class, name)` registration — into the generic `join_error_generic()`, even though `join_error_duplicate()` already exists and is used for the pre-check RPC. Confirmed by direct read. |
+| 7 | low | patch | The join wizard's step indicator (`<ol aria-hidden="true">`) hides step progress from screen-reader users with no visually-hidden equivalent ("Step 2 of 3"). Confirmed by direct read of `+page.svelte`. |
+| 8 | low | patch | The guardian-consent checkbox has no `aria-describedby` linking it to the preceding consent-notice paragraph, so assistive tech doesn't announce the notice as the checkbox's accessible description. Confirmed by direct read. |
+| 9 | low | patch | `join/+page.server.ts`'s `register` action never checks the `signOut()` call's error after `signUp()` — a failed sign-out could leave a Pending student's browser with a live session. Narrow impact (RLS/role checks still gate real access) but the check is a trivial addition. |
+| 10 | medium | defer | Student sign-in has no rate limiting/lockout: a 6-digit numeric PIN (10^6 space) paired with a username deterministically derivable from the registration name, with no throttling anywhere in this diff or the planning docs. Real hardening gap, bounded impact (RLS still scopes a compromised student session to that student's own data only), but the fix (lockout/throttle design) is a feature in its own right, not a smallest-fix patch. |
+| 11 | low | defer | No "reissue credentials" flow exists if a student's one-time-shown username/PIN is lost — matches an already-existing, unaddressed gap for teachers' one-time temp password (Story 1-1), not something newly introduced here; needs its own design across both roles. |
+| 12 | low | defer | Two admins/teachers approving the same pending student at literally the same moment could race between the RLS-scoped pre-check read and the final update, potentially diverging `auth.users.email` from the persisted `profiles.email`. Narrow window, low-volume single-admin tool; a real fix needs a transactional/locking approach beyond a smallest-fix patch. |
+| — | false | reject | `messages/bo.json`'s new keys are English placeholders, not real Tibetan — matches the exact, already-documented project convention (Story 1-1's own deferred-work.md entry covers this generically); not a new or undocumented gap. |
+| — | false | reject | Teams have no update/delete action or RLS policy — matches this spec's own frozen Boundaries ("minimal admin-only 'create team' (name only)"); explicitly out of scope, not an oversight. |
+| — | low | reject | `teams` table has no `created_by` audit column (unlike `classes`) — the spec's own Code Map explicitly scoped the table to `(id, name, created_at)`; a real but low-value nice-to-have, non-trivial to retrofit (migration + insert-time capture) for negligible harm in a single-admin tool. |
+| — | false | reject | `rls.spec.ts`/`temp-password.spec.ts` require live Supabase with no CI enforcement — already tracked generically in `deferred-work.md` from Story 1-1's review; not a new gap introduced by this diff. |
+| — | low | reject | Empty-string `registration_name` would be treated as "not found" rather than "found but missing name" in `approve` — unreachable through normal operation, since the join wizard already rejects an empty name before creating any row. |
+| — | low | reject | The `/join/pending` receipt cookie's parsed shape isn't validated against `JoinReceipt` — only reachable by a student tampering with their own cookie, and the worst case is a cosmetic "undefined" display, not a security or data issue. |
+| — | low | reject | `generateUniqueStudentUsername`'s suffix loop has no upper bound — would require thousands of same-slugging registrations to matter, implausible at this app's actual scale (a single Sunday-school's worth of students). |
+| — | false | reject | The spec's Approach wording ("validates username+PIN against profiles") doesn't literally match the implementation (it validates against Supabase Auth's `auth.users` via `signInWithPassword`, never queries `profiles`) — the actual mechanism matches this spec's own deeper Design Notes intent exactly; the fix would be editing this spec's wording, which is rejected by rule. |
 
 ## Design Notes
 

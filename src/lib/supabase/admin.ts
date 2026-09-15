@@ -26,3 +26,49 @@ export function createSupabaseAdminClient() {
 		}
 	});
 }
+
+/**
+ * Updates an auth user's email/password via a direct call to the Admin REST
+ * API, bypassing supabase-js's `admin.updateUserById()` wrapper.
+ *
+ * Needed specifically for Story 1-2's approval flow: on a duplicate-email
+ * collision, the SDK collapses the response into a generic
+ * `AuthRetryableFetchError` ("Error updating user", status 500, no `code`)
+ * -- it discards the real Postgres error the raw HTTP body actually carries
+ * (`{"code":"23505","message":"duplicate key value violates unique
+ * constraint \"users_email_partial_key\"", ...}`). Without that code, the
+ * collision-retry logic in requests/+page.server.ts's `approve` action has
+ * no reliable way to tell "this email is already taken, try the next
+ * candidate" apart from any other unexpected failure -- verified directly
+ * against the local Auth API, not assumed.
+ */
+export async function updateAuthUserEmailAndPassword(
+	userId: string,
+	updates: { email: string; password: string }
+): Promise<{ error: { code?: string; message: string } | null }> {
+	const res = await fetch(`${PUBLIC_SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+		method: 'PUT',
+		headers: {
+			apikey: SUPABASE_SERVICE_ROLE_KEY,
+			authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+			'content-type': 'application/json'
+		},
+		body: JSON.stringify({
+			email: updates.email,
+			password: updates.password,
+			email_confirm: true
+		})
+	});
+
+	if (res.ok) {
+		return { error: null };
+	}
+
+	const body = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+	return {
+		error: {
+			code: body?.code,
+			message: body?.message ?? `Admin API update failed with status ${res.status}`
+		}
+	};
+}

@@ -30,7 +30,7 @@ export const actions: Actions = {
 			.single();
 
 		if (error) {
-			return fail(400, { error: error.message, name });
+			return fail(400, { error: m.teams_error_create_failed(), name });
 		}
 
 		return { success: true, team: created, name };

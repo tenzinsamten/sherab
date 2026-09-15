@@ -145,6 +145,23 @@ h3 {
 	margin-top: 0;
 }
 
+/* Standard visually-hidden pattern: present to screen readers/assistive
+   tech, invisible on screen -- e.g. the join wizard's "Step X of 3"
+   announcement, which the numbered 01/02/03 list conveys visually only
+   (that list is aria-hidden). Clip-based, not display:none, so it still
+   participates in the accessibility tree. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
 a,
 button,
 input,

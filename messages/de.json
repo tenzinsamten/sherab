@@ -94,6 +94,7 @@
 	"teams_empty": "Noch keine Teams vorhanden.",
 	"teams_created_success": "Team \"{name}\" erstellt.",
 	"teams_error_name_required": "Teamname ist erforderlich.",
+	"teams_error_create_failed": "Das Team konnte nicht erstellt werden.",
 	"teams_col_name": "Name",
 	"teams_col_created": "Erstellt",
 
@@ -106,6 +107,7 @@
 	"join_continue": "Weiter",
 	"join_back": "Zurück",
 	"join_class_confirmed": "{name} · {code}",
+	"join_step_progress": "Schritt {step} von 3",
 	"join_name_label": "Vollständiger Name",
 	"join_name_note": "Einen Spitznamen kannst du später wählen, sobald du freigegeben bist.",
 	"join_consent_notice": "Wir speichern deinen Namen, deine Klasse und deinen Fortschritt, damit deine Lehrkraft ihn nachverfolgen kann. Nichts davon ist öffentlich sichtbar, und du kannst jederzeit die Löschung verlangen.",

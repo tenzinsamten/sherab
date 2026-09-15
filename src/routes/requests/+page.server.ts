@@ -1,5 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { createSupabaseAdminClient } from '$lib/supabase/admin';
+import { createSupabaseAdminClient, updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
 import {
 	STUDENT_EMAIL_DOMAIN,
 	generateStudentPin,
@@ -137,10 +137,17 @@ export const actions: Actions = {
 		let credentialsAssigned = false;
 
 		for (let attempt = 0; attempt < MAX_CREDENTIAL_ATTEMPTS; attempt++) {
-			const { error: updateAuthError } = await adminClient.auth.admin.updateUserById(studentId, {
+			// Goes through updateAuthUserEmailAndPassword (a direct Admin REST
+			// call), not adminClient.auth.admin.updateUserById() -- the SDK
+			// wraps every 500-status failure from this endpoint into a generic
+			// AuthRetryableFetchError with no `code` and a fixed "Error updating
+			// user" message, discarding the real Postgres error (`code:
+			// "23505"`) a duplicate-email collision actually returns. Without
+			// that code there is no way to tell "this email is already taken,
+			// try the next candidate" apart from any other failure.
+			const { error: updateAuthError } = await updateAuthUserEmailAndPassword(studentId, {
 				email: studentUsernameToEmail(username),
-				password: pin,
-				email_confirm: true
+				password: pin
 			});
 
 			if (!updateAuthError) {
@@ -149,8 +156,9 @@ export const actions: Actions = {
 			}
 
 			const isDuplicate =
+				updateAuthError.code === '23505' ||
 				updateAuthError.code === 'email_exists' ||
-				/already.*registered|exists/i.test(updateAuthError.message ?? '');
+				/already.*registered|exists|duplicate/i.test(updateAuthError.message ?? '');
 			if (!isDuplicate) {
 				return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
 			}
@@ -214,6 +222,21 @@ export const actions: Actions = {
 		const studentName = String(formData.get('studentName') ?? '');
 
 		if (!studentId) {
+			return fail(400, { error: m.requests_error_not_found(), studentId, studentName });
+		}
+
+		// Same RLS-gated pre-check as `approve`/`clearRejected`: distinguishes
+		// "not found / already decided / not yours to act on" (the specific
+		// message) from a genuine unexpected update failure below.
+		const { data: student, error: fetchError } = await supabase
+			.from('profiles')
+			.select('id')
+			.eq('id', studentId)
+			.eq('role', 'student')
+			.eq('status', 'pending')
+			.single();
+
+		if (fetchError || !student) {
 			return fail(400, { error: m.requests_error_not_found(), studentId, studentName });
 		}
 

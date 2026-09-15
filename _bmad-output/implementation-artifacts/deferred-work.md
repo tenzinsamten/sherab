@@ -35,3 +35,15 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-1-teacher-student-account-management.md`
   summary: `messages/bo.json`'s values are English placeholders, not real Tibetan translations, despite dedicated `[lang='bo']` typography (`--font-tibetan`) already wired up in `src/app.css`.
   evidence: Already flagged in this spec's own Implementation Notes ("per the design-tokens doc's own 'flag, don't fabricate' principle... not confident producing accurate Tibetan UI copy... pending native-speaker review") but not previously recorded here. Needs a native Tibetan speaker, not more engineering, to resolve.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: Student sign-in has no rate limiting or lockout -- a 6-digit numeric PIN (10^6 space) paired with a username deterministically derivable from the registration name, with no throttling anywhere in the codebase or planning docs.
+  evidence: Story 1-2's own bmad-build review (blind-hunter layer) confirmed no rate limiting exists on the `/login` action or in this project's Supabase Auth configuration. Bounded impact today (RLS still scopes a compromised student session to that student's own data only), but a real hardening gap for a system holding minors' data. Needs its own throttle/lockout design, not a smallest-fix patch.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: No "reissue credentials" flow exists if a student's one-time-shown username/PIN is lost after approval (or, symmetrically, if a teacher's one-time temp password from Story 1-1 is lost).
+  evidence: Story 1-2's own bmad-build review (blind-hunter layer) confirmed no such action exists anywhere in the diff. Mirrors an already-existing, unaddressed gap for teachers from Story 1-1 -- needs one design covering both roles, not a per-story patch.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
+  summary: Two admins/teachers approving the same pending student at the same moment could race between `requests/+page.server.ts`'s RLS-scoped pre-check read and its final `profiles` update, potentially diverging `auth.users.email` from the persisted `profiles.email`.
+  evidence: Story 1-2's own bmad-build review (edge-case-hunter layer) identified the narrow TOCTOU window. Low real-world likelihood in a single-admin, low-volume tool; a real fix needs a transactional/locking approach beyond a smallest-fix patch.

@@ -63,6 +63,7 @@
 		<p class="banner-error" role="alert">{form.error}</p>
 	{/if}
 
+	<p class="sr-only" aria-live="polite">{m.join_step_progress({ step: `${step}` })}</p>
 	<ol
 		style="list-style: none; padding: 0; margin: 0 0 var(--space-4) 0; display:flex; gap: var(--space-3);"
 		aria-hidden="true"
@@ -139,9 +140,17 @@
 			<input type="hidden" name="classCode" value={classCode} />
 			<input type="hidden" name="registrationName" value={registrationName} />
 
-			<p style="color: var(--color-muted-foreground);">{m.join_consent_notice()}</p>
+			<p id="joinConsentNotice" style="color: var(--color-muted-foreground);">
+				{m.join_consent_notice()}
+			</p>
 			<label style="display:flex; align-items:flex-start; gap: var(--space-2);">
-				<input type="checkbox" name="guardianConsent" required bind:checked={guardianConsent} />
+				<input
+					type="checkbox"
+					name="guardianConsent"
+					required
+					aria-describedby="joinConsentNotice"
+					bind:checked={guardianConsent}
+				/>
 				<span>{m.join_consent_checkbox_label()}</span>
 			</label>
 

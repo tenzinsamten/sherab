@@ -21,6 +21,7 @@ import {
 	resolveLoginIdentifierToEmail,
 	studentUsernameToEmail
 } from './temp-password';
+import { updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
 import type { Database } from './../supabase/database.types';
 
 const adminClient = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -421,27 +422,13 @@ describe.skipIf(!reachable)(
 			const registrationName = `Approved Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
 
-			const { data: updated, error } = await teacherA.client
-				.from('profiles')
-				.update({
-					status: 'approved',
-					team_id: teamId,
-					reviewed_by: teacherA.id,
-					reviewed_at: new Date().toISOString()
-				})
-				.eq('id', id!)
-				.select('status, team_id, reviewed_by')
-				.single();
-
-			expect(error).toBeNull();
-			expect(updated?.status).toBe('approved');
-			expect(updated?.team_id).toBe(teamId);
-			expect(updated?.reviewed_by).toBe(teacherA.id);
-
-			// Mirrors requests/+page.server.ts's approve action: assign a real
-			// username + PIN and sign in through Supabase Auth, exactly like a
-			// student would (Design Notes: "the student just becomes a normal
-			// authenticated user").
+			// Mirrors requests/+page.server.ts's approve action's real order:
+			// generate + assign the auth credentials FIRST, then flip
+			// status/team/email on profiles together -- `email` is included in
+			// that same update because there is no trigger syncing
+			// profiles.email when auth.users.email changes on UPDATE (only
+			// handle_new_user() populates it, and only on INSERT). Asserting it
+			// here is what would catch a regression of that sync.
 			const { data: existing } = await adminClient
 				.from('profiles')
 				.select('email')
@@ -454,12 +441,30 @@ describe.skipIf(!reachable)(
 			const username = generateUniqueStudentUsername(registrationName, existingUsernames);
 			const pin = generateStudentPin();
 
-			const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(id!, {
+			const { error: authUpdateError } = await updateAuthUserEmailAndPassword(id!, {
 				email: studentUsernameToEmail(username),
-				password: pin,
-				email_confirm: true
+				password: pin
 			});
 			expect(authUpdateError).toBeNull();
+
+			const { data: updated, error } = await teacherA.client
+				.from('profiles')
+				.update({
+					status: 'approved',
+					team_id: teamId,
+					email: studentUsernameToEmail(username),
+					reviewed_by: teacherA.id,
+					reviewed_at: new Date().toISOString()
+				})
+				.eq('id', id!)
+				.select('status, team_id, reviewed_by, email')
+				.single();
+
+			expect(error).toBeNull();
+			expect(updated?.status).toBe('approved');
+			expect(updated?.team_id).toBe(teamId);
+			expect(updated?.reviewed_by).toBe(teacherA.id);
+			expect(updated?.email).toBe(studentUsernameToEmail(username));
 
 			// Goes through resolveLoginIdentifierToEmail -- the exact function
 			// (auth)/login/+page.server.ts calls -- with the bare username a
@@ -632,6 +637,154 @@ describe.skipIf(!reachable)(
 			// again (Story 1-2 AC 3 / Boundaries).
 			const resubmit = await signUpStudent({ classId: classAId, registrationName });
 			expect(resubmit.error).toBeNull();
+		});
+
+		it('nav pending-requests badge count query is RLS-scoped: an assigned teacher sees it, an unassigned teacher sees zero', async () => {
+			const teacherC = await createSignedInUser('teacher');
+
+			const { data: classC, error: classCError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Badge Count Class',
+					code: `BC${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (classCError || !classC) {
+				throw new Error(`Failed to create badge-count class: ${classCError?.message}`);
+			}
+
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classC.id, teacher_id: teacherC.id });
+			expect(assignError).toBeNull();
+
+			await signUpStudent({
+				classId: classC.id,
+				registrationName: `Badge Pending A ${crypto.randomUUID().slice(0, 6)}`
+			});
+			await signUpStudent({
+				classId: classC.id,
+				registrationName: `Badge Pending B ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// Mirrors +layout.server.ts's pendingRequestsCount query exactly.
+			const asAssignedTeacher = await teacherC.client
+				.from('profiles')
+				.select('id', { count: 'exact', head: true })
+				.eq('role', 'student')
+				.eq('status', 'pending');
+			expect(asAssignedTeacher.error).toBeNull();
+			expect(asAssignedTeacher.count).toBe(2);
+
+			// teacherB is never assigned to any class in this describe block, so
+			// RLS scopes their count to zero regardless of how many pending
+			// students exist elsewhere.
+			const asUnassignedTeacher = await teacherB.client
+				.from('profiles')
+				.select('id', { count: 'exact', head: true })
+				.eq('role', 'student')
+				.eq('status', 'pending');
+			expect(asUnassignedTeacher.error).toBeNull();
+			expect(asUnassignedTeacher.count).toBe(0);
+		});
+
+		it('two students with identical registration names in the same class both get distinct, working sign-in credentials (real Auth collision retry)', async () => {
+			// Mirrors requests/+page.server.ts's approve action's retry loop
+			// exactly, but takes `existingUsernames` as a parameter instead of
+			// querying it, so the test can force a genuine Postgres unique-
+			// violation on demand rather than hoping one occurs. Uses
+			// updateAuthUserEmailAndPassword, not
+			// adminClient.auth.admin.updateUserById(), for the same reason the
+			// real action does: the SDK wraps every 500 from this endpoint into
+			// a generic error with no code, discarding the real `23505` a
+			// duplicate-email collision returns.
+			async function approveWithUsernameSnapshot(
+				studentId: string,
+				registrationName: string,
+				existingUsernames: Set<string>
+			) {
+				let username = generateUniqueStudentUsername(registrationName, existingUsernames);
+				let pin = generateStudentPin();
+				let assigned = false;
+
+				for (let attempt = 0; attempt < 5 && !assigned; attempt++) {
+					const { error: authError } = await updateAuthUserEmailAndPassword(studentId, {
+						email: studentUsernameToEmail(username),
+						password: pin
+					});
+					if (!authError) {
+						assigned = true;
+						break;
+					}
+					const isDuplicate =
+						authError.code === '23505' ||
+						authError.code === 'email_exists' ||
+						/already.*registered|exists|duplicate/i.test(authError.message ?? '');
+					if (!isDuplicate) {
+						throw new Error(`Unexpected auth update error: ${authError.message}`);
+					}
+					existingUsernames.add(username);
+					username = generateUniqueStudentUsername(registrationName, existingUsernames);
+					pin = generateStudentPin();
+				}
+				if (!assigned) {
+					throw new Error('Could not assign student credentials after retries');
+				}
+
+				const { error: profileError } = await teacherA.client
+					.from('profiles')
+					.update({
+						status: 'approved',
+						team_id: teamId,
+						email: studentUsernameToEmail(username),
+						reviewed_by: teacherA.id,
+						reviewed_at: new Date().toISOString()
+					})
+					.eq('id', studentId);
+				if (profileError) {
+					throw new Error(`Profile approval update failed: ${profileError.message}`);
+				}
+
+				return { username, pin };
+			}
+
+			const dupName = `Dup Name ${crypto.randomUUID().slice(0, 6)}`;
+
+			const student1 = await signUpStudent({ classId: classAId, registrationName: dupName });
+			expect(student1.error).toBeNull();
+
+			// Approved before student2 registers -- otherwise
+			// profiles_open_student_registration_unique would block a second
+			// Pending row for the identical (class, name) pair (Boundaries).
+			const approval1 = await approveWithUsernameSnapshot(student1.id!, dupName, new Set());
+
+			const student2 = await signUpStudent({ classId: classAId, registrationName: dupName });
+			expect(student2.error).toBeNull();
+
+			// Deliberately an EMPTY set, not a fresh query of already-assigned
+			// usernames -- generateUniqueStudentUsername therefore proposes the
+			// exact same base slug student1 already has, guaranteeing
+			// updateUserById's first attempt hits a real, already-taken email
+			// (a genuine email_exists error from Supabase Auth, not a simulated
+			// one) and forcing the retry branch to run for real.
+			const approval2 = await approveWithUsernameSnapshot(student2.id!, dupName, new Set());
+
+			expect(approval2.username).not.toBe(approval1.username);
+
+			const login1 = await anonClient().auth.signInWithPassword({
+				email: resolveLoginIdentifierToEmail(approval1.username),
+				password: approval1.pin
+			});
+			expect(login1.error).toBeNull();
+			expect(login1.data.session).not.toBeNull();
+
+			const login2 = await anonClient().auth.signInWithPassword({
+				email: resolveLoginIdentifierToEmail(approval2.username),
+				password: approval2.pin
+			});
+			expect(login2.error).toBeNull();
+			expect(login2.data.session).not.toBeNull();
 		});
 	}
 );

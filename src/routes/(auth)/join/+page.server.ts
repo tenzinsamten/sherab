@@ -65,13 +65,36 @@ export const actions: Actions = {
 		// Pending account -- there is nothing a Pending student can
 		// legitimately do yet (I/O matrix: "invisible everywhere, no
 		// activity"), and /join/pending needs no session, only the receipt
-		// cookie set below.
-		await supabase.auth.signOut();
+		// cookie set below. A failed sign-out here would otherwise leave that
+		// browser holding a live (if useless -- RLS still gates real access)
+		// session, so it's worth a server-side log even though the user-facing
+		// flow doesn't need to change over it.
+		const { error: signOutError } = await supabase.auth.signOut();
+		if (signOutError) {
+			console.error(
+				'(auth)/join register: failed to sign out after registration',
+				signOutError.message
+			);
+		}
 
 		if (signUpError) {
-			// The rare-race backstop (profiles_open_student_registration_unique)
-			// lands here too, as a generic message -- expected duplicates are
-			// already caught above with a specific one.
+			// The raw signUp() error is generic ("Database error saving new
+			// user", status 500, no distinguishing code) regardless of cause --
+			// Postgres/GoTrue give no signal here for "the
+			// profiles_open_student_registration_unique backstop rejected this
+			// insert" versus any other failure inside handle_new_user().
+			// Re-checking availability is what actually tells them apart: if a
+			// concurrent registration for the same (class, name) pair won the
+			// race between this action's own pre-check above and this signUp()
+			// call, check_registration_available now says so.
+			const { data: stillAvailable } = await supabase.rpc('check_registration_available', {
+				p_class_id: classId,
+				p_registration_name: registrationName
+			});
+
+			if (stillAvailable === false) {
+				return fail(400, { error: m.join_error_duplicate() });
+			}
 			return fail(400, { error: m.join_error_generic() });
 		}
 
