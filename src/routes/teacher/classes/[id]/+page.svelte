@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
@@ -48,6 +49,14 @@
 <h1>{data.class.name}</h1>
 <p style="color: var(--color-muted-foreground);">
 	{m.teacher_class_code_label({ code: data.class.code })}
+</p>
+<p>
+	<a
+		class="btn-outline btn"
+		style="text-decoration:none;"
+		href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
+		>{m.homework_heading()}</a
+	>
 </p>
 
 {#if data.loadError}

@@ -59,6 +59,16 @@
 			</a>
 		</p>
 	</div>
+{:else if data.profile.role === 'student'}
+	<div class="card">
+		<h1 style="margin-top:0;">
+			{m.home_student_greeting({ name: data.profile.display_name ?? data.profile.email })}
+		</h1>
+		<p>{m.home_student_subtitle()}</p>
+		<p>
+			<a class="btn" href={resolve('/student')}>{m.home_see_my_homework()}</a>
+		</p>
+	</div>
 {:else}
 	<div class="card">
 		<p>Signed in.</p>

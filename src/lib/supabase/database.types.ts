@@ -8,6 +8,7 @@ export type UserRole = 'admin' | 'teacher' | 'student';
 export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
 export type SkillArea = 'language' | 'song' | 'dance';
 export type SkillLevel = 'not_started' | 'learning' | 'confident';
+export type HomeworkStatusValue = 'assigned' | 'done' | 'reviewed';
 
 export type Database = {
 	public: {
@@ -204,6 +205,102 @@ export type Database = {
 				};
 				Relationships: [];
 			};
+			homework_assignments: {
+				Row: {
+					id: string;
+					class_id: string;
+					title: string;
+					skill_area: SkillArea;
+					reference_link: string | null;
+					recurrence_rule: unknown | null;
+					created_by: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					class_id: string;
+					title: string;
+					skill_area: SkillArea;
+					reference_link?: string | null;
+					recurrence_rule?: unknown | null;
+					created_by?: string | null;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					class_id?: string;
+					title?: string;
+					skill_area?: SkillArea;
+					reference_link?: string | null;
+					recurrence_rule?: unknown | null;
+					created_by?: string | null;
+					created_at?: string;
+				};
+				Relationships: [];
+			};
+			homework_instances: {
+				Row: {
+					id: string;
+					assignment_id: string;
+					class_id: string;
+					period_start: string;
+					due_date: string;
+					archived_at: string | null;
+					archived_by: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					assignment_id: string;
+					class_id: string;
+					period_start: string;
+					due_date: string;
+					archived_at?: string | null;
+					archived_by?: string | null;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					assignment_id?: string;
+					class_id?: string;
+					period_start?: string;
+					due_date?: string;
+					archived_at?: string | null;
+					archived_by?: string | null;
+					created_at?: string;
+				};
+				Relationships: [];
+			};
+			homework_status_history: {
+				Row: {
+					id: string;
+					instance_id: string;
+					student_id: string;
+					class_id: string;
+					status: HomeworkStatusValue;
+					recorded_by: string | null;
+					recorded_at: string;
+				};
+				Insert: {
+					id?: string;
+					instance_id: string;
+					student_id: string;
+					class_id: string;
+					status: HomeworkStatusValue;
+					recorded_by?: string | null;
+					recorded_at?: string;
+				};
+				Update: {
+					id?: string;
+					instance_id?: string;
+					student_id?: string;
+					class_id?: string;
+					status?: HomeworkStatusValue;
+					recorded_by?: string | null;
+					recorded_at?: string;
+				};
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -221,6 +318,14 @@ export type Database = {
 			};
 			check_registration_available: {
 				Args: { p_class_id: string; p_registration_name: string };
+				Returns: boolean;
+			};
+			is_targeted_for_homework_instance: {
+				Args: { target_instance_id: string };
+				Returns: boolean;
+			};
+			is_targeted_for_homework_assignment: {
+				Args: { target_assignment_id: string };
 				Returns: boolean;
 			};
 		};

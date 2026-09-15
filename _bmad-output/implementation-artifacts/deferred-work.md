@@ -1,5 +1,9 @@
 # Deferred Work
 
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/3-1-one-off-homework-assignment-review.md`
+  summary: `homework_instances_update_admin_or_assigned_teacher` grants an unrestricted UPDATE (any column) to any admin/assigned teacher, not just `archived_at`/`archived_by` -- the migration's own comment claims the app only ever writes archive columns "through this policy," but nothing enforces that at the DB level.
+  evidence: Story 3-1's own bmad-build review (verification-gap layer) identified this. Not tied to a demonstrated regression in 3-1's own scope (archiving itself works and is tested), but explicitly worth tightening before Story 3-2 builds recurring-instance editing on top of the same table -- a direct call could rewrite `due_date`/`period_start` and undermine AD-8's `UNIQUE(assignment_id, period_start)` guarantee.
+
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
   summary: Avatar-picker / nickname-change UI. `display_name` defaults to `registration_name` at profile-creation time (set in the `handle_new_user()` trigger) and stays editable later, but no UI to change it exists yet.
   evidence: Explicitly named as deferred in the story's own Implementation Notes ("Do not build an avatar-picker or nickname-change flow... shipping the minimum that satisfies the acceptance criteria"). A natural follow-on once a student-facing home screen exists.

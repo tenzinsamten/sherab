@@ -1330,3 +1330,973 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)(
+	'Story 3-1 one-off homework assignment & review (requires local Supabase)',
+	() => {
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classAId: string;
+		let teamId: string;
+
+		/**
+		 * Service-role-created student profile in a known (class, status)
+		 * state -- same shape as Story 2-1's local createStudent above
+		 * (duplicated rather than shared, matching this file's existing
+		 * per-describe-block convention).
+		 */
+		async function createStudent(params: {
+			classId: string;
+			status: 'pending' | 'approved' | 'rejected';
+			name: string;
+		}) {
+			const email = `story-3-1-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) {
+				throw new Error(`Failed to create student: ${error?.message}`);
+			}
+
+			const update: Database['public']['Tables']['profiles']['Update'] = {
+				class_id: params.classId,
+				status: params.status,
+				registration_name: params.name,
+				display_name: params.name
+			};
+			if (params.status === 'approved') {
+				update.team_id = teamId;
+			}
+
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update(update)
+				.eq('id', data.user.id);
+			if (updateError) {
+				throw new Error(`Failed to set up student: ${updateError.message}`);
+			}
+
+			return data.user.id;
+		}
+
+		/**
+		 * Same as createStudent, but also signs in with a known password --
+		 * needed for the self-mark-Done tests below, which must exercise the
+		 * RLS policy as the real student (auth.uid() = student_id), not via
+		 * the service-role client.
+		 */
+		async function createSignedInStudent(params: {
+			classId: string;
+			status?: 'pending' | 'approved' | 'rejected';
+			name: string;
+		}) {
+			const email = `story-3-1-signedin-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const password = crypto.randomUUID();
+			const status = params.status ?? 'approved';
+
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password,
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) {
+				throw new Error(`Failed to create signed-in student: ${error?.message}`);
+			}
+
+			const update: Database['public']['Tables']['profiles']['Update'] = {
+				class_id: params.classId,
+				status,
+				registration_name: params.name,
+				display_name: params.name
+			};
+			if (status === 'approved') {
+				update.team_id = teamId;
+			}
+
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update(update)
+				.eq('id', data.user.id);
+			if (updateError) {
+				throw new Error(`Failed to set up signed-in student: ${updateError.message}`);
+			}
+
+			const client = anonClient();
+			const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+			if (signInError) {
+				throw new Error(`Failed to sign in student: ${signInError.message}`);
+			}
+
+			return { id: data.user.id, email, client };
+		}
+
+		async function createHomeworkAssignment(params: {
+			classId: string;
+			createdBy: { id: string; client: ReturnType<typeof anonClient> };
+			title?: string;
+			recurrenceRule?: unknown;
+		}) {
+			// homework_assignments' own INSERT policy places no restriction on
+			// recurrence_rule (only AD-8's homework_instances policy does) -- a
+			// teacher inserting a recurring-assignment row directly is exactly
+			// what Story 3-2 will do, so this fixture goes through the same
+			// direct-lane client as the one-off case, not a service-role bypass.
+			const { data, error } = await params.createdBy.client
+				.from('homework_assignments')
+				.insert({
+					class_id: params.classId,
+					title: params.title ?? `Assignment ${crypto.randomUUID().slice(0, 6)}`,
+					skill_area: 'language',
+					created_by: params.createdBy.id,
+					...(params.recurrenceRule !== undefined ? { recurrence_rule: params.recurrenceRule } : {})
+				})
+				.select('id')
+				.single();
+			if (error || !data) {
+				throw new Error(`Failed to create homework assignment: ${error?.message}`);
+			}
+			return data.id as string;
+		}
+
+		async function createHomeworkInstance(params: {
+			assignmentId: string;
+			classId: string;
+			client: ReturnType<typeof anonClient>;
+			dueDate?: string;
+			periodStart?: string;
+		}) {
+			const dueDate = params.dueDate ?? '2026-09-20';
+			const { data, error } = await params.client
+				.from('homework_instances')
+				.insert({
+					assignment_id: params.assignmentId,
+					class_id: params.classId,
+					period_start: params.periodStart ?? dueDate,
+					due_date: dueDate
+				})
+				.select('id')
+				.single();
+			if (error || !data) {
+				throw new Error(`Failed to create homework instance: ${error?.message}`);
+			}
+			return data.id as string;
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacherA = await createSignedInUser('teacher');
+			teacherB = await createSignedInUser('teacher');
+
+			const { data: classA, error: classAError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Story 3-1 Class A',
+					code: `H${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (classAError || !classA)
+				throw new Error(`Failed to create Class A: ${classAError?.message}`);
+			classAId = classA.id;
+
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classAId, teacher_id: teacherA.id });
+			if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+			const { data: team, error: teamError } = await admin.client
+				.from('teams')
+				.insert({ name: `Story 3-1 Team ${crypto.randomUUID().slice(0, 6)}` })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('whole-class assignment: an assigned row is accepted for every approved student, and rejected for a pending one', async () => {
+			const approvedA = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Whole Class A ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const approvedB = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Whole Class B ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const pending = await createStudent({
+				classId: classAId,
+				status: 'pending',
+				name: `Whole Class Pending ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+
+			for (const studentId of [approvedA, approvedB]) {
+				const { error } = await teacherA.client.from('homework_status_history').insert({
+					instance_id: instanceId,
+					student_id: studentId,
+					class_id: classAId,
+					status: 'assigned',
+					recorded_by: teacherA.id
+				});
+				expect(error).toBeNull();
+			}
+
+			const { error: pendingError } = await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: pending,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+			expect(pendingError).not.toBeNull();
+
+			const { data: assignedRows } = await adminClient
+				.from('homework_status_history')
+				.select('student_id')
+				.eq('instance_id', instanceId)
+				.eq('status', 'assigned');
+			expect((assignedRows ?? []).map((r) => r.student_id).sort()).toEqual(
+				[approvedA, approvedB].sort()
+			);
+		});
+
+		it('subset assignment: assigned rows exist only for the selected students, not the rest of the class', async () => {
+			const targeted = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Subset Targeted ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const untargeted = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Subset Untargeted ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+
+			const { error } = await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: targeted,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+			expect(error).toBeNull();
+
+			const { data: assignedRows } = await adminClient
+				.from('homework_status_history')
+				.select('student_id')
+				.eq('instance_id', instanceId)
+				.eq('status', 'assigned');
+			const assignedStudentIds = (assignedRows ?? []).map((r) => r.student_id);
+			expect(assignedStudentIds).toContain(targeted);
+			expect(assignedStudentIds).not.toContain(untargeted);
+		});
+
+		it('student marks Done: a new done row is inserted, the assigned row remains as history, and Done/Reviewed stay independently queryable', async () => {
+			const student = await createSignedInStudent({
+				classId: classAId,
+				name: `Self Mark Done ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			const { error: doneError } = await student.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: student.id
+			});
+			expect(doneError).toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', instanceId)
+				.eq('student_id', student.id);
+			expect((rows ?? []).map((r) => r.status).sort()).toEqual(['assigned', 'done'].sort());
+
+			// Reviewed is independently queryable and not present yet -- reading
+			// "is this Done" (it is) never depended on "is this Reviewed" (it
+			// isn't).
+			expect((rows ?? []).some((r) => r.status === 'reviewed')).toBe(false);
+
+			// A student cannot self-mark Reviewed directly (Intent: "a teacher
+			// separately marks Reviewed after confirming in class").
+			const { error: reviewedError } = await student.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'reviewed',
+				recorded_by: student.id
+			});
+			expect(reviewedError).not.toBeNull();
+		});
+
+		it('untargeted student attempts Done: RLS rejects the insert, whether self-marking or a teacher marking on their behalf', async () => {
+			const untargeted = await createSignedInStudent({
+				classId: classAId,
+				name: `Untargeted ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			// Deliberately no 'assigned' row inserted for `untargeted` at all.
+
+			const { error: selfError } = await untargeted.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: untargeted.id,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: untargeted.id
+			});
+			expect(selfError).not.toBeNull();
+
+			// Even the assigned teacher cannot mark Done for a student who was
+			// never targeted for this instance -- the "prior assigned row"
+			// check is unconditional, not just a student-side guard.
+			const { error: teacherError } = await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: untargeted.id,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: teacherA.id
+			});
+			expect(teacherError).not.toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_status_history')
+				.select('id')
+				.eq('instance_id', instanceId)
+				.eq('student_id', untargeted.id);
+			expect(rows).toEqual([]);
+		});
+
+		it("teacher marks Done on a student's behalf: recorded_by shows the teacher, not the student", async () => {
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `On Behalf ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			const { data, error } = await teacherA.client
+				.from('homework_status_history')
+				.insert({
+					instance_id: instanceId,
+					student_id: student,
+					class_id: classAId,
+					status: 'done',
+					recorded_by: teacherA.id
+				})
+				.select('student_id, recorded_by')
+				.single();
+
+			expect(error).toBeNull();
+			expect(data?.student_id).toBe(student);
+			expect(data?.recorded_by).toBe(teacherA.id);
+		});
+
+		it('teacher marks Reviewed after the student is Done: independent history, both remain queryable', async () => {
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Reviewed Flow ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: teacherA.id
+			});
+
+			const { error: reviewedError } = await teacherA.client
+				.from('homework_status_history')
+				.insert({
+					instance_id: instanceId,
+					student_id: student,
+					class_id: classAId,
+					status: 'reviewed',
+					recorded_by: teacherA.id
+				});
+			expect(reviewedError).toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', instanceId)
+				.eq('student_id', student);
+			expect((rows ?? []).map((r) => r.status).sort()).toEqual(
+				['assigned', 'done', 'reviewed'].sort()
+			);
+		});
+
+		it('overdue, unarchived item stays visible; archiving is the explicit action that removes it going forward', async () => {
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2020-01-01' // deliberately far in the past
+			});
+
+			// Still selectable -- nothing hides an overdue item automatically.
+			const { data: beforeArchive, error: beforeError } = await teacherA.client
+				.from('homework_instances')
+				.select('id, archived_at')
+				.eq('id', instanceId)
+				.single();
+			expect(beforeError).toBeNull();
+			expect(beforeArchive?.archived_at).toBeNull();
+
+			// A non-assigned teacher cannot archive it.
+			const { data: deniedArchive } = await teacherB.client
+				.from('homework_instances')
+				.update({ archived_at: new Date().toISOString(), archived_by: teacherB.id })
+				.eq('id', instanceId)
+				.select('id');
+			expect(deniedArchive).toEqual([]);
+
+			// The assigned teacher's explicit archive action sets archived_at.
+			const { data: archived, error: archiveError } = await teacherA.client
+				.from('homework_instances')
+				.update({ archived_at: new Date().toISOString(), archived_by: teacherA.id })
+				.eq('id', instanceId)
+				.select('archived_at, archived_by')
+				.single();
+			expect(archiveError).toBeNull();
+			expect(archived?.archived_at).not.toBeNull();
+			expect(archived?.archived_by).toBe(teacherA.id);
+		});
+
+		it('a teacher not assigned to the class gets zero rows reading, and denied writes, across all three tables', async () => {
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Guarded Homework ${crypto.randomUUID().slice(0, 6)}`
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			const readAssignments = await teacherB.client
+				.from('homework_assignments')
+				.select('id')
+				.eq('id', assignmentId);
+			expect(readAssignments.data).toEqual([]);
+
+			const readInstances = await teacherB.client
+				.from('homework_instances')
+				.select('id')
+				.eq('id', instanceId);
+			expect(readInstances.data).toEqual([]);
+
+			const readHistory = await teacherB.client
+				.from('homework_status_history')
+				.select('id')
+				.eq('instance_id', instanceId);
+			expect(readHistory.data).toEqual([]);
+
+			const writeAssignment = await teacherB.client.from('homework_assignments').insert({
+				class_id: classAId,
+				title: 'Should Fail',
+				skill_area: 'language',
+				created_by: teacherB.id
+			});
+			expect(writeAssignment.error).not.toBeNull();
+
+			const writeInstance = await teacherB.client.from('homework_instances').insert({
+				assignment_id: assignmentId,
+				class_id: classAId,
+				period_start: '2026-10-01',
+				due_date: '2026-10-01'
+			});
+			expect(writeInstance.error).not.toBeNull();
+
+			const writeHistory = await teacherB.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: teacherB.id
+			});
+			expect(writeHistory.error).not.toBeNull();
+		});
+
+		it('homework_status_history is append-only: neither UPDATE nor DELETE has a policy -- both attempts affect zero rows', async () => {
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Immutable Homework ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const { data: inserted, error: insertError } = await teacherA.client
+				.from('homework_status_history')
+				.insert({
+					instance_id: instanceId,
+					student_id: student,
+					class_id: classAId,
+					status: 'assigned',
+					recorded_by: teacherA.id
+				})
+				.select('id')
+				.single();
+			expect(insertError).toBeNull();
+
+			const updateAttempt = await teacherA.client
+				.from('homework_status_history')
+				.update({ status: 'done' })
+				.eq('id', inserted!.id)
+				.select('id');
+			expect(updateAttempt.error).toBeNull();
+			expect(updateAttempt.data).toEqual([]);
+
+			const deleteAttempt = await teacherA.client
+				.from('homework_status_history')
+				.delete()
+				.eq('id', inserted!.id)
+				.select('id');
+			expect(deleteAttempt.error).toBeNull();
+			expect(deleteAttempt.data).toEqual([]);
+
+			const { data: stillThere } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('id', inserted!.id)
+				.single();
+			expect(stillThere?.status).toBe('assigned');
+		});
+
+		it('AD-8: UNIQUE(assignment_id, period_start) rejects a duplicate-period instance insert', async () => {
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+
+			const first = await teacherA.client.from('homework_instances').insert({
+				assignment_id: assignmentId,
+				class_id: classAId,
+				period_start: '2026-09-20',
+				due_date: '2026-09-20'
+			});
+			expect(first.error).toBeNull();
+
+			const second = await teacherA.client.from('homework_instances').insert({
+				assignment_id: assignmentId,
+				class_id: classAId,
+				period_start: '2026-09-20',
+				due_date: '2026-09-27'
+			});
+			expect(second.error).not.toBeNull();
+			expect(second.error?.code).toBe('23505');
+		});
+
+		it('AD-8: a direct client insert into homework_instances is rejected for a recurring assignment (recurrence_rule IS NOT NULL)', async () => {
+			const recurringAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				recurrenceRule: { freq: 'weekly' }
+			});
+
+			const { error } = await teacherA.client.from('homework_instances').insert({
+				assignment_id: recurringAssignmentId,
+				class_id: classAId,
+				period_start: '2026-09-20',
+				due_date: '2026-09-20'
+			});
+			expect(error).not.toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', recurringAssignmentId);
+			expect(rows).toEqual([]);
+		});
+
+		it('class_id/instance_id mismatch: a teacher cannot write history for a foreign instance by submitting their own real class_id (HIGH SEVERITY regression guard)', async () => {
+			// teacherB gets a REAL second class of their own (classB), distinct
+			// from classAId -- this is what proves is_teacher_of_class(class_id)
+			// passing on a class teacherB legitimately teaches does not, by
+			// itself, authorize writing history against a DIFFERENT class's
+			// instance/student just because that class_id was submitted instead
+			// of the instance's real one.
+			const { data: classB, error: classBError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Story 3-1 Class B (mismatch)',
+					code: `HB${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			expect(classBError).toBeNull();
+			const classBId = classB!.id;
+
+			const { error: assignBError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classBId, teacher_id: teacherB.id });
+			expect(assignBError).toBeNull();
+
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Mismatch Target ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			// teacherB legitimately teaches classB (is_teacher_of_class(classBId)
+			// passes) but submits classA's real instance_id/student_id alongside
+			// classB's id as class_id.
+			const doneAttempt = await teacherB.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classBId,
+				status: 'done',
+				recorded_by: teacherB.id
+			});
+			expect(doneAttempt.error).not.toBeNull();
+
+			const reviewedAttempt = await teacherB.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classBId,
+				status: 'reviewed',
+				recorded_by: teacherB.id
+			});
+			expect(reviewedAttempt.error).not.toBeNull();
+
+			// Also try the initial 'assigned' row shape against a fresh instance,
+			// same mismatch -- the class_id/instance match check applies to every
+			// branch, not just done/reviewed.
+			const otherAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const otherInstanceId = await createHomeworkInstance({
+				assignmentId: otherAssignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			const otherStudent = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Mismatch Assigned ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const assignedAttempt = await teacherB.client.from('homework_status_history').insert({
+				instance_id: otherInstanceId,
+				student_id: otherStudent,
+				class_id: classBId,
+				status: 'assigned',
+				recorded_by: teacherB.id
+			});
+			expect(assignedAttempt.error).not.toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_status_history')
+				.select('id')
+				.in('instance_id', [instanceId, otherInstanceId])
+				.neq('status', 'assigned');
+			expect(rows).toEqual([]);
+		});
+
+		it("reviewed requires a prior 'done' row: marking Reviewed before Done is rejected", async () => {
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Reviewed Without Done ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const assignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const instanceId = await createHomeworkInstance({
+				assignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			// No 'done' row exists yet -- Reviewed is attempted directly.
+			const { error } = await teacherA.client.from('homework_status_history').insert({
+				instance_id: instanceId,
+				student_id: student,
+				class_id: classAId,
+				status: 'reviewed',
+				recorded_by: teacherA.id
+			});
+			expect(error).not.toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', instanceId)
+				.eq('student_id', student);
+			expect((rows ?? []).map((r) => r.status)).toEqual(['assigned']);
+		});
+
+		it('is_targeted_for_homework_instance/assignment: a signed-in student sees only the assignments/instances they are targeted by, directly selecting both tables', async () => {
+			const student = await createSignedInStudent({
+				classId: classAId,
+				name: `Direct Select ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const targetedAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const targetedInstanceId = await createHomeworkInstance({
+				assignmentId: targetedAssignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: targetedInstanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			// A second assignment/instance the student is never targeted by (no
+			// homework_status_history row for them at all).
+			const untargetedAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const untargetedInstanceId = await createHomeworkInstance({
+				assignmentId: untargetedAssignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: '2026-09-20'
+			});
+
+			const seenAssignments = await student.client
+				.from('homework_assignments')
+				.select('id')
+				.in('id', [targetedAssignmentId, untargetedAssignmentId]);
+			expect(seenAssignments.error).toBeNull();
+			expect((seenAssignments.data ?? []).map((r) => r.id)).toEqual([targetedAssignmentId]);
+
+			const seenInstances = await student.client
+				.from('homework_instances')
+				.select('id')
+				.in('id', [targetedInstanceId, untargetedInstanceId]);
+			expect(seenInstances.error).toBeNull();
+			expect((seenInstances.data ?? []).map((r) => r.id)).toEqual([targetedInstanceId]);
+		});
+
+		it('homework_lookahead_days bounds visibility: an instance due just inside the window is included, one just outside is excluded', async () => {
+			const { data: setting } = await adminClient
+				.from('app_settings')
+				.select('value')
+				.eq('key', 'homework_lookahead_days')
+				.single();
+			const settingValue = setting?.value as { days?: number } | undefined;
+			const lookaheadDays = settingValue?.days ?? 14;
+
+			const today = new Date().toISOString().slice(0, 10);
+			const addDays = (base: string, days: number) => {
+				const d = new Date(`${base}T00:00:00Z`);
+				d.setUTCDate(d.getUTCDate() + days);
+				return d.toISOString().slice(0, 10);
+			};
+			const cutoffDate = addDays(today, lookaheadDays);
+			const insideDueDate = cutoffDate; // exactly at the cutoff, inclusive (<=)
+			const outsideDueDate = addDays(cutoffDate, 1); // one day beyond it
+
+			const student = await createSignedInStudent({
+				classId: classAId,
+				name: `Lookahead ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const insideAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const insideInstanceId = await createHomeworkInstance({
+				assignmentId: insideAssignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: insideDueDate
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: insideInstanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			const outsideAssignmentId = await createHomeworkAssignment({
+				classId: classAId,
+				createdBy: teacherA
+			});
+			const outsideInstanceId = await createHomeworkInstance({
+				assignmentId: outsideAssignmentId,
+				classId: classAId,
+				client: teacherA.client,
+				dueDate: outsideDueDate
+			});
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: outsideInstanceId,
+				student_id: student.id,
+				class_id: classAId,
+				status: 'assigned',
+				recorded_by: teacherA.id
+			});
+
+			// Mirrors src/routes/student/+page.server.ts's load() query shape
+			// exactly (due_date <= cutoff, not archived).
+			const { data: visible, error } = await student.client
+				.from('homework_instances')
+				.select('id')
+				.in('id', [insideInstanceId, outsideInstanceId])
+				.lte('due_date', cutoffDate)
+				.is('archived_at', null);
+
+			expect(error).toBeNull();
+			const visibleIds = (visible ?? []).map((r) => r.id);
+			expect(visibleIds).toContain(insideInstanceId);
+			expect(visibleIds).not.toContain(outsideInstanceId);
+		});
+	}
+);

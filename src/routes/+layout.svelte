@@ -86,6 +86,16 @@
 					? m.nav_requests_with_count({ count: data.pendingRequestsCount })
 					: m.nav_requests()}
 			</a>
+		{:else if data.profile.role === 'student'}
+			{@const studentHref = resolve('/student')}
+			<a
+				href={studentHref}
+				class="nav-link"
+				class:active={isActive(studentHref)}
+				aria-current={isActive(studentHref) ? 'page' : undefined}
+			>
+				{m.nav_my_homework()}
+			</a>
 		{/if}
 		<span
 			style="margin-left:auto; color: var(--color-on-surface-inverse); opacity: 0.7; font-size: var(--text-sm);"

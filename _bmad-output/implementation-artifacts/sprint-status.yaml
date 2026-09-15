@@ -11,19 +11,19 @@
 #      parser was never built to read, regardless of `uv` availability.
 #   2. That YAML file's story ids/format don't match the script's expected
 #      key derivation either.
-# REFRESHED 2026-09-15 06:50: Story 1-2 (student self-registration &
-# approval — the deferred work split from Story 1-1) went through bmad-build
-# (implement → review/patch cycle, 9 findings fixed, 3 deferred → full
-# check/eslint/test suite green) and a bmad-walkthrough human review
-# (Approve). Its spec is `status: done`; sprint-planning mirrors that here.
-# It was epic-1's last story, so epic-1 is now `done`. Students can now
-# actually exist in the system, which is what unblocks Story 2-1 (roster &
-# skill tracking) next.
+# REFRESHED 2026-09-15 08:35: Story 2-1 (roster & skill-status tracking)
+# went through bmad-build (implement → review/patch cycle, 10 findings
+# fixed, 3 rejected as false/by-design → full check/eslint/test suite
+# green) and a bmad-walkthrough human review (Approve). This was the first
+# story reviewed with real git diffing available (repo now has git). Its
+# spec is `status: done`; sprint-planning mirrors that here. It was
+# epic-2's only story, so epic-2 is now `done`. Epic-3 (homework, CAP-3)
+# is next -- unblocked now that students and a roster both exist.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-15-2026 06:50
+last_updated: 09-15-2026 08:35
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -35,12 +35,12 @@ development_status:
   1-2-student-self-registration-approval: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress # Roster & Skill Tracking (CAP-2)
-  2-1-roster-skill-status-tracking: review
+  epic-2: done # Roster & Skill Tracking (CAP-2)
+  2-1-roster-skill-status-tracking: done
   epic-2-retrospective: optional
 
-  epic-3: backlog # Homework (CAP-3)
-  3-1-one-off-homework-assignment-review: backlog
+  epic-3: in-progress # Homework (CAP-3)
+  3-1-one-off-homework-assignment-review: review
   3-2-recurring-homework-assignments: backlog
   epic-3-retrospective: optional
 
