@@ -788,3 +788,545 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)(
+	'Story 2-1 roster & skill-status tracking (requires local Supabase)',
+	() => {
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classAId: string;
+		let teamId: string;
+
+		/**
+		 * Creates a student profile directly via the service-role client
+		 * (bypasses RLS, the same way `psql` run by hand would) rather than
+		 * going through the full signUp()+approve() flow -- that flow is
+		 * already covered end-to-end by the Story 1-2 block above; this story
+		 * only needs profiles in a known (class, status) state to exercise
+		 * skill_status_history/attendance_records RLS.
+		 */
+		async function createStudent(params: {
+			classId: string;
+			status: 'pending' | 'approved' | 'rejected';
+			name: string;
+		}) {
+			const email = `story-2-1-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) {
+				throw new Error(`Failed to create student: ${error?.message}`);
+			}
+
+			const update: Database['public']['Tables']['profiles']['Update'] = {
+				class_id: params.classId,
+				status: params.status,
+				registration_name: params.name,
+				display_name: params.name
+			};
+			if (params.status === 'approved') {
+				update.team_id = teamId;
+			}
+
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update(update)
+				.eq('id', data.user.id);
+			if (updateError) {
+				throw new Error(`Failed to set up student: ${updateError.message}`);
+			}
+
+			return data.user.id;
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacherA = await createSignedInUser('teacher');
+			teacherB = await createSignedInUser('teacher');
+
+			const { data: classA, error: classAError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Story 2-1 Class A',
+					code: `R${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (classAError || !classA)
+				throw new Error(`Failed to create Class A: ${classAError?.message}`);
+			classAId = classA.id;
+
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classAId, teacher_id: teacherA.id });
+			if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+			const { data: team, error: teamError } = await admin.client
+				.from('teams')
+				.insert({ name: `Story 2-1 Team ${crypto.randomUUID().slice(0, 6)}` })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('an assigned teacher can mark attendance for an approved student in their class', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Attendance Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const { data, error } = await teacherA.client
+				.from('attendance_records')
+				.insert({
+					student_id: studentId,
+					class_id: classAId,
+					present: true,
+					session_date: '2026-09-13',
+					recorded_by: teacherA.id
+				})
+				.select('present, session_date')
+				.single();
+
+			expect(error).toBeNull();
+			expect(data?.present).toBe(true);
+			expect(data?.session_date).toBe('2026-09-13');
+		});
+
+		it('skill-status is append-only: three entries for the same (student, skill_area) all persist, and the latest by timestamp is current', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Language Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const now = Date.now();
+
+			const inserts = await Promise.all(
+				[
+					{ level: 'not_started' as const, offsetMs: 2000 },
+					{ level: 'learning' as const, offsetMs: 1000 },
+					{ level: 'confident' as const, offsetMs: 0 }
+				].map(({ level, offsetMs }) =>
+					teacherA.client.from('skill_status_history').insert({
+						student_id: studentId,
+						class_id: classAId,
+						skill_area: 'language',
+						level,
+						recorded_at: new Date(now - offsetMs).toISOString(),
+						recorded_by: teacherA.id
+					})
+				)
+			);
+			for (const result of inserts) expect(result.error).toBeNull();
+
+			// Full history remains queryable -- not just the current value.
+			const { data: rows, error } = await adminClient
+				.from('skill_status_history')
+				.select('level, recorded_at')
+				.eq('student_id', studentId)
+				.eq('skill_area', 'language')
+				.order('recorded_at', { ascending: false });
+
+			expect(error).toBeNull();
+			expect(rows).toHaveLength(3);
+			// Latest row by timestamp is current.
+			expect(rows?.[0].level).toBe('confident');
+			expect((rows ?? []).map((r) => r.level).sort()).toEqual(
+				['confident', 'learning', 'not_started'].sort()
+			);
+		});
+
+		it('a substitute teacher, newly assigned to the class, sees the full existing skill-status timeline, not just the latest value', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Substitute Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const seedInserts = await Promise.all(
+				(['not_started', 'learning', 'confident'] as const).map((level, i) =>
+					teacherA.client.from('skill_status_history').insert({
+						student_id: studentId,
+						class_id: classAId,
+						skill_area: 'song',
+						level,
+						recorded_at: new Date(Date.now() - (3 - i) * 1000).toISOString(),
+						recorded_by: teacherA.id
+					})
+				)
+			);
+			for (const result of seedInserts) expect(result.error).toBeNull();
+
+			const substitute = await createSignedInUser('teacher');
+
+			// Not yet assigned -- sees nothing (RLS denies by filtering).
+			const before = await substitute.client
+				.from('skill_status_history')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(before.error).toBeNull();
+			expect(before.data).toEqual([]);
+
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classAId, teacher_id: substitute.id });
+			expect(assignError).toBeNull();
+
+			// Newly assigned -- sees the full timeline, not just the latest row.
+			const after = await substitute.client
+				.from('skill_status_history')
+				.select('level')
+				.eq('student_id', studentId);
+			expect(after.error).toBeNull();
+			expect(after.data).toHaveLength(3);
+
+			await admin.client
+				.from('class_teachers')
+				.delete()
+				.eq('class_id', classAId)
+				.eq('teacher_id', substitute.id);
+		});
+
+		it('a teacher not assigned to the class gets zero rows reading, and a denied insert, on both tables', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Guarded Roster Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// teacherB is never assigned to Class A in this describe block.
+			const readAttendance = await teacherB.client
+				.from('attendance_records')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(readAttendance.error).toBeNull();
+			expect(readAttendance.data).toEqual([]);
+
+			const readSkill = await teacherB.client
+				.from('skill_status_history')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(readSkill.error).toBeNull();
+			expect(readSkill.data).toEqual([]);
+
+			// WITH CHECK failure on INSERT surfaces as a real error (not silent
+			// zero rows), matching the existing "teacher cannot create a class
+			// directly" pattern in the Story 1-1 block above.
+			const writeAttendance = await teacherB.client.from('attendance_records').insert({
+				student_id: studentId,
+				class_id: classAId,
+				present: true,
+				session_date: '2026-09-13'
+			});
+			expect(writeAttendance.error).not.toBeNull();
+
+			const writeSkill = await teacherB.client.from('skill_status_history').insert({
+				student_id: studentId,
+				class_id: classAId,
+				skill_area: 'dance',
+				level: 'learning'
+			});
+			expect(writeSkill.error).not.toBeNull();
+
+			// Confirms neither denied insert silently went through anyway.
+			const { data: attendanceCheck } = await adminClient
+				.from('attendance_records')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(attendanceCheck).toEqual([]);
+			const { data: skillCheck } = await adminClient
+				.from('skill_status_history')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(skillCheck).toEqual([]);
+		});
+
+		it('an assigned teacher cannot insert attendance/skill-status rows against a Pending student in their own class -- RLS, not just the roster read filter, rejects it', async () => {
+			const pendingStudentId = await createStudent({
+				classId: classAId,
+				status: 'pending',
+				name: `Guarded Pending Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// teacherA IS assigned to classAId -- is_teacher_of_class(class_id)
+			// alone would pass here, so this proves the additional
+			// approved-student exists() check in the WITH CHECK clause is what's
+			// actually stopping it, not class assignment.
+			const writeAttendance = await teacherA.client.from('attendance_records').insert({
+				student_id: pendingStudentId,
+				class_id: classAId,
+				present: true,
+				session_date: '2026-09-13'
+			});
+			expect(writeAttendance.error).not.toBeNull();
+
+			const writeSkill = await teacherA.client.from('skill_status_history').insert({
+				student_id: pendingStudentId,
+				class_id: classAId,
+				skill_area: 'language',
+				level: 'learning'
+			});
+			expect(writeSkill.error).not.toBeNull();
+
+			const { data: attendanceCheck } = await adminClient
+				.from('attendance_records')
+				.select('id')
+				.eq('student_id', pendingStudentId);
+			expect(attendanceCheck).toEqual([]);
+			const { data: skillCheck } = await adminClient
+				.from('skill_status_history')
+				.select('id')
+				.eq('student_id', pendingStudentId);
+			expect(skillCheck).toEqual([]);
+		});
+
+		it('an assigned teacher cannot insert a row with class_id=A but a student_id belonging to a different class', async () => {
+			const { data: classB, error: classBError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Story 2-1 Class B',
+					code: `RB${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			expect(classBError).toBeNull();
+			const classBId = classB!.id;
+
+			const otherClassStudentId = await createStudent({
+				classId: classBId,
+				status: 'approved',
+				name: `Other Class Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// teacherA is assigned to classAId (is_teacher_of_class(classAId)
+			// passes), and otherClassStudentId is a real approved student -- just
+			// not of classAId. This is exactly the scenario the migration's
+			// exists() check comment says it exists to prevent: p.class_id must
+			// match the row's own class_id, not merely "is an approved student
+			// somewhere".
+			const writeAttendance = await teacherA.client.from('attendance_records').insert({
+				student_id: otherClassStudentId,
+				class_id: classAId,
+				present: true,
+				session_date: '2026-09-13',
+				recorded_by: teacherA.id
+			});
+			expect(writeAttendance.error).not.toBeNull();
+
+			const writeSkill = await teacherA.client.from('skill_status_history').insert({
+				student_id: otherClassStudentId,
+				class_id: classAId,
+				skill_area: 'language',
+				level: 'learning',
+				recorded_by: teacherA.id
+			});
+			expect(writeSkill.error).not.toBeNull();
+
+			const { data: attendanceCheck } = await adminClient
+				.from('attendance_records')
+				.select('id')
+				.eq('student_id', otherClassStudentId);
+			expect(attendanceCheck).toEqual([]);
+			const { data: skillCheck } = await adminClient
+				.from('skill_status_history')
+				.select('id')
+				.eq('student_id', otherClassStudentId);
+			expect(skillCheck).toEqual([]);
+		});
+
+		it('pending and rejected students never appear in a roster read scoped to approved students', async () => {
+			const approvedName = `Roster Approved ${crypto.randomUUID().slice(0, 6)}`;
+			const pendingName = `Roster Pending ${crypto.randomUUID().slice(0, 6)}`;
+			const rejectedName = `Roster Rejected ${crypto.randomUUID().slice(0, 6)}`;
+
+			await createStudent({ classId: classAId, status: 'approved', name: approvedName });
+			await createStudent({ classId: classAId, status: 'pending', name: pendingName });
+			await createStudent({ classId: classAId, status: 'rejected', name: rejectedName });
+
+			// Mirrors src/routes/teacher/classes/[id]/+page.server.ts's roster
+			// query exactly.
+			const { data, error } = await teacherA.client
+				.from('profiles')
+				.select('id, display_name')
+				.eq('class_id', classAId)
+				.eq('role', 'student')
+				.eq('status', 'approved');
+
+			expect(error).toBeNull();
+			const names = (data ?? []).map((s) => s.display_name);
+			expect(names).toContain(approvedName);
+			expect(names).not.toContain(pendingName);
+			expect(names).not.toContain(rejectedName);
+		});
+
+		it('two teachers inserting skill-status rows for the same student and skill_area at the same time both persist -- no clobbering, no lock contention', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Concurrent Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const substitute = await createSignedInUser('teacher');
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classAId, teacher_id: substitute.id });
+			expect(assignError).toBeNull();
+
+			const [resultA, resultB] = await Promise.all([
+				teacherA.client.from('skill_status_history').insert({
+					student_id: studentId,
+					class_id: classAId,
+					skill_area: 'dance',
+					level: 'learning',
+					recorded_by: teacherA.id
+				}),
+				substitute.client.from('skill_status_history').insert({
+					student_id: studentId,
+					class_id: classAId,
+					skill_area: 'dance',
+					level: 'confident',
+					recorded_by: substitute.id
+				})
+			]);
+
+			expect(resultA.error).toBeNull();
+			expect(resultB.error).toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('skill_status_history')
+				.select('id, recorded_by')
+				.eq('student_id', studentId)
+				.eq('skill_area', 'dance');
+			expect(rows).toHaveLength(2);
+
+			await admin.client
+				.from('class_teachers')
+				.delete()
+				.eq('class_id', classAId)
+				.eq('teacher_id', substitute.id);
+		});
+
+		it('attendance is append-only too: two marks for the same student and session_date both persist rather than one overwriting the other', async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Attendance Append Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const first = await teacherA.client.from('attendance_records').insert({
+				student_id: studentId,
+				class_id: classAId,
+				present: false,
+				session_date: '2026-09-13',
+				recorded_by: teacherA.id
+			});
+			expect(first.error).toBeNull();
+
+			const second = await teacherA.client.from('attendance_records').insert({
+				student_id: studentId,
+				class_id: classAId,
+				present: true,
+				session_date: '2026-09-13',
+				recorded_by: teacherA.id
+			});
+			expect(second.error).toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('attendance_records')
+				.select('present, recorded_at')
+				.eq('student_id', studentId)
+				.eq('session_date', '2026-09-13')
+				.order('recorded_at', { ascending: false });
+			expect(rows).toHaveLength(2);
+			// Latest-by-timestamp query returns the newer one.
+			expect(rows?.[0].present).toBe(true);
+		});
+
+		it("neither skill_status_history nor attendance_records has an UPDATE or DELETE policy -- both attempts affect zero rows on both tables (append-only by absence, matching profiles' pattern)", async () => {
+			const studentId = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Immutable Student ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// skill_status_history
+			const { data: insertedSkill, error: insertSkillError } = await teacherA.client
+				.from('skill_status_history')
+				.insert({
+					student_id: studentId,
+					class_id: classAId,
+					skill_area: 'language',
+					level: 'learning',
+					recorded_by: teacherA.id
+				})
+				.select('id')
+				.single();
+			expect(insertSkillError).toBeNull();
+
+			const skillUpdateAttempt = await teacherA.client
+				.from('skill_status_history')
+				.update({ level: 'confident' })
+				.eq('id', insertedSkill!.id)
+				.select('id');
+			expect(skillUpdateAttempt.error).toBeNull();
+			expect(skillUpdateAttempt.data).toEqual([]);
+
+			const skillDeleteAttempt = await teacherA.client
+				.from('skill_status_history')
+				.delete()
+				.eq('id', insertedSkill!.id)
+				.select('id');
+			expect(skillDeleteAttempt.error).toBeNull();
+			expect(skillDeleteAttempt.data).toEqual([]);
+
+			const { data: skillStillThere } = await adminClient
+				.from('skill_status_history')
+				.select('level')
+				.eq('id', insertedSkill!.id)
+				.single();
+			expect(skillStillThere?.level).toBe('learning');
+
+			// attendance_records -- same assertions, twin table.
+			const { data: insertedAttendance, error: insertAttendanceError } = await teacherA.client
+				.from('attendance_records')
+				.insert({
+					student_id: studentId,
+					class_id: classAId,
+					present: true,
+					session_date: '2026-09-13',
+					recorded_by: teacherA.id
+				})
+				.select('id')
+				.single();
+			expect(insertAttendanceError).toBeNull();
+
+			const attendanceUpdateAttempt = await teacherA.client
+				.from('attendance_records')
+				.update({ present: false })
+				.eq('id', insertedAttendance!.id)
+				.select('id');
+			expect(attendanceUpdateAttempt.error).toBeNull();
+			expect(attendanceUpdateAttempt.data).toEqual([]);
+
+			const attendanceDeleteAttempt = await teacherA.client
+				.from('attendance_records')
+				.delete()
+				.eq('id', insertedAttendance!.id)
+				.select('id');
+			expect(attendanceDeleteAttempt.error).toBeNull();
+			expect(attendanceDeleteAttempt.data).toEqual([]);
+
+			const { data: attendanceStillThere } = await adminClient
+				.from('attendance_records')
+				.select('present')
+				.eq('id', insertedAttendance!.id)
+				.single();
+			expect(attendanceStillThere?.present).toBe(true);
+		});
+	}
+);

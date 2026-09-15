@@ -6,6 +6,8 @@
 
 export type UserRole = 'admin' | 'teacher' | 'student';
 export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+export type SkillArea = 'language' | 'song' | 'dance';
+export type SkillLevel = 'not_started' | 'learning' | 'confident';
 
 export type Database = {
 	public: {
@@ -136,6 +138,72 @@ export type Database = {
 				};
 				Relationships: [];
 			};
+			skill_status_history: {
+				Row: {
+					id: string;
+					student_id: string;
+					class_id: string;
+					skill_area: SkillArea;
+					level: SkillLevel;
+					notes: string | null;
+					recorded_by: string | null;
+					recorded_at: string;
+				};
+				Insert: {
+					id?: string;
+					student_id: string;
+					class_id: string;
+					skill_area: SkillArea;
+					level: SkillLevel;
+					notes?: string | null;
+					recorded_by?: string | null;
+					recorded_at?: string;
+				};
+				Update: {
+					id?: string;
+					student_id?: string;
+					class_id?: string;
+					skill_area?: SkillArea;
+					level?: SkillLevel;
+					notes?: string | null;
+					recorded_by?: string | null;
+					recorded_at?: string;
+				};
+				Relationships: [];
+			};
+			attendance_records: {
+				Row: {
+					id: string;
+					student_id: string;
+					class_id: string;
+					present: boolean;
+					notes: string | null;
+					recorded_by: string | null;
+					recorded_at: string;
+					session_date: string;
+				};
+				Insert: {
+					id?: string;
+					student_id: string;
+					class_id: string;
+					present: boolean;
+					notes?: string | null;
+					recorded_by?: string | null;
+					recorded_at?: string;
+					session_date?: string;
+				};
+				Update: {
+					id?: string;
+					student_id?: string;
+					class_id?: string;
+					present?: boolean;
+					notes?: string | null;
+					recorded_by?: string | null;
+					recorded_at?: string;
+					session_date?: string;
+				};
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -159,6 +227,8 @@ export type Database = {
 		Enums: {
 			user_role: UserRole;
 			registration_status: RegistrationStatus;
+			skill_area: SkillArea;
+			skill_level: SkillLevel;
 		};
 	};
 };

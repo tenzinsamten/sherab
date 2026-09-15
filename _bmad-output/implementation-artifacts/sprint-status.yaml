@@ -11,34 +11,32 @@
 #      parser was never built to read, regardless of `uv` availability.
 #   2. That YAML file's story ids/format don't match the script's expected
 #      key derivation either.
-# REFRESHED 2026-09-14 19:25: Story 1-1 went through bmad-build (implement →
-# review/patch cycle, 5 findings fixed, 3 deferred to deferred-work.md →
-# full check/eslint/test suite green) and a bmad-walkthrough human review
+# REFRESHED 2026-09-15 06:50: Story 1-2 (student self-registration &
+# approval — the deferred work split from Story 1-1) went through bmad-build
+# (implement → review/patch cycle, 9 findings fixed, 3 deferred → full
+# check/eslint/test suite green) and a bmad-walkthrough human review
 # (Approve). Its spec is `status: done`; sprint-planning mirrors that here.
-# Story 2-1 (roster & skill tracking) was attempted next but blocked:
-# investigation found no student concept exists anywhere in the codebase
-# (Story 1-1 deliberately deferred self-registration/approval). The human
-# chose to build that deferred work first — registered as story `1-2` in
-# stories.yaml (Feature 1) rather than starting 2-1, so epic-1 is back to
-# `in-progress` rather than `done`.
+# It was epic-1's last story, so epic-1 is now `done`. Students can now
+# actually exist in the system, which is what unblocks Story 2-1 (roster &
+# skill tracking) next.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-14-2026 19:20
+last_updated: 09-15-2026 06:50
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
 story_location: "_bmad-output/specs/spec-class-tracker/stories"
 
 development_status:
-  epic-1: in-progress # Accounts & Roles (CAP-1)
+  epic-1: done # Accounts & Roles (CAP-1)
   1-1-teacher-student-account-management: done
-  1-2-student-self-registration-approval: in-progress
+  1-2-student-self-registration-approval: done
   epic-1-retrospective: optional
 
-  epic-2: backlog # Roster & Skill Tracking (CAP-2)
-  2-1-roster-skill-status-tracking: backlog
+  epic-2: in-progress # Roster & Skill Tracking (CAP-2)
+  2-1-roster-skill-status-tracking: review
   epic-2-retrospective: optional
 
   epic-3: backlog # Homework (CAP-3)

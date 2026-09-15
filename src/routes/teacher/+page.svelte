@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
@@ -29,10 +30,12 @@
 				<p style="margin: 0; color: var(--color-muted-foreground);">
 					{m.teacher_class_code_label({ code: cls.code })}
 				</p>
-				<p
-					style="margin: var(--space-2) 0 0 0; color: var(--color-muted-foreground); font-size: var(--text-sm);"
-				>
-					{m.teacher_no_roster_note()}
+				<p style="margin: var(--space-2) 0 0 0;">
+					<a
+						class="btn btn-outline"
+						style="text-decoration:none;"
+						href={resolve('/teacher/classes/[id]', { id: cls.id })}>{m.teacher_view_roster()}</a
+					>
 				</p>
 			</div>
 		{/each}
