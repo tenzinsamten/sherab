@@ -22,6 +22,24 @@ describe('isDuplicateSignup', () => {
 		expect(isDuplicateSignup(null, user)).toBe(false);
 	});
 
+	it("detects this project's actual GoTrue shape: success, non-empty identity, updated_at drifted well past created_at", () => {
+		const user = {
+			identities: [{ id: 'x' }],
+			created_at: '2026-01-01T00:00:00.000Z',
+			updated_at: '2026-01-01T00:00:05.000Z'
+		} as never;
+		expect(isDuplicateSignup(null, user)).toBe(true);
+	});
+
+	it("does not treat a fresh signup's few-millisecond created_at/updated_at gap as duplicate", () => {
+		const user = {
+			identities: [{ id: 'x' }],
+			created_at: '2026-01-01T00:00:00.000Z',
+			updated_at: '2026-01-01T00:00:00.010Z'
+		} as never;
+		expect(isDuplicateSignup(null, user)).toBe(false);
+	});
+
 	it('does not treat an unrelated error as duplicate', () => {
 		const error = { status: 500, message: 'Internal error' };
 		expect(isDuplicateSignup(error, null)).toBe(false);

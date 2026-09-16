@@ -1,0 +1,1350 @@
+<!--
+  Reference-only design markup, NOT valid runnable HTML/JSX as-is (uses
+  {{ token }} placeholder syntax from a Claude Design canvas template).
+
+  Extracted from the Claude Design artifact the user shared:
+  https://claude.ai/artifact/BZvqrZenRHyAcHd7kCofu9 ("Story 1-1 Prototype.dc.html")
+  -- decoded 2026-09-16 by unpacking the artifact's self-bundled HTML (base64
+  + gzip manifest) and pulling out its __bundler/template script contents.
+
+  Read this file directly for exact markup, inline styles, and pixel/hex
+  values -- the accompanying spec's "Concrete Design-vs-Implementation Diff"
+  section is a distillation of this file, not a replacement for it.
+-->
+
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="cd0afcf5-875d-46e0-b0ee-d6e9ef2db067"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 900;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 900;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 900;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>/* Modernist — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("2dd361d6-89a6-4a6a-81fa-497924286764") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fd6b23a7-90fe-4319-adc8-0bb90053bcd4") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("565c180d-d180-4376-87b0-fa1e9f02b030") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+
+:root {
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201e1d;
+  --color-accent: #ec3013;
+  --color-accent-2: #e15b47;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
+     same step of any role matches the others in visual value. */
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-200: #eae7e7;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
+
+  --color-accent-100: #fff2ef;
+  --color-accent-200: #ffe0d9;
+  --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783;
+  --color-accent-500: #ff563c;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+  --color-accent-900: #4d170e;
+
+  --color-accent-2-100: #fff2ef;
+  --color-accent-2-200: #ffe0da;
+  --color-accent-2-300: #ffc4b9;
+  --color-accent-2-400: #ff9784;
+  --color-accent-2-500: #ef6853;
+  --color-accent-2-600: #c94b39;
+  --color-accent-2-700: #9e3526;
+  --color-accent-2-800: #71261b;
+  --color-accent-2-900: #471d16;
+
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: "Archivo", system-ui, sans-serif;
+
+  --space-1: 4.0px;
+  --space-2: 8.0px;
+  --space-3: 12.0px;
+  --space-4: 16.0px;
+  --space-6: 24.0px;
+  --space-8: 32.0px;
+
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+
+  /* Elevation — derived from the ground: soft ink-tinted shadows on a
+     light theme, a hairline edge + ambient darkness on a dark one. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
+
+.grayscale{filter:grayscale(1) contrast(1.08)}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Components — built with the tokens above. Plain CSS
+   on plain HTML: no JavaScript, no build step. Each class is documented in
+   readme.md and demonstrated in foundations/ and components/.
+   ══════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-size: 15px; line-height: 1.55; font-weight: 400; }
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
+}
+h1 { font-size: 42px; }
+h2 { font-size: 32px; }
+h3 { font-size: 25px; }
+h4 { font-size: 20px; }
+h5 { font-size: 16px; }
+h6 { font-size: 13px; }
+h6 { letter-spacing: 0.08em; text-transform: uppercase; }
+p { margin: 0 0 var(--space-3); }
+a { color: var(--color-accent); text-underline-offset: 3px; }
+img { display: block; max-width: 100%; }
+figure { margin: 0; }
+figcaption {
+  font-size: 11px; margin-top: var(--space-1);
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+/* — rules — */
+.hr {
+  height: 2px; border: 0; margin: var(--space-4) 0;
+  background: var(--color-divider);
+}
+
+/* — buttons — */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; text-decoration: none;
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 14px; line-height: 1.2; color: var(--color-text); /* matches the .input's 14px —
+     the pair sits side by side in sign-up rows */
+  background: transparent; border: 1px solid transparent;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+  border-radius: var(--radius-md);
+}
+.btn svg { display: block; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--color-accent); color: var(--color-bg); }
+.btn-primary:hover { background: var(--color-accent-600); }
+.btn-primary:active { background: var(--color-accent-700); }
+.btn-secondary { border-color: var(--color-divider); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
+.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
+.btn-icon { width: 36px; height: 36px; padding: 0; }
+.btn-block { width: 100%; margin-top: var(--space-2); justify-content: flex-start; text-align: left; }
+
+/* — forms — */
+.field > label {
+  display: block; font-size: 12px; margin-bottom: 5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+.input {
+  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
+  font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+textarea.input { min-height: 90px; resize: vertical; }
+.radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.radio input, .seg-opt input {
+  position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
+}
+.radio .dot {
+  width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--color-divider);
+}
+.radio:hover .dot { border-color: var(--color-accent); }
+.radio input:checked + .dot {
+  border-color: var(--color-accent); background: var(--color-accent);
+  box-shadow: inset 0 0 0 4px var(--color-bg);
+}
+.radio input:focus-visible + .dot { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.seg {
+  display: inline-flex; overflow: hidden;
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.seg-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; font-size: 13px; cursor: pointer;
+}
+.seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
+.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-bg); }
+.seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+/* — cards — */
+.card {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface);
+}
+.card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
+.card-title {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 17px; line-height: 1.2;
+}
+.card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
+.card-meta {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+.elev-sm { box-shadow: var(--shadow-sm); }
+.elev-md { box-shadow: var(--shadow-md); }
+.elev-lg { box-shadow: var(--shadow-lg); }
+
+/* — tags — */
+.tag {
+  display: inline-flex; align-items: center; font-size: 11px;
+  letter-spacing: 0.02em; padding: 3px 10px;
+  border-radius: calc(var(--radius-md) * 0.75);
+}
+.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
+.tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+
+/* — navigation — */
+.nav {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 2px solid var(--color-divider);
+}
+.nav-brand {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 18px; margin-right: auto;
+}
+.nav a { color: inherit; text-decoration: none; font-size: 14px; }
+.nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
+
+/* — tables — */
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th {
+  text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  padding: var(--space-2); border-bottom: 2px solid var(--color-divider);
+}
+.table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+.table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+
+/* — dialog — */
+.dialog-backdrop {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
+}
+.dialog {
+  width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4); border-radius: var(--radius-lg);
+  background: var(--color-surface); box-shadow: var(--shadow-lg);
+}
+.dialog-title {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 20px;
+}
+.dialog-body { font-size: 14px; opacity: 0.85; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+
+</style>
+<script src="3fa5451d-053d-4931-aef2-b288c3957a58"></script>
+<style>
+  body { margin: 0; background: #E2E8F0; color: #0F172A; font-family: "Archivo", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+  button, input { font-family: inherit; }
+  button { touch-action: manipulation; }
+  a { color: #2563EB; text-underline-offset: 3px; }
+  a:hover { color: #1D4FD7; }
+  :focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; display: flex; flex-direction: column; background: #E2E8F0;">
+
+  <sc-if value="{{ showToolbar }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 16px; background: {{ barBg }}; color: {{ barFg }}; border-bottom: {{ barEdge }}; position: sticky; top: 0; z-index: 10;">
+      <span style="font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">STORY 1-1 / PROTOTYPE</span>
+      <span style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.08em; color: {{ barMuted }};">{{ routeLabel }}</span>
+      <span style="flex: 1;"></span>
+      <div style="display: flex; border: 1px solid {{ barLine }};">
+        <button type="button" sc-camel-on-click="{{ setPhone }}" style="min-height: 32px; padding: 0 14px; border: none; border-radius: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; background: {{ phoneBg }}; color: {{ phoneFg }};">Phone</button>
+        <button type="button" sc-camel-on-click="{{ setDesktop }}" style="min-height: 32px; padding: 0 14px; border: none; border-left: 1px solid {{ barLine }}; border-radius: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; background: {{ desktopBg }}; color: {{ desktopFg }};">Desktop</button>
+      </div>
+      <button type="button" sc-camel-on-click="{{ reset }}" style="min-height: 32px; padding: 0 14px; background: transparent; border: 1px solid {{ barLine }}; border-radius: 0; color: {{ barFg }}; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;" style-hover="background: {{ barHover }};">Reset</button>
+    </div>
+  </sc-if>
+
+  <div style="flex: 1; display: flex; justify-content: center; align-items: flex-start; padding: 28px 16px 64px;">
+    <div style="width: 100%; max-width: {{ frameMax }}; min-height: {{ frameMinH }}; background: #FFFFFF; border: 2px solid #0F172A; display: flex; flex-direction: column;">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: {{ ink }};">
+        <span style="display: flex; align-items: baseline; gap: 8px; padding: 14px 18px; color: #FFFFFF;">
+          <span style="font-size: 18px; font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase;">Sherab</span>
+          <span style="font-variant-numeric: tabular-nums; font-size: 10px; letter-spacing: 0.12em; color: #94A3B8;">v0.1</span>
+        </span>
+        <span style="flex: 1;"></span>
+        <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="3">
+          <button type="button" sc-camel-on-click="{{ item.go }}" style="min-height: 52px; padding: 0 18px; background: {{ item.bg }}; border: none; border-left: 1px solid #334155; border-radius: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: {{ item.fg }}; cursor: pointer; text-align: left;">{{ item.label }}</button>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ hasBanner }}" hint-placeholder-val="{{ false }}">
+        <div role="status" style="display: flex; flex-wrap: wrap; align-items: stretch; background: #2563EB; color: #FFFFFF;">
+          <div style="padding: 14px 18px; background: {{ ink }}; font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; display: flex; align-items: center;">{{ bannerKicker }}</div>
+          <div style="flex: 1; min-width: 220px; padding: 14px 18px; font-size: 14px; line-height: 1.5;">{{ bannerText }}</div>
+        </div>
+      </sc-if>
+
+      <div style="flex: 1; display: flex; flex-direction: column;">
+
+        <sc-if value="{{ isHomeOut }}" hint-placeholder-val="{{ true }}">
+          <div style="flex: 1; display: grid; grid-template-columns: {{ splitCols }};">
+            <div style="padding: {{ posterPad }}; background: #2563EB; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #BFD4FE;">Munich Tibetan Sunday School</div>
+                <h1 style="font-size: {{ heroSize }}; font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; margin: 20px 0 0; text-transform: uppercase;">Class<br>Tracker</h1>
+              </div>
+              <div style="border-top: 2px solid #FFFFFF; padding-top: 16px; font-size: 15px; line-height: 1.5; max-width: 34ch;">Attendance, homework and skills for every Sunday class — one shared record.</div>
+            </div>
+            <div style="padding: {{ pad }}; display: flex; flex-direction: column; justify-content: center; gap: 28px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">01 / Access</div>
+                <h2 style="font-size: 30px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; margin: 10px 0 0;">Sign in to continue</h2>
+                <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 12px 0 0; max-width: 40ch;">Use the email and password your admin gave you.</p>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 10px; max-width: 320px;">
+                <button type="button" sc-camel-on-click="{{ goSignin }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Sign in</button>
+                <button type="button" sc-camel-on-click="{{ goJoin }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Join a class</button>
+                <button type="button" sc-camel-on-click="{{ goSignup }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #475569; border: none; border-radius: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" style-hover="color: #0F172A;">Admin bootstrap</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSignin }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: grid; grid-template-columns: {{ splitCols }};">
+            <div style="padding: {{ posterPad }}; background: {{ ink }}; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #94A3B8;">01 / Access</div>
+                <h1 style="font-size: {{ heroSize }}; font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; margin: 20px 0 0; text-transform: uppercase;">Sign<br>in</h1>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 0; border-top: 2px solid #334155;">
+                <div style="padding: 12px 0 10px; font-variant-numeric: tabular-nums; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #94A3B8;">Prototype accounts</div>
+                <sc-for list="{{ demoAccounts }}" as="acct" hint-placeholder-count="2">
+                  <button type="button" sc-camel-on-click="{{ acct.pick }}" style="display: flex; align-items: center; gap: 12px; text-align: left; min-height: 48px; padding: 10px 0; background: transparent; border: none; border-top: 1px solid #334155; border-radius: 0; cursor: pointer; color: #FFFFFF;" style-hover="color: #BFD4FE;">
+                    <span style="padding: 3px 8px; background: #2563EB; color: #FFFFFF; font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">{{ acct.role }}</span>
+                    <span style="font-size: 14px;">{{ acct.email }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="padding: {{ pad }}; display: flex; flex-direction: column; justify-content: center;">
+              <div style="max-width: 400px; width: 100%;">
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px;">
+                  <label for="p-email" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Email</label>
+                  <input id="p-email" type="email" value="{{ signinEmail }}" sc-camel-on-change="{{ onSigninEmail }}" placeholder="name@example.org" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 32px;">
+                  <label for="p-pass" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Password</label>
+                  <input id="p-pass" type="password" value="••••••••••" sc-camel-read-only="{{ true }}" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+                </div>
+                <button type="button" sc-camel-on-click="{{ submitSignin }}" style="display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Sign in</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: grid; grid-template-columns: {{ splitCols }};">
+            <div style="padding: {{ posterPad }}; background: #F59E0B; color: #0F172A; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;">One-time step</div>
+                <h1 style="font-size: {{ heroSize }}; font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; margin: 20px 0 0; text-transform: uppercase;">Admin<br>bootstrap</h1>
+              </div>
+              <p style="margin: 0; border-top: 2px solid #0F172A; padding-top: 16px; font-size: 15px; line-height: 1.55; max-width: 38ch; font-weight: 500;">This form exists only for the one-time admin-bootstrap step: the first person to sign up here has their account promoted to admin via a documented one-time SQL statement. Every teacher account after that is created by the admin from the Teachers screen, not through this form.</p>
+            </div>
+            <div style="padding: {{ pad }}; display: flex; flex-direction: column; justify-content: center;">
+              <div style="max-width: 400px; width: 100%;">
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px;">
+                  <label for="p-su-email" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Email</label>
+                  <input id="p-su-email" type="email" value="sherab.admin@example.org" sc-camel-read-only="{{ true }}" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 32px;">
+                  <label for="p-su-pass" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Password</label>
+                  <input id="p-su-pass" type="password" value="••••••••••" sc-camel-read-only="{{ true }}" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+                </div>
+                <button type="button" sc-camel-on-click="{{ submitSignup }}" style="display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 52px; padding: 0 20px; background: {{ ink }}; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="opacity: 0.88;">Create account</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isJoin }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: grid; grid-template-columns: {{ splitCols }};">
+            <div style="padding: {{ posterPad }}; background: #2563EB; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #BFD4FE;">Next story / Student</div>
+                <h1 style="font-size: {{ heroSize }}; font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; margin: 20px 0 0; text-transform: uppercase;">Join a<br>class</h1>
+              </div>
+              <div style="border-top: 2px solid #FFFFFF;">
+                <sc-for list="{{ joinSteps }}" as="st" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: baseline; gap: 12px; padding: 12px 0; border-bottom: 1px solid #7FA6F7; opacity: {{ st.opacity }};">
+                    <span style="font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; letter-spacing: 0.12em;">{{ st.num }}</span>
+                    <span style="font-size: 15px; font-weight: {{ st.weight }};">{{ st.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="padding: {{ pad }}; display: flex; flex-direction: column; justify-content: center;">
+              <div style="max-width: 420px; width: 100%;">
+
+                <sc-if value="{{ joinAtCode }}" hint-placeholder-val="{{ false }}">
+                  <h2 style="font-size: 26px; font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 10px;">What is your class code?</h2>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 26px; max-width: 40ch;">Your teacher gives you a six-character code.</p>
+                  <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
+                    <label for="p-join-code" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Class code</label>
+                    <input id="p-join-code" type="text" value="{{ joinCode }}" sc-camel-on-change="{{ onJoinCode }}" placeholder="4KTM7X" style="min-height: 56px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid {{ codeEdge }}; border-radius: 0; font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #0F172A;">
+                  </div>
+                  <sc-if value="{{ hasJoinError }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 10px 0 0; font-size: 14px; font-weight: 600; color: #DC2626;">{{ joinError }}</div>
+                  </sc-if>
+                  <button type="button" sc-camel-on-click="{{ joinNext }}" style="display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 52px; margin-top: 28px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Continue</button>
+                </sc-if>
+
+                <sc-if value="{{ joinAtName }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #2563EB;">{{ joinClassLabel }}</div>
+                  <h2 style="font-size: 26px; font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 10px 0 10px;">What is your name?</h2>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 26px; max-width: 40ch;">Your teacher needs to recognise you. You can pick a nickname after you are approved.</p>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label for="p-join-name" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Full name</label>
+                    <input id="p-join-name" type="text" value="{{ joinName }}" sc-camel-on-change="{{ onJoinName }}" placeholder="Tenzin Dolma" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+                  </div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px;">
+                    <button type="button" sc-camel-on-click="{{ joinNext }}" style="display: flex; align-items: center; justify-content: flex-start; flex: 1; min-width: 160px; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Continue</button>
+                    <button type="button" sc-camel-on-click="{{ joinBack }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Back</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ joinAtConsent }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">03 / Consent</div>
+                  <h2 style="font-size: 26px; font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 10px 0 0;">Guardian consent</h2>
+                  <div style="margin: 22px 0 0; padding: 18px; background: #F1F5FD; border-top: 4px solid #0F172A;">
+                    <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #0F172A;">A parent or guardian must agree before this account is created. The school stores the student's name, attendance, homework status and skill progress. Nothing is public, and the data can be deleted on request.</p>
+                  </div>
+                  <button type="button" sc-camel-on-click="{{ toggleConsent }}" aria-pressed="{{ joinConsent }}" style="display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 52px; margin-top: 18px; padding: 14px 12px; background: {{ consentBg }}; border: none; border-bottom: 1px solid #E4ECFC; border-radius: 0; font-size: 15px; line-height: 1.5; color: #0F172A; cursor: pointer; text-align: left;" style-hover="background: #F1F5FD;">
+                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; margin-top: 1px; border: 2px solid #0F172A; background: {{ consentBox }}; color: #FFFFFF; font-size: 13px; font-weight: 800;">{{ consentMark }}</span>
+                    <span>I am the parent or guardian, and I consent to this.</span>
+                  </button>
+                  <sc-if value="{{ hasJoinError }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 14px 0 0; font-size: 14px; font-weight: 600; color: #DC2626;">{{ joinError }}</div>
+                  </sc-if>
+                  <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px;">
+                    <button type="button" sc-camel-on-click="{{ submitJoin }}" style="display: flex; align-items: center; justify-content: flex-start; flex: 1; min-width: 160px; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Send request</button>
+                    <button type="button" sc-camel-on-click="{{ joinBack }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Back</button>
+                  </div>
+                </sc-if>
+
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isJoinPending }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: grid; grid-template-columns: {{ splitCols }};">
+            <div style="padding: {{ posterPad }}; background: {{ ink }}; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #94A3B8;">Status</div>
+                <h1 style="font-size: {{ heroSize }}; font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; margin: 20px 0 0; text-transform: uppercase;">Pending</h1>
+              </div>
+              <div style="border-top: 2px solid #334155; padding-top: 16px; font-size: 15px; line-height: 1.55; max-width: 34ch; color: #CBD5E1;">You are not on the roster or the leaderboard yet, and you cannot log homework until a teacher approves you.</div>
+            </div>
+            <div style="padding: {{ pad }}; display: flex; flex-direction: column; justify-content: center;">
+              <div style="max-width: 420px;">
+                <h2 style="font-size: 26px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin: 0;">Request sent</h2>
+                <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 14px 0 0;">{{ pendingBlurb }}</p>
+                <div style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; margin: 26px 0 0; padding: 18px 0; border-top: 2px solid #0F172A; border-bottom: 1px solid #E4ECFC;">
+                  <span style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Name</span>
+                  <span style="font-size: 15px; font-weight: 600;">{{ pendingName }}</span>
+                  <span style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Class</span>
+                  <span style="font-size: 15px; font-weight: 600;">{{ pendingClass }}</span>
+                  <span style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Consent</span>
+                  <span style="font-size: 15px; font-weight: 600; color: #2563EB;">Given by guardian</span>
+                </div>
+                <button type="button" sc-camel-on-click="{{ reset }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; margin-top: 28px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Start over</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRequests }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">{{ requestsKicker }}</div>
+                <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 12px 0 0; text-transform: uppercase;">Requests</h1>
+              </div>
+              <div style="font-size: 56px; font-weight: 900; line-height: 0.9; letter-spacing: -0.04em; color: #2563EB;">{{ pendingCount }}</div>
+            </div>
+            <hr style="height: 2px; border: 0; margin: 24px 0 0; background: #0F172A;">
+            <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 20px 0 0; max-width: 56ch;">{{ requestsBlurb }}</p>
+
+            <sc-if value="{{ hasPending }}" hint-placeholder-val="{{ true }}">
+              <sc-if value="{{ showReqHeader }}" hint-placeholder-val="{{ true }}">
+                <div style="display: grid; grid-template-columns: {{ reqCols }}; grid-template-areas: {{ reqAreas }}; align-items: center; gap: 4px 12px; padding: 14px; background: {{ ink }}; color: #FFFFFF; margin-top: 28px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;">
+                  <span style="grid-area: name;">STUDENT</span>
+                  <span style="grid-area: class;">CLASS</span>
+                  <span style="grid-area: date;">SENT</span>
+                  <span style="grid-area: act;"></span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ showReqLabel }}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 14px; background: {{ ink }}; color: #FFFFFF; margin-top: 28px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;">PENDING</div>
+              </sc-if>
+              <sc-for list="{{ pendingList }}" as="p" hint-placeholder-count="2">
+                <div style="display: grid; grid-template-columns: {{ reqCols }}; grid-template-areas: {{ reqAreas }}; align-items: center; gap: 8px 12px; padding: 14px; border-bottom: 1px solid #E4ECFC;">
+                  <span style="grid-area: name; min-width: 0; font-size: 17px; font-weight: 700;">{{ p.name }}</span>
+                  <span style="grid-area: class; min-width: 0; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; letter-spacing: 0.06em; color: #2563EB;">{{ p.classLabel }}</span>
+                  <span style="grid-area: date; font-variant-numeric: tabular-nums; font-size: 12px; color: #475569;">{{ p.submitted }}</span>
+                  <div style="grid-area: act; display: flex; gap: 8px;">
+                    <button type="button" sc-camel-on-click="{{ p.approve }}" style="min-height: 44px; padding: 0 16px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Approve</button>
+                    <button type="button" sc-camel-on-click="{{ p.reject }}" style="min-height: 44px; padding: 0 16px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Reject</button>
+                  </div>
+                </div>
+              </sc-for>
+            </sc-if>
+
+            <sc-if value="{{ noPending }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top: 28px; padding: 28px 18px; border: 2px solid #E4ECFC;">
+                <div style="font-size: 18px; font-weight: 700;">Nothing waiting</div>
+                <p style="margin: 8px 0 0; font-size: 15px; line-height: 1.55; color: #475569;">New registrations for {{ requestsScopeLabel }} will appear here.</p>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hasDecided }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 40px; padding: 14px; background: #F1F5FD; border-top: 2px solid #0F172A;">
+                <span style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Decided — {{ decidedSummary }}</span>
+                <button type="button" sc-camel-on-click="{{ clearRejected }}" style="min-height: 44px; padding: 0 14px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;" style-hover="background: #E2E8F0;">Clear rejected</button>
+              </div>
+              <sc-for list="{{ decidedList }}" as="d" hint-placeholder-count="1">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px; border-bottom: 1px solid #E4ECFC;">
+                  <span style="padding: 4px 8px; background: {{ d.badgeBg }}; color: {{ d.badgeFg }}; font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">{{ d.status }}</span>
+                  <span style="flex: 1; min-width: 140px; font-size: 16px; font-weight: 600; color: {{ d.nameColor }};">{{ d.name }}</span>
+                  <span style="font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: #475569;">{{ d.classLabel }}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAdminHome }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Signed in as admin</div>
+            <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 14px 0 0; text-transform: uppercase;">Sherab<br>admin</h1>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 36px; border-top: 2px solid #0F172A; border-left: 1px solid #E4ECFC;">
+              <sc-for list="{{ stats }}" as="st" hint-placeholder-count="3">
+                <div style="padding: 18px 18px 20px; border-right: 1px solid #E4ECFC; border-bottom: 1px solid #E4ECFC;">
+                  <div style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">{{ st.label }}</div>
+                  <div style="font-size: 48px; font-weight: 900; line-height: 1; letter-spacing: -0.04em; margin-top: 10px; color: {{ st.color }};">{{ st.value }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px;">
+              <button type="button" sc-camel-on-click="{{ goClasses }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Manage classes</button>
+              <button type="button" sc-camel-on-click="{{ goTeachers }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Manage teachers</button>
+              <button type="button" sc-camel-on-click="{{ goRequests }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Review requests</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isTeacherHome }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Signed in as teacher</div>
+            <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 14px 0 0; text-transform: uppercase;">{{ teacherName }}</h1>
+            <hr style="height: 2px; border: 0; margin: 28px 0 32px; background: #0F172A;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+              <button type="button" sc-camel-on-click="{{ goMyClasses }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">See my classes</button>
+              <button type="button" sc-camel-on-click="{{ goRequests }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: transparent; color: #0F172A; border: 2px solid #0F172A; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #F1F5FD;">Review requests {{ pendingCount }}</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAdminClasses }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">02 / Classes</div>
+                <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 12px 0 0; text-transform: uppercase;">Classes</h1>
+              </div>
+              <div style="font-size: 56px; font-weight: 900; line-height: 0.9; letter-spacing: -0.04em; color: #2563EB;">{{ classCount }}</div>
+            </div>
+            <hr style="height: 2px; border: 0; margin: 24px 0 0; background: #0F172A;">
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 24px 0 28px; border-bottom: 1px solid #E4ECFC;">
+              <div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 6px;">
+                <label for="p-cls-name" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">New class name</label>
+                <input id="p-cls-name" type="text" value="{{ className }}" sc-camel-on-change="{{ onClassName }}" placeholder="e.g. Tibetan Language — Group C" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+              </div>
+              <button type="button" sc-camel-on-click="{{ createClass }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Create class</button>
+            </div>
+            <div style="display: grid; grid-template-columns: {{ rowCols }}; grid-template-areas: {{ rowAreas }}; align-items: center; gap: 4px 12px; padding: 14px; background: {{ ink }}; color: #FFFFFF; margin-top: 32px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;">
+              <span style="grid-area: no;">NO.</span>
+              <span style="grid-area: name; min-width: 0;">CLASS</span>
+              <span style="grid-area: code;">CODE</span>
+              <span style="grid-area: date;">CREATED</span>
+            </div>
+            <sc-for list="{{ classes }}" as="cls" hint-placeholder-count="2">
+              <div style="display: grid; grid-template-columns: {{ rowCols }}; grid-template-areas: {{ rowAreas }}; align-items: center; gap: 2px 12px; padding: 14px; border-bottom: 1px solid #E4ECFC;">
+                <span style="grid-area: no; font-variant-numeric: tabular-nums; font-size: 13px; color: #94A3B8;">{{ cls.index }}</span>
+                <span style="grid-area: name; min-width: 0; font-size: 16px; font-weight: 600;">{{ cls.name }}</span>
+                <span style="grid-area: code; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; letter-spacing: 0.08em; color: #2563EB;">{{ cls.code }}</span>
+                <span style="grid-area: date; font-variant-numeric: tabular-nums; font-size: 12px; color: #475569;">{{ cls.created }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAdminTeachers }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+              <div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">03 / Teachers</div>
+                <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 12px 0 0; text-transform: uppercase;">Teachers</h1>
+              </div>
+              <div style="font-size: 56px; font-weight: 900; line-height: 0.9; letter-spacing: -0.04em; color: #2563EB;">{{ teacherCount }}</div>
+            </div>
+            <hr style="height: 2px; border: 0; margin: 24px 0 28px; background: #0F172A;">
+            <div style="max-width: 520px;">
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px;">
+                <label for="p-t-email" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Email</label>
+                <input id="p-t-email" type="email" value="{{ teacherEmail }}" sc-camel-on-change="{{ onTeacherEmail }}" placeholder="name@example.org" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 26px;">
+                <label for="p-t-name" style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">Display name (optional)</label>
+                <input id="p-t-name" type="text" value="{{ teacherDisplayName }}" sc-camel-on-change="{{ onTeacherDisplayName }}" style="min-height: 52px; padding: 0 14px; background: #F8FAFF; border: none; border-bottom: 2px solid #0F172A; border-radius: 0; font-size: 16px; color: #0F172A;">
+              </div>
+              <div style="font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569; margin-bottom: 10px;">Assign to classes</div>
+              <div style="display: flex; flex-direction: column; gap: 0; margin-bottom: 28px; border-top: 1px solid #E4ECFC;">
+                <sc-for list="{{ assignables }}" as="cls" hint-placeholder-count="2">
+                  <button type="button" sc-camel-on-click="{{ cls.toggle }}" aria-pressed="{{ cls.checked }}" style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; background: {{ cls.bg }}; border: none; border-bottom: 1px solid #E4ECFC; border-radius: 0; font-size: 15px; color: #0F172A; cursor: pointer; text-align: left;" style-hover="background: #F1F5FD;">
+                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; border: 2px solid #0F172A; background: {{ cls.boxBg }}; color: #FFFFFF; font-size: 13px; font-weight: 800;">{{ cls.mark }}</span>
+                    <span style="flex: 1; min-width: 0;">{{ cls.name }}</span>
+                    <span style="font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: #475569;">{{ cls.code }}</span>
+                  </button>
+                </sc-for>
+              </div>
+              <button type="button" sc-camel-on-click="{{ createTeacher }}" style="display: flex; align-items: center; justify-content: flex-start; min-height: 52px; padding: 0 20px; background: #2563EB; color: #FFFFFF; border: none; border-radius: 0; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;" style-hover="background: #1D4FD7;" style-active="background: #1B45BE;">Create teacher</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; padding: 14px; background: {{ ink }}; color: #FFFFFF; margin-top: 40px; font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;">ALL TEACHERS</div>
+            <sc-for list="{{ teachers }}" as="t" hint-placeholder-count="1">
+              <div style="display: grid; grid-template-columns: {{ teacherRowCols }}; align-items: baseline; gap: 2px 16px; padding: 16px 14px; border-bottom: 1px solid #E4ECFC;">
+                <span style="min-width: 0; font-size: 17px; font-weight: 700;">{{ t.name }}</span>
+                <span style="min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: #475569;">{{ t.email }}</span>
+                <span style="min-width: 0; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; letter-spacing: 0.06em; color: #2563EB;">{{ t.classLabel }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isMyClasses }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: {{ pad }};">
+            <div style="font-variant-numeric: tabular-nums; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">04 / Teacher</div>
+            <h1 style="font-size: {{ pageSize }}; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin: 12px 0 0; text-transform: uppercase;">My classes</h1>
+            <hr style="height: 2px; border: 0; margin: 24px 0 28px; background: #0F172A;">
+            <div style="display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));">
+              <sc-for list="{{ myClasses }}" as="cls" hint-placeholder-count="2">
+                <div style="display: flex; flex-direction: column; border: 2px solid #0F172A;">
+                  <div style="padding: 14px; background: {{ ink }}; color: #FFFFFF; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; letter-spacing: 0.12em;">{{ cls.code }}</div>
+                  <div style="flex: 1; padding: 16px 14px 18px;">
+                    <h2 style="font-size: 19px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; margin: 0;">{{ cls.name }}</h2>
+                    <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.5; color: #475569;">No students yet — roster tracking arrives in a later story.</p>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 16px; background: #F1F5FD; border-top: 2px solid #0F172A; font-variant-numeric: tabular-nums; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">
+        <span>{{ routeLabel }}</span>
+        <span style="flex: 1;"></span>
+        <span>{{ localeLabel }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;showPrototypeToolbar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;toolbarTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Ink&quot;,&quot;Blue&quot;,&quot;Paper&quot;,&quot;Amber&quot;],&quot;default&quot;:&quot;Ink&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+const SEED_CLASSES = [
+  { id: 'c1', name: 'Tibetan Language — Beginners', code: '4KTM7X', created: '6 Sep 2026' },
+  { id: 'c2', name: 'Song & Dance — Group B', code: 'W9HRJP', created: '6 Sep 2026' }
+];
+
+const SEED_TEACHERS = [
+  { id: 't1', name: 'Dechen Wangmo', email: 'dechen@example.org', classIds: ['c1'] }
+];
+
+const BARS = {
+  Ink: { barBg: '#0F172A', barFg: '#F1F5FD', barMuted: '#94A3B8', barLine: '#475569', barHover: '#1B2336', barEdge: 'none' },
+  Blue: { barBg: '#2563EB', barFg: '#FFFFFF', barMuted: '#BFD4FE', barLine: '#7FA6F7', barHover: '#1D4FD7', barEdge: 'none' },
+  Paper: { barBg: '#F1F5FD', barFg: '#0F172A', barMuted: '#475569', barLine: '#0F172A', barHover: '#E2E8F0', barEdge: '2px solid #0F172A' },
+  Amber: { barBg: '#F59E0B', barFg: '#0F172A', barMuted: '#7A4E05', barLine: '#0F172A', barHover: '#DE8E0A', barEdge: '2px solid #0F172A' }
+};
+
+const ROUTES = {
+  home_out: '/',
+  signin: '/(auth)/login',
+  signup: '/(auth)/signup',
+  join: '/(auth)/join',
+  join_pending: '/join/pending',
+  admin_home: '/admin',
+  teacher_home: '/teacher',
+  admin_classes: '/admin/classes',
+  admin_teachers: '/admin/teachers',
+  my_classes: '/teacher/classes',
+  requests: '/requests'
+};
+
+const SEED_PENDING = [
+  { id: 'p1', name: 'Tenzin Dolma', classId: 'c1', submitted: '13 Sep 2026', status: 'pending' },
+  { id: 'p2', name: 'Nyima Lhamo', classId: 'c1', submitted: '13 Sep 2026', status: 'pending' },
+  { id: 'p3', name: 'Pema Tsering', classId: 'c2', submitted: '14 Sep 2026', status: 'pending' }
+];
+
+class Component extends DCLogic {
+  state = {
+    screen: 'home_out',
+    session: null,
+    device: 'phone',
+    banner: '',
+    bannerKicker: '',
+    classes: SEED_CLASSES,
+    teachers: SEED_TEACHERS,
+    signinEmail: '',
+    className: '',
+    teacherEmail: '',
+    teacherDisplayName: '',
+    picked: [],
+    seq: 0,
+    pending: SEED_PENDING,
+    joinStep: 'code',
+    joinCode: '',
+    joinName: '',
+    joinClassId: null,
+    joinConsent: false,
+    joinError: '',
+    lastJoin: null
+  };
+
+  go(screen) {
+    this.setState({ screen, banner: '', bannerKicker: '' });
+  }
+
+  code() {
+    let out = '';
+    for (let i = 0; i < 6; i++) out += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+    return out;
+  }
+
+  today() {
+    return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  tempPassword() {
+    const pool = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    for (let i = 0; i < 12; i++) out += pool[Math.floor(Math.random() * pool.length)];
+    return out;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const isAdmin = s.session === 'admin';
+    const isTeacher = s.session === 'teacher';
+    const phone = s.device === 'phone';
+
+    const teacherIds = s.teachers.find((t) => t.email === 'dechen@example.org')?.classIds ?? [];
+    const scopeIds = isAdmin ? s.classes.map((c) => c.id) : teacherIds;
+    const inScope = s.pending.filter((p) => scopeIds.includes(p.classId));
+    const pendingInScope = inScope.filter((p) => p.status === 'pending');
+    const decidedInScope = inScope.filter((p) => p.status !== 'pending');
+    const classOf = (id) => s.classes.find((c) => c.id === id);
+
+    const navDef = [];
+    if (isAdmin) {
+      navDef.push({ label: 'Classes', screen: 'admin_classes' });
+      navDef.push({ label: 'Teachers', screen: 'admin_teachers' });
+      navDef.push({ label: 'Requests ' + pendingInScope.length, screen: 'requests' });
+    } else if (isTeacher) {
+      navDef.push({ label: 'My Classes', screen: 'my_classes' });
+      navDef.push({ label: 'Requests ' + pendingInScope.length, screen: 'requests' });
+    } else {
+      navDef.push({ label: 'Sign in', screen: 'signin' });
+      navDef.push({ label: 'Join a class', screen: 'join' });
+    }
+    const nav = navDef.map((n) => {
+      const active = s.screen === n.screen;
+      return {
+        label: n.label,
+        bg: active ? '#2563EB' : 'transparent',
+        fg: active ? '#FFFFFF' : '#94A3B8',
+        go: () => this.go(n.screen)
+      };
+    });
+    if (isAdmin || isTeacher) {
+      nav.push({
+        label: 'Sign out', bg: 'transparent', fg: '#94A3B8',
+        go: () => this.setState({ session: null, screen: 'home_out', banner: '', bannerKicker: '' })
+      });
+    }
+
+    const teacherClassIds = teacherIds;
+    const assignedCount = s.teachers.reduce((n, t) => n + t.classIds.length, 0);
+    const approvedCount = s.pending.filter((p) => p.status === 'approved').length;
+    const decide = (id, status) => this.setState({
+      pending: s.pending.map((p) => (p.id === id ? { ...p, status } : p)),
+      bannerKicker: status === 'approved' ? 'Approved' : 'Rejected',
+      banner: (s.pending.find((p) => p.id === id)?.name ?? 'Student') + ' was ' + status +
+        (status === 'approved' ? ' — they can now appear on the roster. Team assignment comes with the leaderboard story.' : ' and will not appear on any roster.')
+    });
+
+    return {
+      showToolbar: this.props.showPrototypeToolbar ?? true,
+      ...BARS[this.props.toolbarTheme ?? 'Ink'] ?? BARS.Ink,
+      ink: this.props.inkColor ?? '#0F172A',
+      routeLabel: ROUTES[s.screen] ?? '/',
+      localeLabel: 'locale de · en · bo',
+      phoneBg: phone ? '#2563EB' : 'transparent',
+      phoneFg: phone ? '#FFFFFF' : '#94A3B8',
+      desktopBg: phone ? 'transparent' : '#2563EB',
+      desktopFg: phone ? '#94A3B8' : '#FFFFFF',
+      setPhone: () => this.setState({ device: 'phone' }),
+      setDesktop: () => this.setState({ device: 'desktop' }),
+      reset: () => this.setState({
+        screen: 'home_out', session: null, banner: '', bannerKicker: '', classes: SEED_CLASSES, teachers: SEED_TEACHERS,
+        signinEmail: '', className: '', teacherEmail: '', teacherDisplayName: '', picked: [],
+        pending: SEED_PENDING, joinStep: 'code', joinCode: '', joinName: '', joinClassId: null,
+        joinConsent: false, joinError: '', lastJoin: null
+      }),
+      frameMax: phone ? '390px' : '1120px',
+      frameMinH: phone ? '780px' : '660px',
+      pad: phone ? '28px 18px 36px' : '44px 48px 52px',
+      posterPad: phone ? '28px 18px 32px' : '44px 40px',
+      splitCols: phone ? '1fr' : '1fr 1fr',
+      heroSize: phone ? '52px' : '76px',
+      pageSize: phone ? '40px' : '56px',
+      rowCols: phone ? 'auto minmax(0, 1fr)' : '44px minmax(0, 1fr) 104px 104px',
+      rowAreas: phone ? '"no name" "code date"' : '"no name code date"',
+      teacherRowCols: phone ? 'minmax(0, 1fr)' : 'minmax(0, 1.1fr) minmax(0, 1.4fr) auto',
+
+      navItems: nav,
+      hasBanner: !!s.banner,
+      bannerText: s.banner,
+      bannerKicker: s.bannerKicker,
+
+      isHomeOut: s.screen === 'home_out',
+      isSignin: s.screen === 'signin',
+      isSignup: s.screen === 'signup',
+      isAdminHome: s.screen === 'admin_home',
+      isTeacherHome: s.screen === 'teacher_home',
+      isAdminClasses: s.screen === 'admin_classes',
+      isAdminTeachers: s.screen === 'admin_teachers',
+      isMyClasses: s.screen === 'my_classes',
+      isJoin: s.screen === 'join',
+      isJoinPending: s.screen === 'join_pending',
+      isRequests: s.screen === 'requests',
+
+      joinAtCode: s.joinStep === 'code',
+      joinAtName: s.joinStep === 'name',
+      joinAtConsent: s.joinStep === 'consent',
+      joinSteps: ['Class code', 'Your name', 'Guardian consent'].map((label, i) => {
+        const active = ['code', 'name', 'consent'][i] === s.joinStep;
+        return { num: String(i + 1).padStart(2, '0'), label, opacity: active ? '1' : '0.55', weight: active ? '700' : '400' };
+      }),
+      joinCode: s.joinCode,
+      joinName: s.joinName,
+      joinConsent: s.joinConsent,
+      joinError: s.joinError,
+      hasJoinError: !!s.joinError,
+      codeEdge: s.joinError ? '#DC2626' : '#0F172A',
+      consentBg: s.joinConsent ? '#F1F5FD' : 'transparent',
+      consentBox: s.joinConsent ? '#2563EB' : '#FFFFFF',
+      consentMark: s.joinConsent ? '✓' : '',
+      joinClassLabel: classOf(s.joinClassId) ? classOf(s.joinClassId).name + ' · ' + classOf(s.joinClassId).code : '',
+      onJoinCode: (e) => this.setState({ joinCode: e.target.value.toUpperCase(), joinError: '' }),
+      onJoinName: (e) => this.setState({ joinName: e.target.value, joinError: '' }),
+      toggleConsent: () => this.setState({ joinConsent: !s.joinConsent, joinError: '' }),
+      joinBack: () => this.setState({ joinStep: s.joinStep === 'consent' ? 'name' : 'code', joinError: '' }),
+      joinNext: () => {
+        if (s.joinStep === 'code') {
+          const match = s.classes.find((c) => c.code === s.joinCode.trim().toUpperCase());
+          if (!match) return this.setState({ joinError: 'No class has that code. Check it with your teacher.' });
+          return this.setState({ joinClassId: match.id, joinStep: 'name', joinError: '' });
+        }
+        if (!s.joinName.trim()) return this.setState({ joinError: 'Please enter your name.' });
+        this.setState({ joinStep: 'consent', joinError: '' });
+      },
+      submitJoin: () => {
+        if (!s.joinConsent) return this.setState({ joinError: 'A parent or guardian has to consent before the request can be sent.' });
+        const cls = classOf(s.joinClassId);
+        this.setState({
+          pending: [...s.pending, { id: 'p' + (s.pending.length + 1), name: s.joinName.trim(), classId: s.joinClassId, submitted: this.today(), status: 'pending' }],
+          lastJoin: { name: s.joinName.trim(), className: cls ? cls.name + ' · ' + cls.code : '' },
+          screen: 'join_pending',
+          joinStep: 'code', joinCode: '', joinName: '', joinConsent: false, joinError: ''
+        });
+      },
+      pendingName: s.lastJoin?.name ?? '—',
+      pendingClass: s.lastJoin?.className ?? '—',
+      pendingBlurb: 'A teacher for this class reviews it. The admin can step in as backup if no teacher is available.',
+
+      requestsKicker: isAdmin ? '05 / Admin backup' : '05 / Teacher',
+      requestsBlurb: isAdmin
+        ? 'Every class, as backup — step in when a teacher is unavailable or a registration looks off. Normally the class\u2019s own teacher acts on these.'
+        : 'Registrations for the classes you are assigned to. Approving puts a student on your roster.',
+      requestsScopeLabel: isAdmin ? 'any class' : 'your classes',
+      pendingCount: String(pendingInScope.length).padStart(2, '0'),
+      hasPending: pendingInScope.length > 0,
+      noPending: pendingInScope.length === 0,
+      showReqHeader: !phone,
+      showReqLabel: phone,
+      reqCols: phone ? 'minmax(0, 1fr)' : 'minmax(0, 1.2fr) 140px 100px auto',
+      reqAreas: phone ? '"name" "class" "date" "act"' : '"name class date act"',
+      pendingList: pendingInScope.map((p) => ({
+        name: p.name,
+        classLabel: classOf(p.classId)?.code ?? '—',
+        submitted: p.submitted,
+        approve: () => decide(p.id, 'approved'),
+        reject: () => decide(p.id, 'rejected')
+      })),
+      hasDecided: decidedInScope.length > 0,
+      decidedSummary: decidedInScope.filter((p) => p.status === 'approved').length + ' approved · ' +
+        decidedInScope.filter((p) => p.status === 'rejected').length + ' rejected',
+      decidedList: decidedInScope.map((p) => ({
+        name: p.name,
+        status: p.status,
+        classLabel: classOf(p.classId)?.code ?? '—',
+        badgeBg: p.status === 'approved' ? '#2563EB' : '#E2E8F0',
+        badgeFg: p.status === 'approved' ? '#FFFFFF' : '#475569',
+        nameColor: p.status === 'approved' ? '#0F172A' : '#94A3B8'
+      })),
+      clearRejected: () => this.setState({
+        pending: s.pending.filter((p) => p.status !== 'rejected'),
+        bannerKicker: 'Cleared', banner: 'Rejected registrations were removed.'
+      }),
+
+      goSignin: () => this.go('signin'),
+      goSignup: () => this.go('signup'),
+      goJoin: () => this.setState({ screen: 'join', joinStep: 'code', joinCode: '', joinName: '', joinConsent: false, joinError: '', banner: '', bannerKicker: '' }),
+      goRequests: () => this.go('requests'),
+      goClasses: () => this.go('admin_classes'),
+      goTeachers: () => this.go('admin_teachers'),
+      goMyClasses: () => this.go('my_classes'),
+
+      stats: [
+        { label: 'Classes', value: String(s.classes.length).padStart(2, '0'), color: '#2563EB' },
+        { label: 'Teachers', value: String(s.teachers.length).padStart(2, '0'), color: '#2563EB' },
+        { label: 'Assignments', value: String(assignedCount).padStart(2, '0'), color: '#0F172A' },
+        { label: 'Pending', value: String(pendingInScope.length).padStart(2, '0'), color: pendingInScope.length ? '#F59E0B' : '#94A3B8' },
+        { label: 'Students', value: String(approvedCount).padStart(2, '0'), color: approvedCount ? '#0F172A' : '#94A3B8' }
+      ],
+      classCount: String(s.classes.length).padStart(2, '0'),
+      teacherCount: String(s.teachers.length).padStart(2, '0'),
+
+      signinEmail: s.signinEmail,
+      onSigninEmail: (e) => this.setState({ signinEmail: e.target.value }),
+      demoAccounts: [
+        { role: 'Admin', email: 'sherab.admin@example.org', pick: () => this.setState({ signinEmail: 'sherab.admin@example.org' }) },
+        { role: 'Teacher', email: 'dechen@example.org', pick: () => this.setState({ signinEmail: 'dechen@example.org' }) }
+      ],
+      submitSignin: () => {
+        const email = (s.signinEmail || 'sherab.admin@example.org').trim().toLowerCase();
+        const teacher = s.teachers.find((t) => t.email.toLowerCase() === email);
+        if (teacher) this.setState({ session: 'teacher', screen: 'teacher_home', banner: '', bannerKicker: '' });
+        else this.setState({ session: 'admin', screen: 'admin_home', banner: '', bannerKicker: '' });
+      },
+      submitSignup: () => this.setState({
+        screen: 'home_out',
+        bannerKicker: 'Account created',
+        banner: 'If this is meant to be the first admin account, ask whoever has database access to run the documented admin-bootstrap SQL statement, then sign in again.'
+      }),
+
+      teacherName: s.teachers.find((t) => t.email === 'dechen@example.org')?.name ?? 'Dechen Wangmo',
+
+      classes: s.classes.map((c, i) => ({ ...c, index: String(i + 1).padStart(2, '0') })),
+      className: s.className,
+      onClassName: (e) => this.setState({ className: e.target.value }),
+      createClass: () => {
+        const name = s.className.trim() || 'Tibetan Language — Group C';
+        const code = this.code();
+        this.setState({
+          classes: [...s.classes, { id: 'c' + (s.seq + 3), name, code, created: this.today() }],
+          seq: s.seq + 1,
+          className: '',
+          bannerKicker: 'Class created',
+          banner: '“' + name + '” was created with code ' + code + '.'
+        });
+      },
+
+      teachers: s.teachers.map((t) => ({
+        name: t.name || '—',
+        email: t.email,
+        classLabel: t.classIds.length
+          ? t.classIds.map((id) => {
+              const c = s.classes.find((x) => x.id === id);
+              return c ? c.code : '';
+            }).filter(Boolean).join(' · ')
+          : 'No classes assigned'
+      })),
+      teacherEmail: s.teacherEmail,
+      teacherDisplayName: s.teacherDisplayName,
+      onTeacherEmail: (e) => this.setState({ teacherEmail: e.target.value }),
+      onTeacherDisplayName: (e) => this.setState({ teacherDisplayName: e.target.value }),
+      assignables: s.classes.map((c) => {
+        const on = s.picked.includes(c.id);
+        return {
+          name: c.name,
+          code: c.code,
+          checked: on,
+          mark: on ? '✓' : '',
+          bg: on ? '#F1F5FD' : 'transparent',
+          boxBg: on ? '#2563EB' : '#FFFFFF',
+          toggle: () => this.setState({
+            picked: on ? s.picked.filter((x) => x !== c.id) : [...s.picked, c.id]
+          })
+        };
+      }),
+      createTeacher: () => {
+        const email = s.teacherEmail.trim() || 'tenzin@example.org';
+        const picked = s.picked.length ? s.picked : [s.classes[0].id];
+        const pw = this.tempPassword();
+        this.setState({
+          teachers: [...s.teachers, { id: 't' + (s.teachers.length + 1), name: s.teacherDisplayName.trim(), email, classIds: picked }],
+          teacherEmail: '',
+          teacherDisplayName: '',
+          picked: [],
+          bannerKicker: 'Temporary password',
+          banner: email + ' — one-time password ' + pw + '. Share it with them directly; it will not be shown again.'
+        });
+      },
+
+      myClasses: s.classes
+        .filter((c) => teacherClassIds.includes(c.id))
+        .map((c) => ({ name: c.name, code: c.code }))
+    };
+  }
+}
+</script>
+
+
+<div id="__claude_design_branding"><style>#__claude_design_branding{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:flex;align-items:center;gap:7px;height:30px;padding:0 5px 0 10px;border-radius:999px;font-family:"Anthropic Sans",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:12.5px;font-weight:400;line-height:1;letter-spacing:normal;text-transform:none;color:#141413;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:0 0 0 .5px rgba(31,30,29,.14),0 2px 10px rgba(0,0,0,.09)}
+#__claude_design_branding *{box-sizing:border-box;margin:0}
+#__claude_design_branding a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+#__claude_design_branding a:hover span{text-decoration:underline}
+#__claude_design_branding svg{flex:none}
+#__claude_design_branding a svg{color:#D97757}
+#__claude_design_branding button{width:20px;height:20px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:currentColor;opacity:.55;border:0;background:none;cursor:pointer;flex:none;font:inherit;transition:opacity .14s}
+#__claude_design_branding button:hover{opacity:1;background:rgba(127,127,127,.22)}
+@media print{#__claude_design_branding{display:none}}</style><a href="https://claude.com/product/design" target="_blank" rel="noopener noreferrer"><svg width="14" height="14" viewBox="0 0 20 21" fill="none" aria-hidden="true"><path fill="currentColor" d="M9.99902 0C15.5258 0.000170936 19.999 4.50643 19.999 10.0547C19.999 11.7656 19.5863 12.9976 18.7861 13.8203C17.9924 14.6362 16.9465 14.9138 15.9854 15.0078C15.05 15.0993 14.0097 15.0262 13.2549 15.0186C12.8524 15.0145 12.5177 15.0267 12.2441 15.0703C11.9682 15.1144 11.8143 15.1813 11.7305 15.2432C11.4745 15.4322 11.3353 15.7121 11.2656 16.1602C11.2303 16.3875 11.2168 16.6362 11.209 16.9131C11.2017 17.1715 11.1986 17.4893 11.1807 17.7705C11.1469 18.2975 11.0495 19.0865 10.4199 19.5908C9.7846 20.0996 8.88652 20.1057 7.85449 19.877C7.36399 19.7682 6.88652 19.6232 6.42578 19.4453C2.66989 17.9949 0.000187748 14.3414 0 10.0547C0 4.50643 4.47223 0.000171048 9.99902 0ZM9.99902 1.60547C5.36781 1.60564 1.60547 5.38391 1.60547 10.0547C1.60566 13.6582 3.84823 16.7296 7.00391 17.9482C7.39027 18.0974 7.79085 18.2184 8.20215 18.3096C9.1375 18.5169 9.384 18.3633 9.41602 18.3379C9.4524 18.3087 9.54558 18.1915 9.5791 17.668C9.5947 17.4239 9.59473 17.1786 9.60352 16.8672C9.61179 16.5742 9.62831 16.2435 9.67969 15.9131C9.78359 15.2455 10.0474 14.4906 10.7764 13.9521C11.1479 13.6778 11.5842 13.5493 11.9912 13.4844C12.4007 13.4191 12.8434 13.4088 13.2705 13.4131C14.1753 13.4222 15.0071 13.4905 15.8291 13.4102C16.6257 13.3322 17.2249 13.1235 17.6357 12.7012C18.0401 12.2855 18.3935 11.5261 18.3936 10.0547C18.3936 5.38391 14.6302 1.60564 9.99902 1.60547ZM5.11621 9.86719C5.86386 9.91468 6.45486 10.5348 6.45508 11.2939C6.45506 12.0838 5.81519 12.7245 5.02539 12.7246C4.28481 12.7246 3.67573 12.1617 3.60254 11.4404L3.59473 11.2939L3.60156 11.1533C3.66942 10.4596 4.23282 9.91186 4.93359 9.86719H5.11621ZM14.9814 7.19141C15.729 7.23889 16.3199 7.85919 16.3203 8.61816C16.3203 9.40801 15.6804 10.0487 14.8906 10.0488C14.1501 10.0487 13.5409 9.48586 13.4678 8.76465L13.46 8.61816L13.4668 8.47754C13.5348 7.78403 14.0983 7.23618 14.7988 7.19141H14.9814ZM6.4541 4.93457C7.20161 4.9822 7.79275 5.60231 7.79297 6.36133C7.79288 7.151 7.15291 7.7917 6.36328 7.79199C5.62274 7.79199 5.01369 7.22903 4.94043 6.50781L4.93262 6.36133L4.93945 6.2207C5.00731 5.52698 5.5707 4.97922 6.27148 4.93457H6.4541ZM11.3867 3.59668C12.1343 3.64419 12.7253 4.26436 12.7256 5.02344C12.7256 5.81326 12.0857 6.45393 11.2959 6.4541C10.5553 6.4541 9.94622 5.89123 9.87305 5.16992L9.86523 5.02344L9.87207 4.88281C9.93996 4.18912 10.5033 3.64133 11.2041 3.59668H11.3867Z"></path></svg><span>Made with Claude Design</span></a><button type="button" aria-label="Dismiss" onclick="this.parentElement.remove()"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button></div></body></html>

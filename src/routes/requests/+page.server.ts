@@ -18,6 +18,7 @@ type StudentRow = {
 	status: 'pending' | 'approved' | 'rejected' | null;
 	created_at: string;
 	reviewed_at: string | null;
+	email_confirmed_at: string | null;
 	classes: { id: string; name: string; code: string } | null;
 };
 
@@ -40,8 +41,15 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		throw error(403, 'Admin or teacher access only.');
 	}
 
+	// classes!profiles_class_id_fkey (not the bare "classes" embed shorthand)
+	// -- profiles<->classes now has three FK paths (classes.created_by,
+	// profiles.class_id, and the class_teachers many-to-many), so PostgREST
+	// refuses to guess and returns PGRST201 without an explicit hint. Caught
+	// live: rls.spec.ts asserts against raw table selects, never against this
+	// route's actual embedded-relation syntax, so this was silently broken
+	// for every real visit to /requests until browser-verified here.
 	const selectColumns =
-		'id, registration_name, status, created_at, reviewed_at, classes ( id, name, code )';
+		'id, registration_name, status, created_at, reviewed_at, email_confirmed_at, classes!profiles_class_id_fkey ( id, name, code )';
 
 	const [
 		{ data: pendingRows, error: pendingError },
@@ -71,6 +79,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			status: r.status,
 			createdAt: r.created_at,
 			reviewedAt: r.reviewed_at,
+			emailConfirmedAt: r.email_confirmed_at,
 			class: r.classes as unknown as { id: string; name: string; code: string } | null
 		};
 	};
@@ -107,7 +116,7 @@ export const actions: Actions = {
 		// all. This also gets us registration_name for username generation.
 		const { data: student, error: fetchError } = await supabase
 			.from('profiles')
-			.select('id, registration_name')
+			.select('id, registration_name, email_confirmed_at')
 			.eq('id', studentId)
 			.eq('role', 'student')
 			.eq('status', 'pending')
@@ -115,6 +124,18 @@ export const actions: Actions = {
 
 		if (fetchError || !student || !student.registration_name) {
 			return fail(400, { error: m.requests_error_not_found(), studentId, studentName });
+		}
+
+		// Must run here, before any Admin API call: updateAuthUserEmailAndPassword
+		// below unconditionally sets email_confirm=true on the *synthetic*
+		// login email it mints, which the on_auth_user_email_confirmed trigger
+		// (migration 0006) would mirror onto profiles.email_confirmed_at
+		// regardless of whether the guardian ever actually confirmed -- by the
+		// time the final profiles.update() below runs, the RLS WITH CHECK gate
+		// would already see a non-null value no matter what. This app-level
+		// check on the pre-Admin-API read is the real gate for this action.
+		if (!student.email_confirmed_at) {
+			return fail(400, { error: m.requests_error_unverified(), studentId, studentName });
 		}
 
 		const adminClient = createSupabaseAdminClient();

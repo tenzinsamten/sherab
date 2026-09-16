@@ -1,46 +1,61 @@
-/* Sherab design tokens -- see
-   _bmad-output/planning-artifacts/ux-designs/ux-tib-class-2026-09-14/DESIGN.md
-   (source of truth as of 2026-09-14, superseding the earlier design-tokens.md
-   palette). Bold, high-contrast, editorial/brutalist system: navy + one
-   signal blue + attention amber + error red, zero border-radius, no shadows,
-   heavy all-caps display type. Story 1-1 only builds admin/teacher (auth,
-   classes, teachers, class list) screens, so this file wires up the tokens
-   those surfaces need; the celebration/student-facing tokens land with later
-   stories that actually build student screens. */
+/* Sherab design tokens -- retuned 2026-09-16 to match the user-provided
+   "Story 1-1 Prototype" Claude Design canvas exactly (see
+   _bmad-output/implementation-artifacts/spec-ui-restyle-story-1-1-prototype.md
+   and its decoded reference file), which supersedes the earlier token-level
+   interpretation in DESIGN.md/EXPERIENCE.md wherever the two differ. Bold,
+   high-contrast, editorial/brutalist system: ink + one signal blue +
+   one-time-step amber + error red, zero border-radius, no shadows, heavy
+   uppercase display type -- now on a single variable-weight Archivo family
+   for both heading and body, not two separate faces. */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
 
 :root {
-	--color-primary: #2f5fe0;
+	--color-primary: #2563eb;
+	--color-primary-hover: #1d4fd7;
+	--color-primary-active: #1b45be;
 	--color-on-primary: #ffffff;
-	--color-secondary: #f2a71b;
-	--color-on-secondary: #1a1208;
+	--color-primary-tint: #f1f5fd;
+	--color-primary-tint-strong: #e4ecfc;
+	--color-primary-tint-text: #bfd4fe;
+	--color-input-bg: #f8faff;
 
-	--color-surface-inverse: #0b1330;
+	--color-secondary: #f59e0b;
+	--color-on-secondary: #0f172a;
+
+	--color-surface-inverse: #0f172a;
 	--color-on-surface-inverse: #ffffff;
 
 	--color-background: #ffffff;
-	--color-foreground: #0b1330;
+	--color-foreground: #0f172a;
 	--color-card: #ffffff;
-	--color-card-foreground: #0b1330;
-	--color-muted: #eef1f8;
-	--color-muted-foreground: #6b7280;
-	--color-border: #d8dee9;
+	--color-card-foreground: #0f172a;
+	--color-muted: #e2e8f0;
+	--color-muted-foreground: #475569;
+	--color-muted-foreground-soft: #94a3b8;
+	--color-border: #e4ecfc;
+	--color-border-strong: #334155;
 
-	--color-destructive: #d92d20;
+	--color-destructive: #dc2626;
 	--color-on-destructive: #ffffff;
-	--color-ring: #2f5fe0;
+	--color-ring: #2563eb;
 
-	--font-display: 'Archivo Black', sans-serif;
-	--font-body: 'Source Sans 3', sans-serif;
+	--font-display: 'Archivo', sans-serif;
+	--font-body: 'Archivo', sans-serif;
 	--font-tibetan: 'Noto Serif Tibetan', serif;
+	--font-heading-weight: 800;
 
 	--text-sm: 0.875rem;
 	--text-base: 1rem;
 	--text-lg: 1.125rem;
 	--text-xl: 1.375rem;
 	--text-2xl: 1.75rem;
-	--line-height-body: 1.5;
+	/* Fluid hero/page scales -- the prototype specs these as two fixed
+	   phone/desktop values (52px/76px, 40px/56px); clamp() gets the same
+	   fluid result from one declaration instead of a breakpoint pair. */
+	--text-page: clamp(2.5rem, 1.7rem + 3vw, 3.5rem);
+	--text-hero: clamp(3.25rem, 2.2rem + 4vw, 4.75rem);
+	--line-height-body: 1.55;
 	--line-height-heading: 1.1;
 
 	--radius-clay-quiet: 0px;
@@ -61,23 +76,25 @@
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		--color-background: #0b1330;
+		--color-background: #0f172a;
 		--color-foreground: #f1f5fd;
-		--color-card: #151d3d;
+		--color-card: #1e293b;
 		--color-card-foreground: #f1f5fd;
-		--color-muted: #1c254a;
-		--color-muted-foreground: #9aa3c0;
-		--color-border: #2b3563;
+		--color-muted: #334155;
+		--color-muted-foreground: #94a3b8;
+		--color-border: #475569;
+		--color-input-bg: #1e293b;
 	}
 }
 :root[data-theme='dark'] {
-	--color-background: #0b1330;
+	--color-background: #0f172a;
 	--color-foreground: #f1f5fd;
-	--color-card: #151d3d;
+	--color-card: #1e293b;
 	--color-card-foreground: #f1f5fd;
-	--color-muted: #1c254a;
-	--color-muted-foreground: #9aa3c0;
-	--color-border: #2b3563;
+	--color-muted: #334155;
+	--color-muted-foreground: #94a3b8;
+	--color-border: #475569;
+	--color-input-bg: #1e293b;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -105,14 +122,15 @@ h3 {
 	font-family: var(--font-display);
 	line-height: var(--line-height-heading);
 	text-transform: uppercase;
-	letter-spacing: -0.01em;
-	font-weight: 900;
+	letter-spacing: -0.02em;
+	font-weight: var(--font-heading-weight);
 }
 
 /* Tibetan has no uppercase concept and needs more breathing room than Latin
    caps -- do not force the all-caps display treatment onto it (open question
    flagged in DESIGN.md; this is the conservative default: readable weight,
-   no forced case transform). */
+   no forced case transform). Unaffected by the 2026-09-16 palette/type
+   retune -- this exemption carries over unchanged. */
 [lang='bo'] {
 	font-family: var(--font-tibetan);
 }
@@ -126,12 +144,19 @@ h3 {
 	line-height: 1.4;
 }
 
+.section-label,
+.field label,
+.poster-eyebrow,
+.page-kicker,
+.grid-table-header span {
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.12em;
+}
+
 .section-label {
 	display: block;
-	font-family: var(--font-body);
-	font-size: 0.75rem;
-	font-weight: 600;
-	letter-spacing: 0.08em;
+	font-size: 0.6875rem;
+	font-weight: 700;
 	text-transform: uppercase;
 	color: var(--color-muted-foreground);
 	margin: 0 0 var(--space-2) 0;
@@ -141,7 +166,8 @@ h3 {
    the two -- an unstyled h1's browser-default top margin would still open a
    bigger gap after the label on pages that don't also zero it inline. Force
    it here once so every section-label -> heading gap is identical. */
-.section-label + h1 {
+.section-label + h1,
+.page-kicker + h1 {
 	margin-top: 0;
 }
 
@@ -196,9 +222,8 @@ button {
 }
 
 .field label {
-	font-weight: 600;
-	font-size: 0.6875rem;
-	letter-spacing: 0.06em;
+	font-weight: 700;
+	font-size: 0.625rem;
 	text-transform: uppercase;
 	color: var(--color-muted-foreground);
 }
@@ -210,8 +235,8 @@ button {
 	border: none;
 	border-bottom: 2px solid var(--color-foreground);
 	border-radius: var(--radius-clay-quiet);
-	font-size: var(--text-base);
-	background: var(--color-muted);
+	font-size: 1rem;
+	background: var(--color-input-bg);
 	color: var(--color-foreground);
 }
 
@@ -222,6 +247,7 @@ button {
 .field-error {
 	color: var(--color-destructive);
 	font-size: var(--text-sm);
+	font-weight: 600;
 }
 
 .btn {
@@ -235,14 +261,18 @@ button {
 	border: var(--border-clay-quiet);
 	background: var(--color-primary);
 	color: var(--color-on-primary);
-	font-size: var(--text-base);
-	font-weight: 700;
+	font-size: var(--text-sm);
+	font-weight: 800;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
 
 .btn:hover {
-	filter: brightness(0.92);
+	background: var(--color-primary-hover);
+}
+
+.btn:active {
+	background: var(--color-primary-active);
 }
 
 .btn-outline {
@@ -252,8 +282,7 @@ button {
 }
 
 .btn-outline:hover {
-	background: var(--color-muted);
-	filter: none;
+	background: var(--color-primary-tint);
 }
 
 .btn[aria-pressed='true'] {
@@ -288,14 +317,15 @@ thead th {
 	background: var(--color-surface-inverse);
 	color: var(--color-on-surface-inverse);
 	text-transform: uppercase;
-	font-size: 0.75rem;
-	letter-spacing: 0.06em;
+	font-size: 0.6875rem;
+	letter-spacing: 0.1em;
+	font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
 	text-align: left;
-	padding: var(--space-2) var(--space-3);
+	padding: var(--space-3);
 	border-bottom: 1px solid var(--color-border);
 }
 
@@ -325,16 +355,34 @@ code {
 	color: var(--color-muted-foreground);
 }
 
+/* — status/verification tags (e.g. requests' "Unverified" badge) — a second,
+   deliberately minimal chip alongside .badge-repeat, not a general system. */
+.tag {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px var(--space-2);
+	font-size: 0.6875rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	background: var(--color-muted);
+	color: var(--color-muted-foreground);
+}
+.tag-primary {
+	background: var(--color-primary);
+	color: var(--color-on-primary);
+}
+
 .nav-link {
 	display: inline-flex;
 	align-items: center;
 	padding: var(--space-2) var(--space-4);
 	text-decoration: none;
-	font-weight: 700;
+	font-weight: 800;
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	font-size: var(--text-sm);
-	color: var(--color-on-surface-inverse);
+	letter-spacing: 0.06em;
+	font-size: 0.6875rem;
+	color: var(--color-muted-foreground-soft);
 	background: transparent;
 	border: none;
 	min-height: var(--touch-target-min);
@@ -344,12 +392,233 @@ code {
 
 .nav-link:hover {
 	background: rgba(255, 255, 255, 0.12);
+	color: var(--color-on-surface-inverse);
 }
 
 .nav-link.active {
 	background: var(--color-primary);
+	color: var(--color-on-primary);
 }
 
 .nav-link.active:hover {
-	filter: brightness(1.1);
+	background: var(--color-primary-hover);
+}
+
+/* ── Split poster/form screen layout ──────────────────────────────────────
+   The dominant pattern on every auth-adjacent screen in the prototype: a
+   colored/dark "poster" panel (eyebrow + giant uppercase headline +
+   supporting copy or step list) beside a plain white form panel, stacking
+   to one column on narrow viewports. Poster color is a modifier class
+   (.poster-ink / .poster-blue / .poster-amber) chosen per screen by the
+   prototype: ink for sign-in/pending, blue for home/join, amber for the
+   one-time admin-bootstrap step. */
+.split-screen {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	align-items: stretch;
+}
+@media (max-width: 760px) {
+	.split-screen {
+		grid-template-columns: 1fr;
+	}
+}
+
+.poster-panel {
+	padding: var(--space-8) var(--space-6);
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: var(--space-8);
+}
+.poster-panel.poster-ink {
+	background: var(--color-surface-inverse);
+	color: var(--color-on-surface-inverse);
+}
+.poster-panel.poster-blue {
+	background: var(--color-primary);
+	color: var(--color-on-primary);
+}
+.poster-panel.poster-amber {
+	background: var(--color-secondary);
+	color: var(--color-on-secondary);
+}
+
+.poster-eyebrow {
+	font-size: 0.6875rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	opacity: 0.75;
+}
+
+.poster-hero {
+	font-family: var(--font-display);
+	font-size: var(--text-hero);
+	font-weight: 900;
+	line-height: 0.92;
+	letter-spacing: -0.035em;
+	text-transform: uppercase;
+	margin: var(--space-3) 0 0;
+}
+
+.poster-footer {
+	border-top: 2px solid currentColor;
+	padding-top: var(--space-4);
+	font-size: var(--text-base);
+	line-height: 1.6;
+	max-width: 38ch;
+	opacity: 0.9;
+}
+
+.poster-steps {
+	display: flex;
+	flex-direction: column;
+	border-top: 2px solid currentColor;
+}
+.poster-step {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-3);
+	padding: var(--space-3) 0;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+	opacity: 0.55;
+}
+.poster-step.active {
+	opacity: 1;
+	font-weight: 700;
+}
+.poster-step-num {
+	font-size: var(--text-sm);
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+.form-panel {
+	padding: var(--space-8) var(--space-6);
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+.form-panel-inner {
+	max-width: 420px;
+	width: 100%;
+}
+
+/* ── Page header: numbered kicker + optional big live counter ───────────── */
+.page-kicker {
+	display: block;
+	font-size: 0.6875rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--color-muted-foreground);
+	margin: 0 0 var(--space-3) 0;
+}
+.page-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: var(--space-4);
+}
+.page-heading {
+	font-family: var(--font-display);
+	font-size: var(--text-page);
+	font-weight: 900;
+	line-height: 0.95;
+	letter-spacing: -0.03em;
+	text-transform: uppercase;
+	margin: 0;
+}
+.page-counter {
+	font-family: var(--font-display);
+	font-size: clamp(2.25rem, 1.5rem + 3vw, 3.5rem);
+	font-weight: 900;
+	line-height: 0.9;
+	letter-spacing: -0.04em;
+	color: var(--color-primary);
+}
+.page-hr {
+	height: 2px;
+	border: 0;
+	margin: var(--space-6) 0 0;
+	background: var(--color-foreground);
+}
+
+/* ── Grid-based row list (Classes / Teachers / Requests) ─────────────────
+   Replaces a literal <table> so grid-template-columns/areas can swap
+   between a desktop multi-column layout and a phone-stacked one per page,
+   which a <table>'s row/cell model can't do. Column widths are supplied
+   per-page via inline style (they differ per list), only the shared
+   visual treatment (dark header, hairline dividers) lives here. */
+.grid-table-header {
+	display: grid;
+	align-items: center;
+	gap: var(--space-1) var(--space-3);
+	padding: var(--space-3);
+	background: var(--color-surface-inverse);
+	color: var(--color-on-surface-inverse);
+}
+.grid-table-header span {
+	font-size: 0.625rem;
+	font-weight: 700;
+}
+.grid-table-row {
+	display: grid;
+	align-items: center;
+	gap: var(--space-2) var(--space-3);
+	padding: var(--space-3);
+	border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Custom checkbox row (guardian consent, guardian-email note, class
+   assignment chips) — a full-row clickable control with a square glyph,
+   matching the prototype's consent-step treatment, with a real
+   accessible checked state via the underlying (visually hidden) input. */
+.check-row {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	width: 100%;
+	padding: var(--space-3);
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--color-border);
+	font-size: var(--text-base);
+	line-height: 1.5;
+	color: var(--color-foreground);
+	text-align: left;
+	cursor: pointer;
+}
+.check-row:hover {
+	background: var(--color-primary-tint);
+}
+.check-row.checked {
+	background: var(--color-primary-tint);
+}
+.check-row input[type='checkbox'] {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	border: 0;
+}
+.check-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	flex: none;
+	margin-top: 1px;
+	border: 2px solid var(--color-foreground);
+	background: var(--color-background);
+	color: var(--color-on-primary);
+	font-size: 0.8125rem;
+	font-weight: 800;
+}
+.check-row.checked .check-glyph {
+	background: var(--color-primary);
+	border-color: var(--color-primary);
 }

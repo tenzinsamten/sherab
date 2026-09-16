@@ -11,4 +11,5 @@ export type JoinReceipt = {
 	name: string;
 	className: string;
 	classCode: string;
+	guardianEmail: string;
 };

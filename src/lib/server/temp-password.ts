@@ -58,19 +58,6 @@ export function studentUsernameToEmail(username: string): string {
 	return `${username}@${STUDENT_EMAIL_DOMAIN}`;
 }
 
-/**
- * Placeholder email for the ONE signUp() call the join wizard makes
- * (Code Map: "one signUp() call at the end with metadata, so no
- * partial/orphaned auth user exists mid-wizard"). The real username isn't
- * chosen until approval (it's deduped against already-*approved* students,
- * which a still-Pending registration isn't). The `pending-` prefix plus a
- * UUID can never collide with a slugified-name username, which is always
- * plain lowercase letters/digits (see slugifyRegistrationName).
- */
-export function generatePendingRegistrationEmail(): string {
-	return `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`;
-}
-
 /** Extracts the username back out of a synthesized student email. */
 export function studentEmailToUsername(email: string): string | null {
 	const suffix = `@${STUDENT_EMAIL_DOMAIN}`;

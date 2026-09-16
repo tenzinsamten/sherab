@@ -188,26 +188,32 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 	});
 
 	it('signup/+page.server.ts duplicate-email detection matches the real signUp response shape', async () => {
-		// This project's local Supabase config runs with `enable_confirmations
-		// = false` (autoconfirm), which is the shape (auth)/signup's route
-		// actually hits in dev/CI: a direct error, not the success-with-empty-
-		// identities shape used when email confirmation is required elsewhere.
-		// Both shapes are asserted against isDuplicateSignup here so a config
-		// change doesn't silently break duplicate detection.
+		// Local Supabase config now matches production's `enable_confirmations
+		// = true` (migration 0006's guardian-email-verification change): a
+		// duplicate email does NOT error from signUp() -- it returns success
+		// with the pre-existing user's REAL, non-empty identity (same id, same
+		// created_at) while silently resending a confirmation email and
+		// bumping updated_at. isDuplicateSignup() must detect this shape, not
+		// just a thrown error or an empty-identities array that this GoTrue
+		// version doesn't actually produce here.
 		const email = `story-1-1-signup-dup-${crypto.randomUUID()}@example.test`;
 		const client1 = anonClient();
 		const first = await client1.auth.signUp({ email, password: crypto.randomUUID() });
 		expect(first.error).toBeNull();
 		expect(isDuplicateSignup(first.error, first.data.user)).toBe(false);
 
+		// GoTrue enforces a real per-email resend cooldown (auth.email.max_frequency,
+		// "1s" locally) independent of enable_confirmations -- no real user could
+		// ever submit the identical email twice within the same millisecond, but
+		// this test does, so it must wait past that window first.
+		await new Promise((resolve) => setTimeout(resolve, 1100));
+
 		const client2 = anonClient();
 		const second = await client2.auth.signUp({ email, password: crypto.randomUUID() });
 
-		// Document the real shape this config produces so a future config
-		// change (e.g. enabling email confirmations) is caught here rather than
-		// silently breaking the route's duplicate-email error message.
-		expect(second.error).not.toBeNull();
-		expect(second.error?.status).toBe(422);
+		expect(second.error).toBeNull();
+		expect(second.data.user?.id).toBe(first.data.user?.id);
+		expect(second.data.user?.identities?.length).toBeGreaterThan(0);
 		expect(isDuplicateSignup(second.error, second.data.user)).toBe(true);
 	});
 
@@ -287,10 +293,17 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
  * (one signUp() call with metadata, matching handle_new_user()'s student
  * branch in migration 0002), then signs the anon client back out -- a
  * Pending student never keeps a session, per the join route's own comment.
+ * Uses the guardian's (real-shaped) email as the Auth account's email --
+ * migration 0006 replaced the old synthetic `pending-<uuid>@...` placeholder
+ * with this, so Supabase's own confirmation flow verifies it directly.
  */
-async function signUpStudent(params: { classId: string; registrationName: string }) {
+async function signUpStudent(params: {
+	classId: string;
+	registrationName: string;
+	guardianEmail?: string;
+}) {
 	const client = anonClient();
-	const email = `story-1-2-pending-${crypto.randomUUID()}@students.internal.invalid`;
+	const email = params.guardianEmail ?? `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
 	const guardianConsentGivenAt = new Date().toISOString();
 
 	const { data, error } = await client.auth.signUp({
@@ -309,6 +322,18 @@ async function signUpStudent(params: { classId: string; registrationName: string
 	await client.auth.signOut();
 
 	return { data, error, id: data.user?.id ?? null };
+}
+
+/**
+ * Simulates a guardian clicking their confirmation link, without a real
+ * mailbox: flips auth.users.email_confirmed_at via the Admin API, which the
+ * on_auth_user_email_confirmed trigger (migration 0006) mirrors onto
+ * profiles.email_confirmed_at -- the same signal
+ * requests/+page.server.ts's approve action gates on.
+ */
+async function confirmGuardianEmail(userId: string) {
+	const { error } = await adminClient.auth.admin.updateUserById(userId, { email_confirm: true });
+	if (error) throw new Error(`Failed to confirm guardian email: ${error.message}`);
 }
 
 describe.skipIf(!reachable)(
@@ -371,13 +396,20 @@ describe.skipIf(!reachable)(
 
 		it('student registers: signUp() lands a Pending profiles row, invisible to profiles_select_own for anyone else', async () => {
 			const registrationName = `Pending Student ${crypto.randomUUID().slice(0, 8)}`;
-			const { error, id } = await signUpStudent({ classId: classAId, registrationName });
+			const guardianEmail = `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
+			const { error, id } = await signUpStudent({
+				classId: classAId,
+				registrationName,
+				guardianEmail
+			});
 			expect(error).toBeNull();
 			expect(id).not.toBeNull();
 
 			const { data: profile } = await adminClient
 				.from('profiles')
-				.select('status, class_id, registration_name, display_name, team_id')
+				.select(
+					'status, class_id, registration_name, display_name, team_id, guardian_email, email_confirmed_at'
+				)
 				.eq('id', id!)
 				.single();
 
@@ -387,6 +419,9 @@ describe.skipIf(!reachable)(
 			// display_name defaults to registration_name (Implementation Notes).
 			expect(profile?.display_name).toBe(registrationName);
 			expect(profile?.team_id).toBeNull();
+			expect(profile?.guardian_email).toBe(guardianEmail);
+			// Nobody has clicked the confirmation link yet.
+			expect(profile?.email_confirmed_at).toBeNull();
 		});
 
 		it('a Pending student is invisible to an unrelated teacher (not assigned to their class)', async () => {
@@ -421,6 +456,7 @@ describe.skipIf(!reachable)(
 		it('teacher approves: teacherA (assigned to the class) can move Pending -> approved with a team, generating real sign-in credentials', async () => {
 			const registrationName = `Approved Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
+			await confirmGuardianEmail(id!);
 
 			// Mirrors requests/+page.server.ts's approve action's real order:
 			// generate + assign the auth credentials FIRST, then flip
@@ -490,6 +526,7 @@ describe.skipIf(!reachable)(
 		it('team_id is settable only once: a second attempt to change it is rejected for every caller, including an admin', async () => {
 			const registrationName = `Team Once Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
+			await confirmGuardianEmail(id!);
 
 			const { error: approveError } = await teacherA.client
 				.from('profiles')
@@ -581,9 +618,94 @@ describe.skipIf(!reachable)(
 			expect(stillPending?.status).toBe('pending');
 		});
 
+		it('assigned teacher attempts approval before the guardian confirms: the WITH CHECK gate rejects it with a real RLS error', async () => {
+			const registrationName = `Unconfirmed Student ${crypto.randomUUID().slice(0, 8)}`;
+			const { id } = await signUpStudent({ classId: classAId, registrationName });
+			// Deliberately no confirmGuardianEmail() call -- email_confirmed_at
+			// stays null. Unlike the unassigned-teacher case above (where the
+			// USING clause itself filters the row out, producing zero rows with
+			// no error), teacherA IS assigned and the row IS pending, so USING
+			// passes -- only the WITH CHECK added by migration 0006 fails, which
+			// Postgres surfaces as an explicit 42501 permission-denied error,
+			// not a silent empty result. This is exactly why
+			// requests/+page.server.ts's approve action pre-checks
+			// email_confirmed_at itself before ever reaching this update.
+			const { data, error } = await teacherA.client
+				.from('profiles')
+				.update({
+					status: 'approved',
+					team_id: teamId,
+					reviewed_by: teacherA.id,
+					reviewed_at: new Date().toISOString()
+				})
+				.eq('id', id!)
+				.select('id');
+
+			expect(error).not.toBeNull();
+			expect(error?.code).toBe('42501');
+			expect(data).toBeNull();
+
+			const { data: stillPending } = await adminClient
+				.from('profiles')
+				.select('status')
+				.eq('id', id!)
+				.single();
+			expect(stillPending?.status).toBe('pending');
+		});
+
+		it('rejecting an unconfirmed registration still succeeds -- confirmation only gates approval, not rejection', async () => {
+			const registrationName = `Reject Unconfirmed Student ${crypto.randomUUID().slice(0, 8)}`;
+			const { id } = await signUpStudent({ classId: classAId, registrationName });
+
+			const { data, error } = await teacherA.client
+				.from('profiles')
+				.update({
+					status: 'rejected',
+					reviewed_by: teacherA.id,
+					reviewed_at: new Date().toISOString()
+				})
+				.eq('id', id!)
+				.select('status')
+				.single();
+
+			expect(error).toBeNull();
+			expect(data?.status).toBe('rejected');
+		});
+
+		it('a second child registered by the same guardian while the first is still pending hits the real Auth email-uniqueness collision (isDuplicateSignup empty-identities shape)', async () => {
+			const guardianEmail = `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
+
+			const child1 = await signUpStudent({
+				classId: classAId,
+				registrationName: `Sibling One ${crypto.randomUUID().slice(0, 6)}`,
+				guardianEmail
+			});
+			expect(child1.error).toBeNull();
+
+			// GoTrue enforces a real per-email resend cooldown (auth.email.max_frequency)
+			// independent of the email-uniqueness collision this test is actually
+			// exercising -- wait past it first, same as the Story 1-1 dup-shape test.
+			await new Promise((resolve) => setTimeout(resolve, 1100));
+
+			// Same guardian email, different child, while child1 is still
+			// pending/unconfirmed -- Supabase Auth's email-uniqueness constraint
+			// collides. This is the deliberate, narrow, deferred limitation
+			// documented in deferred-work.md: it self-resolves once child1 is
+			// approved (their auth email flips to the synthetic username
+			// address, freeing the guardian's email for reuse).
+			const child2 = await signUpStudent({
+				classId: classAId,
+				registrationName: `Sibling Two ${crypto.randomUUID().slice(0, 6)}`,
+				guardianEmail
+			});
+
+			expect(isDuplicateSignup(child2.error, child2.data.user)).toBe(true);
+		});
+
 		it("admin approves as a backup path for a class the admin didn't create/isn't assigned to", async () => {
 			const registrationName = `Admin Backup Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
+			await confirmGuardianEmail(id!);
 
 			const { data, error } = await admin.client
 				.from('profiles')
@@ -753,6 +875,7 @@ describe.skipIf(!reachable)(
 
 			const student1 = await signUpStudent({ classId: classAId, registrationName: dupName });
 			expect(student1.error).toBeNull();
+			await confirmGuardianEmail(student1.id!);
 
 			// Approved before student2 registers -- otherwise
 			// profiles_open_student_registration_unique would block a second
@@ -761,6 +884,7 @@ describe.skipIf(!reachable)(
 
 			const student2 = await signUpStudent({ classId: classAId, registrationName: dupName });
 			expect(student2.error).toBeNull();
+			await confirmGuardianEmail(student2.id!);
 
 			// Deliberately an EMPTY set, not a fresh query of already-assigned
 			// usernames -- generateUniqueStudentUsername therefore proposes the

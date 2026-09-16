@@ -3,9 +3,9 @@
 	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { locales, localizeHref } from '$lib/paraglide/runtime';
+	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import favicon from '$lib/assets/favicon.svg';
+	import navMark from '$lib/assets/logo-seal-blue.png';
 
 	let { children, data } = $props();
 
@@ -14,16 +14,24 @@
 	}
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<link rel="icon" type="image/png" href="/favicon-32.png" />
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+</svelte:head>
 
 <nav
 	style="display:flex; align-items:center; gap: var(--space-2); padding: var(--space-3) var(--space-6); background: var(--color-surface-inverse); border-bottom: 1px solid rgba(255, 255, 255, 0.25);"
 >
 	<a
 		href={resolve('/')}
-		style="font-family: var(--font-display); text-transform:uppercase; letter-spacing:-0.01em; color: var(--color-on-surface-inverse); text-decoration: none; margin-right: var(--space-4);"
+		style="display:flex; align-items:center; gap: var(--space-2); font-family: var(--font-display); font-weight: 900; text-transform:uppercase; letter-spacing:-0.02em; color: var(--color-on-surface-inverse); text-decoration: none; margin-right: var(--space-4);"
 	>
+		<img src={navMark} alt="" width="28" height="28" style="display:block;" />
 		Sherab
+		<span
+			style="font-variant-numeric: tabular-nums; font-size: 0.625rem; letter-spacing: 0.1em; color: var(--color-muted-foreground-soft); font-weight: 400; text-transform: none;"
+			>v0.1</span
+		>
 	</a>
 	{#if data.profile}
 		{#if data.profile.role === 'admin'}
@@ -135,8 +143,23 @@
 	{@render children()}
 </main>
 
-<div style="display:none">
+<div
+	style="display:flex; flex-wrap:wrap; gap: var(--space-4); padding: var(--space-2) var(--space-6); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground); font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-muted-foreground);"
+>
+	<span aria-hidden="true">{m.footer_locale_label()}</span>
 	{#each locales as locale (locale)}
-		<a href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}>{locale}</a>
+		{@const active = getLocale() === locale}
+		<a
+			href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}
+			lang={locale}
+			aria-current={active ? 'true' : undefined}
+			style="color: {active
+				? 'var(--color-primary)'
+				: 'var(--color-muted-foreground)'}; font-weight: {active
+				? 700
+				: 400}; text-decoration: none;"
+		>
+			{locale}
+		</a>
 	{/each}
 </div>

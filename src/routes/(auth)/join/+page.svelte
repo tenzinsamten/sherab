@@ -14,6 +14,7 @@
 	let resolvedClass = $state<{ id: string; name: string } | null>(null);
 
 	let registrationName = $state('');
+	let guardianEmail = $state('');
 	let guardianConsent = $state(false);
 	let submitting = $state(false);
 
@@ -55,111 +56,155 @@
 	<title>{m.join_heading()} — Sherab</title>
 </svelte:head>
 
-<div class="card" style="max-width: 480px; margin: var(--space-6) auto;">
-	<p class="section-label">{m.join_section_label()}</p>
-	<h1 style="font-size: var(--text-2xl); margin-top: 0;">{m.join_heading()}</h1>
+<div class="split-screen">
+	<div class="poster-panel poster-blue">
+		<div>
+			<p class="poster-eyebrow">{m.join_section_label()}</p>
+			<h1 class="poster-hero">{m.join_heading()}</h1>
+		</div>
+		<p class="sr-only" aria-live="polite">{m.join_step_progress({ step: `${step}` })}</p>
+		<ol
+			style="list-style: none; padding: 0; margin: 0; display:flex; flex-direction:column;"
+			class="poster-steps"
+			aria-hidden="true"
+		>
+			<li class="poster-step" class:active={step === 1}>
+				<span class="poster-step-num">01</span>
+				<span>{m.join_code_label()}</span>
+			</li>
+			<li class="poster-step" class:active={step === 2}>
+				<span class="poster-step-num">02</span>
+				<span>{m.join_name_label()}</span>
+			</li>
+			<li class="poster-step" class:active={step === 3}>
+				<span class="poster-step-num">03</span>
+				<span>{m.join_consent_checkbox_label()}</span>
+			</li>
+		</ol>
+	</div>
+	<div class="form-panel">
+		<div class="form-panel-inner">
+			{#if form?.error}
+				<p class="banner-error" role="alert">{form.error}</p>
+			{/if}
 
-	{#if form?.error}
-		<p class="banner-error" role="alert">{form.error}</p>
-	{/if}
+			{#if step === 1}
+				<div class="field">
+					<label for="classCode">{m.join_code_label()}</label>
+					<input
+						id="classCode"
+						type="text"
+						required
+						autocomplete="off"
+						aria-invalid={classCodeError ? 'true' : undefined}
+						bind:value={classCode}
+						oninput={() => {
+							classCode = classCode.toUpperCase();
+							classCodeError = '';
+						}}
+					/>
+					{#if classCodeError}
+						<p class="field-error">{classCodeError}</p>
+					{/if}
+				</div>
+				<button
+					class="btn"
+					style="width:100%; justify-content:flex-start;"
+					type="button"
+					disabled={checkingCode}
+					onclick={checkClassCode}
+				>
+					{checkingCode ? m.join_checking() : m.join_continue()}
+				</button>
+			{:else if step === 2 && resolvedClass}
+				<p style="color: var(--color-primary); font-weight:700;">
+					{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}
+				</p>
+				<div class="field">
+					<label for="registrationName">{m.join_name_label()}</label>
+					<input
+						id="registrationName"
+						type="text"
+						required
+						autocomplete="name"
+						bind:value={registrationName}
+					/>
+				</div>
+				<p style="color: var(--color-muted-foreground); font-size: var(--text-sm);">
+					{m.join_name_note()}
+				</p>
+				<div style="display:flex; gap: var(--space-2); margin-top: var(--space-4);">
+					<button
+						class="btn"
+						style="flex:1; justify-content:flex-start;"
+						type="button"
+						disabled={!registrationName.trim()}
+						onclick={goToConsentStep}
+					>
+						{m.join_continue()}
+					</button>
+					<button class="btn btn-outline" type="button" onclick={goBack}>{m.join_back()}</button>
+				</div>
+			{:else if step === 3 && resolvedClass}
+				<form
+					method="POST"
+					action="?/register"
+					use:enhance={() => {
+						submitting = true;
+						return async ({ update }) => {
+							await update();
+							submitting = false;
+						};
+					}}
+				>
+					<input type="hidden" name="classId" value={resolvedClass.id} />
+					<input type="hidden" name="className" value={resolvedClass.name} />
+					<input type="hidden" name="classCode" value={classCode} />
+					<input type="hidden" name="registrationName" value={registrationName} />
 
-	<p class="sr-only" aria-live="polite">{m.join_step_progress({ step: `${step}` })}</p>
-	<ol
-		style="list-style: none; padding: 0; margin: 0 0 var(--space-4) 0; display:flex; gap: var(--space-3);"
-		aria-hidden="true"
-	>
-		<li style="opacity:{step === 1 ? 1 : 0.5}; font-weight:700;">01</li>
-		<li style="opacity:{step === 2 ? 1 : 0.5}; font-weight:700;">02</li>
-		<li style="opacity:{step === 3 ? 1 : 0.5}; font-weight:700;">03</li>
-	</ol>
+					<div class="field">
+						<label for="guardianEmail">{m.join_guardian_email_label()}</label>
+						<input
+							id="guardianEmail"
+							name="guardianEmail"
+							type="email"
+							required
+							autocomplete="email"
+							bind:value={guardianEmail}
+						/>
+					</div>
+					<p style="color: var(--color-muted-foreground); font-size: var(--text-sm);">
+						{m.join_guardian_email_note()}
+					</p>
 
-	{#if step === 1}
-		<div class="field">
-			<label for="classCode">{m.join_code_label()}</label>
-			<input
-				id="classCode"
-				type="text"
-				required
-				autocomplete="off"
-				aria-invalid={classCodeError ? 'true' : undefined}
-				bind:value={classCode}
-				oninput={() => {
-					classCode = classCode.toUpperCase();
-					classCodeError = '';
-				}}
-			/>
-			{#if classCodeError}
-				<p class="field-error">{classCodeError}</p>
+					<p id="joinConsentNotice" style="color: var(--color-muted-foreground);">
+						{m.join_consent_notice()}
+					</p>
+					<label class="check-row" class:checked={guardianConsent}>
+						<input
+							type="checkbox"
+							name="guardianConsent"
+							required
+							aria-describedby="joinConsentNotice"
+							bind:checked={guardianConsent}
+						/>
+						<span class="check-glyph" aria-hidden="true">{guardianConsent ? '✓' : ''}</span>
+						<span>{m.join_consent_checkbox_label()}</span>
+					</label>
+
+					<div style="display:flex; gap: var(--space-2); margin-top: var(--space-4);">
+						<button
+							class="btn"
+							style="flex:1; justify-content:flex-start;"
+							type="submit"
+							disabled={!guardianConsent || !guardianEmail.trim() || submitting}
+						>
+							{m.join_submit()}
+						</button>
+						<button class="btn btn-outline" type="button" onclick={goBack}>{m.join_back()}</button>
+					</div>
+				</form>
 			{/if}
 		</div>
-		<button class="btn" type="button" disabled={checkingCode} onclick={checkClassCode}>
-			{checkingCode ? m.join_checking() : m.join_continue()}
-		</button>
-	{:else if step === 2 && resolvedClass}
-		<p style="color: var(--color-muted-foreground);">
-			{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}
-		</p>
-		<div class="field">
-			<label for="registrationName">{m.join_name_label()}</label>
-			<input
-				id="registrationName"
-				type="text"
-				required
-				autocomplete="name"
-				bind:value={registrationName}
-			/>
-		</div>
-		<p style="color: var(--color-muted-foreground); font-size: var(--text-sm);">
-			{m.join_name_note()}
-		</p>
-		<div style="display:flex; gap: var(--space-2);">
-			<button class="btn btn-outline" type="button" onclick={goBack}>{m.join_back()}</button>
-			<button
-				class="btn"
-				type="button"
-				disabled={!registrationName.trim()}
-				onclick={goToConsentStep}
-			>
-				{m.join_continue()}
-			</button>
-		</div>
-	{:else if step === 3 && resolvedClass}
-		<form
-			method="POST"
-			action="?/register"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					await update();
-					submitting = false;
-				};
-			}}
-		>
-			<input type="hidden" name="classId" value={resolvedClass.id} />
-			<input type="hidden" name="className" value={resolvedClass.name} />
-			<input type="hidden" name="classCode" value={classCode} />
-			<input type="hidden" name="registrationName" value={registrationName} />
-
-			<p id="joinConsentNotice" style="color: var(--color-muted-foreground);">
-				{m.join_consent_notice()}
-			</p>
-			<label style="display:flex; align-items:flex-start; gap: var(--space-2);">
-				<input
-					type="checkbox"
-					name="guardianConsent"
-					required
-					aria-describedby="joinConsentNotice"
-					bind:checked={guardianConsent}
-				/>
-				<span>{m.join_consent_checkbox_label()}</span>
-			</label>
-
-			<div style="display:flex; gap: var(--space-2); margin-top: var(--space-4);">
-				<button class="btn btn-outline" type="button" onclick={goBack}>{m.join_back()}</button>
-				<button class="btn" type="submit" disabled={!guardianConsent || submitting}>
-					{m.join_submit()}
-				</button>
-			</div>
-		</form>
-	{/if}
+	</div>
 </div>

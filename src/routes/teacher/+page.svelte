@@ -10,11 +10,14 @@
 	<title>{m.teacher_my_classes_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="section-label">{m.teacher_section_label()}</p>
-<h1>{m.teacher_my_classes_heading()}</h1>
+<p class="page-kicker">{m.teacher_section_label()}</p>
+<h1 class="page-heading">{m.teacher_my_classes_heading()}</h1>
+<hr class="page-hr" />
 
 {#if data.loadError}
-	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
+	<p class="banner-error" role="alert" style="margin-top: var(--space-6);">
+		{m.load_error_generic()}
+	</p>
 {/if}
 {#if data.classes.length === 0}
 	<div class="card">

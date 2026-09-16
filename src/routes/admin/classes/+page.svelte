@@ -10,8 +10,12 @@
 	<title>{m.classes_heading()} — Sherab Admin</title>
 </svelte:head>
 
-<p class="section-label">{m.classes_section_label()}</p>
-<h1>{m.classes_heading()}</h1>
+<p class="page-kicker">{m.classes_section_label()}</p>
+<div class="page-header">
+	<h1 class="page-heading">{m.classes_heading()}</h1>
+	<span class="page-counter">{String(data.classes.length).padStart(2, '0')}</span>
+</div>
+<hr class="page-hr" />
 
 {#if data.loadError}
 	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
@@ -25,10 +29,16 @@
 	</p>
 {/if}
 
-<div class="card" style="margin-bottom: var(--space-6);">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">{m.classes_create_heading()}</h2>
-	<form method="POST" action="?/create" use:enhance>
-		<div class="field">
+<div
+	style="display:flex; flex-wrap:wrap; align-items:flex-end; gap: var(--space-3); padding: var(--space-6) 0; border-bottom: 1px solid var(--color-border);"
+>
+	<form
+		method="POST"
+		action="?/create"
+		use:enhance
+		style="flex:1; min-width:220px; display:flex; flex-wrap:wrap; align-items:flex-end; gap: var(--space-3);"
+	>
+		<div class="field" style="flex:1; min-width:220px; margin-bottom:0;">
 			<label for="name">{m.classes_name_label()}</label>
 			<input id="name" name="name" type="text" required value={form?.name ?? ''} />
 		</div>
@@ -36,28 +46,22 @@
 	</form>
 </div>
 
-<div class="card">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">{m.classes_all_heading()}</h2>
-	{#if data.classes.length === 0}
-		<p style="color: var(--color-muted-foreground);">{m.classes_empty()}</p>
-	{:else}
-		<table>
-			<thead>
-				<tr>
-					<th>{m.classes_col_name()}</th>
-					<th>{m.classes_col_code()}</th>
-					<th>{m.classes_col_created()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.classes as cls (cls.id)}
-					<tr>
-						<td>{cls.name}</td>
-						<td><code>{cls.code}</code></td>
-						<td>{new Date(cls.created_at).toLocaleDateString()}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
-</div>
+<p class="section-label" style="margin-top: var(--space-6);">{m.classes_all_heading()}</p>
+{#if data.classes.length === 0}
+	<p style="color: var(--color-muted-foreground);">{m.classes_empty()}</p>
+{:else}
+	<div class="grid-table-header" style="grid-template-columns: minmax(0,1fr) 120px 140px;">
+		<span>{m.classes_col_name()}</span>
+		<span>{m.classes_col_code()}</span>
+		<span>{m.classes_col_created()}</span>
+	</div>
+	{#each data.classes as cls (cls.id)}
+		<div class="grid-table-row" style="grid-template-columns: minmax(0,1fr) 120px 140px;">
+			<span style="font-weight:600;">{cls.name}</span>
+			<code>{cls.code}</code>
+			<span style="color: var(--color-muted-foreground); font-size: var(--text-sm);"
+				>{new Date(cls.created_at).toLocaleDateString()}</span
+			>
+		</div>
+	{/each}
+{/if}

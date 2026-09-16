@@ -15,7 +15,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 ## Capabilities
 
 - **CAP-1**
-  - **intent:** Admin creates and verifies teacher accounts and assigns them to classes (many-to-many); students self-register with name + class code, give guardian consent, and land in a Pending state until a class teacher or the admin approves them.
+  - **intent:** Admin creates and verifies teacher accounts and assigns them to classes (many-to-many); students self-register with name + class code, give guardian consent, and provide a guardian email that must be confirmed (via Supabase Auth's own confirmation flow) before a class teacher or the admin can approve them into their Pending-gated state.
   - **success:** An unapproved student is invisible on every roster and leaderboard and cannot log any progress; once approved, they appear everywhere and can act. See `roles-and-permissions.md`.
 
 - **CAP-2**
@@ -49,7 +49,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 ## Constraints
 
 - Teachers are created and verified admin-side only — no teacher self-registration.
-- Student registration requires guardian consent and Pending-state gating before any visibility or activity, to guard against dummy/duplicate sign-ups.
+- Student registration requires guardian consent, a confirmed guardian email, and Pending-state gating before any visibility or activity, to guard against dummy/duplicate sign-ups. Approval is blocked until the guardian confirms; rejection is not.
 - Visibility is class-scoped, not teacher-owned: every teacher assigned to a class shares full view/edit of that class; a teacher sees nothing for classes they're not assigned to.
 - Skill-status changes retain full history, not just the current value, so a substitute teacher has continuity.
 - Homework Done (self-report) alone is sufficient for a streak; Reviewed is a separate, teacher-confirmed state for skill-mastery history and does not gate the streak.
@@ -87,4 +87,4 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 ## Open Questions
 
 - Badge milestone step size (every 5 vs. every 10 attendances/homework-done) is explicitly left unresolved in the source — needs confirmation once building.
-- GDPR-specific obligations beyond the described consent-at-registration and admin-approved-deletion flow (data controller identity, retention limits, breach notification) are unaddressed, and this app stores EU minors' personal data — needs a compliance decision before real student data is stored.
+- GDPR-specific obligations beyond the described consent-at-registration and admin-approved-deletion flow (data controller identity, retention limits, breach notification) are unaddressed, and this app stores EU minors' personal data — needs a compliance decision before real student data is stored. Sharper now that registration also collects and retains a guardian's real email address (an adult's personal data, processed to verify a minor's registration) on the student's profile.

@@ -25,9 +25,15 @@
 	<title>{m.requests_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="section-label">{m.requests_section_label()}</p>
-<h1>{m.requests_heading()}</h1>
-<p style="color: var(--color-muted-foreground);">
+<p class="page-kicker">
+	{data.role === 'admin' ? m.requests_kicker_admin() : m.requests_kicker_teacher()}
+</p>
+<div class="page-header">
+	<h1 class="page-heading">{m.requests_heading()}</h1>
+	<span class="page-counter">{String(data.pending.length).padStart(2, '0')}</span>
+</div>
+<hr class="page-hr" />
+<p style="color: var(--color-muted-foreground); max-width: 56ch; margin-top: var(--space-4);">
 	{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
 </p>
 
@@ -41,123 +47,123 @@
 	<p class="banner-success" role="status" aria-live="polite">{outcomeMessage}</p>
 {/if}
 
-<div class="card" style="margin-bottom: var(--space-6);">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">{m.requests_pending_heading()}</h2>
-
-	{#if data.pending.length === 0}
-		<div style="border: var(--border-clay-quiet); padding: var(--space-4);">
-			<p style="margin:0; font-weight:700;">{m.requests_empty_heading()}</p>
-			<p style="margin: var(--space-1) 0 0 0; color: var(--color-muted-foreground);">
-				{m.requests_empty_body()}
-			</p>
-		</div>
-	{:else}
-		<ul style="list-style:none; padding:0; margin:0;">
-			{#each data.pending as student (student.id)}
-				<li
-					style="border-bottom: 1px solid var(--color-border); padding: var(--space-3) 0; display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-3);"
+{#if data.pending.length === 0}
+	<div
+		style="margin-top: var(--space-6); padding: var(--space-6); border: 2px solid var(--color-border);"
+	>
+		<p style="margin:0; font-weight:700; font-size: var(--text-lg);">
+			{m.requests_empty_heading()}
+		</p>
+		<p style="margin: var(--space-1) 0 0 0; color: var(--color-muted-foreground);">
+			{m.requests_empty_body()}
+		</p>
+	</div>
+{:else}
+	<div
+		class="grid-table-header"
+		style="grid-template-columns: minmax(0,1fr) auto; margin-top: var(--space-6);"
+	>
+		<span>{m.requests_col_student()}</span>
+		<span></span>
+	</div>
+	{#each data.pending as student (student.id)}
+		<div class="grid-table-row" style="grid-template-columns: minmax(0,1fr) auto;">
+			<div>
+				<p
+					style="margin:0; font-weight:700; font-size: var(--text-lg); display:flex; align-items:center; gap: var(--space-2);"
 				>
-					<div style="flex: 1 1 220px;">
-						<p style="margin:0; font-weight:700;">{student.registrationName}</p>
-						<p style="margin:0; color: var(--color-muted-foreground); font-size: var(--text-sm);">
-							{#if student.class}
-								<code>{student.class.code}</code> · {student.class.name} ·
-							{/if}
-							{new Date(student.createdAt).toLocaleDateString()}
-						</p>
-					</div>
+					{student.registrationName}
+					{#if !student.emailConfirmedAt}
+						<span class="tag">{m.requests_unverified_badge()}</span>
+					{/if}
+				</p>
+				<p style="margin:0; color: var(--color-muted-foreground); font-size: var(--text-sm);">
+					{#if student.class}
+						<code>{student.class.code}</code> · {student.class.name} ·
+					{/if}
+					{new Date(student.createdAt).toLocaleDateString()}
+				</p>
+			</div>
 
-					<form
-						method="POST"
-						action="?/approve"
-						use:enhance
-						style="display:flex; align-items:center; gap: var(--space-2);"
+			<div style="display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-2);">
+				<form
+					method="POST"
+					action="?/approve"
+					use:enhance
+					style="display:flex; align-items:center; gap: var(--space-2);"
+				>
+					<input type="hidden" name="studentId" value={student.id} />
+					<input type="hidden" name="studentName" value={student.registrationName} />
+					<label style="display:flex; flex-direction:column; gap:2px;">
+						<span class="section-label" style="margin:0;">{m.requests_team_label()}</span>
+						<select name="teamId" required disabled={data.teams.length === 0}>
+							<option value="" disabled selected>{m.requests_team_placeholder()}</option>
+							{#each data.teams as team (team.id)}
+								<option value={team.id}>{team.name}</option>
+							{/each}
+						</select>
+					</label>
+					<button
+						class="btn"
+						type="submit"
+						disabled={data.teams.length === 0 || !student.emailConfirmedAt}
 					>
-						<input type="hidden" name="studentId" value={student.id} />
-						<input type="hidden" name="studentName" value={student.registrationName} />
-						<label style="display:flex; flex-direction:column; gap:2px;">
-							<span
-								style="font-size: 0.6875rem; letter-spacing:0.06em; text-transform:uppercase; color: var(--color-muted-foreground);"
-								>{m.requests_team_label()}</span
-							>
-							<select name="teamId" required disabled={data.teams.length === 0}>
-								<option value="" disabled selected>{m.requests_team_placeholder()}</option>
-								{#each data.teams as team (team.id)}
-									<option value={team.id}>{team.name}</option>
-								{/each}
-							</select>
-						</label>
-						<button class="btn" type="submit" disabled={data.teams.length === 0}>
-							{m.requests_approve()}
-						</button>
-					</form>
+						{m.requests_approve()}
+					</button>
+				</form>
 
-					<form method="POST" action="?/reject" use:enhance>
-						<input type="hidden" name="studentId" value={student.id} />
-						<input type="hidden" name="studentName" value={student.registrationName} />
-						<button class="btn btn-outline" type="submit">{m.requests_reject()}</button>
-					</form>
-				</li>
-			{/each}
-		</ul>
-		{#if data.teams.length === 0}
-			<p class="field-error" style="margin-top: var(--space-3);">{m.requests_no_teams_note()}</p>
-		{/if}
+				<form method="POST" action="?/reject" use:enhance>
+					<input type="hidden" name="studentId" value={student.id} />
+					<input type="hidden" name="studentName" value={student.registrationName} />
+					<button class="btn btn-outline" type="submit">{m.requests_reject()}</button>
+				</form>
+			</div>
+		</div>
+	{/each}
+	{#if data.teams.length === 0}
+		<p class="field-error" style="margin-top: var(--space-3);">{m.requests_no_teams_note()}</p>
 	{/if}
-</div>
+{/if}
 
-<div class="card">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">
+<div
+	style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap: var(--space-3); margin-top: var(--space-8); padding: var(--space-3); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground);"
+>
+	<span class="section-label" style="margin:0;">
 		{m.requests_decided_heading({
 			approved: data.decided.filter((s) => s.status === 'approved').length,
 			rejected: data.decided.filter((s) => s.status === 'rejected').length
 		})}
-	</h2>
-
-	{#if data.decided.length === 0}
-		<p style="color: var(--color-muted-foreground);">{m.requests_decided_empty()}</p>
-	{:else}
-		<ul style="list-style:none; padding:0; margin:0;">
-			{#each data.decided as student (student.id)}
-				<li
-					style="border-bottom: 1px solid var(--color-border); padding: var(--space-3) 0; display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-3);"
-				>
-					<div style="flex: 1 1 220px;">
-						<p
-							style="margin:0; font-weight:700; color: {student.status === 'rejected'
-								? 'var(--color-muted-foreground)'
-								: 'inherit'};"
-						>
-							{student.registrationName}
-						</p>
-						<p style="margin:0; color: var(--color-muted-foreground); font-size: var(--text-sm);">
-							{#if student.class}
-								<code>{student.class.code}</code> · {student.class.name} ·
-							{/if}
-							{student.reviewedAt ? new Date(student.reviewedAt).toLocaleDateString() : ''}
-						</p>
-					</div>
-
-					{#if student.status === 'approved'}
-						<span
-							style="background: var(--color-primary); color: var(--color-on-primary); font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size: var(--text-sm); padding: var(--space-1) var(--space-3);"
-						>
-							{m.requests_status_approved()}
-						</span>
-					{:else}
-						<span
-							style="background: var(--color-muted); color: var(--color-muted-foreground); font-weight:700; text-transform:uppercase; letter-spacing:0.04em; font-size: var(--text-sm); padding: var(--space-1) var(--space-3);"
-						>
-							{m.requests_status_rejected()}
-						</span>
-						<form method="POST" action="?/clearRejected" use:enhance>
-							<input type="hidden" name="studentId" value={student.id} />
-							<input type="hidden" name="studentName" value={student.registrationName} />
-							<button class="btn btn-outline" type="submit">{m.requests_clear_rejected()}</button>
-						</form>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-	{/if}
+	</span>
 </div>
+
+{#if data.decided.length === 0}
+	<p style="color: var(--color-muted-foreground); margin-top: var(--space-3);">
+		{m.requests_decided_empty()}
+	</p>
+{:else}
+	{#each data.decided as student (student.id)}
+		<div class="grid-table-row" style="grid-template-columns: auto minmax(0,1fr) auto;">
+			{#if student.status === 'approved'}
+				<span class="tag tag-primary">{m.requests_status_approved()}</span>
+			{:else}
+				<span class="tag">{m.requests_status_rejected()}</span>
+			{/if}
+			<span
+				style="font-weight:600; color: {student.status === 'rejected'
+					? 'var(--color-muted-foreground)'
+					: 'inherit'};"
+			>
+				{student.registrationName}
+			</span>
+			{#if student.status === 'rejected'}
+				<form method="POST" action="?/clearRejected" use:enhance>
+					<input type="hidden" name="studentId" value={student.id} />
+					<input type="hidden" name="studentName" value={student.registrationName} />
+					<button class="btn btn-outline" type="submit">{m.requests_clear_rejected()}</button>
+				</form>
+			{:else}
+				<span></span>
+			{/if}
+		</div>
+	{/each}
+{/if}

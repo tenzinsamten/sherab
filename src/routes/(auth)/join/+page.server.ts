@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { generatePendingRegistrationEmail } from '$lib/server/temp-password';
+import { isDuplicateSignup } from '$lib/server/signup-duplicate';
 import { JOIN_RECEIPT_COOKIE } from '$lib/server/join-receipt';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -19,9 +19,10 @@ export const actions: Actions = {
 		const className = String(formData.get('className') ?? '').trim();
 		const classCode = String(formData.get('classCode') ?? '').trim();
 		const registrationName = String(formData.get('registrationName') ?? '').trim();
+		const guardianEmail = String(formData.get('guardianEmail') ?? '').trim();
 		const guardianConsent = formData.get('guardianConsent') === 'on';
 
-		if (!classId || !registrationName) {
+		if (!classId || !registrationName || !guardianEmail) {
 			return fail(400, { error: m.join_error_missing_fields() });
 		}
 		if (!guardianConsent) {
@@ -48,8 +49,8 @@ export const actions: Actions = {
 
 		const guardianConsentGivenAt = new Date().toISOString();
 
-		const { error: signUpError } = await supabase.auth.signUp({
-			email: generatePendingRegistrationEmail(),
+		const { data, error: signUpError } = await supabase.auth.signUp({
+			email: guardianEmail,
 			password: crypto.randomUUID(),
 			options: {
 				data: {
@@ -77,6 +78,21 @@ export const actions: Actions = {
 			);
 		}
 
+		// With email confirmation required, a duplicate guardian email does
+		// NOT error from signUp() -- it returns success with a real-looking
+		// user whose identities array is empty (Supabase's own anti-
+		// enumeration behavior), so this must be checked before the
+		// signUpError branch below, or a second child registered by the same
+		// guardian while their first is still pending/unconfirmed would
+		// silently "succeed" with no confirmation email actually sent. This
+		// is a real limitation, not a bug to route around: it resolves
+		// itself once the first child is approved, since approval overwrites
+		// that profile's auth email to the synthetic username address,
+		// freeing the guardian's email for reuse (see deferred-work.md).
+		if (isDuplicateSignup(signUpError, data?.user ?? null)) {
+			return fail(400, { error: m.join_error_guardian_email_taken() });
+		}
+
 		if (signUpError) {
 			// The raw signUp() error is generic ("Database error saving new
 			// user", status 500, no distinguishing code) regardless of cause --
@@ -100,7 +116,7 @@ export const actions: Actions = {
 
 		cookies.set(
 			JOIN_RECEIPT_COOKIE,
-			JSON.stringify({ name: registrationName, className, classCode }),
+			JSON.stringify({ name: registrationName, className, classCode, guardianEmail }),
 			{
 				path: '/join/pending',
 				maxAge: 60 * 10,

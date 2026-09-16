@@ -10,8 +10,12 @@
 	<title>{m.teachers_heading()} — Sherab Admin</title>
 </svelte:head>
 
-<p class="section-label">{m.teachers_section_label()}</p>
-<h1>{m.teachers_heading()}</h1>
+<p class="page-kicker">{m.teachers_section_label()}</p>
+<div class="page-header">
+	<h1 class="page-heading">{m.teachers_heading()}</h1>
+	<span class="page-counter">{String(data.teachers.length).padStart(2, '0')}</span>
+</div>
+<hr class="page-hr" />
 
 {#if data.loadError}
 	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
@@ -25,8 +29,10 @@
 	</p>
 {/if}
 
-<div class="card" style="margin-bottom: var(--space-6);">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">{m.teachers_create_heading()}</h2>
+<div
+	style="max-width: 520px; padding: var(--space-6) 0; border-bottom: 1px solid var(--color-border);"
+>
+	<p class="section-label">{m.teachers_create_heading()}</p>
 	{#if data.classes.length === 0}
 		<p style="color: var(--color-muted-foreground);">{m.teachers_need_class_first()}</p>
 	{:else}
@@ -39,22 +45,18 @@
 				<label for="displayName">{m.teachers_display_name_label()}</label>
 				<input id="displayName" name="displayName" type="text" value={form?.displayName ?? ''} />
 			</div>
-			<fieldset class="field" style="border: none; padding: 0;">
-				<legend style="font-weight: 600; font-size: var(--text-sm);"
+			<fieldset style="border: none; padding: 0; margin: 0 0 var(--space-4);">
+				<legend class="section-label" style="margin-bottom: var(--space-2);"
 					>{m.teachers_assign_legend()}</legend
 				>
-				<div style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
+				<div style="border-top: 1px solid var(--color-border);">
 					{#each data.classes as cls (cls.id)}
-						<label
-							style="display:flex; align-items:center; gap: var(--space-1); border: var(--border-clay-quiet); border-radius: var(--radius-clay-quiet); padding: var(--space-2) var(--space-3);"
-						>
-							<input
-								type="checkbox"
-								name="classIds"
-								value={cls.id}
-								checked={form?.classIds?.includes(cls.id) ?? false}
-							/>
-							{cls.name} ({cls.code})
+						{@const checked = form?.classIds?.includes(cls.id) ?? false}
+						<label class="check-row" class:checked>
+							<input type="checkbox" name="classIds" value={cls.id} {checked} />
+							<span class="check-glyph" aria-hidden="true">{checked ? '✓' : ''}</span>
+							<span style="flex:1;">{cls.name}</span>
+							<code>{cls.code}</code>
 						</label>
 					{/each}
 				</div>
@@ -64,34 +66,27 @@
 	{/if}
 </div>
 
-<div class="card">
-	<h2 style="margin-top:0; font-size: var(--text-lg);">{m.teachers_all_heading()}</h2>
-	{#if data.teachers.length === 0}
-		<p style="color: var(--color-muted-foreground);">{m.teachers_empty()}</p>
-	{:else}
-		<table>
-			<thead>
-				<tr>
-					<th>{m.teachers_col_name()}</th>
-					<th>{m.teachers_col_email()}</th>
-					<th>{m.teachers_col_classes()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.teachers as teacher (teacher.id)}
-					<tr>
-						<td>{teacher.display_name ?? '—'}</td>
-						<td>{teacher.email}</td>
-						<td>
-							{#if teacher.classes.length === 0}
-								<span style="color: var(--color-muted-foreground);">{m.teachers_none()}</span>
-							{:else}
-								{teacher.classes.map((c) => `${c.name} (${c.code})`).join(', ')}
-							{/if}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
-</div>
+<p class="section-label" style="margin-top: var(--space-6);">{m.teachers_all_heading()}</p>
+{#if data.teachers.length === 0}
+	<p style="color: var(--color-muted-foreground);">{m.teachers_empty()}</p>
+{:else}
+	{#each data.teachers as teacher (teacher.id)}
+		<div
+			class="grid-table-row"
+			style="grid-template-columns: minmax(0,1.1fr) minmax(0,1.4fr) auto;"
+		>
+			<span style="font-weight:600;">{teacher.display_name ?? '—'}</span>
+			<span
+				style="color: var(--color-muted-foreground); font-size: var(--text-sm); overflow-wrap: anywhere;"
+				>{teacher.email}</span
+			>
+			<span>
+				{#if teacher.classes.length === 0}
+					<span style="color: var(--color-muted-foreground);">{m.teachers_none()}</span>
+				{:else}
+					{teacher.classes.map((c) => `${c.name} (${c.code})`).join(', ')}
+				{/if}
+			</span>
+		</div>
+	{/each}
+{/if}

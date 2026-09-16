@@ -18,14 +18,17 @@ export default defineConfig({
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
-			emitTsDeclarations: true
+			emitTsDeclarations: true,
+			// Default strategy (['cookie', 'globalVariable', 'baseLocale']) never
+			// checks the URL at all, so the locale-prefixed links localizeHref()
+			// generates (e.g. /de/...) were silently never honored -- 'url' must
+			// come first so an explicit locale link overrides a previously-set
+			// cookie; 'cookie' after that persists the choice across plain,
+			// unprefixed navigation (e.g. clicking "Sign in" -> /login).
+			strategy: ['url', 'cookie', 'baseLocale']
 		}),
 
 		// AD-1: SvelteKit serves the frontend as an installable PWA.
-		// Icons/screenshots are a design-system deliverable not yet produced
-		// (see Story 1-1 Implementation Notes) -- this wires up the
-		// registration/manifest plumbing so a later story can drop in real
-		// artwork without touching build config.
 		SvelteKitPWA({
 			registerType: 'autoUpdate',
 			manifest: {
@@ -35,7 +38,15 @@ export default defineConfig({
 				start_url: '/',
 				display: 'standalone',
 				background_color: '#ffffff',
-				theme_color: '#0b1330'
+				theme_color: '#0f172a',
+				// purpose: 'maskable' deliberately omitted -- the source art is
+				// full-bleed with no safe-zone padding, so Android's adaptive-icon
+				// circular mask would crop it; revisit once a padded export exists.
+				icons: [
+					{ src: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+					{ src: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+					{ src: '/favicon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+				]
 			}
 		})
 	],
