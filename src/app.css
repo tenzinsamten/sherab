@@ -307,6 +307,24 @@ code {
 	background: none;
 }
 
+/* Recurring-assignment indicator (Story 3-2 Code Map: "a small inline flex
+   row with the icon + label, not a new component system" -- first
+   badge/pill/chip-shaped class in this codebase, kept intentionally minimal
+   rather than a general chip system nothing else needs yet). */
+.badge-repeat {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	padding: 0.125rem var(--space-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-clay-quiet);
+	font-size: var(--text-sm);
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--color-muted-foreground);
+}
+
 .nav-link {
 	display: inline-flex;
 	align-items: center;

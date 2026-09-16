@@ -19,6 +19,7 @@ type HomeworkListItem = {
 	dueDate: string;
 	status: 'assigned' | 'done' | 'reviewed';
 	overdue: boolean;
+	isRecurring: boolean;
 };
 
 function addDays(isoDate: string, days: number): string {
@@ -118,12 +119,13 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		title: string;
 		skill_area: SkillArea;
 		reference_link: string | null;
+		recurrence_rule: unknown | null;
 	}[] = [];
 	let assignmentsError = false;
 	if (assignmentIds.length > 0) {
 		const { data, error: assignErr } = await supabase
 			.from('homework_assignments')
-			.select('id, title, skill_area, reference_link')
+			.select('id, title, skill_area, reference_link, recurrence_rule')
 			.in('id', assignmentIds);
 		assignments = data ?? [];
 		assignmentsError = Boolean(assignErr);
@@ -152,7 +154,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 				referenceLink: assignment.reference_link,
 				dueDate: instance.due_date,
 				status,
-				overdue: isOverdue(instance.due_date, entry, today)
+				overdue: isOverdue(instance.due_date, entry, today),
+				isRecurring: assignment.recurrence_rule !== null
 			};
 		})
 		.filter((item): item is HomeworkListItem => item !== null)

@@ -213,6 +213,10 @@ export type Database = {
 					skill_area: SkillArea;
 					reference_link: string | null;
 					recurrence_rule: unknown | null;
+					recurrence_start_date: string | null;
+					due_offset_days: number | null;
+					ends_on: string | null;
+					paused_at: string | null;
 					created_by: string | null;
 					created_at: string;
 				};
@@ -223,6 +227,10 @@ export type Database = {
 					skill_area: SkillArea;
 					reference_link?: string | null;
 					recurrence_rule?: unknown | null;
+					recurrence_start_date?: string | null;
+					due_offset_days?: number | null;
+					ends_on?: string | null;
+					paused_at?: string | null;
 					created_by?: string | null;
 					created_at?: string;
 				};
@@ -233,6 +241,10 @@ export type Database = {
 					skill_area?: SkillArea;
 					reference_link?: string | null;
 					recurrence_rule?: unknown | null;
+					recurrence_start_date?: string | null;
+					due_offset_days?: number | null;
+					ends_on?: string | null;
+					paused_at?: string | null;
 					created_by?: string | null;
 					created_at?: string;
 				};
@@ -327,6 +339,10 @@ export type Database = {
 			is_targeted_for_homework_assignment: {
 				Args: { target_assignment_id: string };
 				Returns: boolean;
+			};
+			generate_recurring_homework_instances: {
+				Args: Record<string, never>;
+				Returns: number;
 			};
 		};
 		Enums: {

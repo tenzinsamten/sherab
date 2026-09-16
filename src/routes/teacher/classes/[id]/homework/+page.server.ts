@@ -10,6 +10,7 @@ import type { SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
 const SKILL_AREAS: SkillArea[] = ['language', 'song', 'dance'];
+const MAX_DUE_OFFSET_DAYS = 365;
 
 type StudentRow = { id: string; displayName: string };
 
@@ -27,6 +28,14 @@ function isValidDate(value: string): boolean {
 	return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+/** Integer >= 0 (and <= a sanity bound) -- used for due_offset_days. */
+function parseNonNegativeInt(value: string): number | null {
+	if (!/^\d+$/.test(value)) return null;
+	const n = Number(value);
+	if (!Number.isSafeInteger(n) || n < 0 || n > MAX_DUE_OFFSET_DAYS) return null;
+	return n;
+}
+
 type AssignmentStudentView = {
 	studentId: string;
 	displayName: string;
@@ -36,18 +45,27 @@ type AssignmentStudentView = {
 	overdue: boolean;
 };
 
+type AssignmentInstanceView = {
+	id: string;
+	periodStart: string;
+	dueDate: string;
+	archivedAt: string | null;
+	students: AssignmentStudentView[];
+	doneCount: number;
+	reviewedCount: number;
+};
+
 type AssignmentView = {
 	id: string;
 	title: string;
 	skillArea: SkillArea;
 	referenceLink: string | null;
 	createdAt: string;
-	instanceId: string | null;
-	dueDate: string | null;
-	archivedAt: string | null;
-	students: AssignmentStudentView[];
-	doneCount: number;
-	reviewedCount: number;
+	isRecurring: boolean;
+	dueOffsetDays: number | null;
+	endsOn: string | null;
+	pausedAt: string | null;
+	instances: AssignmentInstanceView[];
 };
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -86,15 +104,21 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	const { data: assignmentRows, error: assignmentsError } = await supabase
 		.from('homework_assignments')
-		.select('id, title, skill_area, reference_link, created_at')
+		.select(
+			'id, title, skill_area, reference_link, recurrence_rule, due_offset_days, ends_on, paused_at, created_at'
+		)
 		.eq('class_id', classId)
 		.order('created_at', { ascending: false });
 
 	const assignmentIds = (assignmentRows ?? []).map((a) => a.id);
 
-	let instances: {
+	// A recurring assignment (Story 3-2) can have many instances -- unlike
+	// Story 3-1, which had exactly one per assignment -- so this is grouped
+	// as assignment_id -> instance[], not assignment_id -> instance.
+	let instanceRows: {
 		id: string;
 		assignment_id: string;
+		period_start: string;
 		due_date: string;
 		archived_at: string | null;
 	}[] = [];
@@ -103,14 +127,19 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	if (assignmentIds.length > 0) {
 		const { data, error: instErr } = await supabase
 			.from('homework_instances')
-			.select('id, assignment_id, due_date, archived_at')
+			.select('id, assignment_id, period_start, due_date, archived_at')
 			.in('assignment_id', assignmentIds);
-		instances = data ?? [];
+		instanceRows = data ?? [];
 		instancesError = Boolean(instErr);
 	}
 
-	const instanceByAssignmentId = new Map(instances.map((i) => [i.assignment_id, i]));
-	const instanceIds = instances.map((i) => i.id);
+	const instancesByAssignmentId = new Map<string, typeof instanceRows>();
+	for (const inst of instanceRows) {
+		const list = instancesByAssignmentId.get(inst.assignment_id) ?? [];
+		list.push(inst);
+		instancesByAssignmentId.set(inst.assignment_id, list);
+	}
+	const instanceIds = instanceRows.map((i) => i.id);
 
 	let history: HomeworkHistoryRow[] = [];
 	let historyError = false;
@@ -136,9 +165,11 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	// Students targeted per instance -- only the ones with an 'assigned' row
 	// for that instance, NOT every approved student unconditionally (a
-	// subset-targeted assignment must only list its actual targets; a
-	// whole-class assignment ends up listing every approved student because
-	// every one of them got an 'assigned' row at creation time).
+	// subset-targeted one-off assignment must only list its actual targets;
+	// a whole-class one-off, or any recurring instance -- which is always
+	// whole-class, generated fresh against the then-current approved roster
+	// -- ends up listing every student who had an 'assigned' row at that
+	// instance's generation time).
 	const targetedStudentIdsByInstance = new Map<string, Set<string>>();
 	for (const row of history) {
 		if (row.status !== 'assigned') continue;
@@ -150,30 +181,44 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	const today = new Date().toISOString().slice(0, 10);
 
 	const assignments: AssignmentView[] = (assignmentRows ?? []).map((a) => {
-		const instance = instanceByAssignmentId.get(a.id) ?? null;
-		const targetedIds = instance
-			? Array.from(targetedStudentIdsByInstance.get(instance.id) ?? [])
-			: [];
+		const instances: AssignmentInstanceView[] = (instancesByAssignmentId.get(a.id) ?? [])
+			.map((instance) => {
+				const targetedIds = Array.from(targetedStudentIdsByInstance.get(instance.id) ?? []);
 
-		const studentViews: AssignmentStudentView[] = targetedIds
-			.map((studentId) => {
-				const entry = progress[`${instance!.id}:${studentId}`] ?? {
-					instanceId: instance!.id,
-					studentId,
-					assignedAt: null,
-					doneAt: null,
-					reviewedAt: null
-				};
+				const studentViews: AssignmentStudentView[] = targetedIds
+					.map((studentId) => {
+						const entry = progress[`${instance.id}:${studentId}`] ?? {
+							instanceId: instance.id,
+							studentId,
+							assignedAt: null,
+							doneAt: null,
+							reviewedAt: null
+						};
+						return {
+							studentId,
+							displayName: studentNameById.get(studentId) ?? studentId,
+							assignedAt: entry.assignedAt,
+							doneAt: entry.doneAt,
+							reviewedAt: entry.reviewedAt,
+							overdue: isOverdue(instance.due_date, entry, today)
+						};
+					})
+					.sort((x, y) => x.displayName.localeCompare(y.displayName));
+
 				return {
-					studentId,
-					displayName: studentNameById.get(studentId) ?? studentId,
-					assignedAt: entry.assignedAt,
-					doneAt: entry.doneAt,
-					reviewedAt: entry.reviewedAt,
-					overdue: instance ? isOverdue(instance.due_date, entry, today) : false
+					id: instance.id,
+					periodStart: instance.period_start,
+					dueDate: instance.due_date,
+					archivedAt: instance.archived_at,
+					students: studentViews,
+					doneCount: studentViews.filter((s) => s.doneAt !== null).length,
+					reviewedCount: studentViews.filter((s) => s.reviewedAt !== null).length
 				};
 			})
-			.sort((x, y) => x.displayName.localeCompare(y.displayName));
+			// Most recently started period first -- a recurring assignment's
+			// newest instance is almost always the one a teacher wants to act
+			// on first.
+			.sort((x, y) => y.periodStart.localeCompare(x.periodStart));
 
 		return {
 			id: a.id,
@@ -181,12 +226,11 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			skillArea: a.skill_area,
 			referenceLink: a.reference_link,
 			createdAt: a.created_at,
-			instanceId: instance?.id ?? null,
-			dueDate: instance?.due_date ?? null,
-			archivedAt: instance?.archived_at ?? null,
-			students: studentViews,
-			doneCount: studentViews.filter((s) => s.doneAt !== null).length,
-			reviewedCount: studentViews.filter((s) => s.reviewedAt !== null).length
+			isRecurring: a.recurrence_rule !== null,
+			dueOffsetDays: a.due_offset_days,
+			endsOn: a.ends_on,
+			pausedAt: a.paused_at,
+			instances
 		};
 	});
 
@@ -208,12 +252,10 @@ export const actions: Actions = {
 
 		const classId = params.id;
 		const formData = await request.formData();
+		const mode = String(formData.get('mode') ?? 'once');
 		const title = String(formData.get('title') ?? '').trim();
 		const skillArea = String(formData.get('skillArea') ?? '');
-		const dueDate = String(formData.get('dueDate') ?? '');
 		const referenceLinkRaw = String(formData.get('referenceLink') ?? '').trim();
-		const targetMode = String(formData.get('targetMode') ?? 'all');
-		const selectedStudentIds = formData.getAll('studentIds').map(String);
 
 		if (!title) {
 			return fail(400, {
@@ -227,6 +269,71 @@ export const actions: Actions = {
 				action: 'createAssignment' as const
 			});
 		}
+		if (mode !== 'once' && mode !== 'weekly') {
+			return fail(400, {
+				error: m.homework_error_invalid_mode(),
+				action: 'createAssignment' as const
+			});
+		}
+
+		// Recurring case (Story 3-2): Intent -- "no instance created yet (the
+		// generator creates the first on its next run, not synchronously)".
+		// Always whole-class (Code Map: the generator targets "the
+		// then-current approved roster" fresh at every run, so a
+		// creation-time subset choice would go stale the moment the roster
+		// changes) -- there is deliberately no target-mode field on this
+		// path.
+		if (mode === 'weekly') {
+			const startDate = String(formData.get('startDate') ?? '');
+			const dueOffsetDaysRaw = String(formData.get('dueOffsetDays') ?? '');
+
+			if (!startDate || !isValidDate(startDate)) {
+				return fail(400, {
+					error: m.homework_error_invalid_start_date(),
+					action: 'createAssignment' as const
+				});
+			}
+			const dueOffsetDays = parseNonNegativeInt(dueOffsetDaysRaw);
+			if (dueOffsetDays === null) {
+				return fail(400, {
+					error: m.homework_error_invalid_due_offset(),
+					action: 'createAssignment' as const
+				});
+			}
+
+			const { error: assignmentError } = await supabase.from('homework_assignments').insert({
+				class_id: classId,
+				title,
+				skill_area: skillArea as SkillArea,
+				reference_link: referenceLinkRaw || null,
+				created_by: user.id,
+				recurrence_rule: { frequency: 'weekly' },
+				recurrence_start_date: startDate,
+				due_offset_days: dueOffsetDays
+			});
+
+			if (assignmentError) {
+				return fail(400, {
+					error: m.homework_error_create_failed(),
+					action: 'createAssignment' as const
+				});
+			}
+
+			return {
+				success: true,
+				action: 'createAssignment' as const,
+				recurring: true as const,
+				title,
+				targetCount: 0,
+				failedStudentIds: [] as string[]
+			};
+		}
+
+		// One-off case (Story 3-1, unchanged).
+		const dueDate = String(formData.get('dueDate') ?? '');
+		const targetMode = String(formData.get('targetMode') ?? 'all');
+		const selectedStudentIds = formData.getAll('studentIds').map(String);
+
 		if (!dueDate || !isValidDate(dueDate)) {
 			return fail(400, {
 				error: m.homework_error_invalid_due_date(),
@@ -292,8 +399,8 @@ export const actions: Actions = {
 		}
 
 		// One-off assignment: exactly one instance, period_start = due_date
-		// (Story 3-2 gives period_start its real recurring-period meaning --
-		// see the migration comment).
+		// (recurring assignments give period_start its real recurring-period
+		// meaning -- see the migration comment).
 		const { data: instance, error: instanceError } = await supabase
 			.from('homework_instances')
 			.insert({
@@ -357,6 +464,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'createAssignment' as const,
+			recurring: false as const,
 			title,
 			targetCount: targetIds.length - failedStudentIds.length,
 			failedStudentIds
@@ -481,5 +589,158 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'archiveInstance' as const };
+	},
+
+	// Story 3-2: editing a series never touches homework_instances (Always
+	// boundary) -- this is a plain UPDATE on homework_assignments only.
+	editSeries: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.homework_error_not_signed_in() });
+		}
+
+		const formData = await request.formData();
+		const assignmentId = String(formData.get('assignmentId') ?? '');
+		const title = String(formData.get('title') ?? '').trim();
+		const referenceLinkRaw = String(formData.get('referenceLink') ?? '').trim();
+		const dueOffsetDaysRaw = String(formData.get('dueOffsetDays') ?? '');
+
+		if (!assignmentId || !title) {
+			return fail(400, {
+				error: m.homework_error_title_required(),
+				action: 'editSeries' as const
+			});
+		}
+		const dueOffsetDays = parseNonNegativeInt(dueOffsetDaysRaw);
+		if (dueOffsetDays === null) {
+			return fail(400, {
+				error: m.homework_error_invalid_due_offset(),
+				action: 'editSeries' as const
+			});
+		}
+
+		// RLS-gated read first: confirms this is a real recurring assignment of
+		// THIS class before attempting the update, mirroring the "read first"
+		// shape used throughout this codebase.
+		const { data: assignment, error: readError } = await supabase
+			.from('homework_assignments')
+			.select('id, recurrence_rule')
+			.eq('id', assignmentId)
+			.eq('class_id', params.id)
+			.single();
+
+		if (readError || !assignment || assignment.recurrence_rule === null) {
+			return fail(400, {
+				error: m.homework_series_error_save_failed(),
+				action: 'editSeries' as const
+			});
+		}
+
+		const { error: updateError } = await supabase
+			.from('homework_assignments')
+			.update({
+				title,
+				reference_link: referenceLinkRaw || null,
+				due_offset_days: dueOffsetDays
+			})
+			.eq('id', assignmentId);
+
+		if (updateError) {
+			return fail(400, {
+				error: m.homework_series_error_save_failed(),
+				action: 'editSeries' as const
+			});
+		}
+
+		return { success: true, action: 'editSeries' as const };
+	},
+
+	pauseSeries: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.homework_error_not_signed_in() });
+		}
+
+		const formData = await request.formData();
+		const assignmentId = String(formData.get('assignmentId') ?? '');
+		if (!assignmentId) {
+			return fail(400, {
+				error: m.homework_series_error_pause_failed(),
+				action: 'pauseSeries' as const
+			});
+		}
+
+		// Boundaries: pausing only ever changes homework_assignments -- the
+		// generator's own "not paused" check (migration) is what actually
+		// stops future instance creation; already-generated instances are
+		// never touched here.
+		// .select('id') + a row-count check (review finding #5) -- without
+		// this, a stale assignmentId or scope mismatch (wrong class, or an
+		// assignment that isn't actually recurring) returns error:null with
+		// zero rows affected, and this action would report a false success.
+		const { data: updatedRows, error: updateError } = await supabase
+			.from('homework_assignments')
+			.update({ paused_at: new Date().toISOString() })
+			.eq('id', assignmentId)
+			.eq('class_id', params.id)
+			.not('recurrence_rule', 'is', null)
+			.select('id');
+
+		if (updateError || !updatedRows || updatedRows.length === 0) {
+			return fail(400, {
+				error: m.homework_series_error_pause_failed(),
+				action: 'pauseSeries' as const
+			});
+		}
+
+		return { success: true, action: 'pauseSeries' as const };
+	},
+
+	endSeries: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.homework_error_not_signed_in() });
+		}
+
+		const formData = await request.formData();
+		const assignmentId = String(formData.get('assignmentId') ?? '');
+		if (!assignmentId) {
+			return fail(400, {
+				error: m.homework_series_error_end_failed(),
+				action: 'endSeries' as const
+			});
+		}
+
+		const today = new Date().toISOString().slice(0, 10);
+
+		// Boundaries: ending only ever changes homework_assignments -- the
+		// generator's own "not past ends_on" check (migration) is what
+		// actually stops future instance creation; already-generated
+		// instances are never touched here.
+		// .or('ends_on.is.null,ends_on.gt.<today>') (review finding #6) --
+		// without this, a second ?/endSeries submission for an already-ended
+		// series moves ends_on forward, re-opening the window for periods
+		// between the old and new ends_on to generate on the next run,
+		// reviving a series the teacher believed was permanently ended.
+		// .select('id') + a row-count check (review finding #5, same as
+		// pauseSeries) -- catches a stale assignmentId or scope mismatch
+		// that would otherwise report a false success.
+		const { data: updatedRows, error: updateError } = await supabase
+			.from('homework_assignments')
+			.update({ ends_on: today })
+			.eq('id', assignmentId)
+			.eq('class_id', params.id)
+			.not('recurrence_rule', 'is', null)
+			.or(`ends_on.is.null,ends_on.gt.${today}`)
+			.select('id');
+
+		if (updateError || !updatedRows || updatedRows.length === 0) {
+			return fail(400, {
+				error: m.homework_series_error_end_failed(),
+				action: 'endSeries' as const
+			});
+		}
+
+		return { success: true, action: 'endSeries' as const };
 	}
 };

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
+	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -43,7 +44,17 @@
 				<p class="section-label" style="margin-bottom: var(--space-1);">
 					{skillLabel(item.skillArea)}
 				</p>
-				<h2 style="margin: 0 0 var(--space-2) 0; font-size: var(--text-lg);">{item.title}</h2>
+				<h2
+					style="margin: 0 0 var(--space-2) 0; font-size: var(--text-lg); display:flex; align-items:center; gap: var(--space-2);"
+				>
+					{item.title}
+					{#if item.isRecurring}
+						<span class="badge-repeat">
+							<RepeatIcon />
+							{m.homework_recurring_badge_label()}
+						</span>
+					{/if}
+				</h2>
 				<p style="margin: 0 0 var(--space-2) 0; color: var(--color-muted-foreground);">
 					{m.student_homework_due_label({ date: item.dueDate })}
 					{#if item.overdue}

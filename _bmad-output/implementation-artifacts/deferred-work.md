@@ -51,3 +51,11 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/1-2-student-self-registration-approval.md`
   summary: Two admins/teachers approving the same pending student at the same moment could race between `requests/+page.server.ts`'s RLS-scoped pre-check read and its final `profiles` update, potentially diverging `auth.users.email` from the persisted `profiles.email`.
   evidence: Story 1-2's own bmad-build review (edge-case-hunter layer) identified the narrow TOCTOU window. Low real-world likelihood in a single-admin, low-volume tool; a real fix needs a transactional/locking approach beyond a smallest-fix patch.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/3-2-recurring-homework-assignments.md`
+  summary: `messages/bo.json`'s new recurring-homework keys (`homework_mode_legend`, `homework_series_*`, etc.) are verbatim English copies, not real Tibetan translations, unlike the parallel `de.json` additions which are properly localized.
+  evidence: Story 3-2's own bmad-build review (blind-hunter layer) confirmed by direct diff comparison. Same class of gap already logged for Story 1-1's original bo.json content (see above) -- recurs here because each new batch of keys needs its own native-speaker pass; needs a native Tibetan speaker, not more engineering, to resolve.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/3-2-recurring-homework-assignments.md`
+  summary: `src/lib/server/rls.spec.ts`'s Story 3-2 coverage exercises `homework_assignments`/`homework_instances` directly via Supabase clients and never through the actual SvelteKit form actions (`createAssignment`'s weekly branch, `editSeries`, `pauseSeries`, `endSeries`) or the teacher homework page's `load` function (multi-instance grouping/sort order).
+  evidence: Story 3-2's own bmad-build review (verification-gap layer) confirmed no load-function or action-level test scaffolding exists anywhere in this repo (no Playwright/e2e tooling, no mocked-`locals.supabase` unit tests). Matches this codebase's established convention of relying on RLS-layer tests + human walkthrough for this route; building that scaffolding is disproportionate to a single story.

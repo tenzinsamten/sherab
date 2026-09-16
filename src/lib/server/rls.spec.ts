@@ -1440,6 +1440,12 @@ describe.skipIf(!reachable)(
 			createdBy: { id: string; client: ReturnType<typeof anonClient> };
 			title?: string;
 			recurrenceRule?: unknown;
+			// Story 3-2's homework_assignments_recurrence_shape CHECK constraint
+			// requires these whenever recurrence_rule is not null -- optional
+			// here (undefined) for every existing Story 3-1 call site, which
+			// never passes recurrenceRule at all.
+			recurrenceStartDate?: string;
+			dueOffsetDays?: number;
 		}) {
 			// homework_assignments' own INSERT policy places no restriction on
 			// recurrence_rule (only AD-8's homework_instances policy does) -- a
@@ -1453,7 +1459,13 @@ describe.skipIf(!reachable)(
 					title: params.title ?? `Assignment ${crypto.randomUUID().slice(0, 6)}`,
 					skill_area: 'language',
 					created_by: params.createdBy.id,
-					...(params.recurrenceRule !== undefined ? { recurrence_rule: params.recurrenceRule } : {})
+					...(params.recurrenceRule !== undefined
+						? { recurrence_rule: params.recurrenceRule }
+						: {}),
+					...(params.recurrenceStartDate !== undefined
+						? { recurrence_start_date: params.recurrenceStartDate }
+						: {}),
+					...(params.dueOffsetDays !== undefined ? { due_offset_days: params.dueOffsetDays } : {})
 				})
 				.select('id')
 				.single();
@@ -2008,7 +2020,9 @@ describe.skipIf(!reachable)(
 			const recurringAssignmentId = await createHomeworkAssignment({
 				classId: classAId,
 				createdBy: teacherA,
-				recurrenceRule: { freq: 'weekly' }
+				recurrenceRule: { frequency: 'weekly' },
+				recurrenceStartDate: '2026-09-20',
+				dueOffsetDays: 0
 			});
 
 			const { error } = await teacherA.client.from('homework_instances').insert({
@@ -2297,6 +2311,641 @@ describe.skipIf(!reachable)(
 			const visibleIds = (visible ?? []).map((r) => r.id);
 			expect(visibleIds).toContain(insideInstanceId);
 			expect(visibleIds).not.toContain(outsideInstanceId);
+		});
+	}
+);
+
+describe.skipIf(!reachable)(
+	'Story 3-2 recurring homework assignments (requires local Supabase)',
+	() => {
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classAId: string;
+		let teamId: string;
+
+		/** Same shape as the Story 2-1/3-1 blocks' local createStudent. */
+		async function createStudent(params: {
+			classId: string;
+			status: 'pending' | 'approved' | 'rejected';
+			name: string;
+		}) {
+			const email = `story-3-2-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) {
+				throw new Error(`Failed to create student: ${error?.message}`);
+			}
+
+			const update: Database['public']['Tables']['profiles']['Update'] = {
+				class_id: params.classId,
+				status: params.status,
+				registration_name: params.name,
+				display_name: params.name
+			};
+			if (params.status === 'approved') {
+				update.team_id = teamId;
+			}
+
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update(update)
+				.eq('id', data.user.id);
+			if (updateError) {
+				throw new Error(`Failed to set up student: ${updateError.message}`);
+			}
+
+			return data.user.id;
+		}
+
+		function addDays(isoDate: string, days: number): string {
+			const d = new Date(`${isoDate}T00:00:00Z`);
+			d.setUTCDate(d.getUTCDate() + days);
+			return d.toISOString().slice(0, 10);
+		}
+
+		/**
+		 * Creates a recurring assignment directly via teacherA's own client
+		 * (not a service-role bypass) -- homework_assignments' INSERT policy
+		 * (Story 3-1) places no restriction on recurrence_rule/
+		 * recurrence_start_date/due_offset_days, only homework_instances'
+		 * AD-8 policy does, so this exercises the exact same direct-lane path
+		 * the real createAssignment action (weekly mode) uses.
+		 */
+		async function createRecurringAssignment(params: {
+			classId: string;
+			createdBy: { id: string; client: ReturnType<typeof anonClient> };
+			startDate: string;
+			dueOffsetDays: number;
+			title?: string;
+		}) {
+			const { data, error } = await params.createdBy.client
+				.from('homework_assignments')
+				.insert({
+					class_id: params.classId,
+					title: params.title ?? `Recurring ${crypto.randomUUID().slice(0, 6)}`,
+					skill_area: 'language',
+					created_by: params.createdBy.id,
+					recurrence_rule: { frequency: 'weekly' },
+					recurrence_start_date: params.startDate,
+					due_offset_days: params.dueOffsetDays
+				})
+				.select('id')
+				.single();
+			if (error || !data) {
+				throw new Error(`Failed to create recurring assignment: ${error?.message}`);
+			}
+			return data.id as string;
+		}
+
+		async function runGenerator(): Promise<number> {
+			const { data, error } = await adminClient.rpc('generate_recurring_homework_instances');
+			if (error) {
+				throw new Error(`Generator call failed: ${error.message}`);
+			}
+			return data as number;
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacherA = await createSignedInUser('teacher');
+			teacherB = await createSignedInUser('teacher');
+
+			const { data: classA, error: classAError } = await admin.client
+				.from('classes')
+				.insert({
+					name: 'Story 3-2 Class A',
+					code: `RH${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (classAError || !classA)
+				throw new Error(`Failed to create Class A: ${classAError?.message}`);
+			classAId = classA.id;
+
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classAId, teacher_id: teacherA.id });
+			if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+			const { data: team, error: teamError } = await admin.client
+				.from('teams')
+				.insert({ name: `Story 3-2 Team ${crypto.randomUUID().slice(0, 6)}` })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('creating a recurring assignment sets recurrence_rule/start_date/offset and creates no instance yet', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 3
+			});
+
+			const { data: assignment } = await adminClient
+				.from('homework_assignments')
+				.select('recurrence_rule, recurrence_start_date, due_offset_days')
+				.eq('id', assignmentId)
+				.single();
+			expect(assignment?.recurrence_rule).toEqual({ frequency: 'weekly' });
+			expect(assignment?.recurrence_start_date).toBe(today);
+			expect(assignment?.due_offset_days).toBe(3);
+
+			// Intent: "no instance created yet (generator creates the first on
+			// its next run, not synchronously)".
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toEqual([]);
+		});
+
+		it('generator creates a due instance with fresh assigned rows for the then-current approved roster only, due_date = period_start + due_offset_days', async () => {
+			const approved = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Recurring Approved ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const pending = await createStudent({
+				classId: classAId,
+				status: 'pending',
+				name: `Recurring Pending ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 4
+			});
+
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, due_date')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toHaveLength(1);
+			expect(instances?.[0].period_start).toBe(today);
+			expect(instances?.[0].due_date).toBe(addDays(today, 4));
+
+			const { data: assignedRows } = await adminClient
+				.from('homework_status_history')
+				.select('student_id, status, recorded_by')
+				.eq('instance_id', instances![0].id);
+			const assignedStudentIds = (assignedRows ?? [])
+				.filter((r) => r.status === 'assigned')
+				.map((r) => r.student_id);
+			expect(assignedStudentIds).toContain(approved);
+			expect(assignedStudentIds).not.toContain(pending);
+			// System-generated, not a teacher/admin action -- no acting user.
+			expect((assignedRows ?? []).every((r) => r.recorded_by === null)).toBe(true);
+		});
+
+		it('generator run again does not create a duplicate instance for an already-generated period (AD-8 UNIQUE backstop)', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 0
+			});
+
+			await runGenerator();
+			await runGenerator();
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toHaveLength(1);
+		});
+
+		it("a later generator run never touches an earlier instance's Done status, even when it creates a second instance in the same run", async () => {
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `Later Run Unaffected ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			// Start date 8 days ago: two weekly periods (today-8, today-1) are
+			// both already due, so a single generator call creates both at
+			// once -- this is what lets this test observe "a later period's
+			// creation" deterministically, without needing to wait a real
+			// week (see the comment on the due-offset tests below for the
+			// same constraint).
+			const today = new Date().toISOString().slice(0, 10);
+			const startDate = addDays(today, -8);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 0
+			});
+
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start')
+				.eq('assignment_id', assignmentId)
+				.order('period_start', { ascending: true });
+			expect(instances).toHaveLength(2);
+			const earlierInstance = instances![0];
+			const laterInstance = instances![1];
+
+			await teacherA.client.from('homework_status_history').insert({
+				instance_id: earlierInstance.id,
+				student_id: student,
+				class_id: classAId,
+				status: 'done',
+				recorded_by: teacherA.id
+			});
+
+			// Re-running the generator is a no-op here (both periods already
+			// exist, AD-8) -- this asserts that even a run that legitimately
+			// re-evaluates a later period never rewrites the earlier
+			// instance's already-recorded Done status.
+			await runGenerator();
+
+			const { data: earlierRows } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', earlierInstance.id)
+				.eq('student_id', student);
+			expect((earlierRows ?? []).map((r) => r.status).sort()).toEqual(['assigned', 'done'].sort());
+
+			const { data: laterRows } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', laterInstance.id)
+				.eq('student_id', student);
+			expect((laterRows ?? []).map((r) => r.status)).toEqual(['assigned']);
+		});
+
+		it('editing the series title/link never writes to homework_instances -- both an already-generated instance and the series row reflect the edit independently on next read', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 2,
+				title: 'Original Series Title'
+			});
+			await runGenerator();
+
+			const { data: before } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, due_date, created_at')
+				.eq('assignment_id', assignmentId)
+				.single();
+
+			const { error: updateError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ title: 'Updated Series Title', reference_link: 'https://example.test/updated' })
+				.eq('id', assignmentId);
+			expect(updateError).toBeNull();
+
+			const { data: assignment } = await adminClient
+				.from('homework_assignments')
+				.select('title, reference_link')
+				.eq('id', assignmentId)
+				.single();
+			expect(assignment?.title).toBe('Updated Series Title');
+			expect(assignment?.reference_link).toBe('https://example.test/updated');
+
+			// The instance row itself is byte-for-byte unchanged -- no UPDATE
+			// statement in this codebase ever targets homework_instances for a
+			// series edit (Always boundary).
+			const { data: after } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, due_date, created_at')
+				.eq('assignment_id', assignmentId)
+				.single();
+			expect(after).toEqual(before);
+		});
+
+		it("editing due_offset_days never rewrites an already-generated instance's due_date, and the generator reads the offset fresh per assignment at generation time", async () => {
+			const today = new Date().toISOString().slice(0, 10);
+
+			// Half 1 (deterministic, no time travel needed): generate an
+			// instance under offset=2, edit the series to offset=9, confirm
+			// the existing instance's due_date is untouched.
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 2
+			});
+			await runGenerator();
+
+			const { data: instanceBefore } = await adminClient
+				.from('homework_instances')
+				.select('due_date')
+				.eq('assignment_id', assignmentId)
+				.single();
+			expect(instanceBefore?.due_date).toBe(addDays(today, 2));
+
+			const { error: editError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ due_offset_days: 9 })
+				.eq('id', assignmentId);
+			expect(editError).toBeNull();
+
+			// No new period is due yet (next period is 7 days out), so this is
+			// a no-op for instance creation -- it only proves the edit alone
+			// does not retroactively touch the existing row.
+			await runGenerator();
+
+			const { data: instanceAfter } = await adminClient
+				.from('homework_instances')
+				.select('due_date')
+				.eq('assignment_id', assignmentId)
+				.single();
+			expect(instanceAfter?.due_date).toBe(addDays(today, 2));
+
+			// Half 2: the generator computes due_date = period_start +
+			// due_offset_days fresh from EACH assignment row at the moment it
+			// generates that assignment's instance -- proven here with a
+			// second, independent assignment using a different offset,
+			// generated in the same run as the first. This is the mechanism
+			// that makes Half 1's guarantee true without needing to actually
+			// wait a calendar week between two real generator runs on the
+			// same series (this test harness has no fake clock).
+			const secondAssignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 11
+			});
+			await runGenerator();
+
+			const { data: secondInstance } = await adminClient
+				.from('homework_instances')
+				.select('due_date')
+				.eq('assignment_id', secondAssignmentId)
+				.single();
+			expect(secondInstance?.due_date).toBe(addDays(today, 11));
+		});
+
+		it('pausing a series (paused_at set) stops the generator from creating any instance for it, even an already-due one', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const startDate = addDays(today, -8);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 0
+			});
+
+			// Paused before the generator ever runs for it -- two real periods
+			// are already due (today-8, today-1) and would otherwise be
+			// created.
+			const { error: pauseError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ paused_at: new Date().toISOString() })
+				.eq('id', assignmentId);
+			expect(pauseError).toBeNull();
+
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toEqual([]);
+		});
+
+		it('ending a series after instances already exist never touches those already-generated instances', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const startDate = addDays(today, -8);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 0
+			});
+
+			// First period (today-8) generated normally, before any end date.
+			await runGenerator();
+			const { data: firstRunInstances } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, created_at')
+				.eq('assignment_id', assignmentId);
+			expect(firstRunInstances).toHaveLength(2); // today-8 and today-1, both already due
+
+			const preEndSnapshot = [...(firstRunInstances ?? [])].sort((a, b) =>
+				a.period_start.localeCompare(b.period_start)
+			);
+
+			// Now end the series as of today-8 -- only the already-generated
+			// today-8 period stays valid; today-1 (already generated above,
+			// before the end date was set) must remain exactly as-is (Never:
+			// ending never touches already-generated instances).
+			const { error: endError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ ends_on: startDate })
+				.eq('id', assignmentId);
+			expect(endError).toBeNull();
+
+			await runGenerator();
+
+			const { data: afterEndInstances } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, created_at')
+				.eq('assignment_id', assignmentId)
+				.order('period_start', { ascending: true });
+			// No new instance was added (there were none pending anyway, both
+			// already existed) and neither existing row was touched.
+			expect(afterEndInstances).toEqual(preEndSnapshot);
+		});
+
+		it('ending a series before its first generator run stops periods after ends_on, while periods at/before it still generate', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const startDate = addDays(today, -8); // periods: today-8, today-1
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 0
+			});
+
+			// ends_on = today-8: excludes the today-1 period (> ends_on),
+			// keeps the today-8 period (<= ends_on) -- proves the boundary is
+			// evaluated per-period, not "skip the whole series if any period
+			// is past ends_on".
+			const { error: endError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ ends_on: startDate })
+				.eq('id', assignmentId);
+			expect(endError).toBeNull();
+
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('period_start')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toHaveLength(1);
+			expect(instances?.[0].period_start).toBe(startDate);
+		});
+
+		it('a direct client insert into homework_instances for a recurring assignment is still rejected (AD-8, Story 3-1 restriction unchanged)', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 0
+			});
+
+			const { error } = await teacherA.client.from('homework_instances').insert({
+				assignment_id: assignmentId,
+				class_id: classAId,
+				period_start: today,
+				due_date: today
+			});
+			expect(error).not.toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', assignmentId);
+			expect(rows).toEqual([]);
+		});
+
+		it('generate_recurring_homework_instances() cannot be invoked by an authenticated client -- only the trusted service-role/pg_cron path can call it', async () => {
+			const { error } = await teacherA.client.rpc('generate_recurring_homework_instances');
+			expect(error).not.toBeNull();
+
+			const adminAttempt = await admin.client.rpc('generate_recurring_homework_instances');
+			expect(adminAttempt.error).not.toBeNull();
+		});
+
+		it('column-privilege fix: an authorized teacher cannot UPDATE due_date/period_start on homework_instances, even though they can UPDATE archived_at/archived_by (deferred Story 3-1 gap, now closed)', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 0
+			});
+			await runGenerator();
+
+			const { data: instance } = await adminClient
+				.from('homework_instances')
+				.select('id, due_date, period_start')
+				.eq('assignment_id', assignmentId)
+				.single();
+
+			// Column-privilege failure, not an RLS row-filter -- surfaces as a
+			// real error (PostgREST propagates Postgres' permission-denied),
+			// not silent zero-rows-affected.
+			const dueDateAttempt = await teacherA.client
+				.from('homework_instances')
+				.update({ due_date: addDays(today, 30) })
+				.eq('id', instance!.id);
+			expect(dueDateAttempt.error).not.toBeNull();
+
+			const periodStartAttempt = await teacherA.client
+				.from('homework_instances')
+				.update({ period_start: addDays(today, -30) })
+				.eq('id', instance!.id);
+			expect(periodStartAttempt.error).not.toBeNull();
+
+			// The column-level REVOKE applies to the `authenticated` Postgres
+			// role broadly, not just teachers -- the I/O matrix's own row says
+			// "admin or assigned teacher", so this must be rejected for admin
+			// too, not only for teacherA (review finding #10).
+			const adminDueDateAttempt = await admin.client
+				.from('homework_instances')
+				.update({ due_date: addDays(today, 30) })
+				.eq('id', instance!.id);
+			expect(adminDueDateAttempt.error).not.toBeNull();
+
+			const adminPeriodStartAttempt = await admin.client
+				.from('homework_instances')
+				.update({ period_start: addDays(today, -30) })
+				.eq('id', instance!.id);
+			expect(adminPeriodStartAttempt.error).not.toBeNull();
+
+			// The narrow archived_at/archived_by grant still works (Story 3-1
+			// behavior preserved).
+			const archiveAttempt = await teacherA.client
+				.from('homework_instances')
+				.update({ archived_at: new Date().toISOString(), archived_by: teacherA.id })
+				.eq('id', instance!.id)
+				.select('archived_at')
+				.single();
+			expect(archiveAttempt.error).toBeNull();
+			expect(archiveAttempt.data?.archived_at).not.toBeNull();
+
+			const { data: unchanged } = await adminClient
+				.from('homework_instances')
+				.select('due_date, period_start')
+				.eq('id', instance!.id)
+				.single();
+			expect(unchanged?.due_date).toBe(instance!.due_date);
+			expect(unchanged?.period_start).toBe(instance!.period_start);
+		});
+
+		it('a teacher not assigned to the class cannot pause/end/edit a series, and cannot read a recurring assignment scoped to a different class', async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 0
+			});
+
+			const pauseAttempt = await teacherB.client
+				.from('homework_assignments')
+				.update({ paused_at: new Date().toISOString() })
+				.eq('id', assignmentId)
+				.select('id');
+			expect(pauseAttempt.error).toBeNull();
+			expect(pauseAttempt.data).toEqual([]);
+
+			const endAttempt = await teacherB.client
+				.from('homework_assignments')
+				.update({ ends_on: today })
+				.eq('id', assignmentId)
+				.select('id');
+			expect(endAttempt.error).toBeNull();
+			expect(endAttempt.data).toEqual([]);
+
+			const editAttempt = await teacherB.client
+				.from('homework_assignments')
+				.update({ title: 'Hijacked Title' })
+				.eq('id', assignmentId)
+				.select('id');
+			expect(editAttempt.error).toBeNull();
+			expect(editAttempt.data).toEqual([]);
+
+			const { data: stillUntouched } = await adminClient
+				.from('homework_assignments')
+				.select('paused_at, ends_on, title')
+				.eq('id', assignmentId)
+				.single();
+			expect(stillUntouched?.paused_at).toBeNull();
+			expect(stillUntouched?.ends_on).toBeNull();
+			expect(stillUntouched?.title).not.toBe('Hijacked Title');
+
+			const readAttempt = await teacherB.client
+				.from('homework_assignments')
+				.select('id')
+				.eq('id', assignmentId);
+			expect(readAttempt.data).toEqual([]);
 		});
 	}
 );

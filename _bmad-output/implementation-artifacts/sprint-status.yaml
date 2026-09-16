@@ -11,19 +11,31 @@
 #      parser was never built to read, regardless of `uv` availability.
 #   2. That YAML file's story ids/format don't match the script's expected
 #      key derivation either.
-# REFRESHED 2026-09-15 08:35: Story 2-1 (roster & skill-status tracking)
-# went through bmad-build (implement → review/patch cycle, 10 findings
-# fixed, 3 rejected as false/by-design → full check/eslint/test suite
-# green) and a bmad-walkthrough human review (Approve). This was the first
-# story reviewed with real git diffing available (repo now has git). Its
-# spec is `status: done`; sprint-planning mirrors that here. It was
-# epic-2's only story, so epic-2 is now `done`. Epic-3 (homework, CAP-3)
-# is next -- unblocked now that students and a roster both exist.
+# REFRESHED 2026-09-15 18:55: Story 3-1 (one-off homework assignment &
+# review) went through bmad-build (implement → review/patch cycle, 9
+# findings fixed -- including a real RLS gap letting a teacher write
+# status for a class they don't teach, caught before merge -- 1 deferred,
+# 4 rejected as false/by-design -> full check/eslint/test suite green)
+# and a bmad-walkthrough human review (Approve). Its spec is `status:
+# done`; sprint-planning mirrors that here.
+# REFRESHED 2026-09-16: Story 3-2 (recurring homework assignments) went
+# through bmad-build (implement → review/patch cycle, 10 findings fixed --
+# including an unrestricted homework_assignments UPDATE policy letting a
+# teacher convert a one-off assignment into a recurring series after
+# creation, an unbounded due_offset_days CHECK letting one bad assignment
+# abort the shared nightly generator run for every recurring assignment,
+# and an unbounded catch-up loop with no iteration cap -- 2 deferred
+# (bo.json Tibetan translations, action-layer test coverage), 2 rejected
+# as false/by-design -> full check/eslint/test suite green, 104 tests
+# passing). Its spec is `status: done`, but sprint-status mirrors this as
+# `review` rather than `done` until a bmad-walkthrough human review
+# happens, matching 3-1's precedent above. Epic-3 stays `in-progress`
+# until that walkthrough completes.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-15-2026 08:35
+last_updated: 09-16-2026 00:00
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -40,8 +52,8 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress # Homework (CAP-3)
-  3-1-one-off-homework-assignment-review: review
-  3-2-recurring-homework-assignments: backlog
+  3-1-one-off-homework-assignment-review: done
+  3-2-recurring-homework-assignments: review
   epic-3-retrospective: optional
 
   epic-4: backlog # Gamification (CAP-4, CAP-5, CAP-6)
