@@ -27,10 +27,9 @@
 # and an unbounded catch-up loop with no iteration cap -- 2 deferred
 # (bo.json Tibetan translations, action-layer test coverage), 2 rejected
 # as false/by-design -> full check/eslint/test suite green, 104 tests
-# passing). Its spec is `status: done`, but sprint-status mirrors this as
-# `review` rather than `done` until a bmad-walkthrough human review
-# happens, matching 3-1's precedent above. Epic-3 stays `in-progress`
-# until that walkthrough completes.
+# passing) and a bmad-walkthrough human review (Approve). Its spec is
+# `status: done`; sprint-planning mirrors that here. It was epic-3's
+# last story, so epic-3 is now `done`.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
@@ -51,9 +50,9 @@ development_status:
   2-1-roster-skill-status-tracking: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress # Homework (CAP-3)
+  epic-3: done # Homework (CAP-3)
   3-1-one-off-homework-assignment-review: done
-  3-2-recurring-homework-assignments: review
+  3-2-recurring-homework-assignments: done
   epic-3-retrospective: optional
 
   epic-4: backlog # Gamification (CAP-4, CAP-5, CAP-6)
