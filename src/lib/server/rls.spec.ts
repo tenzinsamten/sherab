@@ -3861,3 +3861,569 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 		}
 	});
 });
+
+describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	/** Same per-scenario-fresh-class shape as the Story 4-1 block above. */
+	async function createClass(prefix: string) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 4-2 ${prefix}`,
+				code: `S4B${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const classId = data.id as string;
+
+		const { error: assignError } = await admin.client
+			.from('class_teachers')
+			.insert({ class_id: classId, teacher_id: teacherA.id });
+		if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+		return classId;
+	}
+
+	/** Same shape as the Story 4-1 block's local createStudent. */
+	async function createStudent(params: { classId: string; name: string }) {
+		const email = `story-4-2-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: 'approved',
+				registration_name: params.name,
+				display_name: params.name,
+				team_id: teamId
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up student: ${updateError.message}`);
+		}
+
+		return data.user.id;
+	}
+
+	/**
+	 * Same as createStudent, but also signs in -- needed for the RLS
+	 * self-read test below, which must exercise
+	 * badges_earned_select_admin_or_own's `student_id = auth.uid()` branch as
+	 * the real student, not via the service-role client.
+	 */
+	async function createSignedInStudent(params: { classId: string; name: string }) {
+		const email = `story-4-2-signedin-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const password = crypto.randomUUID();
+
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password,
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create signed-in student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: 'approved',
+				registration_name: params.name,
+				display_name: params.name,
+				team_id: teamId
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up signed-in student: ${updateError.message}`);
+		}
+
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+		if (signInError) {
+			throw new Error(`Failed to sign in student: ${signInError.message}`);
+		}
+
+		return { id: data.user.id, email, client };
+	}
+
+	function addDays(isoDate: string, days: number): string {
+		const d = new Date(`${isoDate}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() + days);
+		return d.toISOString().slice(0, 10);
+	}
+
+	const today = new Date().toISOString().slice(0, 10);
+	/** A distinct, deterministic session_date/period_start for the Nth mark in a scenario. */
+	function dayOffset(n: number): string {
+		return addDays(today, -n);
+	}
+
+	/**
+	 * Fires attendance_records_recompute_badges via a direct service-role
+	 * insert (bypasses attendance_records' own RLS, which this story doesn't
+	 * re-test -- Stories 2-1/3-1 already cover it).
+	 */
+	async function markAttendance(params: {
+		studentId: string;
+		classId: string;
+		sessionDate: string;
+		present: boolean;
+	}) {
+		const { error } = await adminClient.from('attendance_records').insert({
+			student_id: params.studentId,
+			class_id: params.classId,
+			session_date: params.sessionDate,
+			present: params.present,
+			recorded_by: teacherA.id
+		});
+		if (error) throw new Error(`Failed to mark attendance: ${error.message}`);
+	}
+
+	/** One-off homework assignment, service-role, reused across a scenario's instances. */
+	async function createAssignment(classId: string) {
+		const { data, error } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: `Story 4-2 HW ${crypto.randomUUID().slice(0, 6)}`,
+				skill_area: 'language',
+				created_by: teacherA.id
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create assignment: ${error?.message}`);
+		return data.id as string;
+	}
+
+	async function createInstance(params: {
+		assignmentId: string;
+		classId: string;
+		periodStart: string;
+	}) {
+		const { data, error } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: params.assignmentId,
+				class_id: params.classId,
+				period_start: params.periodStart,
+				due_date: addDays(params.periodStart, 3)
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create homework instance: ${error?.message}`);
+		return data.id as string;
+	}
+
+	async function markHomeworkDone(params: {
+		instanceId: string;
+		studentId: string;
+		classId: string;
+		recordedBy?: string;
+	}) {
+		const { error: assignedError } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: 'assigned',
+			recorded_by: teacherA.id
+		});
+		if (assignedError) throw new Error(`Failed to insert assigned row: ${assignedError.message}`);
+
+		const { error: doneError } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: 'done',
+			recorded_by: params.recordedBy ?? params.studentId
+		});
+		if (doneError) throw new Error(`Failed to insert done row: ${doneError.message}`);
+	}
+
+	/** Reads badge rows via the service-role client (no RLS involved). */
+	async function readBadges(studentId: string, badgeType: 'attendance' | 'homework') {
+		const { data, error } = await adminClient
+			.from('badges_earned')
+			.select('badge_type, milestone, earned_at')
+			.eq('student_id', studentId)
+			.eq('badge_type', badgeType);
+		if (error) throw new Error(`Failed to read badges: ${error.message}`);
+		return data ?? [];
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacherA = await createSignedInUser('teacher');
+
+		const { data: team, error: teamError } = await admin.client
+			.from('teams')
+			.insert({ name: `Story 4-2 Team ${crypto.randomUUID().slice(0, 6)}` })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+
+		const { data: settingRow, error: settingError } = await adminClient
+			.from('app_settings')
+			.select('value')
+			.eq('key', 'badge_milestone_thresholds')
+			.single();
+		if (settingError || !settingRow)
+			throw new Error(`Failed to read badge_milestone_thresholds: ${settingError?.message}`);
+		expect(settingRow.value).toEqual([1, 5, 10, 25, 50, 100]);
+	}, 30000);
+
+	it("a student's distinct attendance count reaching a configured milestone inserts exactly one attendance badge row", async () => {
+		const classId = await createClass('Attendance Milestone');
+		const student = await createStudent({
+			classId,
+			name: `Attendance Milestone ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		await markAttendance({ studentId: student, classId, sessionDate: dayOffset(0), present: true });
+
+		const badges = await readBadges(student, 'attendance');
+		expect(badges).toEqual([
+			{ badge_type: 'attendance', milestone: 1, earned_at: expect.any(String) }
+		]);
+		// earned_at is populated/sane -- a real, recent timestamp, not a
+		// placeholder or unset value.
+		const earnedAtMs = new Date(badges[0].earned_at).getTime();
+		expect(Number.isNaN(earnedAtMs)).toBe(false);
+		expect(Date.now() - earnedAtMs).toBeLessThan(60_000);
+	});
+
+	it("a student's distinct homework-done count reaching a configured milestone inserts exactly one homework badge row", async () => {
+		const classId = await createClass('Homework Milestone');
+		const student = await createStudent({
+			classId,
+			name: `Homework Milestone ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart: dayOffset(0) });
+
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+
+		const badges = await readBadges(student, 'homework');
+		expect(badges).toEqual([
+			{ badge_type: 'homework', milestone: 1, earned_at: expect.any(String) }
+		]);
+	});
+
+	it('marking attendance absent never fires the recompute -- no badge is inserted', async () => {
+		const classId = await createClass('Absent No Fire');
+		const student = await createStudent({
+			classId,
+			name: `Absent No Fire ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: dayOffset(0),
+			present: false
+		});
+
+		expect(await readBadges(student, 'attendance')).toEqual([]);
+	});
+
+	it('a duplicate attendance mark for the same session_date is counted once toward the milestone total (never a raw row count)', async () => {
+		const classId = await createClass('Duplicate Attendance');
+		const student = await createStudent({
+			classId,
+			name: `Duplicate Attendance ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		// 4 distinct dates -- one below the next threshold (5).
+		for (let i = 0; i < 4; i++) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: dayOffset(i),
+				present: true
+			});
+		}
+		expect(await readBadges(student, 'attendance')).toEqual([
+			{ badge_type: 'attendance', milestone: 1, earned_at: expect.any(String) }
+		]);
+
+		// A second, duplicate mark for an already-counted date -- 5 rows total,
+		// but still only 4 DISTINCT dates. If the recompute ever counted raw
+		// rows instead of distinct session_date, this would incorrectly cross
+		// the milestone-5 threshold.
+		await markAttendance({ studentId: student, classId, sessionDate: dayOffset(0), present: true });
+
+		expect(await readBadges(student, 'attendance')).toEqual([
+			{ badge_type: 'attendance', milestone: 1, earned_at: expect.any(String) }
+		]);
+	});
+
+	it('a duplicate homework-done mark for the same instance (self + teacher on-behalf-of) is counted once toward the milestone total', async () => {
+		const classId = await createClass('Duplicate Homework');
+		const student = await createStudent({
+			classId,
+			name: `Duplicate Homework ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		// 4 distinct instances marked done -- one below the next threshold (5).
+		const instanceIds: string[] = [];
+		for (let i = 0; i < 4; i++) {
+			const instanceId = await createInstance({ assignmentId, classId, periodStart: dayOffset(i) });
+			instanceIds.push(instanceId);
+			await markHomeworkDone({ instanceId, studentId: student, classId });
+		}
+		expect(await readBadges(student, 'homework')).toEqual([
+			{ badge_type: 'homework', milestone: 1, earned_at: expect.any(String) }
+		]);
+
+		// Teacher-on-behalf-of duplicate 'done' mark for an instance already
+		// marked done -- a second history row, same (student_id, instance_id)
+		// pair. 5 history rows now carry status='done', but only 4 DISTINCT
+		// instance_ids -- must not cross the milestone-5 threshold.
+		const { error: duplicateError } = await adminClient.from('homework_status_history').insert({
+			instance_id: instanceIds[0],
+			student_id: student,
+			class_id: classId,
+			status: 'done',
+			recorded_by: teacherA.id
+		});
+		expect(duplicateError).toBeNull();
+
+		expect(await readBadges(student, 'homework')).toEqual([
+			{ badge_type: 'homework', milestone: 1, earned_at: expect.any(String) }
+		]);
+	});
+
+	it('a student with pre-existing history spanning multiple uncrossed milestones gets every already-crossed milestone from the same qualifying write', async () => {
+		const classId = await createClass('Catch Up');
+		const student = await createStudent({
+			classId,
+			name: `Catch Up ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		// 12 distinct-date attendance rows in a single bulk insert -- crosses
+		// thresholds 1, 5, and 10 (default [1, 5, 10, 25, 50, 100]) together,
+		// simulating a student whose substantial history predates ever
+		// triggering a recompute.
+		const rows = Array.from({ length: 12 }, (_, i) => ({
+			student_id: student,
+			class_id: classId,
+			session_date: dayOffset(i),
+			present: true,
+			recorded_by: teacherA.id
+		}));
+		const { error } = await adminClient.from('attendance_records').insert(rows);
+		expect(error).toBeNull();
+
+		const badges = await readBadges(student, 'attendance');
+		expect(badges.map((b) => b.milestone).sort((a, b) => a - b)).toEqual([1, 5, 10]);
+	});
+
+	it('recompute firing again with the total unchanged is a true no-op -- no duplicate badge row, no error', async () => {
+		const classId = await createClass('No Duplicate');
+		const student = await createStudent({
+			classId,
+			name: `No Duplicate ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart: dayOffset(0) });
+
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		const before = await readBadges(student, 'homework');
+		expect(before).toEqual([
+			{ badge_type: 'homework', milestone: 1, earned_at: expect.any(String) }
+		]);
+
+		// A duplicate homework-done insert fires the trigger again with the
+		// distinct-instance total unchanged -- re-inserting the already-
+		// present milestone-1 row is a true ON CONFLICT DO NOTHING no-op, not
+		// an error.
+		const { error: duplicateError } = await adminClient.from('homework_status_history').insert({
+			instance_id: instanceId,
+			student_id: student,
+			class_id: classId,
+			status: 'done',
+			recorded_by: teacherA.id
+		});
+		expect(duplicateError).toBeNull();
+
+		expect(await readBadges(student, 'homework')).toEqual(before);
+	});
+
+	it('a direct client insert or update against badges_earned is rejected -- it is trigger-written only', async () => {
+		const classId = await createClass('No Direct Writes');
+		const student = await createStudent({
+			classId,
+			name: `No Direct Writes ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const signedInStudent = await createSignedInStudent({
+			classId,
+			name: `No Direct Writes Self ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		const insertAttempt = await teacherA.client
+			.from('badges_earned')
+			.insert({ student_id: student, badge_type: 'attendance', milestone: 999 });
+		expect(insertAttempt.error).not.toBeNull();
+
+		const adminInsertAttempt = await admin.client
+			.from('badges_earned')
+			.insert({ student_id: student, badge_type: 'attendance', milestone: 999 });
+		expect(adminInsertAttempt.error).not.toBeNull();
+
+		// The actual abuse case this boundary exists to prevent: a student
+		// self-awarding a badge for themself. No INSERT policy exists for
+		// anyone (trigger-written only, AD-3), so this is rejected exactly
+		// like the teacher/admin attempts above, not specially allowed just
+		// because student_id matches auth.uid().
+		const selfInsertAttempt = await signedInStudent.client
+			.from('badges_earned')
+			.insert({ student_id: signedInStudent.id, badge_type: 'attendance', milestone: 999 });
+		expect(selfInsertAttempt.error).not.toBeNull();
+
+		const { data: selfInsertCheck } = await adminClient
+			.from('badges_earned')
+			.select('id')
+			.eq('student_id', signedInStudent.id);
+		expect(selfInsertCheck).toEqual([]);
+
+		// A trigger-created row to attempt an UPDATE against.
+		await markAttendance({ studentId: student, classId, sessionDate: dayOffset(0), present: true });
+
+		const updateAttempt = await teacherA.client
+			.from('badges_earned')
+			.update({ milestone: 999 })
+			.eq('student_id', student);
+		expect(updateAttempt.error).toBeNull(); // RLS denies by filtering, not by erroring
+		expect(updateAttempt.data ?? []).toEqual([]);
+
+		const { data: unchanged } = await adminClient
+			.from('badges_earned')
+			.select('milestone')
+			.eq('student_id', student)
+			.eq('badge_type', 'attendance')
+			.single();
+		expect(unchanged?.milestone).not.toBe(999);
+	});
+
+	it('RLS: admin and the student themself can read a badge row; another student and even the assigned teacher cannot (no teacher access, unlike streaks)', async () => {
+		const classId = await createClass('RLS Visibility');
+		const signedInStudent = await createSignedInStudent({
+			classId,
+			name: `RLS Visibility ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const otherSignedInStudent = await createSignedInStudent({
+			classId: await createClass('RLS Visibility Other'),
+			name: `RLS Visibility Other ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		await markAttendance({
+			studentId: signedInStudent.id,
+			classId,
+			sessionDate: dayOffset(0),
+			present: true
+		});
+
+		const adminRead = await admin.client
+			.from('badges_earned')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(adminRead.data).toHaveLength(1);
+
+		const selfRead = await signedInStudent.client
+			.from('badges_earned')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(selfRead.data).toHaveLength(1);
+
+		// Per Boundaries: "visible only on the student's own profile" -- unlike
+		// student_streaks' three-way shape, even the assigned teacher has no
+		// read access here.
+		const assignedTeacherRead = await teacherA.client
+			.from('badges_earned')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(assignedTeacherRead.data).toEqual([]);
+
+		const otherStudentRead = await otherSignedInStudent.client
+			.from('badges_earned')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(otherStudentRead.data).toEqual([]);
+	});
+
+	it('changing badge_milestone_thresholds applies only to future recomputes -- a new threshold below an already-reached total is picked up on the next qualifying write, not retroactively', async () => {
+		const classId = await createClass('Threshold Setting Change');
+		const student = await createStudent({
+			classId,
+			name: `Threshold Setting Change ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		// 4 distinct dates under the default thresholds ([1, 5, 10, 25, 50,
+		// 100]) -- only milestone 1 has been crossed so far (4 < 5).
+		for (let i = 0; i < 4; i++) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: dayOffset(i),
+				present: true
+			});
+		}
+		const beforeSettingChange = await readBadges(student, 'attendance');
+		expect(beforeSettingChange.map((b) => b.milestone)).toEqual([1]);
+
+		let restoreError: string | undefined;
+		try {
+			const { error: updateError } = await admin.client
+				.from('app_settings')
+				.update({ value: [1, 4, 10, 25, 50, 100] })
+				.eq('key', 'badge_milestone_thresholds');
+			expect(updateError).toBeNull();
+
+			// The settings update itself never touches badges_earned -- no
+			// trigger exists on app_settings, mirroring streak_grace_weeks'
+			// behavior in the Story 4-1 block above.
+			const afterSettingChangeOnly = await readBadges(student, 'attendance');
+			expect(afterSettingChangeOnly).toEqual(beforeSettingChange);
+
+			// A fresh trigger fire -- a duplicate mark for an already-counted
+			// date, so present=true still satisfies the WHEN clause but the
+			// distinct total stays at 4 -- recomputes using the NEW thresholds:
+			// 4 is now a configured milestone the existing total already
+			// satisfies, so it appears without any new attendance ever landing.
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: dayOffset(0),
+				present: true
+			});
+
+			const afterNewRecompute = await readBadges(student, 'attendance');
+			expect(afterNewRecompute.map((b) => b.milestone).sort((a, b) => a - b)).toEqual([1, 4]);
+		} finally {
+			const { error } = await admin.client
+				.from('app_settings')
+				.update({ value: [1, 5, 10, 25, 50, 100] })
+				.eq('key', 'badge_milestone_thresholds');
+			restoreError = error?.message;
+		}
+		if (restoreError) {
+			throw new Error(`Failed to restore badge_milestone_thresholds: ${restoreError}`);
+		}
+	});
+});

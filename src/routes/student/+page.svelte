@@ -12,6 +12,15 @@
 		if (area === 'song') return m.roster_skill_song();
 		return m.roster_skill_dance();
 	}
+
+	function badgeEntryLabel(badge: {
+		badgeType: 'attendance' | 'homework';
+		milestone: number;
+	}): string {
+		return badge.badgeType === 'homework'
+			? m.student_badges_entry_homework({ count: badge.milestone })
+			: m.student_badges_entry_attendance({ count: badge.milestone });
+	}
 </script>
 
 <svelte:head>
@@ -38,6 +47,27 @@
 		</p>
 	{:else}
 		<p style="margin: 0; color: var(--color-muted-foreground);">{m.student_streak_empty()}</p>
+	{/if}
+</div>
+
+<div class="card" style="margin-bottom: var(--space-4);">
+	<p class="section-label" style="margin-bottom: var(--space-1);">{m.student_badges_label()}</p>
+	{#if data.loadError}
+		<!-- A failed badges_earned fetch is unknown state, not a truthful
+		     empty list -- show the same error treatment used elsewhere on this
+		     page rather than the empty-state copy, which would otherwise
+		     falsely imply "confirmed no badges". -->
+		<p class="banner-error" role="alert">{m.load_error_generic()}</p>
+	{:else if data.badges.length > 0}
+		<ul
+			style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap: var(--space-1);"
+		>
+			{#each data.badges as badge (`${badge.badgeType}-${badge.milestone}`)}
+				<li>{badgeEntryLabel(badge)}</li>
+			{/each}
+		</ul>
+	{:else}
+		<p style="margin: 0; color: var(--color-muted-foreground);">{m.student_badges_empty()}</p>
 	{/if}
 </div>
 

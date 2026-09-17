@@ -40,6 +40,16 @@
 # check/eslint/test suite green, 125 tests passing). Its spec is `status:
 # done`; a bmad-walkthrough human review (Approve) followed on 2026-09-17,
 # so this line now mirrors that too.
+# REFRESHED 2026-09-17: Story 4-2 (badges) went through bmad-build
+# (implement -> review/patch cycle, 19 findings triaged: 4 defer/carried --
+# stale badge_milestone_step doc references, self-fixed in the spec text --
+# 7 false/rejected (unreachable preconditions, self-healing races, or
+# already-covered failure modes), 7 patched -- including a silent
+# unrecognized-badge_type coalesce, an empty-thresholds-array footgun, and
+# missing self-insert/order/earned_at test coverage -> full
+# check/eslint/test suite green, 139 tests passing). Its spec is `status:
+# done`; awaiting bmad-walkthrough human review before this line moves to
+# `done`.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
@@ -67,7 +77,7 @@ development_status:
 
   epic-4: in-progress # Gamification (CAP-4, CAP-5, CAP-6)
   4-1-streaks: done
-  4-2-badges: backlog
+  4-2-badges: review
   4-3-team-leaderboard: backlog
   epic-4-retrospective: optional
 

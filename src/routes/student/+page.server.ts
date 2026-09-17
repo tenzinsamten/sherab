@@ -5,6 +5,7 @@ import {
 	isOverdue,
 	type HomeworkHistoryRow
 } from '$lib/server/homework-status';
+import { shapeStudentBadges } from '$lib/server/badges';
 import { shapeStudentStreak } from '$lib/server/streak';
 import type { SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -176,10 +177,29 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	const streak = shapeStudentStreak(streakRow);
 
+	// Story 4-2: badges_earned is trigger-written only (AD-3) -- this is a
+	// plain list read (not .maybeSingle(), a student can hold many badge
+	// rows), scoped by RLS (badges_earned_select_admin_or_own) to the
+	// caller's own rows; the explicit .eq is belt-and-suspenders, matching
+	// the pattern already used throughout this codebase. A student who has
+	// never crossed a milestone legitimately has zero rows, not a load
+	// error.
+	const { data: badgeRows, error: badgesError } = await supabase
+		.from('badges_earned')
+		.select('badge_type, milestone, earned_at')
+		.eq('student_id', user.id)
+		.order('badge_type')
+		.order('milestone', { ascending: true });
+
+	const badges = shapeStudentBadges(badgeRows);
+
 	return {
 		items,
 		streak,
-		loadError: Boolean(historyError || instancesError || assignmentsError || streakError)
+		badges,
+		loadError: Boolean(
+			historyError || instancesError || assignmentsError || streakError || badgesError
+		)
 	};
 };
 

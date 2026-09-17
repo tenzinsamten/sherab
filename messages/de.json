@@ -242,6 +242,11 @@
 	],
 	"student_streak_empty": "Aktuell keine Serie. Sei in derselben Woche anwesend und erledige die Hausaufgaben, um eine zu starten.",
 
+	"student_badges_label": "Abzeichen",
+	"student_badges_empty": "Noch keine Abzeichen.",
+	"student_badges_entry_attendance": "Anwesenheit x{count}",
+	"student_badges_entry_homework": "Hausaufgaben x{count}",
+
 	"teams_section_label": "04 / Teams",
 	"teams_heading": "Teams",
 	"teams_create_heading": "Team erstellen",

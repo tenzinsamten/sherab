@@ -242,6 +242,11 @@
 	],
 	"student_streak_empty": "No current streak. Attend and finish homework in the same week to start one.",
 
+	"student_badges_label": "Badges",
+	"student_badges_empty": "No badges yet.",
+	"student_badges_entry_attendance": "Attendance x{count}",
+	"student_badges_entry_homework": "Homework x{count}",
+
 	"teams_section_label": "04 / Teams",
 	"teams_heading": "Teams",
 	"teams_create_heading": "Create a team",

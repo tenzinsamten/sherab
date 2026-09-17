@@ -104,6 +104,38 @@ export type Database = {
 					}
 				];
 			};
+			badges_earned: {
+				Row: {
+					badge_type: BadgeType;
+					earned_at: string;
+					id: string;
+					milestone: number;
+					student_id: string;
+				};
+				Insert: {
+					badge_type: BadgeType;
+					earned_at?: string;
+					id?: string;
+					milestone: number;
+					student_id: string;
+				};
+				Update: {
+					badge_type?: BadgeType;
+					earned_at?: string;
+					id?: string;
+					milestone?: number;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'badges_earned_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_teachers: {
 				Row: {
 					assigned_at: string;
@@ -551,6 +583,10 @@ export type Database = {
 				Args: { target_class_id: string };
 				Returns: boolean;
 			};
+			recompute_student_badges: {
+				Args: { p_badge_type: string; p_student_id: string };
+				Returns: undefined;
+			};
 			recompute_student_streak: {
 				Args: { p_class_id: string; p_student_id: string };
 				Returns: undefined;
@@ -705,3 +741,4 @@ export type RegistrationStatus = Database['public']['Enums']['registration_statu
 export type SkillArea = Database['public']['Enums']['skill_area'];
 export type SkillLevel = Database['public']['Enums']['skill_level'];
 export type HomeworkStatusValue = 'assigned' | 'done' | 'reviewed';
+export type BadgeType = 'attendance' | 'homework';
