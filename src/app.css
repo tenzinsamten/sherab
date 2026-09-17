@@ -11,6 +11,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
 
 :root {
+	/* This is a fixed editorial brand palette (per the Story 1-1 prototype),
+	   not a light/dark pair -- pin color-scheme so browser-native form
+	   controls and scrollbars don't independently invert on a dark OS/browser
+	   preference while the rest of the page stays on these fixed colors. */
+	color-scheme: light;
+
 	--color-primary: #2563eb;
 	--color-primary-hover: #1d4fd7;
 	--color-primary-active: #1b45be;
@@ -54,7 +60,12 @@
 	   phone/desktop values (52px/76px, 40px/56px); clamp() gets the same
 	   fluid result from one declaration instead of a breakpoint pair. */
 	--text-page: clamp(2.5rem, 1.7rem + 3vw, 3.5rem);
-	--text-hero: clamp(3.25rem, 2.2rem + 4vw, 4.75rem);
+	/* Sized against the poster panel's own width (cqi), not the viewport --
+	   the panel is a fraction of the browser window (40% of it, currently),
+	   so a viewport-relative size overflows/wraps short multi-word headlines
+	   like "Class Tracker" onto two lines well before the panel is actually
+	   out of room. Requires `container-type: inline-size` on .poster-panel. */
+	--text-hero: clamp(2.75rem, 1.75rem + 6.5cqi, 4.25rem);
 	--line-height-body: 1.55;
 	--line-height-heading: 1.1;
 
@@ -74,29 +85,6 @@
 	--transition-standard: 200ms ease-out;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		--color-background: #0f172a;
-		--color-foreground: #f1f5fd;
-		--color-card: #1e293b;
-		--color-card-foreground: #f1f5fd;
-		--color-muted: #334155;
-		--color-muted-foreground: #94a3b8;
-		--color-border: #475569;
-		--color-input-bg: #1e293b;
-	}
-}
-:root[data-theme='dark'] {
-	--color-background: #0f172a;
-	--color-foreground: #f1f5fd;
-	--color-card: #1e293b;
-	--color-card-foreground: #f1f5fd;
-	--color-muted: #334155;
-	--color-muted-foreground: #94a3b8;
-	--color-border: #475569;
-	--color-input-bg: #1e293b;
-}
-
 @media (prefers-reduced-motion: reduce) {
 	:root {
 		--transition-standard: 0ms;
@@ -109,11 +97,33 @@
 
 body {
 	margin: 0;
-	background: var(--color-background);
+	background: var(--color-muted);
 	color: var(--color-foreground);
 	font-family: var(--font-body);
 	font-size: var(--text-base);
 	line-height: var(--line-height-body);
+}
+
+/* ── App shell ─────────────────────────────────────────────────────────────
+   Nav down through the bottom locale strip fills the full browser viewport
+   -- full-bleed width, and at least full-bleed height so short pages don't
+   leave a gap below the footer strip. Body is the app's base canvas color
+   (the prototype's page-backdrop gray); content sections that are meant to
+   read as white -- the plain content area and the split-screen form panel --
+   set their own explicit white background rather than inheriting it. */
+.app-shell {
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+.app-main {
+	padding: var(--space-6);
+	flex: 1;
+	background: var(--color-background);
+}
+.app-main:has(.split-screen) {
+	padding: 0;
+	display: flex;
 }
 
 h1,
@@ -376,18 +386,22 @@ code {
 .nav-link {
 	display: inline-flex;
 	align-items: center;
-	padding: var(--space-2) var(--space-4);
+	padding: 0 18px;
 	text-decoration: none;
 	font-weight: 800;
 	text-transform: uppercase;
-	letter-spacing: 0.06em;
+	letter-spacing: 0.1em;
 	font-size: 0.6875rem;
 	color: var(--color-muted-foreground-soft);
 	background: transparent;
 	border: none;
-	min-height: var(--touch-target-min);
+	min-height: 52px;
 	font-family: inherit;
 	cursor: pointer;
+}
+
+.nav-link + .nav-link {
+	border-left: 1px solid var(--color-border-strong);
 }
 
 .nav-link:hover {
@@ -413,18 +427,26 @@ code {
    prototype: ink for sign-in/pending, blue for home/join, amber for the
    one-time admin-bootstrap step. */
 .split-screen {
+	flex: 1;
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: 40% 60%;
 	align-items: stretch;
 }
 @media (max-width: 760px) {
 	.split-screen {
 		grid-template-columns: 1fr;
 	}
+	.poster-panel {
+		padding: 28px 18px 32px;
+	}
+	.form-panel {
+		padding: 28px 18px 36px;
+	}
 }
 
 .poster-panel {
-	padding: var(--space-8) var(--space-6);
+	container-type: inline-size;
+	padding: 44px 40px;
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
@@ -447,7 +469,14 @@ code {
 	font-size: 0.6875rem;
 	font-weight: 700;
 	text-transform: uppercase;
-	opacity: 0.75;
+	letter-spacing: 0.14em;
+	font-variant-numeric: tabular-nums;
+}
+.poster-panel.poster-ink .poster-eyebrow {
+	color: var(--color-muted-foreground-soft);
+}
+.poster-panel.poster-blue .poster-eyebrow {
+	color: var(--color-primary-tint-text);
 }
 
 .poster-hero {
@@ -479,7 +508,7 @@ code {
 	align-items: baseline;
 	gap: var(--space-3);
 	padding: var(--space-3) 0;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+	border-bottom: 1px solid #7fa6f7;
 	opacity: 0.55;
 }
 .poster-step.active {
@@ -493,13 +522,15 @@ code {
 }
 
 .form-panel {
-	padding: var(--space-8) var(--space-6);
+	padding: 44px 48px 52px;
+	background: var(--color-background);
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
+	align-items: center;
 }
 .form-panel-inner {
-	max-width: 420px;
+	max-width: max(320px, 50%);
 	width: 100%;
 }
 

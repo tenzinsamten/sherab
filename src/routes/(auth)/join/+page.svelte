@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import * as m from '$lib/paraglide/messages.js';
+	import logoSeal from '$lib/assets/logo-seal-blue.png';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -84,11 +85,22 @@
 	</div>
 	<div class="form-panel">
 		<div class="form-panel-inner">
+			<img
+				src={logoSeal}
+				alt={m.nav_seal_aria_label()}
+				width="144"
+				height="144"
+				style="display:block; margin: -80px auto var(--space-4);"
+			/>
+
 			{#if form?.error}
 				<p class="banner-error" role="alert">{form.error}</p>
 			{/if}
 
 			{#if step === 1}
+				<h2 style="font-size: var(--text-2xl); margin: 0 0 var(--space-4);">
+					{m.join_code_question()}
+				</h2>
 				<div class="field">
 					<label for="classCode">{m.join_code_label()}</label>
 					<input
@@ -96,6 +108,7 @@
 						type="text"
 						required
 						autocomplete="off"
+						placeholder={m.join_code_placeholder()}
 						aria-invalid={classCodeError ? 'true' : undefined}
 						bind:value={classCode}
 						oninput={() => {

@@ -6,6 +6,13 @@
 	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
 	import navMark from '$lib/assets/logo-seal-blue.png';
+	import flagTibet from '$lib/assets/flag-tibet.svg';
+
+	const localeFlags: Record<string, { emoji?: string; icon?: string; name: string }> = {
+		en: { emoji: '🇬🇧', name: 'English' },
+		de: { emoji: '🇩🇪', name: 'Deutsch' },
+		bo: { icon: flagTibet, name: 'བོད་སྐད།' }
+	};
 
 	let { children, data } = $props();
 
@@ -19,21 +26,23 @@
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
-<nav
-	style="display:flex; align-items:center; gap: var(--space-2); padding: var(--space-3) var(--space-6); background: var(--color-surface-inverse); border-bottom: 1px solid rgba(255, 255, 255, 0.25);"
->
-	<a
-		href={resolve('/')}
-		style="display:flex; align-items:center; gap: var(--space-2); font-family: var(--font-display); font-weight: 900; text-transform:uppercase; letter-spacing:-0.02em; color: var(--color-on-surface-inverse); text-decoration: none; margin-right: var(--space-4);"
-	>
-		<img src={navMark} alt="" width="28" height="28" style="display:block;" />
-		Sherab
-		<span
-			style="font-variant-numeric: tabular-nums; font-size: 0.625rem; letter-spacing: 0.1em; color: var(--color-muted-foreground-soft); font-weight: 400; text-transform: none;"
-			>v0.1</span
+<div class="app-shell">
+	<nav
+			style="display:flex; align-items:center; gap: var(--space-2); padding: var(--space-3) var(--space-6); background: var(--color-surface-inverse); border-bottom: 1px solid rgba(255, 255, 255, 0.25);"
 		>
-	</a>
+			<a
+				href={resolve('/')}
+				style="display:flex; align-items:center; gap: var(--space-2); font-family: var(--font-display); font-size: 18px; font-weight: 900; text-transform:uppercase; letter-spacing:-0.02em; color: var(--color-on-surface-inverse); text-decoration: none; margin-right: var(--space-4);"
+			>
+				<span
+					role="img"
+					aria-label={m.nav_seal_aria_label()}
+					style="display:block; width:44px; height:44px; flex:none; background: currentColor; mask: url({navMark}) center / contain no-repeat; -webkit-mask: url({navMark}) center / contain no-repeat;"
+				></span>
+				Sherab
+			</a>
 	{#if data.profile}
+		<span style="margin-left:auto;"></span>
 		{#if data.profile.role === 'admin'}
 			{@const classesHref = resolve('/admin/classes')}
 			{@const teachersHref = resolve('/admin/teachers')}
@@ -106,7 +115,7 @@
 			</a>
 		{/if}
 		<span
-			style="margin-left:auto; color: var(--color-on-surface-inverse); opacity: 0.7; font-size: var(--text-sm);"
+			style="display:flex; align-items:center; padding: 0 var(--space-4); color: var(--color-on-surface-inverse); opacity: 0.7; font-size: var(--text-sm);"
 		>
 			{data.profile.email} ({data.profile.role})
 		</span>
@@ -116,14 +125,6 @@
 	{:else}
 		{@const loginHref = resolve('/login')}
 		{@const joinHref = resolve('/join')}
-		<a
-			href={joinHref}
-			class="nav-link"
-			class:active={isActive(joinHref)}
-			aria-current={isActive(joinHref) ? 'page' : undefined}
-		>
-			{m.nav_join()}
-		</a>
 		<span style="margin-left:auto;"></span>
 		<a
 			href={loginHref}
@@ -133,33 +134,51 @@
 		>
 			{m.nav_sign_in()}
 		</a>
-	{/if}
-</nav>
-
-<main style="max-width: 960px; margin: 0 auto; padding: var(--space-6);">
-	{#if data.loadError}
-		<p class="banner-error" role="alert">{m.load_error_generic()}</p>
-	{/if}
-	{@render children()}
-</main>
-
-<div
-	style="display:flex; flex-wrap:wrap; gap: var(--space-4); padding: var(--space-2) var(--space-6); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground); font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-muted-foreground);"
->
-	<span aria-hidden="true">{m.footer_locale_label()}</span>
-	{#each locales as locale (locale)}
-		{@const active = getLocale() === locale}
 		<a
-			href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}
-			lang={locale}
-			aria-current={active ? 'true' : undefined}
-			style="color: {active
-				? 'var(--color-primary)'
-				: 'var(--color-muted-foreground)'}; font-weight: {active
-				? 700
-				: 400}; text-decoration: none;"
+			href={joinHref}
+			class="nav-link"
+			class:active={isActive(joinHref)}
+			aria-current={isActive(joinHref) ? 'page' : undefined}
 		>
-			{locale}
+			{m.nav_join()}
 		</a>
-	{/each}
-</div>
+		{/if}
+		</nav>
+
+		<main class="app-main">
+			{#if data.loadError}
+				<p class="banner-error" role="alert">{m.load_error_generic()}</p>
+			{/if}
+			{@render children()}
+		</main>
+
+		<div
+			style="display:flex; flex-wrap:wrap; gap: var(--space-4); padding: var(--space-2) var(--space-6); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground); font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-muted-foreground);"
+		>
+			<span aria-hidden="true">{m.footer_locale_label()}</span>
+			{#each locales as locale (locale)}
+				{@const active = getLocale() === locale}
+				{@const flag = localeFlags[locale]}
+				<a
+					href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}
+					data-sveltekit-reload
+					lang={locale}
+					title={flag?.name ?? locale}
+					aria-label={flag?.name ?? locale}
+					aria-current={active ? 'true' : undefined}
+					style="display:inline-flex; align-items:center; gap: var(--space-1); border-bottom: 2px solid {active
+						? 'var(--color-primary)'
+						: 'transparent'}; text-decoration: none; opacity: {active ? 1 : 0.6};"
+				>
+					{#if flag?.icon}
+						<img src={flag.icon} alt="" width="18" height="12" style="display:block;" />
+					{:else if flag?.emoji}
+						<span aria-hidden="true" style="font-size: 1rem; line-height:1;">{flag.emoji}</span>
+					{:else}
+						{locale}
+					{/if}
+				</a>
+			{/each}
+		</div>
+	</div>
+

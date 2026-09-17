@@ -2,7 +2,6 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
-	import logoSeal from '$lib/assets/logo-seal-blue.png';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -23,13 +22,6 @@
 	<div class="split-screen">
 		<div class="poster-panel poster-blue">
 			<div>
-				<img
-					src={logoSeal}
-					alt={m.home_poster_seal_alt()}
-					width="110"
-					height="110"
-					style="display:block; margin-bottom: var(--space-4);"
-				/>
 				<p class="poster-eyebrow">{m.home_poster_eyebrow()}</p>
 				<h1 class="poster-hero">{m.home_poster_hero()}</h1>
 			</div>
@@ -42,17 +34,12 @@
 					{m.home_welcome_title()}
 				</h2>
 				<p style="color: var(--color-muted-foreground);">{m.home_welcome_signin_prompt()}</p>
-				<div style="display:flex; flex-direction:column; gap: var(--space-2); max-width: 320px;">
+				<div style="display:flex; flex-direction:column; gap: var(--space-2);">
 					<a class="btn" style="justify-content:flex-start;" href={resolve('/login')}
 						>{m.nav_sign_in()}</a
 					>
 					<a class="btn btn-outline" style="justify-content:flex-start;" href={resolve('/join')}
 						>{m.nav_join()}</a
-					>
-					<a
-						class="btn btn-outline"
-						style="justify-content:flex-start; border:none; text-decoration:underline; text-underline-offset:4px;"
-						href={resolve('/signup')}>{m.signup_heading()}</a
 					>
 				</div>
 			</div>
