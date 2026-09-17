@@ -62,14 +62,15 @@
 # comment that inaccurately credited the DB grant (rather than the route's
 # own redirect) as the real anon-blocking barrier, and an overclaiming
 # Tasks & Acceptance checklist line about RLS-layer coverage of the "no
-# teams exist" row -> full check/eslint/test suite green, 153 tests passing.
-# Its spec is `status: done`; sprint-planning mirrors that here as `review`
-# pending a bmad-walkthrough human review, which has not yet run.
+# teams exist" row -> full check/eslint/test suite green, 153 tests passing)
+# and a bmad-walkthrough human review (Approve) followed on 2026-09-17. Its
+# spec is `status: done`; sprint-planning mirrors that here. It was epic-4's
+# last story, so epic-4 is now `done`.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-17-2026 20:15
+last_updated: 09-17-2026 20:30
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -90,10 +91,10 @@ development_status:
   3-2-recurring-homework-assignments: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress # Gamification (CAP-4, CAP-5, CAP-6)
+  epic-4: done # Gamification (CAP-4, CAP-5, CAP-6)
   4-1-streaks: done
   4-2-badges: done
-  4-3-team-leaderboard: review
+  4-3-team-leaderboard: done
   epic-4-retrospective: optional
 
   epic-5: backlog # Admin Oversight & Privacy (CAP-7, CAP-8)
