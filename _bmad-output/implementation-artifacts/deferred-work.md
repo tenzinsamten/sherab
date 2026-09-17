@@ -75,3 +75,11 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/4-1-streaks.md`
   summary: `messages/bo.json`'s new streak keys (`student_streak_label`, `student_streak_weeks`, `student_streak_empty`) are verbatim English copies, not real Tibetan translations.
   evidence: Story 4-1's own bmad-build review (blind-hunter and edge-case-hunter layers, both independently) confirmed by diff comparison; verification-gap additionally confirmed 0/289 string values in the entire `bo.json` file contain Tibetan script anywhere, so this is pre-existing and codebase-wide, not specific to this story. Same recurring pattern already logged for Stories 1-1, 1-2, and 3-2's bo.json additions above -- needs a native Tibetan speaker, not more engineering, to resolve.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/4-3-team-leaderboard.md`
+  summary: `messages/bo.json`'s new `leaderboard_*` keys (`leaderboard_section_label`, `leaderboard_heading`, `leaderboard_rank_label`, `leaderboard_streak_weeks`, `leaderboard_row_aria_label`, `leaderboard_empty`) are verbatim English copies, not real Tibetan translations.
+  evidence: Story 4-3's own bmad-build review (blind-hunter layer) confirmed byte-for-byte identity with the English strings. Same recurring pattern already logged for Stories 1-1, 1-2, 3-2, and 4-1's bo.json additions above -- needs a native Tibetan speaker, not more engineering, to resolve.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/4-3-team-leaderboard.md`
+  summary: The installed Supabase CLI's `supabase gen types` regenerates `src/lib/supabase/database.types.ts` in a way that drops hand-maintained trailing type aliases (`SkillArea`, `BadgeType`, `HomeworkStatusValue`, etc.) and downgrades several enum columns to plain `string` -- discovered while implementing Story 4-3 (which hand-patched around it instead of regenerating), but not tracked anywhere a future contributor would see it before blindly re-running the regen command.
+  evidence: Story 4-3's own bmad-build review (blind-hunter layer) confirmed this is documented only as prose in that one story's Implementation Notes, with no discoverable warning in CLAUDE.md, the architecture doc, or elsewhere in the repo. Pre-existing CLI-version regression, not caused by Story 4-3, but that is where it was first encountered and worked around.

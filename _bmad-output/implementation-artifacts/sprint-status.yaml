@@ -50,11 +50,26 @@
 # check/eslint/test suite green, 139 tests passing). Its spec is `status:
 # done`; a bmad-walkthrough human review (Approve) followed on 2026-09-17,
 # so this line now mirrors that too.
+# REFRESHED 2026-09-17: Story 4-3 (team leaderboard) implemented
+# (team_leaderboard() read-time SECURITY DEFINER aggregate, leaderboard.ts
+# shaping helper, /leaderboard route + nav wiring in all three role
+# dashboards, Paraglide keys in all three locales, a new Story 4-3 RLS
+# block) and went through a review/patch cycle: 6 findings patched --
+# a bigint/integer type mismatch between the SQL SUM and the generated TS
+# RPC type, a nav-link block byte-for-byte duplicated across all three role
+# branches in +layout.svelte, missing load() test coverage for the
+# RPC-succeeds-with-zero-teams and unauthenticated-redirect cases, a route
+# comment that inaccurately credited the DB grant (rather than the route's
+# own redirect) as the real anon-blocking barrier, and an overclaiming
+# Tasks & Acceptance checklist line about RLS-layer coverage of the "no
+# teams exist" row -> full check/eslint/test suite green, 153 tests passing.
+# Its spec is `status: done`; sprint-planning mirrors that here as `review`
+# pending a bmad-walkthrough human review, which has not yet run.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-17-2026 00:00
+last_updated: 09-17-2026 20:15
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -78,7 +93,7 @@ development_status:
   epic-4: in-progress # Gamification (CAP-4, CAP-5, CAP-6)
   4-1-streaks: done
   4-2-badges: done
-  4-3-team-leaderboard: backlog
+  4-3-team-leaderboard: review
   epic-4-retrospective: optional
 
   epic-5: backlog # Admin Oversight & Privacy (CAP-7, CAP-8)

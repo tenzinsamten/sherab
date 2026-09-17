@@ -591,6 +591,14 @@ export type Database = {
 				Args: { p_class_id: string; p_student_id: string };
 				Returns: undefined;
 			};
+			team_leaderboard: {
+				Args: never;
+				Returns: {
+					team_id: string;
+					team_name: string;
+					total_streak: number;
+				}[];
+			};
 			validate_class_code: {
 				Args: { p_code: string };
 				Returns: {

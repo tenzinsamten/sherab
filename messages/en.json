@@ -10,6 +10,7 @@
 	"nav_requests_with_count": "Requests {count}",
 	"nav_my_classes": "My Classes",
 	"nav_my_homework": "My Homework",
+	"nav_leaderboard": "Leaderboard",
 	"nav_sign_out": "Sign out",
 	"footer_locale_label": "Language:",
 	"nav_sign_in": "Sign in",
@@ -259,6 +260,22 @@
 	"teams_error_create_failed": "Could not create the team.",
 	"teams_col_name": "Name",
 	"teams_col_created": "Created",
+
+	"leaderboard_section_label": "Leaderboard",
+	"leaderboard_heading": "Team Leaderboard",
+	"leaderboard_rank_label": "Rank {rank}",
+	"leaderboard_streak_weeks": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} week",
+				"countPlural=other": "{count} weeks"
+			}
+		}
+	],
+	"leaderboard_row_aria_label": "Rank {rank}: {team}, {weeks} combined streak",
+	"leaderboard_empty": "No teams yet.",
 
 	"join_section_label": "Join a class",
 	"join_heading": "Join a class",

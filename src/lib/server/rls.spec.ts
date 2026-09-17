@@ -4427,3 +4427,252 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		}
 	});
 });
+
+describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+
+	/** Same per-scenario-fresh-class shape as the Story 4-1/4-2 blocks above. */
+	async function createClass(prefix: string) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 4-3 ${prefix}`,
+				code: `S4C${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const classId = data.id as string;
+
+		const { error: assignError } = await admin.client
+			.from('class_teachers')
+			.insert({ class_id: classId, teacher_id: teacherA.id });
+		if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+		return classId;
+	}
+
+	async function createTeam(name: string) {
+		const { data, error } = await admin.client.from('teams').insert({ name }).select('id').single();
+		if (error || !data) throw new Error(`Failed to create team: ${error?.message}`);
+		return data.id as string;
+	}
+
+	/**
+	 * A student in an arbitrary approval/team state -- unlike the Story
+	 * 4-1/4-2 blocks' createStudent (which always creates an approved,
+	 * team-assigned student), this story's own I/O matrix needs pending and
+	 * team-less students too (e.g. "Student with a streak but team_id IS
+	 * NULL -- excluded from every team's sum").
+	 */
+	async function createStudent(params: {
+		classId: string;
+		name: string;
+		status?: 'pending' | 'approved' | 'rejected';
+		teamId?: string | null;
+	}) {
+		const email = `story-4-3-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: params.status ?? 'approved',
+				registration_name: params.name,
+				display_name: params.name,
+				team_id: params.teamId ?? null
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up student: ${updateError.message}`);
+		}
+
+		return data.user.id;
+	}
+
+	/**
+	 * Directly upserts a known student_streaks total via the service-role
+	 * client -- team_leaderboard() only sums whatever is already in
+	 * student_streaks, so this story's own tests don't need to replay a full
+	 * attendance/homework history to get a specific number the way the
+	 * Story 4-1 block's trigger tests do; that recompute logic is already
+	 * covered there. Mirrors the table's own upsert shape
+	 * (0007_streaks.sql's ON CONFLICT (student_id) DO UPDATE).
+	 */
+	async function setStreak(studentId: string, classId: string, currentStreak: number) {
+		const { error } = await adminClient
+			.from('student_streaks')
+			.upsert({ student_id: studentId, class_id: classId, current_streak: currentStreak });
+		if (error) throw new Error(`Failed to set streak: ${error.message}`);
+	}
+
+	/** Calls the RPC as a given signed-in client and returns only the rows for the given team ids, in the order returned (i.e. still rank-ordered). */
+	async function readLeaderboard(
+		client: Awaited<ReturnType<typeof createSignedInUser>>['client'],
+		teamIds: string[]
+	) {
+		const { data, error } = await client.rpc('team_leaderboard');
+		if (error) throw new Error(`team_leaderboard RPC failed: ${error.message}`);
+		return (data ?? []).filter((row) => teamIds.includes(row.team_id));
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacherA = await createSignedInUser('teacher');
+	}, 30000);
+
+	it('ranks teams by combined approved-student streak descending', async () => {
+		const classId = await createClass('Ranking');
+		const teamHigh = await createTeam(`Ranking High ${crypto.randomUUID().slice(0, 6)}`);
+		const teamLow = await createTeam(`Ranking Low ${crypto.randomUUID().slice(0, 6)}`);
+
+		const s1 = await createStudent({ classId, name: 'Ranking S1', teamId: teamHigh });
+		const s2 = await createStudent({ classId, name: 'Ranking S2', teamId: teamHigh });
+		const s3 = await createStudent({ classId, name: 'Ranking S3', teamId: teamLow });
+
+		await setStreak(s1, classId, 5);
+		await setStreak(s2, classId, 3);
+		await setStreak(s3, classId, 3);
+
+		const rows = await readLeaderboard(admin.client, [teamHigh, teamLow]);
+		expect(rows).toEqual([
+			{ team_id: teamHigh, team_name: expect.any(String), total_streak: 8 },
+			{ team_id: teamLow, team_name: expect.any(String), total_streak: 3 }
+		]);
+		// The higher-total team is genuinely first in the returned order, not
+		// just present with the right total (I/O matrix: "the higher-total
+		// team is ranked above the lower one").
+		const highIndex = rows.findIndex((r) => r.team_id === teamHigh);
+		const lowIndex = rows.findIndex((r) => r.team_id === teamLow);
+		expect(highIndex).toBeLessThan(lowIndex);
+	});
+
+	it('a team with no approved students holding a streak still appears, with a total of 0', async () => {
+		const teamEmpty = await createTeam(`Empty Team ${crypto.randomUUID().slice(0, 6)}`);
+
+		const rows = await readLeaderboard(admin.client, [teamEmpty]);
+		expect(rows).toEqual([{ team_id: teamEmpty, team_name: expect.any(String), total_streak: 0 }]);
+	});
+
+	it('a team whose only member has never triggered a streak recompute (no student_streaks row) still totals correctly, never null', async () => {
+		const classId = await createClass('No Streak Row');
+		const team = await createTeam(`No Streak Row ${crypto.randomUUID().slice(0, 6)}`);
+		const withRow = await createStudent({ classId, name: 'Has Row', teamId: team });
+		await createStudent({ classId, name: 'Never Recomputed', teamId: team });
+		await setStreak(withRow, classId, 5);
+
+		const rows = await readLeaderboard(admin.client, [team]);
+		// COALESCE(SUM(...), 0) plus the fact that SUM() itself already skips
+		// a NULL row (the never-recomputed student's LEFT JOIN miss) --
+		// total_streak must come back as a real 5, never null or an error.
+		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 5 }]);
+	});
+
+	it('tied totals are ordered deterministically by team name ascending, across repeated loads', async () => {
+		const classId = await createClass('Tied');
+		const suffix = crypto.randomUUID().slice(0, 6);
+		// Names deliberately chosen so alphabetical order is unambiguous
+		// regardless of the random suffix.
+		const teamA = await createTeam(`AAA Tied ${suffix}`);
+		const teamZ = await createTeam(`ZZZ Tied ${suffix}`);
+
+		const sa = await createStudent({ classId, name: 'Tied SA', teamId: teamA });
+		const sz = await createStudent({ classId, name: 'Tied SZ', teamId: teamZ });
+		await setStreak(sa, classId, 4);
+		await setStreak(sz, classId, 4);
+
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const rows = await readLeaderboard(admin.client, [teamA, teamZ]);
+			expect(rows.map((r) => r.team_id)).toEqual([teamA, teamZ]);
+		}
+	});
+
+	it("a student with a streak but no team assignment (team_id IS NULL) is excluded from every team's sum", async () => {
+		const classId = await createClass('No Team');
+		const team = await createTeam(`No Team Control ${crypto.randomUUID().slice(0, 6)}`);
+		const teamless = await createStudent({ classId, name: 'Teamless', teamId: null });
+		await setStreak(teamless, classId, 99);
+
+		// The control team has zero members -- if the teamless student's
+		// streak were ever mis-attributed anywhere, this is the team it could
+		// only wrongly land on by a null-handling bug (e.g. team_id IS NULL
+		// coalescing to some team's id).
+		const rows = await readLeaderboard(admin.client, [team]);
+		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 0 }]);
+	});
+
+	it("a pending (not yet approved) student's streak is excluded from their team's sum", async () => {
+		const classId = await createClass('Pending Excluded');
+		const team = await createTeam(`Pending Excluded ${crypto.randomUUID().slice(0, 6)}`);
+		const pending = await createStudent({
+			classId,
+			name: 'Pending Student',
+			status: 'pending',
+			teamId: team
+		});
+		await setStreak(pending, classId, 10);
+
+		const rows = await readLeaderboard(admin.client, [team]);
+		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 0 }]);
+	});
+
+	it('every authenticated role (admin, teacher, student) sees the identical team-level totals -- no individual streak is exposed', async () => {
+		const classId = await createClass('Cross Role');
+		const team = await createTeam(`Cross Role ${crypto.randomUUID().slice(0, 6)}`);
+		const s1 = await createStudent({ classId, name: 'Cross Role S1', teamId: team });
+		await setStreak(s1, classId, 6);
+
+		const signedInStudentEmail = `story-4-3-signedin-${crypto.randomUUID()}@students.internal.invalid`;
+		const signedInStudentPassword = crypto.randomUUID();
+		const { data: signedInStudentData, error: signedInStudentError } =
+			await adminClient.auth.admin.createUser({
+				email: signedInStudentEmail,
+				password: signedInStudentPassword,
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+		if (signedInStudentError || !signedInStudentData.user) {
+			throw new Error(`Failed to create signed-in student: ${signedInStudentError?.message}`);
+		}
+		await adminClient
+			.from('profiles')
+			.update({
+				class_id: classId,
+				status: 'approved',
+				registration_name: 'Cross Role Viewer',
+				display_name: 'Cross Role Viewer',
+				team_id: team
+			})
+			.eq('id', signedInStudentData.user.id);
+		const studentClient = anonClient();
+		const { error: signInError } = await studentClient.auth.signInWithPassword({
+			email: signedInStudentEmail,
+			password: signedInStudentPassword
+		});
+		if (signInError) throw new Error(`Failed to sign in student: ${signInError.message}`);
+
+		const adminRows = await readLeaderboard(admin.client, [team]);
+		const teacherRows = await readLeaderboard(teacherA.client, [team]);
+		const studentRows = await readLeaderboard(studentClient, [team]);
+
+		expect(adminRows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 6 }]);
+		expect(teacherRows).toEqual(adminRows);
+		expect(studentRows).toEqual(adminRows);
+
+		// The return shape itself only ever carries team-level columns -- no
+		// student_id/student-level field could leak through even by accident
+		// (Boundaries: "Do not expose any individual student's streak value
+		// through this feature -- only team-level sums").
+		expect(Object.keys(adminRows[0]).sort()).toEqual(['team_id', 'team_name', 'total_streak']);
+	});
+});
