@@ -14,6 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { isDuplicateSignup } from './signup-duplicate';
+import { buildHomeworkProgress, type HomeworkHistoryRow } from './homework-status';
 import {
 	STUDENT_EMAIL_DOMAIN,
 	generateStudentPin,
@@ -4674,5 +4675,407 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		// (Boundaries: "Do not expose any individual student's streak value
 		// through this feature -- only team-level sums").
 		expect(Object.keys(adminRows[0]).sort()).toEqual(['team_id', 'team_name', 'total_streak']);
+	});
+});
+
+describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+
+	/** Same per-scenario-fresh-class shape as the Story 4-1/4-2/4-3 blocks above -- teacherA is assigned. */
+	async function createClass(prefix: string) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 5-1 ${prefix}`,
+				code: `S5${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const classId = data.id as string;
+
+		const { error: assignError } = await admin.client
+			.from('class_teachers')
+			.insert({ class_id: classId, teacher_id: teacherA.id });
+		if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+		return classId;
+	}
+
+	/**
+	 * Deliberately NOT assigned to teacherA -- used by the cross-role
+	 * regression test below to prove a class outside a teacher's own
+	 * assignment never counts toward their scoped read, the way it would for
+	 * admin's cross-class dashboard read.
+	 */
+	async function createUnassignedClass(prefix: string) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 5-1 ${prefix}`,
+				code: `S5${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create unassigned class: ${error?.message}`);
+		return data.id as string;
+	}
+
+	/** Same shape as the Story 4-3 block's own createStudent (status defaults to approved). */
+	async function createStudent(params: {
+		classId: string;
+		name: string;
+		status?: 'pending' | 'approved' | 'rejected';
+	}) {
+		const email = `story-5-1-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: params.status ?? 'approved',
+				registration_name: params.name,
+				display_name: params.name
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up student: ${updateError.message}`);
+		}
+
+		return data.user.id;
+	}
+
+	/** Same as createStudent, but also signs in -- needed for the student-side regression check below. */
+	async function createSignedInStudent(params: { classId: string; name: string }) {
+		const email = `story-5-1-signedin-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const password = crypto.randomUUID();
+
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password,
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create signed-in student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: 'approved',
+				registration_name: params.name,
+				display_name: params.name
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up signed-in student: ${updateError.message}`);
+		}
+
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+		if (signInError) {
+			throw new Error(`Failed to sign in student: ${signInError.message}`);
+		}
+
+		return { id: data.user.id, email, client };
+	}
+
+	function addDays(isoDate: string, days: number): string {
+		const d = new Date(`${isoDate}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() + days);
+		return d.toISOString().slice(0, 10);
+	}
+
+	const today = new Date().toISOString().slice(0, 10);
+
+	/** One-off homework assignment, service-role. */
+	async function createAssignment(classId: string) {
+		const { data, error } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: `Story 5-1 HW ${crypto.randomUUID().slice(0, 6)}`,
+				skill_area: 'language',
+				created_by: teacherA.id
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create assignment: ${error?.message}`);
+		return data.id as string;
+	}
+
+	async function createInstance(params: {
+		assignmentId: string;
+		classId: string;
+		periodStart: string;
+	}) {
+		const { data, error } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: params.assignmentId,
+				class_id: params.classId,
+				period_start: params.periodStart,
+				due_date: addDays(params.periodStart, 3)
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create homework instance: ${error?.message}`);
+		return data.id as string;
+	}
+
+	/** Inserts the initial 'assigned' row for a (instance, student) pair -- Code Map's own history shape (0004). */
+	async function assignStudent(params: { instanceId: string; studentId: string; classId: string }) {
+		const { error } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: 'assigned',
+			recorded_by: teacherA.id
+		});
+		if (error) throw new Error(`Failed to insert assigned row: ${error.message}`);
+	}
+
+	async function markStatus(params: {
+		instanceId: string;
+		studentId: string;
+		classId: string;
+		status: 'done' | 'reviewed';
+	}) {
+		const { error } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: params.status,
+			recorded_by: params.status === 'done' ? params.studentId : teacherA.id
+		});
+		if (error) throw new Error(`Failed to insert ${params.status} row: ${error.message}`);
+	}
+
+	/**
+	 * Runs the same shape of parallel aggregate queries
+	 * src/routes/admin/+page.server.ts issues, as whichever client is passed
+	 * -- lets the cross-role regression test below reuse the exact query
+	 * shapes rather than re-deriving its own.
+	 */
+	async function readAggregateCounts(
+		client: Awaited<ReturnType<typeof createSignedInUser>>['client']
+	) {
+		const [classesRes, teachersRes, studentsRes, pendingRes, assignmentsRes] = await Promise.all([
+			client.from('classes').select('id', { count: 'exact', head: true }),
+			client.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'teacher'),
+			client
+				.from('profiles')
+				.select('id', { count: 'exact', head: true })
+				.eq('role', 'student')
+				.eq('status', 'approved'),
+			client
+				.from('profiles')
+				.select('id', { count: 'exact', head: true })
+				.eq('role', 'student')
+				.eq('status', 'pending'),
+			client.from('homework_assignments').select('id', { count: 'exact', head: true })
+		]);
+		return {
+			classes: classesRes.count ?? 0,
+			teachers: teachersRes.count ?? 0,
+			students: studentsRes.count ?? 0,
+			pending: pendingRes.count ?? 0,
+			assignments: assignmentsRes.count ?? 0
+		};
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacherA = await createSignedInUser('teacher');
+	}, 30000);
+
+	it('as admin, classes/teachers/approved-students/pending-requests/homework-assignments counts each increase by exactly the known fixture added (I/O matrix: "Normal load")', async () => {
+		const before = await readAggregateCounts(admin.client);
+
+		const classId = await createClass('Fixture A');
+		await createClass('Fixture B');
+		await createSignedInUser('teacher');
+		await createStudent({ classId, name: 'Fixture Approved 1' });
+		await createStudent({ classId, name: 'Fixture Approved 2' });
+		await createStudent({ classId, name: 'Fixture Pending 1', status: 'pending' });
+		await createAssignment(classId);
+
+		const after = await readAggregateCounts(admin.client);
+
+		expect(after.classes - before.classes).toBe(2);
+		expect(after.teachers - before.teachers).toBe(1);
+		expect(after.students - before.students).toBe(2);
+		expect(after.pending - before.pending).toBe(1);
+		expect(after.assignments - before.assignments).toBe(1);
+	});
+
+	it('a fresh class contributing zero pending requests is a truthful 0, not a missing/undefined count (I/O matrix: "Fresh school with zero of something")', async () => {
+		const before = await readAggregateCounts(admin.client);
+		await createClass('Zero Pending');
+		const after = await readAggregateCounts(admin.client);
+
+		// The new class has no students at all -- pending, students, and
+		// assignments must be unchanged, never null/NaN/undefined, and the
+		// classes count must still move by exactly 1.
+		expect(after.classes - before.classes).toBe(1);
+		expect(after.pending - before.pending).toBe(0);
+		expect(after.students - before.students).toBe(0);
+		expect(after.assignments - before.assignments).toBe(0);
+		expect(Number.isFinite(after.pending)).toBe(true);
+	});
+
+	it('completion math follows the distinct (instance, student) done-or-reviewed dedup convention (never raw history-row counts) against a known fixture', async () => {
+		const classId = await createClass('Completion');
+		const assignmentId = await createAssignment(classId);
+		const s1 = await createStudent({ classId, name: 'Completion S1' });
+		const s2 = await createStudent({ classId, name: 'Completion S2' });
+		const s3 = await createStudent({ classId, name: 'Completion S3' });
+
+		const instance1 = await createInstance({ assignmentId, classId, periodStart: today });
+		const instance2 = await createInstance({
+			assignmentId,
+			classId,
+			periodStart: addDays(today, 7)
+		});
+
+		// instance1: three targeted students, s1 reaches done, s2 reaches
+		// done+reviewed (a second history row for the same pair -- must not
+		// double-count), s3 stays assigned-only.
+		await assignStudent({ instanceId: instance1, studentId: s1, classId });
+		await assignStudent({ instanceId: instance1, studentId: s2, classId });
+		await assignStudent({ instanceId: instance1, studentId: s3, classId });
+		await markStatus({ instanceId: instance1, studentId: s1, classId, status: 'done' });
+		await markStatus({ instanceId: instance1, studentId: s2, classId, status: 'done' });
+		await markStatus({ instanceId: instance1, studentId: s2, classId, status: 'reviewed' });
+
+		// instance2: one assigned-only pair (I/O matrix: "no homework history
+		// at all yet" for this pair specifically) -- contributes to the
+		// denominator, never the numerator.
+		await assignStudent({ instanceId: instance2, studentId: s1, classId });
+
+		// Admin reads via the same admin-readable RLS policy
+		// src/routes/admin/+page.server.ts's own (paginated) whole-table read
+		// relies on (homework_status_history_select_admin_teacher_or_own),
+		// but this test scopes server-side to its own known instance ids via
+		// `.in(...)` rather than an unfiltered select -- the shared table
+		// already holds 1000+ rows across every other describe block in this
+		// file, past PostgREST's `api.max_rows` page cap, so an unfiltered
+		// select here would itself need the same pagination the route uses;
+		// `.in('instance_id', [...])` sidesteps that while still exercising
+		// the identical RLS policy and dedup logic.
+		const { data: allHistory, error } = await admin.client
+			.from('homework_status_history')
+			.select('id, instance_id, student_id, status, recorded_by, recorded_at')
+			.in('instance_id', [instance1, instance2]);
+		expect(error).toBeNull();
+
+		const scoped: HomeworkHistoryRow[] = (allHistory ?? []).map((r) => ({
+			id: r.id,
+			instanceId: r.instance_id,
+			studentId: r.student_id,
+			status: r.status,
+			recordedBy: r.recorded_by,
+			recordedAt: r.recorded_at
+		}));
+
+		const progress = Object.values(buildHomeworkProgress(scoped));
+		const totalAssigned = progress.filter((p) => p.assignedAt !== null).length;
+		const totalDoneOrReviewed = progress.filter(
+			(p) => p.doneAt !== null || p.reviewedAt !== null
+		).length;
+
+		// Four distinct (instance, student) pairs total: (i1,s1) (i1,s2)
+		// (i1,s3) (i2,s1) -- never five, even though six history rows were
+		// inserted (three assigned + done + done + reviewed).
+		expect(totalAssigned).toBe(4);
+		// Two pairs reached done-or-reviewed: (i1,s1) and (i1,s2) -- s2's
+		// extra 'reviewed' row must not count it twice.
+		expect(totalDoneOrReviewed).toBe(2);
+
+		const percent =
+			totalAssigned === 0 ? 0 : Math.round((totalDoneOrReviewed / totalAssigned) * 100);
+		expect(percent).toBe(50);
+	});
+
+	it('completion percentage is 0, never NaN, when the assigned-pairs denominator is 0 (I/O matrix: "No homework history at all yet")', () => {
+		const progress = Object.values(buildHomeworkProgress([]));
+		const totalAssigned = progress.filter((p) => p.assignedAt !== null).length;
+		const totalDoneOrReviewed = progress.filter(
+			(p) => p.doneAt !== null || p.reviewedAt !== null
+		).length;
+		const percent =
+			totalAssigned === 0 ? 0 : Math.round((totalDoneOrReviewed / totalAssigned) * 100);
+
+		expect(percent).toBe(0);
+		expect(Number.isNaN(percent)).toBe(false);
+	});
+
+	it("a teacher's identical aggregate queries stay scoped to their own assignment -- never the admin's cross-class totals (read-only regression, no new policy)", async () => {
+		const ownClassId = await createClass('Teacher Scope Own');
+		const foreignClassId = await createUnassignedClass('Teacher Scope Foreign');
+
+		await createStudent({ classId: ownClassId, name: 'Own Approved' });
+		await createStudent({ classId: foreignClassId, name: 'Foreign Approved' });
+		await createStudent({ classId: foreignClassId, name: 'Foreign Pending', status: 'pending' });
+
+		// classes_select_admin_or_assigned_teacher: teacherA's count excludes
+		// the foreign class entirely, so it must be strictly less than
+		// admin's, even though both ran the exact same query shape.
+		const adminCounts = await readAggregateCounts(admin.client);
+		const teacherCounts = await readAggregateCounts(teacherA.client);
+		expect(teacherCounts.classes).toBeLessThan(adminCounts.classes);
+
+		// profiles_select_admin_or_teacher_of_student_class: the foreign
+		// class's students (approved and pending alike) never appear in
+		// teacherA's read, even though the dashboard's own query has no
+		// class_id filter -- RLS is the real scoping, not app-level code.
+		const { data: teacherVisibleStudents, error: teacherStudentsError } = await teacherA.client
+			.from('profiles')
+			.select('id, class_id')
+			.eq('role', 'student');
+		expect(teacherStudentsError).toBeNull();
+		expect((teacherVisibleStudents ?? []).some((r) => r.class_id === foreignClassId)).toBe(false);
+
+		// profiles_select_own is the only policy that could match a
+		// role='teacher' filter for a non-admin -- teacherA sees exactly
+		// their own row, never every teacher account the way admin's
+		// dashboard tile does.
+		const { data: teacherVisibleTeachers, error: teacherTeachersError } = await teacherA.client
+			.from('profiles')
+			.select('id')
+			.eq('role', 'teacher');
+		expect(teacherTeachersError).toBeNull();
+		expect(teacherVisibleTeachers).toEqual([{ id: teacherA.id }]);
+
+		// A student has no select policy on `classes` at all (admin-or-
+		// assigned-teacher only) -- zero rows, not a scoped-down subset.
+		const signedInStudent = await createSignedInStudent({
+			classId: ownClassId,
+			name: 'Regression Viewer'
+		});
+		const { data: studentVisibleClasses, error: studentClassesError } = await signedInStudent.client
+			.from('classes')
+			.select('id');
+		expect(studentClassesError).toBeNull();
+		expect(studentVisibleClasses).toEqual([]);
+
+		// profiles_select_own: a student sees only their own profile row,
+		// never the cross-class student roster the admin dashboard aggregates.
+		const { data: studentVisibleProfiles, error: studentProfilesError } =
+			await signedInStudent.client.from('profiles').select('id').eq('role', 'student');
+		expect(studentProfilesError).toBeNull();
+		expect(studentVisibleProfiles).toEqual([{ id: signedInStudent.id }]);
 	});
 });

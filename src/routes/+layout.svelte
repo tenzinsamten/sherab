@@ -44,10 +44,19 @@
 		{#if data.profile}
 			<span style="margin-left:auto;"></span>
 			{#if data.profile.role === 'admin'}
+				{@const dashboardHref = resolve('/admin')}
 				{@const classesHref = resolve('/admin/classes')}
 				{@const teachersHref = resolve('/admin/teachers')}
 				{@const teamsHref = resolve('/admin/teams')}
 				{@const requestsHref = resolve('/requests')}
+				<a
+					href={dashboardHref}
+					class="nav-link"
+					class:active={page.url.pathname === dashboardHref}
+					aria-current={page.url.pathname === dashboardHref ? 'page' : undefined}
+				>
+					{m.nav_dashboard()}
+				</a>
 				<a
 					href={classesHref}
 					class="nav-link"

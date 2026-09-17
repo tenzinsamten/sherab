@@ -70,7 +70,7 @@
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-17-2026 20:30
+last_updated: 09-17-2026 20:45
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -97,8 +97,8 @@ development_status:
   4-3-team-leaderboard: done
   epic-4-retrospective: optional
 
-  epic-5: backlog # Admin Oversight & Privacy (CAP-7, CAP-8)
-  5-1-admin-cross-class-oversight-data-deletion: backlog
+  epic-5: in-progress # Admin Oversight & Privacy (CAP-7, CAP-8)
+  5-1-admin-cross-class-oversight-data-deletion: in-progress
   epic-5-retrospective: optional
 
 action_items: []
