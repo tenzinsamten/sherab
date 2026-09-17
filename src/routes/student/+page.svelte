@@ -21,6 +21,26 @@
 <p class="section-label">{m.student_section_label()}</p>
 <h1>{m.student_homework_heading()}</h1>
 
+<div class="card" style="margin-bottom: var(--space-4);">
+	<p class="section-label" style="margin-bottom: var(--space-1);">{m.student_streak_label()}</p>
+	{#if data.loadError}
+		<!-- A failed student_streaks fetch is unknown state, not a truthful
+		     zero -- show the same error treatment used elsewhere on this page
+		     rather than the empty-state copy, which would otherwise falsely
+		     imply "confirmed no streak". -->
+		<p class="banner-error" role="alert">{m.load_error_generic()}</p>
+	{:else if data.streak && data.streak.currentStreak > 0}
+		<p
+			class="stat-tile-value"
+			aria-label={m.student_streak_aria_label({ count: data.streak.currentStreak })}
+		>
+			{m.student_streak_weeks({ count: data.streak.currentStreak })}
+		</p>
+	{:else}
+		<p style="margin: 0; color: var(--color-muted-foreground);">{m.student_streak_empty()}</p>
+	{/if}
+</div>
+
 {#if data.loadError}
 	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
 {/if}

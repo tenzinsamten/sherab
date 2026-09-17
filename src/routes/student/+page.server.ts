@@ -5,6 +5,7 @@ import {
 	isOverdue,
 	type HomeworkHistoryRow
 } from '$lib/server/homework-status';
+import { shapeStudentStreak } from '$lib/server/streak';
 import type { SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -161,9 +162,24 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		.filter((item): item is HomeworkListItem => item !== null)
 		.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
+	// Story 4-1: student_streaks is trigger-written only (AD-3) -- this is a
+	// plain read, scoped by RLS (student_streaks_select_admin_teacher_or_own)
+	// to the caller's own row; the explicit .eq is belt-and-suspenders,
+	// matching the pattern already used throughout this codebase. A student
+	// with no row yet (never triggered a recompute) is a legitimate "no
+	// streak yet" state, not a load error.
+	const { data: streakRow, error: streakError } = await supabase
+		.from('student_streaks')
+		.select('current_streak, last_qualifying_week')
+		.eq('student_id', user.id)
+		.maybeSingle();
+
+	const streak = shapeStudentStreak(streakRow);
+
 	return {
 		items,
-		loadError: Boolean(historyError || instancesError || assignmentsError)
+		streak,
+		loadError: Boolean(historyError || instancesError || assignmentsError || streakError)
 	};
 };
 

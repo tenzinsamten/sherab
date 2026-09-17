@@ -224,6 +224,19 @@ button {
 	padding: var(--space-6);
 }
 
+/* Stat tile (DESIGN.md: "small uppercase label over a huge bold number") --
+   pair with .card + .section-label for the tile itself; this covers just the
+   large number, since no color/weight treatment beyond ink has been decided
+   yet for any stat tile in this app (functional-first, per Epic 4 context:
+   "flag any real design decision instead of guessing one"). First used by
+   the student streak tile (Story 4-1); reuse for future stat displays
+   (badges/leaderboard) rather than repeating the inline styles. */
+.stat-tile-value {
+	margin: 0;
+	font-size: var(--text-2xl);
+	font-weight: 700;
+}
+
 .field {
 	display: flex;
 	flex-direction: column;

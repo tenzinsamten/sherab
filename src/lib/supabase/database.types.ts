@@ -471,6 +471,45 @@ export type Database = {
 					}
 				];
 			};
+			student_streaks: {
+				Row: {
+					class_id: string;
+					current_streak: number;
+					last_qualifying_week: string | null;
+					student_id: string;
+					updated_at: string;
+				};
+				Insert: {
+					class_id: string;
+					current_streak?: number;
+					last_qualifying_week?: string | null;
+					student_id: string;
+					updated_at?: string;
+				};
+				Update: {
+					class_id?: string;
+					current_streak?: number;
+					last_qualifying_week?: string | null;
+					student_id?: string;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'student_streaks_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'student_streaks_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: true;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			teams: {
 				Row: {
 					created_at: string;
@@ -511,6 +550,10 @@ export type Database = {
 			is_teacher_of_class: {
 				Args: { target_class_id: string };
 				Returns: boolean;
+			};
+			recompute_student_streak: {
+				Args: { p_class_id: string; p_student_id: string };
+				Returns: undefined;
 			};
 			validate_class_code: {
 				Args: { p_code: string };

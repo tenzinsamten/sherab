@@ -219,6 +219,29 @@
 	"student_homework_error_mark_failed": "Konnte nicht als erledigt markiert werden. Bitte erneut versuchen.",
 	"student_homework_error_not_found": "Diese Hausaufgabe wurde nicht gefunden.",
 
+	"student_streak_label": "Serie",
+	"student_streak_weeks": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} Woche",
+				"countPlural=other": "{count} Wochen"
+			}
+		}
+	],
+	"student_streak_aria_label": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Aktuelle Serie: {count} Woche",
+				"countPlural=other": "Aktuelle Serie: {count} Wochen"
+			}
+		}
+	],
+	"student_streak_empty": "Aktuell keine Serie. Sei in derselben Woche anwesend und erledige die Hausaufgaben, um eine zu starten.",
+
 	"teams_section_label": "04 / Teams",
 	"teams_heading": "Teams",
 	"teams_create_heading": "Team erstellen",

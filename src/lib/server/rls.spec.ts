@@ -3073,3 +3073,791 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+	let originalGraceWeeksValue: Database['public']['Tables']['app_settings']['Row']['value'];
+
+	/**
+	 * Every scenario below gets its own fresh class (rather than sharing one
+	 * classAId the way earlier blocks do) -- recompute_student_streak()'s
+	 * class-wide holiday exclusion and grace consumption are both scoped to
+	 * class_id across *all* of a class's attendance_records rows, so two
+	 * scenarios sharing a class could otherwise silently interact via each
+	 * other's session weeks.
+	 */
+	async function createClass(prefix: string) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 4-1 ${prefix}`,
+				code: `S4${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const classId = data.id as string;
+
+		const { error: assignError } = await admin.client
+			.from('class_teachers')
+			.insert({ class_id: classId, teacher_id: teacherA.id });
+		if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
+
+		return classId;
+	}
+
+	/** Same shape as the Story 2-1/3-1/3-2 blocks' local createStudent. */
+	async function createStudent(params: { classId: string; name: string }) {
+		const email = `story-4-1-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: 'approved',
+				registration_name: params.name,
+				display_name: params.name,
+				team_id: teamId
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up student: ${updateError.message}`);
+		}
+
+		return data.user.id;
+	}
+
+	/**
+	 * Same as createStudent, but also signs in -- needed for the RLS
+	 * self-read test below, which must exercise student_streaks_select_
+	 * admin_teacher_or_own's `student_id = auth.uid()` branch as the real
+	 * student, not via the service-role client.
+	 */
+	async function createSignedInStudent(params: { classId: string; name: string }) {
+		const email = `story-4-1-signedin-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const password = crypto.randomUUID();
+
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password,
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) {
+			throw new Error(`Failed to create signed-in student: ${error?.message}`);
+		}
+
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: params.classId,
+				status: 'approved',
+				registration_name: params.name,
+				display_name: params.name,
+				team_id: teamId
+			})
+			.eq('id', data.user.id);
+		if (updateError) {
+			throw new Error(`Failed to set up signed-in student: ${updateError.message}`);
+		}
+
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+		if (signInError) {
+			throw new Error(`Failed to sign in student: ${signInError.message}`);
+		}
+
+		return { id: data.user.id, email, client };
+	}
+
+	function addDays(isoDate: string, days: number): string {
+		const d = new Date(`${isoDate}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() + days);
+		return d.toISOString().slice(0, 10);
+	}
+
+	/** Mirrors the migration's date_trunc('week', ...) -- Monday of the ISO week containing isoDate. */
+	function mondayOf(isoDate: string): string {
+		const d = new Date(`${isoDate}T00:00:00Z`);
+		const day = d.getUTCDay(); // 0 = Sunday .. 6 = Saturday
+		const diffFromMonday = day === 0 ? 6 : day - 1;
+		d.setUTCDate(d.getUTCDate() - diffFromMonday);
+		return d.toISOString().slice(0, 10);
+	}
+
+	const today = new Date().toISOString().slice(0, 10);
+	/** ISO date for the Nth week offset from today (0 = this week, -1 = last week, ...). */
+	function weekOffset(n: number): string {
+		return addDays(today, n * 7);
+	}
+
+	/**
+	 * Fires attendance_records_recompute_streak via a direct service-role
+	 * insert (bypasses attendance_records' own RLS, which this story doesn't
+	 * re-test -- Stories 2-1/3-1 already cover it). The trigger fires
+	 * identically regardless of which role performed the insert.
+	 */
+	async function markAttendance(params: {
+		studentId: string;
+		classId: string;
+		sessionDate: string;
+		present: boolean;
+	}) {
+		const { error } = await adminClient.from('attendance_records').insert({
+			student_id: params.studentId,
+			class_id: params.classId,
+			session_date: params.sessionDate,
+			present: params.present,
+			recorded_by: teacherA.id
+		});
+		if (error) throw new Error(`Failed to mark attendance: ${error.message}`);
+	}
+
+	/** One-off homework assignment, service-role, reused across a scenario's weeks. */
+	async function createAssignment(classId: string) {
+		const { data, error } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: `Story 4-1 HW ${crypto.randomUUID().slice(0, 6)}`,
+				skill_area: 'language',
+				created_by: teacherA.id
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create assignment: ${error?.message}`);
+		return data.id as string;
+	}
+
+	async function createInstance(params: {
+		assignmentId: string;
+		classId: string;
+		periodStart: string;
+	}) {
+		const { data, error } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: params.assignmentId,
+				class_id: params.classId,
+				period_start: params.periodStart,
+				due_date: addDays(params.periodStart, 3)
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create homework instance: ${error?.message}`);
+		return data.id as string;
+	}
+
+	async function markHomeworkDone(params: {
+		instanceId: string;
+		studentId: string;
+		classId: string;
+		recordedBy?: string;
+	}) {
+		// The initial 'assigned' row is always inserted first (Code Map /
+		// 0004's own history shape) -- a 'done' row with no prior 'assigned'
+		// row is not a state this story's trigger needs to handle specially,
+		// but every other story's fixtures maintain this shape, so this one
+		// does too for realism.
+		const { error: assignedError } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: 'assigned',
+			recorded_by: teacherA.id
+		});
+		if (assignedError) throw new Error(`Failed to insert assigned row: ${assignedError.message}`);
+
+		const { error: doneError } = await adminClient.from('homework_status_history').insert({
+			instance_id: params.instanceId,
+			student_id: params.studentId,
+			class_id: params.classId,
+			status: 'done',
+			recorded_by: params.recordedBy ?? params.studentId
+		});
+		if (doneError) throw new Error(`Failed to insert done row: ${doneError.message}`);
+	}
+
+	/** Reads current_streak/last_qualifying_week via the service-role client (no RLS involved). */
+	async function readStreak(studentId: string) {
+		const { data, error } = await adminClient
+			.from('student_streaks')
+			.select('current_streak, last_qualifying_week')
+			.eq('student_id', studentId)
+			.maybeSingle();
+		if (error) throw new Error(`Failed to read streak: ${error.message}`);
+		return data;
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacherA = await createSignedInUser('teacher');
+		teacherB = await createSignedInUser('teacher');
+
+		const { data: team, error: teamError } = await admin.client
+			.from('teams')
+			.insert({ name: `Story 4-1 Team ${crypto.randomUUID().slice(0, 6)}` })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+
+		const { data: settingRow, error: settingError } = await adminClient
+			.from('app_settings')
+			.select('value')
+			.eq('key', 'streak_grace_weeks')
+			.single();
+		if (settingError || !settingRow)
+			throw new Error(`Failed to read streak_grace_weeks: ${settingError?.message}`);
+		originalGraceWeeksValue = settingRow.value;
+		expect((originalGraceWeeksValue as { weeks?: number }).weeks).toBe(2);
+	}, 30000);
+
+	it('attendance then homework Done landing in the same week increments the streak exactly once, regardless of mark order', async () => {
+		const classId = await createClass('Same Week A');
+		const student = await createStudent({
+			classId,
+			name: `Same Week Attendance First ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart: weekOffset(0) });
+
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: weekOffset(0),
+			present: true
+		});
+		let streak = await readStreak(student);
+		// Only attendance has landed so far -- I/O matrix: "Streak does not
+		// increment for that week until the missing condition also lands".
+		expect(streak?.current_streak ?? 0).toBe(0);
+
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		streak = await readStreak(student);
+		expect(streak?.current_streak).toBe(1);
+		expect(streak?.last_qualifying_week).toBe(mondayOf(weekOffset(0)));
+	});
+
+	it('homework Done landing before attendance in the same week produces the identical end state (mark order does not matter)', async () => {
+		const classId = await createClass('Same Week B');
+		const student = await createStudent({
+			classId,
+			name: `Same Week Homework First ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart: weekOffset(0) });
+
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		let streak = await readStreak(student);
+		expect(streak?.current_streak ?? 0).toBe(0);
+
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: weekOffset(0),
+			present: true
+		});
+		streak = await readStreak(student);
+		expect(streak?.current_streak).toBe(1);
+	});
+
+	it('a multi-week consecutive qualifying run accumulates the full count', async () => {
+		const classId = await createClass('Consecutive Run');
+		const student = await createStudent({
+			classId,
+			name: `Consecutive ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		for (const offset of [-3, -2, -1, 0]) {
+			const periodStart = weekOffset(offset);
+			const instanceId = await createInstance({ assignmentId, classId, periodStart });
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: periodStart,
+				present: true
+			});
+			await markHomeworkDone({ instanceId, studentId: student, classId });
+		}
+
+		const streak = await readStreak(student);
+		expect(streak?.current_streak).toBe(4);
+		expect(streak?.last_qualifying_week).toBe(mondayOf(weekOffset(0)));
+	});
+
+	it('a single missed week (fewer than streak_grace_weeks) preserves the streak across the gap rather than resetting it', async () => {
+		const classId = await createClass('Grace Preserved');
+		const student = await createStudent({
+			classId,
+			name: `Grace Preserved ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		for (const offset of [-4, -3]) {
+			const periodStart = weekOffset(offset);
+			const instanceId = await createInstance({ assignmentId, classId, periodStart });
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: periodStart,
+				present: true
+			});
+			await markHomeworkDone({ instanceId, studentId: student, classId });
+		}
+
+		// Week -2: the class holds a session (attendance row exists), but
+		// this student misses both conditions entirely -- a real, grace-
+		// consuming miss, not a holiday.
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: weekOffset(-2),
+			present: false
+		});
+
+		for (const offset of [-1, 0]) {
+			const periodStart = weekOffset(offset);
+			const instanceId = await createInstance({ assignmentId, classId, periodStart });
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: periodStart,
+				present: true
+			});
+			await markHomeworkDone({ instanceId, studentId: student, classId });
+		}
+
+		const streak = await readStreak(student);
+		// 4 qualifying weeks (-4, -3, -1, 0); the single -2 miss is tolerated
+		// (default streak_grace_weeks = 2) and does not itself count.
+		expect(streak?.current_streak).toBe(4);
+	});
+
+	it('missing more consecutive weeks than streak_grace_weeks resets the streak to 0', async () => {
+		const classId = await createClass('Grace Exceeded');
+		const student = await createStudent({
+			classId,
+			name: `Grace Exceeded ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		const qualifyingPeriod = weekOffset(-4);
+		const instanceId = await createInstance({
+			assignmentId,
+			classId,
+			periodStart: qualifyingPeriod
+		});
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: qualifyingPeriod,
+			present: true
+		});
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		expect((await readStreak(student))?.current_streak).toBe(1);
+
+		// 3 consecutive real misses (grace default = 2) -- each is its own
+		// class session (present=false), never a holiday.
+		for (const offset of [-3, -2, -1]) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: weekOffset(offset),
+				present: false
+			});
+		}
+
+		const streak = await readStreak(student);
+		expect(streak?.current_streak).toBe(0);
+	});
+
+	it('exercises the exact streak_grace_weeks = 2 boundary: 2 consecutive misses preserved, 3 resets to 0', async () => {
+		const classId = await createClass('Grace Boundary');
+		const preservedStudent = await createStudent({
+			classId,
+			name: `Grace Boundary Preserved ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const resetStudent = await createStudent({
+			classId,
+			name: `Grace Boundary Reset ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		// Both students qualify at the same earlier week, then diverge: the
+		// "preserved" student misses exactly 2 consecutive weeks (== the
+		// shipped default streak_grace_weeks), the "reset" student misses 3.
+		const qualifyingPeriod = weekOffset(-5);
+		const instanceId = await createInstance({
+			assignmentId,
+			classId,
+			periodStart: qualifyingPeriod
+		});
+		for (const student of [preservedStudent, resetStudent]) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: qualifyingPeriod,
+				present: true
+			});
+			await markHomeworkDone({ instanceId, studentId: student, classId });
+		}
+
+		for (const offset of [-4, -3]) {
+			await markAttendance({
+				studentId: preservedStudent,
+				classId,
+				sessionDate: weekOffset(offset),
+				present: false
+			});
+		}
+		for (const offset of [-4, -3, -2]) {
+			await markAttendance({
+				studentId: resetStudent,
+				classId,
+				sessionDate: weekOffset(offset),
+				present: false
+			});
+		}
+
+		expect((await readStreak(preservedStudent))?.current_streak).toBe(1);
+		expect((await readStreak(resetStudent))?.current_streak).toBe(0);
+	});
+
+	it("a homework Done -> Reviewed transition does not change the streak (the recompute trigger only fires on status = 'done')", async () => {
+		const classId = await createClass('Reviewed Transition');
+		const student = await createStudent({
+			classId,
+			name: `Reviewed Transition ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const periodStart = weekOffset(0);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart });
+
+		await markAttendance({ studentId: student, classId, sessionDate: periodStart, present: true });
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		const before = await readStreak(student);
+		expect(before?.current_streak).toBe(1);
+
+		const { error: reviewedError } = await adminClient.from('homework_status_history').insert({
+			instance_id: instanceId,
+			student_id: student,
+			class_id: classId,
+			status: 'reviewed',
+			recorded_by: teacherA.id
+		});
+		expect(reviewedError).toBeNull();
+
+		const after = await readStreak(student);
+		expect(after).toEqual(before);
+	});
+
+	it('a duplicate homework-done mark for an already-done instance (self + teacher on-behalf-of) does not affect the streak', async () => {
+		const classId = await createClass('Duplicate Done');
+		const student = await createStudent({
+			classId,
+			name: `Duplicate Done ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+		const periodStart = weekOffset(0);
+		const instanceId = await createInstance({ assignmentId, classId, periodStart });
+
+		await markAttendance({ studentId: student, classId, sessionDate: periodStart, present: true });
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+		const before = await readStreak(student);
+		expect(before?.current_streak).toBe(1);
+
+		// Teacher-on-behalf-of duplicate 'done' mark for the exact same
+		// instance -- a second history row, same (student_id, instance_id)
+		// pair.
+		const { error: duplicateError } = await adminClient.from('homework_status_history').insert({
+			instance_id: instanceId,
+			student_id: student,
+			class_id: classId,
+			status: 'done',
+			recorded_by: teacherA.id
+		});
+		expect(duplicateError).toBeNull();
+
+		const after = await readStreak(student);
+		expect(after?.current_streak).toBe(1);
+		expect(after?.last_qualifying_week).toBe(before?.last_qualifying_week);
+	});
+
+	it('a week where the whole class holds zero sessions is excluded from grace consumption for every student in the class, even beyond streak_grace_weeks', async () => {
+		const classId = await createClass('Holiday');
+		const studentX = await createStudent({
+			classId,
+			name: `Holiday X ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const studentY = await createStudent({
+			classId,
+			name: `Holiday Y ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		// One instance per period, shared by both students (homework_instances
+		// is unique on (assignment_id, period_start) -- per-student marks land
+		// as separate homework_status_history rows against the same instance).
+		const earlyPeriod = weekOffset(-5);
+		const earlyInstance = await createInstance({ assignmentId, classId, periodStart: earlyPeriod });
+		for (const student of [studentX, studentY]) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: earlyPeriod,
+				present: true
+			});
+			await markHomeworkDone({ instanceId: earlyInstance, studentId: student, classId });
+		}
+
+		// Weeks -4, -3, -2, -1: no attendance_records row for this class at
+		// all (for either student) -- a genuine class-wide holiday stretch, 4
+		// weeks long (longer than the default streak_grace_weeks = 2), which
+		// a real gap of that length would otherwise reset.
+
+		const latePeriod = weekOffset(0);
+		const lateInstance = await createInstance({ assignmentId, classId, periodStart: latePeriod });
+		for (const student of [studentX, studentY]) {
+			await markAttendance({ studentId: student, classId, sessionDate: latePeriod, present: true });
+			await markHomeworkDone({ instanceId: lateInstance, studentId: student, classId });
+		}
+
+		for (const student of [studentX, studentY]) {
+			const streak = await readStreak(student);
+			// Both qualifying weeks (-5 and 0) count; the 3 holiday weeks in
+			// between never consumed grace, so the streak survives fully
+			// intact rather than resetting.
+			expect(streak?.current_streak).toBe(2);
+		}
+	});
+
+	it('a backdated attendance insert for a week behind the student’s last qualifying week is reflected by the next full recompute, not miscounted from a stale state', async () => {
+		const classId = await createClass('Backdated Catchup');
+		const student = await createStudent({
+			classId,
+			name: `Backdated ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		const earlierPeriod = weekOffset(-1);
+		const earlierInstance = await createInstance({
+			assignmentId,
+			classId,
+			periodStart: earlierPeriod
+		});
+		// Initially recorded absent -- the class did meet (a real session,
+		// not a holiday), but this student's attendance mark is wrong.
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: earlierPeriod,
+			present: false
+		});
+		await markHomeworkDone({ instanceId: earlierInstance, studentId: student, classId });
+
+		const laterPeriod = weekOffset(0);
+		const laterInstance = await createInstance({ assignmentId, classId, periodStart: laterPeriod });
+		await markAttendance({ studentId: student, classId, sessionDate: laterPeriod, present: true });
+		await markHomeworkDone({ instanceId: laterInstance, studentId: student, classId });
+
+		// Before the correction: only week 0 qualifies (week -1's homework
+		// was Done, but attendance was marked absent).
+		expect((await readStreak(student))?.current_streak).toBe(1);
+
+		// Backdated catch-up: a new attendance_records row lands for the
+		// same student/session_date, present=true -- append-only (AD-5), the
+		// earlier present=false row is never edited in place.
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: earlierPeriod,
+			present: true
+		});
+
+		const streak = await readStreak(student);
+		// Full recompute now finds week -1 qualifying too -- a stale
+		// incremental counter would have stayed at 1.
+		expect(streak?.current_streak).toBe(2);
+		expect(streak?.last_qualifying_week).toBe(mondayOf(laterPeriod));
+	});
+
+	it('a direct client insert or update against student_streaks is rejected -- it is trigger-written only', async () => {
+		const classId = await createClass('No Direct Writes');
+		const student = await createStudent({
+			classId,
+			name: `No Direct Writes ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		const insertAttempt = await teacherA.client
+			.from('student_streaks')
+			.insert({ student_id: student, class_id: classId, current_streak: 99 });
+		expect(insertAttempt.error).not.toBeNull();
+
+		const adminInsertAttempt = await admin.client
+			.from('student_streaks')
+			.insert({ student_id: student, class_id: classId, current_streak: 99 });
+		expect(adminInsertAttempt.error).not.toBeNull();
+
+		// A trigger-created row to attempt an UPDATE against.
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: weekOffset(0),
+			present: true
+		});
+
+		const updateAttempt = await teacherA.client
+			.from('student_streaks')
+			.update({ current_streak: 999 })
+			.eq('student_id', student);
+		expect(updateAttempt.error).toBeNull(); // RLS denies by filtering, not by erroring
+		expect(updateAttempt.data ?? []).toEqual([]);
+
+		const { data: unchanged } = await adminClient
+			.from('student_streaks')
+			.select('current_streak')
+			.eq('student_id', student)
+			.single();
+		expect(unchanged?.current_streak).not.toBe(999);
+	});
+
+	it('RLS: admin, the assigned teacher, and the student themself can read a streak row; an unrelated teacher and another student cannot', async () => {
+		const classId = await createClass('RLS Visibility');
+		const signedInStudent = await createSignedInStudent({
+			classId,
+			name: `RLS Visibility ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const otherSignedInStudent = await createSignedInStudent({
+			classId: await createClass('RLS Visibility Other'),
+			name: `RLS Visibility Other ${crypto.randomUUID().slice(0, 6)}`
+		});
+
+		await markAttendance({
+			studentId: signedInStudent.id,
+			classId,
+			sessionDate: weekOffset(0),
+			present: true
+		});
+
+		const adminRead = await admin.client
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(adminRead.data).toHaveLength(1);
+
+		const assignedTeacherRead = await teacherA.client
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(assignedTeacherRead.data).toHaveLength(1);
+
+		const selfRead = await signedInStudent.client
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(selfRead.data).toHaveLength(1);
+
+		const unrelatedTeacherRead = await teacherB.client
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(unrelatedTeacherRead.data).toEqual([]);
+
+		const otherStudentRead = await otherSignedInStudent.client
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', signedInStudent.id);
+		expect(otherStudentRead.data).toEqual([]);
+	});
+
+	it('changing streak_grace_weeks applies only to future recomputes -- a previously stored streak row is not retroactively rewritten', async () => {
+		const classId = await createClass('Grace Setting Change');
+		const student = await createStudent({
+			classId,
+			name: `Grace Setting Change ${crypto.randomUUID().slice(0, 6)}`
+		});
+		const assignmentId = await createAssignment(classId);
+
+		// Qualifying at week -4, then 3 consecutive real misses (weeks -3,
+		// -2, -1) -- with the default grace (2), this already exceeds it, so
+		// the streak sits at 0 with today's week not yet touched at all
+		// (streak_session data doesn't exist for "week 0" yet, so it's
+		// treated as a holiday-so-far, not a miss).
+		const qualifyingPeriod = weekOffset(-4);
+		const instanceId = await createInstance({
+			assignmentId,
+			classId,
+			periodStart: qualifyingPeriod
+		});
+		await markAttendance({
+			studentId: student,
+			classId,
+			sessionDate: qualifyingPeriod,
+			present: true
+		});
+		await markHomeworkDone({ instanceId, studentId: student, classId });
+
+		for (const offset of [-3, -2, -1]) {
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: weekOffset(offset),
+				present: false
+			});
+		}
+
+		const beforeSettingChange = await readStreak(student);
+		expect(beforeSettingChange?.current_streak).toBe(0);
+
+		let restoreError: string | undefined;
+		try {
+			const { error: updateError } = await admin.client
+				.from('app_settings')
+				.update({ value: { weeks: 4 } })
+				.eq('key', 'streak_grace_weeks');
+			expect(updateError).toBeNull();
+
+			// The settings update itself never touches student_streaks -- no
+			// trigger exists on app_settings.
+			const afterSettingChangeOnly = await readStreak(student);
+			expect(afterSettingChangeOnly).toEqual(beforeSettingChange);
+
+			// A fresh trigger fire (week 0, a real miss -- present=false)
+			// recomputes using the NEW grace (4): weeks 0, -1, -2, -3 are all
+			// real misses (gap = 4, <= new grace), so week -4's qualifying
+			// mark is now reached again.
+			await markAttendance({
+				studentId: student,
+				classId,
+				sessionDate: weekOffset(0),
+				present: false
+			});
+			const afterNewRecompute = await readStreak(student);
+			expect(afterNewRecompute?.current_streak).toBe(1);
+			expect(afterNewRecompute?.last_qualifying_week).toBe(mondayOf(qualifyingPeriod));
+		} finally {
+			const { error } = await admin.client
+				.from('app_settings')
+				.update({ value: originalGraceWeeksValue })
+				.eq('key', 'streak_grace_weeks');
+			restoreError = error?.message;
+		}
+		if (restoreError) {
+			throw new Error(`Failed to restore streak_grace_weeks: ${restoreError}`);
+		}
+	});
+});

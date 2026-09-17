@@ -30,11 +30,21 @@
 # passing) and a bmad-walkthrough human review (Approve). Its spec is
 # `status: done`; sprint-planning mirrors that here. It was epic-3's
 # last story, so epic-3 is now `done`.
+# REFRESHED 2026-09-17: Story 4-1 (streaks) went through bmad-build
+# (implement -> review/patch cycle, 13 findings triaged: 2 defer -- bo.json
+# Tibetan translations (pre-existing, codebase-wide) -- 6 false/rejected
+# (unreachable preconditions or expected workflow artifact lag), 11 patched
+# -- including a masked-error UI bug where a failed streak fetch looked
+# identical to a truthful zero-streak state, a missing WCAG aria-label, and
+# zero test coverage on the student-facing read/render path -> full
+# check/eslint/test suite green, 125 tests passing). Its spec is `status:
+# done`; awaiting bmad-walkthrough human review before this line moves to
+# `done`.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-16-2026 00:00
+last_updated: 09-17-2026 00:00
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -55,8 +65,8 @@ development_status:
   3-2-recurring-homework-assignments: done
   epic-3-retrospective: optional
 
-  epic-4: backlog # Gamification (CAP-4, CAP-5, CAP-6)
-  4-1-streaks: backlog
+  epic-4: in-progress # Gamification (CAP-4, CAP-5, CAP-6)
+  4-1-streaks: review
   4-2-badges: backlog
   4-3-team-leaderboard: backlog
   epic-4-retrospective: optional

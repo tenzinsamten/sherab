@@ -219,6 +219,29 @@
 	"student_homework_error_mark_failed": "Could not mark this done. Please try again.",
 	"student_homework_error_not_found": "That homework item could not be found.",
 
+	"student_streak_label": "Streak",
+	"student_streak_weeks": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} week",
+				"countPlural=other": "{count} weeks"
+			}
+		}
+	],
+	"student_streak_aria_label": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Current streak: {count} week",
+				"countPlural=other": "Current streak: {count} weeks"
+			}
+		}
+	],
+	"student_streak_empty": "No current streak. Attend and finish homework in the same week to start one.",
+
 	"teams_section_label": "04 / Teams",
 	"teams_heading": "Teams",
 	"teams_create_heading": "Create a team",
