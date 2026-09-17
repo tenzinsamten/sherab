@@ -38,8 +38,8 @@
 # identical to a truthful zero-streak state, a missing WCAG aria-label, and
 # zero test coverage on the student-facing read/render path -> full
 # check/eslint/test suite green, 125 tests passing). Its spec is `status:
-# done`; awaiting bmad-walkthrough human review before this line moves to
-# `done`.
+# done`; a bmad-walkthrough human review (Approve) followed on 2026-09-17,
+# so this line now mirrors that too.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
@@ -66,7 +66,7 @@ development_status:
   epic-3-retrospective: optional
 
   epic-4: in-progress # Gamification (CAP-4, CAP-5, CAP-6)
-  4-1-streaks: review
+  4-1-streaks: done
   4-2-badges: backlog
   4-3-team-leaderboard: backlog
   epic-4-retrospective: optional
