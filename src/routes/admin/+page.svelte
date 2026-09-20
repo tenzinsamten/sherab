@@ -28,21 +28,21 @@
 	style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-4); margin-top: var(--space-4);"
 >
 	<!-- Linked tiles: each has an existing management/review screen to jump into. -->
-	<a href={resolve('/admin/classes')} class="card" style="text-decoration:none; color:inherit;">
+	<a href={resolve('/admin/classes')} class="card card-link">
 		<p class="section-label" style="margin:0 0 var(--space-1) 0;">{m.dashboard_tile_classes()}</p>
 		<p class="stat-tile-value" style="margin:0; color:{valueColor(data.classesCount)};">
 			{data.classesCount}
 		</p>
 	</a>
 
-	<a href={resolve('/admin/teachers')} class="card" style="text-decoration:none; color:inherit;">
+	<a href={resolve('/admin/teachers')} class="card card-link">
 		<p class="section-label" style="margin:0 0 var(--space-1) 0;">{m.dashboard_tile_teachers()}</p>
 		<p class="stat-tile-value" style="margin:0; color:{valueColor(data.teachersCount)};">
 			{data.teachersCount}
 		</p>
 	</a>
 
-	<a href={resolve('/requests')} class="card" style="text-decoration:none; color:inherit;">
+	<a href={resolve('/requests')} class="card card-link">
 		<p class="section-label" style="margin:0 0 var(--space-1) 0;">
 			{m.dashboard_tile_pending_requests()}
 		</p>

@@ -66,11 +66,26 @@
 # and a bmad-walkthrough human review (Approve) followed on 2026-09-17. Its
 # spec is `status: done`; sprint-planning mirrors that here. It was epic-4's
 # last story, so epic-4 is now `done`.
+# REFRESHED 2026-09-20: Story 5-1 (admin cross-class dashboard -- split from
+# the original "oversight & data deletion" story; the deletion flow is
+# deferred separately) went through a bmad-build review/patch cycle: 18
+# findings triaged (4 false/rejected, 5 deferred, 9 patched -- including a
+# missing ORDER BY on the completion tile's paginated homework_status_history
+# read, a test mock that couldn't distinguish the three separately-filtered
+# profiles queries or exercise the pagination loop's multi-page path, a
+# missing RLS scoping test for that same paginated read, an uncapped
+# completion percentage, and a repeated inline style) -> npm run check/eslint/
+# prettier clean, 65 non-Supabase unit tests passing. The Story 5-1 RLS block
+# (including the new scoping test) could not be run in this environment --
+# neither the Supabase CLI nor a running Docker daemon was available -- so it
+# remains unverified pending a run with local Supabase. Its spec is `status:
+# done`; sprint-planning mirrors that here as `review`, pending a
+# bmad-walkthrough human review before it can move to `done`.
 # All other stories: no spec file exists yet, so `backlog`.
 # Rerun `bmad-sprint-planning` to refresh after stories.yaml or story specs change.
 
 generated: 09-13-2026 17:46
-last_updated: 09-17-2026 20:45
+last_updated: 09-20-2026 14:10
 project: Sherab
 project_key: NOKEY
 tracking_system: file-system
@@ -98,7 +113,7 @@ development_status:
   epic-4-retrospective: optional
 
   epic-5: in-progress # Admin Oversight & Privacy (CAP-7, CAP-8)
-  5-1-admin-cross-class-oversight-data-deletion: in-progress
+  5-1-admin-cross-class-oversight-data-deletion: review
   epic-5-retrospective: optional
 
 action_items: []

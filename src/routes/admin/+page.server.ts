@@ -24,6 +24,7 @@ async function fetchAllHistoryRows(
 		const { data, error } = await supabase
 			.from('homework_status_history')
 			.select('id, instance_id, student_id, status, recorded_by, recorded_at')
+			.order('id', { ascending: true })
 			.range(from, from + pageSize - 1);
 
 		if (error) return { rows: [], error };
@@ -105,7 +106,9 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		(p) => p.doneAt !== null || p.reviewedAt !== null
 	).length;
 	const homeworkCompletionPercent =
-		totalAssigned === 0 ? 0 : Math.round((totalDoneOrReviewed / totalAssigned) * 100);
+		totalAssigned === 0
+			? 0
+			: Math.min(100, Math.round((totalDoneOrReviewed / totalAssigned) * 100));
 
 	return {
 		classesCount: classesCount ?? 0,

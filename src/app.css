@@ -224,6 +224,13 @@ button {
 	padding: var(--space-6);
 }
 
+/* .card rendered as an <a> (e.g. admin dashboard's linked stat tiles, Story
+   5-1) -- strips link styling so it reads identically to a plain .card. */
+.card-link {
+	text-decoration: none;
+	color: inherit;
+}
+
 /* Stat tile (DESIGN.md: "small uppercase label over a huge bold number") --
    pair with .card + .section-label for the tile itself; this covers just the
    large number, since no color/weight treatment beyond ink has been decided

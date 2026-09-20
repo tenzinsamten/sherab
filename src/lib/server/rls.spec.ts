@@ -5059,6 +5059,41 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 		expect(teacherTeachersError).toBeNull();
 		expect(teacherVisibleTeachers).toEqual([{ id: teacherA.id }]);
 
+		// homework_status_history_select_admin_teacher_or_own: this is the
+		// one unfiltered, highest-risk read behind the completion tile's
+		// paginated fetchAllHistoryRows() -- confirm it's scoped the same way
+		// as the five aggregates above, not just assumed from the policy's
+		// name (Review Triage Log #4).
+		const foreignAssignmentId = await createAssignment(foreignClassId);
+		const foreignInstanceId = await createInstance({
+			assignmentId: foreignAssignmentId,
+			classId: foreignClassId,
+			periodStart: today
+		});
+		const foreignStudentId = await createStudent({
+			classId: foreignClassId,
+			name: 'Foreign History Subject'
+		});
+		await assignStudent({
+			instanceId: foreignInstanceId,
+			studentId: foreignStudentId,
+			classId: foreignClassId
+		});
+
+		const { data: teacherVisibleHistory, error: teacherHistoryError } = await teacherA.client
+			.from('homework_status_history')
+			.select('id')
+			.eq('instance_id', foreignInstanceId);
+		expect(teacherHistoryError).toBeNull();
+		expect(teacherVisibleHistory).toEqual([]);
+
+		const { data: adminVisibleHistory, error: adminHistoryError } = await admin.client
+			.from('homework_status_history')
+			.select('id')
+			.eq('instance_id', foreignInstanceId);
+		expect(adminHistoryError).toBeNull();
+		expect(adminVisibleHistory).toHaveLength(1);
+
 		// A student has no select policy on `classes` at all (admin-or-
 		// assigned-teacher only) -- zero rows, not a scoped-down subset.
 		const signedInStudent = await createSignedInStudent({
