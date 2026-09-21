@@ -2,27 +2,22 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import logoSeal from '$lib/assets/logo-seal-blue.png';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { form, data }: { form: ActionData; data: PageData } = $props();
 </script>
 
 <svelte:head>
-	<title>{m.login_heading()} — Sherab</title>
+	<title>{m.forgot_heading()} — Sherab</title>
 </svelte:head>
 
 <div class="split-screen">
 	<div class="poster-panel poster-ink">
 		<div>
 			<p class="poster-eyebrow">{m.login_section_label()}</p>
-			<h1 class="poster-hero">{m.login_heading()}</h1>
+			<h1 class="poster-hero">{m.forgot_heading()}</h1>
 		</div>
-		<p class="poster-footer">
-			<strong style="display:block; font-size: var(--text-lg); margin-bottom: var(--space-1);"
-				>{m.login_welcome_title()}</strong
-			>
-			{m.login_welcome_subtitle()}
-		</p>
+		<p class="poster-footer">{m.forgot_description()}</p>
 	</div>
 	<div class="form-panel">
 		<div class="form-panel-inner">
@@ -36,11 +31,16 @@
 
 			{#if form?.error}
 				<p class="banner-error" role="alert">{form.error}</p>
+			{:else if data.expired && !form?.success}
+				<p class="banner-error" role="alert">{m.forgot_error_expired()}</p>
+			{/if}
+			{#if form?.success}
+				<p class="banner-success" role="status">{m.forgot_success()}</p>
 			{/if}
 
 			<form method="POST" use:enhance>
 				<div class="field">
-					<label for="email">{m.login_email_label()}</label>
+					<label for="email">{m.forgot_email_label()}</label>
 					<input
 						id="email"
 						name="email"
@@ -51,23 +51,12 @@
 						value={form?.email ?? ''}
 					/>
 				</div>
-				<div class="field">
-					<label for="password">{m.login_password_label()}</label>
-					<input
-						id="password"
-						name="password"
-						type="password"
-						autocomplete="current-password"
-						placeholder={m.login_password_placeholder()}
-						required
-					/>
-				</div>
 				<button class="btn" style="width:100%; justify-content:flex-start;" type="submit"
-					>{m.login_submit()}</button
+					>{m.forgot_submit()}</button
 				>
 			</form>
 			<p style="margin-top: var(--space-4);">
-				<a href="/forgot-password">{m.login_forgot_link()}</a>
+				<a href="/login">{m.forgot_back_to_login()}</a>
 			</p>
 		</div>
 	</div>

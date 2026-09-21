@@ -8,21 +8,15 @@
 </script>
 
 <svelte:head>
-	<title>{m.login_heading()} — Sherab</title>
+	<title>{m.reset_heading()} — Sherab</title>
 </svelte:head>
 
 <div class="split-screen">
 	<div class="poster-panel poster-ink">
 		<div>
 			<p class="poster-eyebrow">{m.login_section_label()}</p>
-			<h1 class="poster-hero">{m.login_heading()}</h1>
+			<h1 class="poster-hero">{m.reset_heading()}</h1>
 		</div>
-		<p class="poster-footer">
-			<strong style="display:block; font-size: var(--text-lg); margin-bottom: var(--space-1);"
-				>{m.login_welcome_title()}</strong
-			>
-			{m.login_welcome_subtitle()}
-		</p>
 	</div>
 	<div class="form-panel">
 		<div class="form-panel-inner">
@@ -40,35 +34,31 @@
 
 			<form method="POST" use:enhance>
 				<div class="field">
-					<label for="email">{m.login_email_label()}</label>
-					<input
-						id="email"
-						name="email"
-						type="text"
-						autocomplete="username"
-						placeholder={m.login_email_placeholder()}
-						required
-						value={form?.email ?? ''}
-					/>
-				</div>
-				<div class="field">
-					<label for="password">{m.login_password_label()}</label>
+					<label for="password">{m.reset_password_label()}</label>
 					<input
 						id="password"
 						name="password"
 						type="password"
-						autocomplete="current-password"
-						placeholder={m.login_password_placeholder()}
+						autocomplete="new-password"
+						minlength="6"
+						required
+					/>
+				</div>
+				<div class="field">
+					<label for="confirm">{m.reset_confirm_label()}</label>
+					<input
+						id="confirm"
+						name="confirm"
+						type="password"
+						autocomplete="new-password"
+						minlength="6"
 						required
 					/>
 				</div>
 				<button class="btn" style="width:100%; justify-content:flex-start;" type="submit"
-					>{m.login_submit()}</button
+					>{m.reset_submit()}</button
 				>
 			</form>
-			<p style="margin-top: var(--space-4);">
-				<a href="/forgot-password">{m.login_forgot_link()}</a>
-			</p>
 		</div>
 	</div>
 </div>
