@@ -1,11 +1,14 @@
 <script lang="ts">
+	import '@siemens/ix/dist/siemens-ix/siemens-ix.css';
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import navMark from '$lib/assets/logo-seal-blue.png';
+	import { headerHomeLink, setupIx, showToast } from '$lib/ix';
+	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
 
 	const localeFlags: Record<string, { emoji?: string; icon?: string; name: string }> = {
@@ -16,8 +19,86 @@
 
 	let { children, data } = $props();
 
-	function isActive(href: string) {
-		return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
+	onMount(() => {
+		setupIx();
+	});
+
+	// Every form action on every route returns `fail(..., { error })` on
+	// failure -- page.form is that latest action result app-wide, so error
+	// toasts live here once instead of in each page. Plain variables (not
+	// $state) just remember what was already shown.
+	let lastForm: unknown;
+	$effect(() => {
+		const form = page.form as { error?: unknown } | null;
+		if (!form || form === lastForm) return;
+		lastForm = form;
+		if (typeof form.error === 'string' && form.error) showToast('error', form.error);
+	});
+
+	let lastLoadErrorUrl = '';
+	$effect(() => {
+		const url = page.url.href;
+		if (page.data.loadError && url !== lastLoadErrorUrl) {
+			lastLoadErrorUrl = url;
+			showToast('error', m.load_error_generic());
+		}
+	});
+
+	// Signup redirects with ?justSignedUp=1; `/` forwards the query to the
+	// role's start page, so the confirmation is shown wherever the user lands.
+	$effect(() => {
+		if (page.url.searchParams.has('justSignedUp')) showToast('success', m.home_just_signed_up());
+	});
+
+	let homeHref = $derived(resolve(roleHome(data.profile?.role) ?? '/'));
+
+	let signOutForm: HTMLFormElement | undefined = $state();
+
+	type NavItem = { href: string; label: string; icon: string; exact?: boolean };
+
+	let navItems = $derived.by((): NavItem[] => {
+		const role = data.profile?.role;
+		const requests = {
+			href: resolve('/requests'),
+			label: data.pendingRequestsCount
+				? m.nav_requests_with_count({ count: data.pendingRequestsCount })
+				: m.nav_requests(),
+			icon: 'user-check'
+		};
+		const leaderboard = {
+			href: resolve('/leaderboard'),
+			label: m.nav_leaderboard(),
+			icon: 'trophy'
+		};
+		if (role === 'admin') {
+			return [
+				{ href: resolve('/admin'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
+				{ href: resolve('/admin/classes'), label: m.nav_classes(), icon: 'book' },
+				{ href: resolve('/admin/teachers'), label: m.nav_teachers(), icon: 'user-reading' },
+				{ href: resolve('/admin/teams'), label: m.nav_teams(), icon: 'user-group' },
+				requests,
+				leaderboard
+			];
+		}
+		if (role === 'teacher') {
+			return [
+				{ href: resolve('/teacher'), label: m.nav_my_classes(), icon: 'book' },
+				requests,
+				leaderboard
+			];
+		}
+		if (role === 'student') {
+			return [
+				{ href: resolve('/student'), label: m.nav_my_homework(), icon: 'tasks-open' },
+				leaderboard
+			];
+		}
+		return [];
+	});
+
+	function isActive(item: NavItem) {
+		const path = page.url.pathname;
+		return item.exact ? path === item.href : path === item.href || path.startsWith(item.href + '/');
 	}
 </script>
 
@@ -26,176 +107,75 @@
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
-<div class="app-shell">
-	<nav
-		style="display:flex; align-items:center; gap: var(--space-2); padding: var(--space-3) var(--space-6); background: var(--color-surface-inverse); border-bottom: 1px solid rgba(255, 255, 255, 0.25);"
+{#snippet headerItems()}
+	<!-- The "avatar" slot is the header's only right-hand slot that never
+	     collapses into the small-screen "more" overflow menu, so the language
+	     switch stays one tap away on phones. -->
+	<ix-dropdown-button
+		slot="ix-application-header-avatar"
+		enable-top-layer
+		variant="subtle-tertiary"
+		icon="globe"
+		label={localeFlags[getLocale()]?.name ?? getLocale()}
+		aria-label={m.footer_locale_label()}
 	>
-		<a
-			href={resolve('/')}
-			style="display:flex; align-items:center; gap: var(--space-2); font-family: var(--font-display); font-size: 18px; font-weight: 900; text-transform:uppercase; letter-spacing:-0.02em; color: var(--color-on-surface-inverse); text-decoration: none; margin-right: var(--space-4);"
-		>
-			<span
-				role="img"
-				aria-label={m.nav_seal_aria_label()}
-				style="display:block; width:44px; height:44px; flex:none; background: currentColor; mask: url({navMark}) center / contain no-repeat; -webkit-mask: url({navMark}) center / contain no-repeat;"
-			></span>
-			Sherab
-		</a>
-		{#if data.profile}
-			<span style="margin-left:auto;"></span>
-			{#if data.profile.role === 'admin'}
-				{@const dashboardHref = resolve('/admin')}
-				{@const classesHref = resolve('/admin/classes')}
-				{@const teachersHref = resolve('/admin/teachers')}
-				{@const teamsHref = resolve('/admin/teams')}
-				{@const requestsHref = resolve('/requests')}
-				<a
-					href={dashboardHref}
-					class="nav-link"
-					class:active={page.url.pathname === dashboardHref}
-					aria-current={page.url.pathname === dashboardHref ? 'page' : undefined}
-				>
-					{m.nav_dashboard()}
-				</a>
-				<a
-					href={classesHref}
-					class="nav-link"
-					class:active={isActive(classesHref)}
-					aria-current={isActive(classesHref) ? 'page' : undefined}
-				>
-					{m.nav_classes()}
-				</a>
-				<a
-					href={teachersHref}
-					class="nav-link"
-					class:active={isActive(teachersHref)}
-					aria-current={isActive(teachersHref) ? 'page' : undefined}
-				>
-					{m.nav_teachers()}
-				</a>
-				<a
-					href={teamsHref}
-					class="nav-link"
-					class:active={isActive(teamsHref)}
-					aria-current={isActive(teamsHref) ? 'page' : undefined}
-				>
-					{m.nav_teams()}
-				</a>
-				<a
-					href={requestsHref}
-					class="nav-link"
-					class:active={isActive(requestsHref)}
-					aria-current={isActive(requestsHref) ? 'page' : undefined}
-				>
-					{data.pendingRequestsCount
-						? m.nav_requests_with_count({ count: data.pendingRequestsCount })
-						: m.nav_requests()}
-				</a>
-			{:else if data.profile.role === 'teacher'}
-				{@const teacherHref = resolve('/teacher')}
-				{@const requestsHref = resolve('/requests')}
-				<a
-					href={teacherHref}
-					class="nav-link"
-					class:active={isActive(teacherHref)}
-					aria-current={isActive(teacherHref) ? 'page' : undefined}
-				>
-					{m.nav_my_classes()}
-				</a>
-				<a
-					href={requestsHref}
-					class="nav-link"
-					class:active={isActive(requestsHref)}
-					aria-current={isActive(requestsHref) ? 'page' : undefined}
-				>
-					{data.pendingRequestsCount
-						? m.nav_requests_with_count({ count: data.pendingRequestsCount })
-						: m.nav_requests()}
-				</a>
-			{:else if data.profile.role === 'student'}
-				{@const studentHref = resolve('/student')}
-				<a
-					href={studentHref}
-					class="nav-link"
-					class:active={isActive(studentHref)}
-					aria-current={isActive(studentHref) ? 'page' : undefined}
-				>
-					{m.nav_my_homework()}
-				</a>
-			{/if}
-			{@const leaderboardHref = resolve('/leaderboard')}
-			<a
-				href={leaderboardHref}
-				class="nav-link"
-				class:active={isActive(leaderboardHref)}
-				aria-current={isActive(leaderboardHref) ? 'page' : undefined}
-			>
-				{m.nav_leaderboard()}
-			</a>
-			<span
-				style="display:flex; align-items:center; padding: 0 var(--space-4); color: var(--color-on-surface-inverse); opacity: 0.7; font-size: var(--text-sm);"
-			>
-				{data.profile.email} ({data.profile.role})
-			</span>
-			<form method="POST" action={resolve('/logout')}>
-				<button type="submit" class="nav-link">{m.nav_sign_out()}</button>
-			</form>
-		{:else}
-			{@const loginHref = resolve('/login')}
-			{@const joinHref = resolve('/join')}
-			<span style="margin-left:auto;"></span>
-			<a
-				href={loginHref}
-				class="nav-link"
-				class:active={isActive(loginHref)}
-				aria-current={isActive(loginHref) ? 'page' : undefined}
-			>
-				{m.nav_sign_in()}
-			</a>
-			<a
-				href={joinHref}
-				class="nav-link"
-				class:active={isActive(joinHref)}
-				aria-current={isActive(joinHref) ? 'page' : undefined}
-			>
-				{m.nav_join()}
-			</a>
-		{/if}
-	</nav>
-
-	<main class="app-main">
-		{#if data.loadError}
-			<p class="banner-error" role="alert">{m.load_error_generic()}</p>
-		{/if}
-		{@render children()}
-	</main>
-
-	<div
-		style="display:flex; flex-wrap:wrap; gap: var(--space-4); padding: var(--space-2) var(--space-6); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground); font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-muted-foreground);"
-	>
-		<span aria-hidden="true">{m.footer_locale_label()}</span>
 		{#each locales as locale (locale)}
-			{@const active = getLocale() === locale}
 			{@const flag = localeFlags[locale]}
-			<a
-				href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}
-				data-sveltekit-reload
+			<!-- Full page load (not client routing): the locale is read server-side. -->
+			<ix-dropdown-item
+				checked={getLocale() === locale || undefined}
 				lang={locale}
-				title={flag?.name ?? locale}
-				aria-label={flag?.name ?? locale}
-				aria-current={active ? 'true' : undefined}
-				style="display:inline-flex; align-items:center; gap: var(--space-1); border-bottom: 2px solid {active
-					? 'var(--color-primary)'
-					: 'transparent'}; text-decoration: none; opacity: {active ? 1 : 0.6};"
+				onclick={() =>
+					window.location.assign(resolve(localizeHref(page.url.pathname, { locale }) as Pathname))}
 			>
-				{#if flag?.icon}
-					<img src={flag.icon} alt="" width="18" height="12" style="display:block;" />
-				{:else if flag?.emoji}
-					<span aria-hidden="true" style="font-size: 1rem; line-height:1;">{flag.emoji}</span>
-				{:else}
-					{locale}
-				{/if}
-			</a>
+				<span class="locale-option">
+					{#if flag?.icon}
+						<img src={flag.icon} alt="" width="18" height="12" />
+					{:else if flag?.emoji}
+						<span aria-hidden="true">{flag.emoji}</span>
+					{/if}
+					{flag?.name ?? locale}
+				</span>
+			</ix-dropdown-item>
 		{/each}
+	</ix-dropdown-button>
+{/snippet}
+
+{#if data.profile}
+	<ix-application>
+		<ix-application-header
+			name="Sherab"
+			name-suffix={data.profile.role}
+			use:headerHomeLink={homeHref}
+		>
+			{@render headerItems()}
+		</ix-application-header>
+
+		<ix-menu>
+			{#each navItems as item (item.href)}
+				<ix-menu-item href={item.href} icon={item.icon} active={isActive(item) || undefined}>
+					{item.label}
+				</ix-menu-item>
+			{/each}
+			<ix-menu-item slot="bottom" icon="log-out" onclick={() => signOutForm?.requestSubmit()}>
+				{m.nav_sign_out()}
+			</ix-menu-item>
+		</ix-menu>
+		<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
+
+		<ix-content>
+			{@render children()}
+		</ix-content>
+	</ix-application>
+{:else}
+	<!-- Signed out: no side menu, so the header stands alone -- inside
+	     <ix-application> it would always show a menu toggle on small screens. -->
+	<div class="app-public">
+		<ix-application-header name="Sherab" use:headerHomeLink={resolve('/')}>
+			{@render headerItems()}
+		</ix-application-header>
+		<main class="app-public-main">
+			{@render children()}
+		</main>
 	</div>
-</div>
+{/if}

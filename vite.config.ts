@@ -10,7 +10,16 @@ export default defineConfig({
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) =>
-					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
+					filename.split(/[/\\]/).includes('node_modules') ? undefined : true,
+				// <ix-button>/<ix-menu-item> render a real focusable <button> in
+				// their shadow DOM, which the compiler can't see, so its
+				// "static element with a click handler" checks misfire on them.
+				warningFilter: (warning) =>
+					!(
+						(warning.code === 'a11y_click_events_have_key_events' ||
+							warning.code === 'a11y_no_static_element_interactions') &&
+						warning.message.includes('`<ix-')
+					)
 			},
 			adapter: adapter()
 		}),

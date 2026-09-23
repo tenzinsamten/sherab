@@ -1,23 +1,28 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/ix';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
-	let outcomeMessage = $derived.by(() => {
-		if (!form?.success) return null;
+	// Approval shows the student's one-time username/PIN, so it stays on
+	// screen; rejected/cleared are short confirmations, so they're toasts.
+	let credential = $derived(
+		form?.success && form.action === 'approved'
+			? m.requests_outcome_approved({
+					name: form.studentName || '',
+					username: form.username,
+					pin: form.pin
+				})
+			: null
+	);
+
+	$effect(() => {
+		if (!form?.success) return;
 		const name = form.studentName || '';
-		if (form.action === 'approved') {
-			return m.requests_outcome_approved({ name, username: form.username, pin: form.pin });
-		}
-		if (form.action === 'rejected') {
-			return m.requests_outcome_rejected({ name });
-		}
-		if (form.action === 'cleared') {
-			return m.requests_outcome_cleared({ name });
-		}
-		return null;
+		if (form.action === 'rejected') showToast('success', m.requests_outcome_rejected({ name }));
+		if (form.action === 'cleared') showToast('success', m.requests_outcome_cleared({ name }));
 	});
 </script>
 
@@ -25,145 +30,157 @@
 	<title>{m.requests_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="page-kicker">
-	{data.role === 'admin' ? m.requests_kicker_admin() : m.requests_kicker_teacher()}
-</p>
-<div class="page-header">
-	<h1 class="page-heading">{m.requests_heading()}</h1>
-	<span class="page-counter">{String(data.pending.length).padStart(2, '0')}</span>
-</div>
-<hr class="page-hr" />
-<p style="color: var(--color-muted-foreground); max-width: 56ch; margin-top: var(--space-4);">
-	{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
-</p>
-
-{#if data.loadError}
-	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
-{/if}
-{#if form?.error}
-	<p class="banner-error" role="alert">{form.error}</p>
-{/if}
-{#if outcomeMessage}
-	<p class="banner-success" role="status" aria-live="polite">{outcomeMessage}</p>
-{/if}
-
-{#if data.pending.length === 0}
-	<div
-		style="margin-top: var(--space-6); padding: var(--space-6); border: 2px solid var(--color-border);"
-	>
-		<p style="margin:0; font-weight:700; font-size: var(--text-lg);">
-			{m.requests_empty_heading()}
-		</p>
-		<p style="margin: var(--space-1) 0 0 0; color: var(--color-muted-foreground);">
-			{m.requests_empty_body()}
-		</p>
-	</div>
-{:else}
-	<div
-		class="grid-table-header"
-		style="grid-template-columns: minmax(0,1fr) auto; margin-top: var(--space-6);"
-	>
-		<span>{m.requests_col_student()}</span>
-		<span></span>
-	</div>
-	{#each data.pending as student (student.id)}
-		<div class="grid-table-row" style="grid-template-columns: minmax(0,1fr) auto;">
-			<div>
-				<p
-					style="margin:0; font-weight:700; font-size: var(--text-lg); display:flex; align-items:center; gap: var(--space-2);"
-				>
-					{student.registrationName}
-					{#if !student.emailConfirmedAt}
-						<span class="tag">{m.requests_unverified_badge()}</span>
-					{/if}
-				</p>
-				<p style="margin:0; color: var(--color-muted-foreground); font-size: var(--text-sm);">
-					{#if student.class}
-						<code>{student.class.code}</code> · {student.class.name} ·
-					{/if}
-					{new Date(student.createdAt).toLocaleDateString()}
-				</p>
-			</div>
-
-			<div style="display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-2);">
-				<form
-					method="POST"
-					action="?/approve"
-					use:enhance
-					style="display:flex; align-items:center; gap: var(--space-2);"
-				>
-					<input type="hidden" name="studentId" value={student.id} />
-					<input type="hidden" name="studentName" value={student.registrationName} />
-					<label style="display:flex; flex-direction:column; gap:2px;">
-						<span class="section-label" style="margin:0;">{m.requests_team_label()}</span>
-						<select name="teamId" required disabled={data.teams.length === 0}>
-							<option value="" disabled selected>{m.requests_team_placeholder()}</option>
-							{#each data.teams as team (team.id)}
-								<option value={team.id}>{team.name}</option>
-							{/each}
-						</select>
-					</label>
-					<button
-						class="btn"
-						type="submit"
-						disabled={data.teams.length === 0 || !student.emailConfirmedAt}
-					>
-						{m.requests_approve()}
-					</button>
-				</form>
-
-				<form method="POST" action="?/reject" use:enhance>
-					<input type="hidden" name="studentId" value={student.id} />
-					<input type="hidden" name="studentName" value={student.registrationName} />
-					<button class="btn btn-outline" type="submit">{m.requests_reject()}</button>
-				</form>
-			</div>
+<div class="page">
+	<header class="page-header">
+		<div>
+			<p class="page-kicker">
+				{data.role === 'admin' ? m.requests_kicker_admin() : m.requests_kicker_teacher()}
+			</p>
+			<h1 class="page-heading">{m.requests_heading()}</h1>
+			<p class="page-subtitle">
+				{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
+			</p>
 		</div>
-	{/each}
-	{#if data.teams.length === 0}
-		<p class="field-error" style="margin-top: var(--space-3);">{m.requests_no_teams_note()}</p>
+		<span class="page-counter">{data.pending.length}</span>
+	</header>
+
+	{#if credential}
+		<ix-message-bar type="success" persistent style="display:block; margin-bottom: var(--space-4);">
+			<span class="credential">{credential}</span>
+		</ix-message-bar>
 	{/if}
-{/if}
 
-<div
-	style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap: var(--space-3); margin-top: var(--space-8); padding: var(--space-3); background: var(--color-primary-tint); border-top: 2px solid var(--color-foreground);"
->
-	<span class="section-label" style="margin:0;">
-		{m.requests_decided_heading({
-			approved: data.decided.filter((s) => s.status === 'approved').length,
-			rejected: data.decided.filter((s) => s.status === 'rejected').length
-		})}
-	</span>
+	<section class="card">
+		{#if data.pending.length === 0}
+			<ix-empty-state
+				header={m.requests_empty_heading()}
+				sub-header={m.requests_empty_body()}
+				icon="user-check"
+			></ix-empty-state>
+		{:else}
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>{m.requests_col_student()}</th>
+							<th><span class="sr-only">{m.requests_approve()}</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.pending as student (student.id)}
+							<tr>
+								<td>
+									<div class="actions">
+										<strong>{student.registrationName}</strong>
+										{#if !student.emailConfirmedAt}
+											<ix-pill variant="warning">{m.requests_unverified_badge()}</ix-pill>
+										{/if}
+									</div>
+									<div class="muted">
+										{#if student.class}
+											<code>{student.class.code}</code> · {student.class.name} ·
+										{/if}
+										{new Date(student.createdAt).toLocaleDateString()}
+									</div>
+								</td>
+								<td>
+									<div class="actions" style="justify-content:flex-end; align-items:flex-end;">
+										<form
+											method="POST"
+											action="?/approve"
+											use:enhance
+											class="actions"
+											style="align-items:flex-end;"
+										>
+											<input type="hidden" name="studentId" value={student.id} />
+											<input type="hidden" name="studentName" value={student.registrationName} />
+											<div class="field" style="margin:0;">
+												<label for="team-{student.id}">{m.requests_team_label()}</label>
+												<select
+													id="team-{student.id}"
+													name="teamId"
+													required
+													disabled={data.teams.length === 0}
+												>
+													<option value="" disabled selected>{m.requests_team_placeholder()}</option
+													>
+													{#each data.teams as team (team.id)}
+														<option value={team.id}>{team.name}</option>
+													{/each}
+												</select>
+											</div>
+											<ix-button
+												type="submit"
+												disabled={data.teams.length === 0 || !student.emailConfirmedAt || undefined}
+											>
+												{m.requests_approve()}
+											</ix-button>
+										</form>
+										<form method="POST" action="?/reject" use:enhance>
+											<input type="hidden" name="studentId" value={student.id} />
+											<input type="hidden" name="studentName" value={student.registrationName} />
+											<ix-button type="submit" variant="danger-secondary"
+												>{m.requests_reject()}</ix-button
+											>
+										</form>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if data.teams.length === 0}
+				<ix-message-bar
+					type="warning"
+					persistent
+					style="display:block; margin-top: var(--space-3);"
+				>
+					{m.requests_no_teams_note()}
+				</ix-message-bar>
+			{/if}
+		{/if}
+	</section>
+
+	<section class="card">
+		<h2>
+			{m.requests_decided_heading({
+				approved: data.decided.filter((s) => s.status === 'approved').length,
+				rejected: data.decided.filter((s) => s.status === 'rejected').length
+			})}
+		</h2>
+		{#if data.decided.length === 0}
+			<p class="muted">{m.requests_decided_empty()}</p>
+		{:else}
+			<div class="table-wrap">
+				<table>
+					<tbody>
+						{#each data.decided as student (student.id)}
+							<tr>
+								<td style="width:1%; white-space:nowrap;">
+									{#if student.status === 'approved'}
+										<ix-pill variant="success">{m.requests_status_approved()}</ix-pill>
+									{:else}
+										<ix-pill variant="neutral">{m.requests_status_rejected()}</ix-pill>
+									{/if}
+								</td>
+								<td class:muted={student.status === 'rejected'}>{student.registrationName}</td>
+								<td style="text-align:right;">
+									{#if student.status === 'rejected'}
+										<form method="POST" action="?/clearRejected" use:enhance>
+											<input type="hidden" name="studentId" value={student.id} />
+											<input type="hidden" name="studentName" value={student.registrationName} />
+											<ix-button type="submit" variant="tertiary" icon="trashcan">
+												{m.requests_clear_rejected()}
+											</ix-button>
+										</form>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 </div>
-
-{#if data.decided.length === 0}
-	<p style="color: var(--color-muted-foreground); margin-top: var(--space-3);">
-		{m.requests_decided_empty()}
-	</p>
-{:else}
-	{#each data.decided as student (student.id)}
-		<div class="grid-table-row" style="grid-template-columns: auto minmax(0,1fr) auto;">
-			{#if student.status === 'approved'}
-				<span class="tag tag-primary">{m.requests_status_approved()}</span>
-			{:else}
-				<span class="tag">{m.requests_status_rejected()}</span>
-			{/if}
-			<span
-				style="font-weight:600; color: {student.status === 'rejected'
-					? 'var(--color-muted-foreground)'
-					: 'inherit'};"
-			>
-				{student.registrationName}
-			</span>
-			{#if student.status === 'rejected'}
-				<form method="POST" action="?/clearRejected" use:enhance>
-					<input type="hidden" name="studentId" value={student.id} />
-					<input type="hidden" name="studentName" value={student.registrationName} />
-					<button class="btn btn-outline" type="submit">{m.requests_clear_rejected()}</button>
-				</form>
-			{:else}
-				<span></span>
-			{/if}
-		</div>
-	{/each}
-{/if}

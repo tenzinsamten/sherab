@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:hosted": "vite dev --mode production",
 		"build": "wrangler types --check && vite build",
 		"preview": "wrangler pages dev .svelte-kit/cloudflare --port 4173",
 		"prepare": "svelte-kit sync || echo ''",
@@ -45,6 +46,8 @@
 		"wrangler": "^4.97.0"
 	},
 	"dependencies": {
+		"@siemens/ix": "^5.2.1",
+		"@siemens/ix-icons": "^3.5.0",
 		"@supabase/ssr": "^0.12.7",
 		"@supabase/supabase-js": "^2.116.0"
 	}

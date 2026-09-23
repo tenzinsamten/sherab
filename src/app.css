@@ -1,77 +1,14 @@
-/* Sherab design tokens -- retuned 2026-09-16 to match the user-provided
-   "Story 1-1 Prototype" Claude Design canvas exactly (see
-   _bmad-output/implementation-artifacts/spec-ui-restyle-story-1-1-prototype.md
-   and its decoded reference file), which supersedes the earlier token-level
-   interpretation in DESIGN.md/EXPERIENCE.md wherever the two differ. Bold,
-   high-contrast, editorial/brutalist system: ink + one signal blue +
-   one-time-step amber + error red, zero border-radius, no shadows, heavy
-   uppercase display type -- now on a single variable-weight Archivo family
-   for both heading and body, not two separate faces. */
+/* Sherab on Siemens iX (classic theme, light only for phase 1 -- dark mode
+   and a theme switch are phase 2; see data-ix-color-schema in app.html). Components come from iX (<ix-button>, <ix-checkbox>, toasts, ...);
+   this file only holds page layout helpers and styles for native form
+   controls, and every colour, radius and font size is an iX theme variable
+   so both colour schemas work. The previous editorial design
+   (DESIGN.md / design-tokens.md) is superseded. */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
 
 :root {
-	/* This is a fixed editorial brand palette (per the Story 1-1 prototype),
-	   not a light/dark pair -- pin color-scheme so browser-native form
-	   controls and scrollbars don't independently invert on a dark OS/browser
-	   preference while the rest of the page stays on these fixed colors. */
-	color-scheme: light;
-
-	--color-primary: #2563eb;
-	--color-primary-hover: #1d4fd7;
-	--color-primary-active: #1b45be;
-	--color-on-primary: #ffffff;
-	--color-primary-tint: #f1f5fd;
-	--color-primary-tint-strong: #e4ecfc;
-	--color-primary-tint-text: #bfd4fe;
-	--color-input-bg: #f8faff;
-
-	--color-secondary: #f59e0b;
-	--color-on-secondary: #0f172a;
-
-	--color-surface-inverse: #0f172a;
-	--color-on-surface-inverse: #ffffff;
-
-	--color-background: #ffffff;
-	--color-foreground: #0f172a;
-	--color-card: #ffffff;
-	--color-card-foreground: #0f172a;
-	--color-muted: #e2e8f0;
-	--color-muted-foreground: #475569;
-	--color-muted-foreground-soft: #94a3b8;
-	--color-border: #e4ecfc;
-	--color-border-strong: #334155;
-
-	--color-destructive: #dc2626;
-	--color-on-destructive: #ffffff;
-	--color-ring: #2563eb;
-
-	--font-display: 'Archivo', sans-serif;
-	--font-body: 'Archivo', sans-serif;
 	--font-tibetan: 'Noto Serif Tibetan', serif;
-	--font-heading-weight: 800;
-
-	--text-sm: 0.875rem;
-	--text-base: 1rem;
-	--text-lg: 1.125rem;
-	--text-xl: 1.375rem;
-	--text-2xl: 1.75rem;
-	/* Fluid hero/page scales -- the prototype specs these as two fixed
-	   phone/desktop values (52px/76px, 40px/56px); clamp() gets the same
-	   fluid result from one declaration instead of a breakpoint pair. */
-	--text-page: clamp(2.5rem, 1.7rem + 3vw, 3.5rem);
-	/* Sized against the poster panel's own width (cqi), not the viewport --
-	   the panel is a fraction of the browser window (40% of it, currently),
-	   so a viewport-relative size overflows/wraps short multi-word headlines
-	   like "Class Tracker" onto two lines well before the panel is actually
-	   out of room. Requires `container-type: inline-size` on .poster-panel. */
-	--text-hero: clamp(2.75rem, 1.75rem + 6.5cqi, 4.25rem);
-	--line-height-body: 1.55;
-	--line-height-heading: 1.1;
-
-	--radius-clay-quiet: 0px;
-	--border-clay-quiet: 1px solid var(--color-border);
-	--shadow-clay-quiet: none;
 
 	--space-1: 0.25rem;
 	--space-2: 0.5rem;
@@ -80,112 +17,96 @@
 	--space-6: 1.5rem;
 	--space-8: 2rem;
 
-	--touch-target-min: 48px;
-	--touch-gap-min: 8px;
-	--transition-standard: 200ms ease-out;
+	--content-max: 72rem;
 }
 
-@media (prefers-reduced-motion: reduce) {
-	:root {
-		--transition-standard: 0ms;
-	}
+/* Sherab keeps its own primary blue on top of iX classic. The selector is
+   more specific than iX's `[data-ix-theme][data-ix-color-schema]` rules. */
+html[data-ix-theme='classic'][data-ix-color-schema] {
+	--theme-color-primary: #2563eb;
+	--theme-color-primary--hover: #1d4fd7;
+	--theme-color-primary--active: #1b45be;
+	--theme-color-primary--contrast: #ffffff;
+	--theme-color-primary--disabled: rgba(37, 99, 235, 0.3);
+	--theme-color-ghost-primary--hover: rgba(37, 99, 235, 0.12);
+	--theme-color-ghost-primary--active: rgba(37, 99, 235, 0.2);
+}
+/* Sherab frame: header and side menu keep the earlier navy nav bar
+   (#0f172a, white text) with the current page in primary blue, in both
+   colour schemas. Scoped to the two elements so iX buttons elsewhere keep
+   their normal subtle/tertiary colours. */
+ix-application-header,
+ix-menu {
+	--sherab-frame: #0f172a;
+	--sherab-frame-text: #ffffff;
+	--sherab-frame-soft: rgba(255, 255, 255, 0.7);
+	--sherab-frame-hover: rgba(255, 255, 255, 0.12);
+	--sherab-frame-active: rgba(255, 255, 255, 0.18);
+
+	--theme-app-header--background: var(--sherab-frame);
+	--theme-app-header--color: var(--sherab-frame-text);
+	--theme-app-header--border-color: rgba(255, 255, 255, 0.12);
+	--theme-app-header-name-suffix--color: var(--sherab-frame-soft);
+	--theme-app-header-logo--color: var(--sherab-frame-text);
+
+	--theme-nav--background: var(--sherab-frame);
+	--theme-nav-item-primary--color: var(--sherab-frame-text);
+	--theme-nav-item-primary--color--hover: var(--sherab-frame-text);
+	--theme-nav-item-primary--color--active: var(--sherab-frame-text);
+	--theme-nav-item-primary--color--selected: var(--sherab-frame-text);
+	--theme-nav-item-primary-icon--color: var(--sherab-frame-text);
+	--theme-nav-item-primary-icon--color--hover: var(--sherab-frame-text);
+	--theme-nav-item-primary-icon--color--active: var(--sherab-frame-text);
+	--theme-nav-item-primary-icon--color--selected: var(--sherab-frame-text);
+	--theme-nav-item-primary--background--hover: var(--sherab-frame-hover);
+	--theme-nav-item-primary--background--active: var(--sherab-frame-active);
+	--theme-nav-item-primary--background--selected: #2563eb;
+	--theme-nav-item-primary--border-color--selected: #2563eb;
+
+	--theme-menu-btn--color: var(--sherab-frame-text);
+	--theme-menu-btn--color--hover: var(--sherab-frame-text);
+	--theme-menu-btn--color--active: var(--sherab-frame-text);
+	--theme-menu-btn--background--hover: var(--sherab-frame-hover);
+	--theme-menu-btn--background--active: var(--sherab-frame-active);
+
+	/* Icon buttons in the header (menu toggle, "more" overflow). */
+	--theme-btn-subtle-tertiary--color: var(--sherab-frame-text);
+	--theme-btn-subtle-tertiary--color--hover: var(--sherab-frame-text);
+	--theme-btn-subtle-tertiary--color--active: var(--sherab-frame-text);
+	--theme-btn-subtle-tertiary--background--hover: var(--sherab-frame-hover);
+	--theme-btn-subtle-tertiary--background--active: var(--sherab-frame-active);
 }
 
 * {
 	box-sizing: border-box;
 }
 
+html,
 body {
+	height: 100%;
 	margin: 0;
-	background: var(--color-muted);
-	color: var(--color-foreground);
-	font-family: var(--font-body);
-	font-size: var(--text-base);
-	line-height: var(--line-height-body);
 }
 
-/* ── App shell ─────────────────────────────────────────────────────────────
-   Nav down through the bottom locale strip fills the full browser viewport
-   -- full-bleed width, and at least full-bleed height so short pages don't
-   leave a gap below the footer strip. Body is the app's base canvas color
-   (the prototype's page-backdrop gray); content sections that are meant to
-   read as white -- the plain content area and the split-screen form panel --
-   set their own explicit white background rather than inheriting it. */
-.app-shell {
-	min-height: 100vh;
-	display: flex;
-	flex-direction: column;
-}
-.app-main {
-	padding: var(--space-6);
-	flex: 1;
-	background: var(--color-background);
-}
-.app-main:has(.split-screen) {
-	padding: 0;
-	display: flex;
+body {
+	color: var(--theme-color-std-text);
+	font-size: var(--theme-font-size-l);
+	line-height: 1.5;
 }
 
-h1,
-h2,
-h3 {
-	font-family: var(--font-display);
-	line-height: var(--line-height-heading);
-	text-transform: uppercase;
-	letter-spacing: -0.02em;
-	font-weight: var(--font-heading-weight);
+a {
+	color: var(--theme-color-primary);
 }
 
-/* Tibetan has no uppercase concept and needs more breathing room than Latin
-   caps -- do not force the all-caps display treatment onto it (open question
-   flagged in DESIGN.md; this is the conservative default: readable weight,
-   no forced case transform). Unaffected by the 2026-09-16 palette/type
-   retune -- this exemption carries over unchanged. */
-[lang='bo'] {
-	font-family: var(--font-tibetan);
-}
+/* Tibetan has no uppercase and needs more line height than Latin, and iX's
+   fonts have no Tibetan glyphs -- keep the dedicated face for `bo`. */
+[lang='bo'],
 [lang='bo'] h1,
 [lang='bo'] h2,
 [lang='bo'] h3 {
 	font-family: var(--font-tibetan);
-	text-transform: none;
-	letter-spacing: normal;
-	font-weight: 700;
-	line-height: 1.4;
+	line-height: 1.6;
 }
 
-.section-label,
-.field label,
-.poster-eyebrow,
-.page-kicker,
-.grid-table-header span {
-	font-variant-numeric: tabular-nums;
-	letter-spacing: 0.12em;
-}
-
-.section-label {
-	display: block;
-	font-size: 0.6875rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	color: var(--color-muted-foreground);
-	margin: 0 0 var(--space-2) 0;
-}
-
-/* Margins collapse between adjacent siblings, but only up to the larger of
-   the two -- an unstyled h1's browser-default top margin would still open a
-   bigger gap after the label on pages that don't also zero it inline. Force
-   it here once so every section-label -> heading gap is identical. */
-.section-label + h1,
-.page-kicker + h1 {
-	margin-top: 0;
-}
-
-/* Standard visually-hidden pattern: present to screen readers/assistive
-   tech, invisible on screen -- e.g. the join wizard's "Step X of 3"
-   announcement, which the numbered 01/02/03 list conveys visually only
-   (that list is aria-hidden). Clip-based, not display:none, so it still
-   participates in the accessibility tree. */
 .sr-only {
 	position: absolute;
 	width: 1px;
@@ -198,370 +119,35 @@ h3 {
 	border: 0;
 }
 
-a,
-button,
-input,
-select {
-	touch-action: manipulation;
-}
-
-button {
-	cursor: pointer;
-	font-family: inherit;
-}
-
-:focus-visible {
-	outline: 3px solid var(--color-ring);
-	outline-offset: 2px;
-}
-
-.card {
-	background: var(--color-card);
-	color: var(--color-card-foreground);
-	border: var(--border-clay-quiet);
-	border-radius: var(--radius-clay-quiet);
-	box-shadow: var(--shadow-clay-quiet);
-	padding: var(--space-6);
-}
-
-/* .card rendered as an <a> (e.g. admin dashboard's linked stat tiles, Story
-   5-1) -- strips link styling so it reads identically to a plain .card. */
-.card-link {
-	text-decoration: none;
-	color: inherit;
-}
-
-/* Stat tile (DESIGN.md: "small uppercase label over a huge bold number") --
-   pair with .card + .section-label for the tile itself; this covers just the
-   large number, since no color/weight treatment beyond ink has been decided
-   yet for any stat tile in this app (functional-first, per Epic 4 context:
-   "flag any real design decision instead of guessing one"). First used by
-   the student streak tile (Story 4-1); reuse for future stat displays
-   (badges/leaderboard) rather than repeating the inline styles. */
-.stat-tile-value {
-	margin: 0;
-	font-size: var(--text-2xl);
-	font-weight: 700;
-}
-
-.field {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-1);
-	margin-bottom: var(--space-4);
-}
-
-.field label {
-	font-weight: 700;
-	font-size: 0.625rem;
-	text-transform: uppercase;
-	color: var(--color-muted-foreground);
-}
-
-.field input,
-.field select {
-	min-height: var(--touch-target-min);
-	padding: var(--space-2) var(--space-3);
-	border: none;
-	border-bottom: 2px solid var(--color-foreground);
-	border-radius: var(--radius-clay-quiet);
-	font-size: 1rem;
-	background: var(--color-input-bg);
-	color: var(--color-foreground);
-}
-
-.field input[aria-invalid='true'] {
-	border-bottom-color: var(--color-destructive);
-}
-
-.field-error {
-	color: var(--color-destructive);
-	font-size: var(--text-sm);
-	font-weight: 600;
-}
-
-.btn {
+/* ── App shell (ix-application header) ───────────────────────────────────── */
+.locale-option {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
 	gap: var(--space-2);
-	min-height: var(--touch-target-min);
-	padding: var(--space-2) var(--space-4);
-	border-radius: var(--radius-clay-quiet);
-	border: var(--border-clay-quiet);
-	background: var(--color-primary);
-	color: var(--color-on-primary);
-	font-size: var(--text-sm);
-	font-weight: 800;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	/* The items render inside the navy header, whose white text colour
+	   would otherwise carry into the light dropdown panel. */
+	color: var(--theme-color-std-text);
 }
-
-.btn:hover {
-	background: var(--color-primary-hover);
-}
-
-.btn:active {
-	background: var(--color-primary-active);
-}
-
-.btn-outline {
-	background: transparent;
-	color: var(--color-foreground);
-	border: 2px solid var(--color-foreground);
-}
-
-.btn-outline:hover {
-	background: var(--color-primary-tint);
-}
-
-.btn[aria-pressed='true'] {
-	background: var(--color-secondary);
-	color: var(--color-on-secondary);
-}
-
-.banner-error {
-	background: var(--color-card);
-	color: var(--color-destructive);
-	border: 1px solid var(--color-destructive);
-	border-radius: var(--radius-clay-quiet);
-	padding: var(--space-3) var(--space-4);
-	margin-bottom: var(--space-4);
-}
-
-.banner-success {
-	background: var(--color-card);
-	color: var(--color-primary);
-	border: 1px solid var(--color-primary);
-	border-radius: var(--radius-clay-quiet);
-	padding: var(--space-3) var(--space-4);
-	margin-bottom: var(--space-4);
-}
-
-table {
-	width: 100%;
-	border-collapse: collapse;
-}
-
-thead th {
-	background: var(--color-surface-inverse);
-	color: var(--color-on-surface-inverse);
-	text-transform: uppercase;
-	font-size: 0.6875rem;
-	letter-spacing: 0.1em;
-	font-variant-numeric: tabular-nums;
-}
-
-th,
-td {
-	text-align: left;
-	padding: var(--space-3);
-	border-bottom: 1px solid var(--color-border);
-}
-
-code {
-	font-family: var(--font-body);
-	font-weight: 700;
-	letter-spacing: 0.08em;
-	color: var(--color-primary);
-	background: none;
-}
-
-/* Recurring-assignment indicator (Story 3-2 Code Map: "a small inline flex
-   row with the icon + label, not a new component system" -- first
-   badge/pill/chip-shaped class in this codebase, kept intentionally minimal
-   rather than a general chip system nothing else needs yet). */
-.badge-repeat {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-1);
-	padding: 0.125rem var(--space-2);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-clay-quiet);
-	font-size: var(--text-sm);
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--color-muted-foreground);
-}
-
-/* — status/verification tags (e.g. requests' "Unverified" badge) — a second,
-   deliberately minimal chip alongside .badge-repeat, not a general system. */
-.tag {
-	display: inline-flex;
-	align-items: center;
-	padding: 2px var(--space-2);
-	font-size: 0.6875rem;
-	font-weight: 800;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	background: var(--color-muted);
-	color: var(--color-muted-foreground);
-}
-.tag-primary {
-	background: var(--color-primary);
-	color: var(--color-on-primary);
-}
-
-.nav-link {
-	display: inline-flex;
-	align-items: center;
-	padding: 0 18px;
-	text-decoration: none;
-	font-weight: 800;
-	text-transform: uppercase;
-	letter-spacing: 0.1em;
-	font-size: 0.6875rem;
-	color: var(--color-muted-foreground-soft);
-	background: transparent;
-	border: none;
-	min-height: 52px;
-	font-family: inherit;
-	cursor: pointer;
-}
-
-.nav-link + .nav-link {
-	border-left: 1px solid var(--color-border-strong);
-}
-
-.nav-link:hover {
-	background: rgba(255, 255, 255, 0.12);
-	color: var(--color-on-surface-inverse);
-}
-
-.nav-link.active {
-	background: var(--color-primary);
-	color: var(--color-on-primary);
-}
-
-.nav-link.active:hover {
-	background: var(--color-primary-hover);
-}
-
-/* ── Split poster/form screen layout ──────────────────────────────────────
-   The dominant pattern on every auth-adjacent screen in the prototype: a
-   colored/dark "poster" panel (eyebrow + giant uppercase headline +
-   supporting copy or step list) beside a plain white form panel, stacking
-   to one column on narrow viewports. Poster color is a modifier class
-   (.poster-ink / .poster-blue / .poster-amber) chosen per screen by the
-   prototype: ink for sign-in/pending, blue for home/join, amber for the
-   one-time admin-bootstrap step. */
-.split-screen {
-	flex: 1;
-	display: grid;
-	grid-template-columns: 40% 60%;
-	align-items: stretch;
-}
-@media (max-width: 760px) {
-	.split-screen {
-		grid-template-columns: 1fr;
-	}
-	.poster-panel {
-		padding: 28px 18px 32px;
-	}
-	.form-panel {
-		padding: 28px 18px 36px;
-	}
-}
-
-.poster-panel {
-	container-type: inline-size;
-	padding: 44px 40px;
-	display: flex;
-	flex-direction: column;
-	justify-content: space-between;
-	gap: var(--space-8);
-}
-.poster-panel.poster-ink {
-	background: var(--color-surface-inverse);
-	color: var(--color-on-surface-inverse);
-}
-.poster-panel.poster-blue {
-	background: var(--color-primary);
-	color: var(--color-on-primary);
-}
-.poster-panel.poster-amber {
-	background: var(--color-secondary);
-	color: var(--color-on-secondary);
-}
-
-.poster-eyebrow {
-	font-size: 0.6875rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.14em;
-	font-variant-numeric: tabular-nums;
-}
-.poster-panel.poster-ink .poster-eyebrow {
-	color: var(--color-muted-foreground-soft);
-}
-.poster-panel.poster-blue .poster-eyebrow {
-	color: var(--color-primary-tint-text);
-}
-
-.poster-hero {
-	font-family: var(--font-display);
-	font-size: var(--text-hero);
-	font-weight: 900;
-	line-height: 0.92;
-	letter-spacing: -0.035em;
-	text-transform: uppercase;
-	margin: var(--space-3) 0 0;
-}
-
-.poster-footer {
-	border-top: 2px solid currentColor;
-	padding-top: var(--space-4);
-	font-size: var(--text-base);
-	line-height: 1.6;
-	max-width: 38ch;
-	opacity: 0.9;
-}
-
-.poster-steps {
-	display: flex;
-	flex-direction: column;
-	border-top: 2px solid currentColor;
-}
-.poster-step {
-	display: flex;
-	align-items: baseline;
-	gap: var(--space-3);
-	padding: var(--space-3) 0;
-	border-bottom: 1px solid #7fa6f7;
-	opacity: 0.55;
-}
-.poster-step.active {
-	opacity: 1;
-	font-weight: 700;
-}
-.poster-step-num {
-	font-size: var(--text-sm);
-	font-weight: 700;
-	font-variant-numeric: tabular-nums;
-}
-
-.form-panel {
-	padding: 44px 48px 52px;
-	background: var(--color-background);
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-}
-.form-panel-inner {
-	max-width: max(320px, 50%);
-	width: 100%;
-}
-
-/* ── Page header: numbered kicker + optional big live counter ───────────── */
-.page-kicker {
+.locale-option img {
 	display: block;
-	font-size: 0.6875rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	color: var(--color-muted-foreground);
-	margin: 0 0 var(--space-3) 0;
+}
+
+/* Signed-out shell (no ix-application): header on top, page scrolls. */
+.app-public {
+	display: flex;
+	flex-direction: column;
+	min-height: 100%;
+	background: var(--theme-color-2);
+}
+.app-public-main {
+	flex: 1;
+}
+
+/* ── Page structure ──────────────────────────────────────────────────────── */
+.page {
+	max-width: var(--content-max);
+	margin: 0 auto;
+	padding: var(--space-6) var(--space-4) var(--space-8);
 }
 .page-header {
 	display: flex;
@@ -569,107 +155,300 @@ code {
 	align-items: flex-end;
 	justify-content: space-between;
 	gap: var(--space-4);
+	margin-bottom: var(--space-6);
+}
+.page-kicker,
+.section-label {
+	display: block;
+	margin: 0 0 var(--space-2);
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-s);
+	font-weight: var(--theme-font-weight-bold);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 .page-heading {
-	font-family: var(--font-display);
-	font-size: var(--text-page);
-	font-weight: 900;
-	line-height: 0.95;
-	letter-spacing: -0.03em;
-	text-transform: uppercase;
 	margin: 0;
+	font-size: var(--theme-font-size-xl);
+	font-weight: var(--theme-font-weight-bold);
+	line-height: 1.25;
+}
+.page-heading-greeting {
+	overflow-wrap: anywhere;
+}
+.page-subtitle {
+	margin: var(--space-2) 0 0;
+	max-width: 60ch;
+	color: var(--theme-color-soft-text);
 }
 .page-counter {
-	font-family: var(--font-display);
-	font-size: clamp(2.25rem, 1.5rem + 3vw, 3.5rem);
-	font-weight: 900;
-	line-height: 0.9;
-	letter-spacing: -0.04em;
-	color: var(--color-primary);
+	font-size: 2.5rem;
+	font-weight: var(--theme-font-weight-bold);
+	line-height: 1;
+	color: var(--theme-color-primary);
+	font-variant-numeric: tabular-nums;
 }
-.page-hr {
-	height: 2px;
-	border: 0;
-	margin: var(--space-6) 0 0;
-	background: var(--color-foreground);
+.muted {
+	color: var(--theme-color-soft-text);
+}
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	align-items: center;
 }
 
-/* ── Grid-based row list (Classes / Teachers / Requests) ─────────────────
-   Replaces a literal <table> so grid-template-columns/areas can swap
-   between a desktop multi-column layout and a phone-stacked one per page,
-   which a <table>'s row/cell model can't do. Column widths are supplied
-   per-page via inline style (they differ per list), only the shared
-   visual treatment (dark header, hairline dividers) lives here. */
-.grid-table-header {
+h1,
+h2,
+h3 {
+	font-weight: var(--theme-font-weight-bold);
+	line-height: 1.25;
+}
+h2 {
+	font-size: var(--theme-font-size-l);
+}
+
+/* Static container. Interactive tiles use <ix-card>. */
+.card {
+	padding: var(--space-6);
+	background: var(--theme-color-1);
+	border: 1px solid var(--theme-color-soft-bdr);
+	border-radius: var(--theme-default-border-radius);
+}
+.card + .card {
+	margin-top: var(--space-4);
+}
+.card > h2:first-child,
+.card > .section-label:first-child {
+	margin-top: 0;
+}
+.tile-link {
+	display: block;
+	color: inherit;
+	text-decoration: none;
+}
+/* iX gives <ix-card> a fixed 20rem width; every card here sits in a grid
+   cell or list row, so it fills that instead of overflowing into the next. */
+ix-card {
+	width: 100%;
+}
+.tile-grid ix-card {
+	height: 100%;
+}
+.tile-grid .section-label {
+	margin: 0;
+}
+.stat-tile-value {
+	margin: 0;
+	font-size: 2rem;
+	font-weight: var(--theme-font-weight-bold);
+	font-variant-numeric: tabular-nums;
+}
+.tile-grid {
 	display: grid;
-	align-items: center;
-	gap: var(--space-1) var(--space-3);
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: var(--space-4);
+}
+
+/* ── Forms: native controls in iX's input style ──────────────────────────
+   Text fields stay native <input> so password managers, autofill and
+   use:enhance's form reset keep working; they take iX's input tokens. */
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	margin-bottom: var(--space-4);
+}
+.field > label {
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-default);
+}
+.field input:not([type='checkbox']):not([type='radio']),
+.field select,
+.field textarea {
+	min-height: 2.5rem;
+	padding: var(--space-1) var(--space-2);
+	background-color: var(--theme-input--background);
+	color: var(--theme-input--color);
+	border: 1px solid var(--theme-input--border-color);
+	border-radius: var(--theme-input--border-radius);
+	font: inherit;
+	font-size: var(--theme-font-size-l);
+}
+.field input:not([type='checkbox']):not([type='radio']):hover,
+.field select:hover,
+.field textarea:hover {
+	border-color: var(--theme-input--border-color--hover);
+	background-color: var(--theme-input--background--hover);
+}
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+	outline: 1px solid var(--theme-color-focus-bdr);
+	border-color: var(--theme-input--border-color--focus);
+}
+.field input[aria-invalid='true'] {
+	border-color: var(--theme-color-alarm);
+}
+.field-error {
+	color: var(--theme-color-alarm-text);
+	font-size: var(--theme-font-size-default);
+}
+.form-narrow {
+	max-width: 32rem;
+}
+.check-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
 	padding: var(--space-3);
-	background: var(--color-surface-inverse);
-	color: var(--color-on-surface-inverse);
+	border: 1px solid var(--theme-color-soft-bdr);
+	border-radius: var(--theme-default-border-radius);
 }
-.grid-table-header span {
-	font-size: 0.625rem;
-	font-weight: 700;
+input[type='checkbox'],
+input[type='radio'] {
+	accent-color: var(--theme-color-primary);
 }
+fieldset {
+	border: none;
+	margin: 0 0 var(--space-4);
+	padding: 0;
+}
+legend {
+	margin-bottom: var(--space-2);
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-default);
+}
+
+/* One-time credentials (temp password, student PIN) stay on screen, since
+   a toast disappears before they can be copied. */
+.credential {
+	font-family: var(--theme-font-family-mono, monospace);
+	font-weight: var(--theme-font-weight-bold);
+	user-select: all;
+}
+
+/* ── Tables and row lists ─────────────────────────────────────────────── */
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+th,
+td {
+	padding: var(--space-2) var(--space-3);
+	text-align: left;
+	border-bottom: 1px solid var(--theme-color-soft-bdr);
+	vertical-align: middle;
+}
+thead th {
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-default);
+	font-weight: var(--theme-font-weight-bold);
+}
+.table-wrap {
+	overflow-x: auto;
+}
+.grid-table-header,
 .grid-table-row {
 	display: grid;
 	align-items: center;
 	gap: var(--space-2) var(--space-3);
-	padding: var(--space-3);
-	border-bottom: 1px solid var(--color-border);
+	padding: var(--space-2) var(--space-3);
+	border-bottom: 1px solid var(--theme-color-soft-bdr);
+}
+.grid-table-header span {
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-default);
+	font-weight: var(--theme-font-weight-bold);
 }
 
-/* ── Custom checkbox row (guardian consent, guardian-email note, class
-   assignment chips) — a full-row clickable control with a square glyph,
-   matching the prototype's consent-step treatment, with a real
-   accessible checked state via the underlying (visually hidden) input. */
-.check-row {
+code {
+	font-family: var(--theme-font-family-mono, monospace);
+	font-weight: var(--theme-font-weight-bold);
+	letter-spacing: 0.06em;
+}
+
+/* ── Auth pages: one centred card ─────────────────────────────────────── */
+.auth-page {
 	display: flex;
-	align-items: flex-start;
-	gap: var(--space-3);
-	width: 100%;
-	padding: var(--space-3);
-	background: transparent;
-	border: none;
-	border-bottom: 1px solid var(--color-border);
-	font-size: var(--text-base);
-	line-height: 1.5;
-	color: var(--color-foreground);
-	text-align: left;
-	cursor: pointer;
-}
-.check-row:hover {
-	background: var(--color-primary-tint);
-}
-.check-row.checked {
-	background: var(--color-primary-tint);
-}
-.check-row input[type='checkbox'] {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip: rect(0, 0, 0, 0);
-	border: 0;
-}
-.check-glyph {
-	display: inline-flex;
-	align-items: center;
 	justify-content: center;
-	width: 22px;
-	height: 22px;
-	flex: none;
-	margin-top: 1px;
-	border: 2px solid var(--color-foreground);
-	background: var(--color-background);
-	color: var(--color-on-primary);
-	font-size: 0.8125rem;
-	font-weight: 800;
+	padding: var(--space-8) var(--space-4);
 }
-.check-row.checked .check-glyph {
-	background: var(--color-primary);
-	border-color: var(--color-primary);
+.auth-card {
+	width: 100%;
+	max-width: 28rem;
+	padding: 2.5rem var(--space-8);
+	background: var(--theme-color-1);
+	border: 1px solid var(--theme-color-soft-bdr);
+	border-radius: var(--theme-default-border-radius);
+	box-shadow: var(--theme-shadow-1);
+}
+.auth-card-header {
+	margin-bottom: var(--space-6);
+	text-align: center;
+}
+.auth-card-header img {
+	display: block;
+	margin: 0 auto var(--space-3);
+}
+.auth-card-header h1 {
+	margin: 0;
+	font-size: var(--theme-font-size-xl);
+}
+.auth-card-header p {
+	margin: var(--space-2) 0 0;
+	color: var(--theme-color-soft-text);
+}
+.auth-card ix-button.block {
+	display: block;
+	width: 100%;
+	/* Full-width primary actions get a taller, roomier target than iX's
+	   default 2rem button. */
+	height: 2.75rem;
+	--ix-button-padding: 0 var(--space-4);
+}
+.stacked-actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	margin-top: var(--space-6);
+}
+.auth-card-footer {
+	margin-top: var(--space-4);
+	text-align: center;
+}
+
+.join-steps {
+	display: flex;
+	gap: var(--space-2);
+	margin: 0 0 var(--space-6);
+	padding: 0;
+	list-style: none;
+}
+.join-steps li {
+	flex: 1;
+	padding-top: var(--space-2);
+	border-top: 3px solid var(--theme-color-soft-bdr);
+	color: var(--theme-color-soft-text);
+	font-size: var(--theme-font-size-default);
+}
+.join-steps li.active {
+	border-top-color: var(--theme-color-primary);
+	color: var(--theme-color-std-text);
+	font-weight: var(--theme-font-weight-bold);
+}
+.join-steps li.done {
+	border-top-color: var(--theme-color-primary);
+}
+
+@media (max-width: 640px) {
+	.page {
+		padding: var(--space-4) var(--space-3) var(--space-6);
+	}
+	.card {
+		padding: var(--space-4);
+	}
+	.auth-card {
+		padding: var(--space-8) var(--space-6);
+	}
 }

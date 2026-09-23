@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/ix';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -39,183 +40,177 @@
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
+
+	$effect(() => {
+		if (!form?.success) return;
+		if (form.action === 'attendance') {
+			if (form.failedStudentIds.length > 0) {
+				showToast(
+					'error',
+					m.roster_attendance_saved_partial({
+						date: form.sessionDate,
+						names: form.failedStudentIds.map(studentName).join(', ')
+					})
+				);
+			} else {
+				showToast('success', m.roster_attendance_saved({ date: form.sessionDate }));
+			}
+		}
+		if (form.action === 'skillStatus') showToast('success', m.roster_skill_saved());
+	});
 </script>
 
 <svelte:head>
 	<title>{data.class.name} — {m.roster_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="section-label">{m.roster_section_label()}</p>
-<h1>{data.class.name}</h1>
-<p style="color: var(--color-muted-foreground);">
-	{m.teacher_class_code_label({ code: data.class.code })}
-</p>
-<p>
-	<a
-		class="btn-outline btn"
-		style="text-decoration:none;"
-		href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
-		>{m.homework_heading()}</a
-	>
-</p>
+<div class="page">
+	<header class="page-header">
+		<div>
+			<p class="page-kicker">{m.roster_section_label()}</p>
+			<h1 class="page-heading">{data.class.name}</h1>
+			<p class="page-subtitle">{m.teacher_class_code_label({ code: data.class.code })}</p>
+		</div>
+		<ix-button
+			variant="secondary"
+			icon="tasks-open"
+			href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
+		>
+			{m.homework_heading()}
+		</ix-button>
+	</header>
 
-{#if data.loadError}
-	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
-{/if}
-{#if form?.error}
-	<p class="banner-error" role="alert">{form.error}</p>
-{/if}
-{#if form?.success && form.action === 'attendance'}
-	{#if form.failedStudentIds.length > 0}
-		<p class="banner-error" role="alert">
-			{m.roster_attendance_saved_partial({
-				date: form.sessionDate,
-				names: form.failedStudentIds.map(studentName).join(', ')
-			})}
-		</p>
+	{#if data.students.length === 0}
+		<ix-empty-state header={m.roster_empty()} icon="user-group"></ix-empty-state>
 	{:else}
-		<p class="banner-success" role="status">
-			{m.roster_attendance_saved({ date: form.sessionDate })}
-		</p>
-	{/if}
-{/if}
-{#if form?.success && form.action === 'skillStatus'}
-	<p class="banner-success" role="status">{m.roster_skill_saved()}</p>
-{/if}
-
-{#if data.students.length === 0}
-	<div class="card">
-		<p style="color: var(--color-muted-foreground); margin: 0;">{m.roster_empty()}</p>
-	</div>
-{:else}
-	<div class="card" style="margin-bottom: var(--space-6);">
-		<h2 style="margin-top:0; font-size: var(--text-lg);">{m.roster_attendance_heading()}</h2>
-		<form method="POST" action="?/markAttendance" use:enhance>
-			<div class="field">
-				<label for="sessionDate">{m.roster_attendance_date_label()}</label>
-				<input
-					id="sessionDate"
-					name="sessionDate"
-					type="date"
-					required
-					value={form?.sessionDate ?? today}
-				/>
-			</div>
-			<ul style="list-style:none; padding:0; margin: var(--space-3) 0;">
-				{#each data.students as student (student.id)}
-					<li
-						style="display:flex; align-items:center; gap: var(--space-2); padding: var(--space-1) 0;"
-					>
+		<section class="card">
+			<h2>{m.roster_attendance_heading()}</h2>
+			<form method="POST" action="?/markAttendance" use:enhance>
+				<div class="field form-narrow">
+					<label for="sessionDate">{m.roster_attendance_date_label()}</label>
+					<input
+						id="sessionDate"
+						name="sessionDate"
+						type="date"
+						required
+						value={form?.sessionDate ?? today}
+					/>
+				</div>
+				<div class="check-list" style="margin-bottom: var(--space-4);">
+					{#each data.students as student (student.id)}
 						<input type="hidden" name="studentIds" value={student.id} />
-						<label style="display:flex; align-items:center; gap: var(--space-2);">
-							<input type="checkbox" name="present_{student.id}" />
-							{student.displayName}
-						</label>
-					</li>
-				{/each}
-			</ul>
-			<button class="btn" type="submit">{m.roster_attendance_submit()}</button>
-		</form>
-	</div>
-
-	<div class="card">
-		<h2 style="margin-top:0; font-size: var(--text-lg);">{m.roster_skills_heading()}</h2>
-		<table>
-			<thead>
-				<tr>
-					<th>{m.roster_col_student()}</th>
-					{#each skillAreas as area (area)}
-						<th>{skillLabel(area)}</th>
+						<ix-checkbox name="present_{student.id}" label={student.displayName}></ix-checkbox>
 					{/each}
-					<th>{m.roster_col_history()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.students as student (student.id)}
-					<tr>
-						<td>{student.displayName}</td>
-						{#each skillAreas as area (area)}
-							<td>
-								<p style="margin: 0 0 var(--space-2) 0; font-weight:700;">
-									{#if currentLevel(student.id, area)}
-										{levelLabel(currentLevel(student.id, area)!)}
-									{:else}
-										{m.roster_no_entry_yet()}
-									{/if}
-								</p>
-								<form
-									method="POST"
-									action="?/setSkillStatus"
-									use:enhance
-									style="display:flex; flex-direction:column; gap: var(--space-1); min-width: 140px;"
-								>
-									<input type="hidden" name="studentId" value={student.id} />
-									<input type="hidden" name="skillArea" value={area} />
-									<select name="level" required>
-										<option value="" disabled selected>{m.roster_level_placeholder()}</option>
-										{#each skillLevels as level (level)}
-											<option value={level}>{levelLabel(level)}</option>
-										{/each}
-									</select>
-									<input type="text" name="notes" placeholder={m.roster_notes_placeholder()} />
-									<button class="btn btn-outline" type="submit">{m.roster_set_status()}</button>
-								</form>
-							</td>
-						{/each}
-						<td>
-							<details>
-								<summary>{m.roster_view_history()}</summary>
-								<p style="font-weight:700; margin: var(--space-2) 0 0 0;">
-									{m.roster_skills_heading()}
-								</p>
-								{#if skillHistoryFor(student.id).length === 0}
-									<p style="color: var(--color-muted-foreground);">{m.roster_history_empty()}</p>
-								{:else}
-									<ul style="list-style:none; padding:0; margin: var(--space-1) 0 0 0;">
-										{#each skillHistoryFor(student.id) as entry (entry.id)}
-											<li
-												style="border-bottom: 1px solid var(--color-border); padding: var(--space-1) 0;"
-											>
-												<strong>{skillLabel(entry.skillArea)}</strong> — {levelLabel(entry.level)}
-												<span
-													style="color: var(--color-muted-foreground); font-size: var(--text-sm);"
-												>
-													· {new Date(entry.recordedAt).toLocaleString()}
-												</span>
-												{#if entry.notes}
-													<p
-														style="margin: var(--space-1) 0 0 0; color: var(--color-muted-foreground);"
-													>
-														{entry.notes}
-													</p>
-												{/if}
-											</li>
-										{/each}
-									</ul>
-								{/if}
+				</div>
+				<ix-button type="submit">{m.roster_attendance_submit()}</ix-button>
+			</form>
+		</section>
 
-								<p style="font-weight:700; margin: var(--space-3) 0 0 0;">
-									{m.roster_attendance_heading()}
-								</p>
-								{#if attendanceHistoryFor(student.id).length === 0}
-									<p style="color: var(--color-muted-foreground);">{m.roster_history_empty()}</p>
-								{:else}
-									<ul style="list-style:none; padding:0; margin: var(--space-1) 0 0 0;">
-										{#each attendanceHistoryFor(student.id) as entry (entry.id)}
-											<li
-												style="border-bottom: 1px solid var(--color-border); padding: var(--space-1) 0;"
+		<section class="card">
+			<h2>{m.roster_skills_heading()}</h2>
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>{m.roster_col_student()}</th>
+							{#each skillAreas as area (area)}
+								<th>{skillLabel(area)}</th>
+							{/each}
+							<th>{m.roster_col_history()}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.students as student (student.id)}
+							<tr>
+								<td>{student.displayName}</td>
+								{#each skillAreas as area (area)}
+									<td>
+										<p
+											style="margin: 0 0 var(--space-2) 0; font-weight:700;"
+											class:muted={!currentLevel(student.id, area)}
+										>
+											{#if currentLevel(student.id, area)}
+												{levelLabel(currentLevel(student.id, area)!)}
+											{:else}
+												{m.roster_no_entry_yet()}
+											{/if}
+										</p>
+										<form
+											method="POST"
+											action="?/setSkillStatus"
+											use:enhance
+											class="field"
+											style="gap: var(--space-1); min-width: 140px; margin:0;"
+										>
+											<input type="hidden" name="studentId" value={student.id} />
+											<input type="hidden" name="skillArea" value={area} />
+											<select name="level" required>
+												<option value="" disabled selected>{m.roster_level_placeholder()}</option>
+												{#each skillLevels as level (level)}
+													<option value={level}>{levelLabel(level)}</option>
+												{/each}
+											</select>
+											<input type="text" name="notes" placeholder={m.roster_notes_placeholder()} />
+											<ix-button variant="secondary" type="submit"
+												>{m.roster_set_status()}</ix-button
 											>
-												{entry.sessionDate} —
-												{entry.present ? m.roster_present() : m.roster_absent()}
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</details>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+										</form>
+									</td>
+								{/each}
+								<td>
+									<details>
+										<summary>{m.roster_view_history()}</summary>
+										<p style="font-weight:700; margin: var(--space-2) 0 0 0;">
+											{m.roster_skills_heading()}
+										</p>
+										{#if skillHistoryFor(student.id).length === 0}
+											<p class="muted">{m.roster_history_empty()}</p>
+										{:else}
+											<ul style="list-style:none; padding:0; margin: var(--space-1) 0 0 0;">
+												{#each skillHistoryFor(student.id) as entry (entry.id)}
+													<li
+														style="border-bottom: 1px solid var(--theme-color-soft-bdr); padding: var(--space-1) 0;"
+													>
+														<strong>{skillLabel(entry.skillArea)}</strong> — {levelLabel(
+															entry.level
+														)}
+														<span class="muted">
+															· {new Date(entry.recordedAt).toLocaleString()}
+														</span>
+														{#if entry.notes}
+															<p class="muted" style="margin: var(--space-1) 0 0 0;">
+																{entry.notes}
+															</p>
+														{/if}
+													</li>
+												{/each}
+											</ul>
+										{/if}
+
+										<p style="font-weight:700; margin: var(--space-3) 0 0 0;">
+											{m.roster_attendance_heading()}
+										</p>
+										{#if attendanceHistoryFor(student.id).length === 0}
+											<p class="muted">{m.roster_history_empty()}</p>
+										{:else}
+											<ul style="list-style:none; padding:0; margin: var(--space-1) 0 0 0;">
+												{#each attendanceHistoryFor(student.id) as entry (entry.id)}
+													<li
+														style="border-bottom: 1px solid var(--theme-color-soft-bdr); padding: var(--space-1) 0;"
+													>
+														{entry.sessionDate} —
+														{entry.present ? m.roster_present() : m.roster_absent()}
+													</li>
+												{/each}
+											</ul>
+										{/if}
+									</details>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+</div>

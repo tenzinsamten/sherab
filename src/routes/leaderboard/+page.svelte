@@ -26,35 +26,72 @@
 	<title>{m.leaderboard_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="section-label">{m.leaderboard_section_label()}</p>
-<h1>{m.leaderboard_heading()}</h1>
+<div class="page">
+	<header class="page-header">
+		<div>
+			<p class="page-kicker">{m.leaderboard_section_label()}</p>
+			<h1 class="page-heading">{m.leaderboard_heading()}</h1>
+		</div>
+	</header>
 
-{#if data.loadError}
-	<p class="banner-error" role="alert">{m.load_error_generic()}</p>
-{:else if data.teams.length > 0}
-	<ol
-		style="list-style:none; padding:0; margin: var(--space-4) 0 0 0; display:flex; flex-direction:column; gap: var(--space-2);"
-	>
-		{#each data.teams as team, index (team.teamId)}
-			<li class="card" aria-label={rowAriaLabel(index + 1, team.teamName, team.totalStreak)}>
-				<div
-					style="display:flex; align-items:center; justify-content:space-between; gap: var(--space-4);"
-				>
-					<div style="display:flex; align-items:baseline; gap: var(--space-3);">
-						<span class="section-label" style="margin:0;"
-							>{m.leaderboard_rank_label({ rank: index + 1 })}</span
-						>
-						<span style="font-weight:700; font-size: var(--text-lg);">{team.teamName}</span>
-					</div>
-					<p class="stat-tile-value" style="margin:0;">
-						{m.leaderboard_streak_weeks({ count: team.totalStreak })}
-					</p>
-				</div>
-			</li>
-		{/each}
-	</ol>
-{:else}
-	<div class="card" style="margin-top: var(--space-4);">
-		<p style="color: var(--color-muted-foreground); margin: 0;">{m.leaderboard_empty()}</p>
-	</div>
-{/if}
+	{#if !data.loadError}
+		{#if data.teams.length > 0}
+			<ol class="leaderboard">
+				{#each data.teams as team, index (team.teamId)}
+					<li aria-label={rowAriaLabel(index + 1, team.teamName, team.totalStreak)}>
+						<ix-card variant="outline" passive>
+							<ix-card-content>
+								<div class="leaderboard-row">
+									<span class="leaderboard-rank" class:top={index === 0}>{index + 1}</span>
+									<span class="leaderboard-team">{team.teamName}</span>
+									<span class="stat-tile-value"
+										>{m.leaderboard_streak_weeks({ count: team.totalStreak })}</span
+									>
+								</div>
+							</ix-card-content>
+						</ix-card>
+					</li>
+				{/each}
+			</ol>
+		{:else}
+			<ix-empty-state header={m.leaderboard_empty()} icon="trophy"></ix-empty-state>
+		{/if}
+	{/if}
+</div>
+
+<style>
+	.leaderboard {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.leaderboard-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+	}
+	.leaderboard-rank {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		background: var(--theme-color-component-1);
+		font-weight: var(--theme-font-weight-bold);
+	}
+	.leaderboard-rank.top {
+		background: var(--theme-color-primary);
+		color: var(--theme-color-primary--contrast);
+	}
+	.leaderboard-team {
+		flex: 1;
+		font-weight: var(--theme-font-weight-bold);
+	}
+	.leaderboard-row .stat-tile-value {
+		font-size: var(--theme-font-size-xl);
+	}
+</style>

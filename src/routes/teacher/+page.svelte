@@ -10,37 +10,29 @@
 	<title>{m.teacher_my_classes_heading()} — Sherab</title>
 </svelte:head>
 
-<p class="page-kicker">{m.teacher_section_label()}</p>
-<h1 class="page-heading">{m.teacher_my_classes_heading()}</h1>
-<hr class="page-hr" />
+<div class="page">
+	<header class="page-header">
+		<div>
+			<p class="page-kicker">{m.teacher_section_label()}</p>
+			<h1 class="page-heading">{m.teacher_my_classes_heading()}</h1>
+		</div>
+	</header>
 
-{#if data.loadError}
-	<p class="banner-error" role="alert" style="margin-top: var(--space-6);">
-		{m.load_error_generic()}
-	</p>
-{/if}
-{#if data.classes.length === 0}
-	<div class="card">
-		<p style="color: var(--color-muted-foreground); margin: 0;">{m.teacher_no_classes()}</p>
-	</div>
-{:else}
-	<div
-		style="display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));"
-	>
-		{#each data.classes as cls (cls.id)}
-			<div class="card">
-				<h2 style="margin: 0 0 var(--space-2) 0; font-size: var(--text-lg);">{cls.name}</h2>
-				<p style="margin: 0; color: var(--color-muted-foreground);">
-					{m.teacher_class_code_label({ code: cls.code })}
-				</p>
-				<p style="margin: var(--space-2) 0 0 0;">
-					<a
-						class="btn btn-outline"
-						style="text-decoration:none;"
-						href={resolve('/teacher/classes/[id]', { id: cls.id })}>{m.teacher_view_roster()}</a
-					>
-				</p>
-			</div>
-		{/each}
-	</div>
-{/if}
+	{#if data.classes.length === 0}
+		<ix-empty-state header={m.teacher_no_classes()} icon="book"></ix-empty-state>
+	{:else}
+		<div class="tile-grid">
+			{#each data.classes as cls (cls.id)}
+				<ix-card variant="outline" passive>
+					<ix-card-content>
+						<h2 style="margin:0;">{cls.name}</h2>
+						<p class="muted" style="margin:0;">{m.teacher_class_code_label({ code: cls.code })}</p>
+						<ix-button variant="secondary" href={resolve('/teacher/classes/[id]', { id: cls.id })}>
+							{m.teacher_view_roster()}
+						</ix-button>
+					</ix-card-content>
+				</ix-card>
+			{/each}
+		</div>
+	{/if}
+</div>
