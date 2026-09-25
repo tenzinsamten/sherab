@@ -1,4 +1,5 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
+import { CLASS_MESSAGES, HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import * as m from '$lib/paraglide/messages.js';
 import {
 	parseDescription,
@@ -22,26 +23,20 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	}
 
 	// RLS (classes_select_admin_or_assigned_teacher) is the real barrier (AD-2).
-	const { data: cls, error: classError } = await supabase
-		.from('classes')
-		.select('id, name, code')
-		.eq('id', params.id)
-		.single();
+	const cls = rowOr404(
+		await supabase.from('classes').select('id, name, code').eq('id', params.id).maybeSingle(),
+		CLASS_MESSAGES
+	);
 
-	if (classError || !cls) {
-		throw error(404, 'Class not found.');
-	}
-
-	const { data: assignmentRow, error: assignmentError } = await supabase
-		.from('homework_assignments')
-		.select(ASSIGNMENT_COLUMNS)
-		.eq('id', params.assignmentId)
-		.eq('class_id', params.id)
-		.maybeSingle();
-
-	if (assignmentError || !assignmentRow) {
-		throw error(404, 'Homework not found.');
-	}
+	const assignmentRow = rowOr404(
+		await supabase
+			.from('homework_assignments')
+			.select(ASSIGNMENT_COLUMNS)
+			.eq('id', params.assignmentId)
+			.eq('class_id', params.id)
+			.maybeSingle(),
+		HOMEWORK_MESSAGES
+	);
 
 	const [{ data: studentRows, error: studentsError }, details] = await Promise.all([
 		supabase

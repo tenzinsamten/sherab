@@ -1,4 +1,5 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
+import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import * as m from '$lib/paraglide/messages.js';
 import { parseSyllabusForm, saveSyllabus } from '$lib/server/class-syllabus';
 import { readReferenceLinks } from '$lib/server/homework-details';
@@ -47,15 +48,14 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// rows back, which this turns into a 404 rather than an empty-looking
 	// roster (UX-only, matching the "RLS is the real barrier, this check is
 	// UX-only" convention already used by requests/+page.server.ts).
-	const { data: cls, error: classError } = await supabase
-		.from('classes')
-		.select('id, name, code, syllabus, syllabus_links')
-		.eq('id', classId)
-		.single();
-
-	if (classError || !cls) {
-		throw error(404, 'Class not found.');
-	}
+	const cls = rowOr404(
+		await supabase
+			.from('classes')
+			.select('id, name, code, syllabus, syllabus_links')
+			.eq('id', classId)
+			.maybeSingle(),
+		CLASS_MESSAGES
+	);
 
 	// Roster reads are scoped to approved students only (Boundaries):
 	// Pending/Rejected students never appear here, matching how

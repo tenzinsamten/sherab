@@ -1,4 +1,5 @@
-import { error, redirect } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
+import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import {
 	ASSIGNMENT_COLUMNS,
 	buildAssignmentViews,
@@ -31,15 +32,10 @@ export const load: PageServerLoad = async ({
 	}
 
 	// RLS (classes_select_admin_or_assigned_teacher) is the real barrier (AD-2).
-	const { data: cls, error: classError } = await supabase
-		.from('classes')
-		.select('id, name, code')
-		.eq('id', params.id)
-		.single();
-
-	if (classError || !cls) {
-		throw error(404, 'Class not found.');
-	}
+	const cls = rowOr404(
+		await supabase.from('classes').select('id, name, code').eq('id', params.id).maybeSingle(),
+		CLASS_MESSAGES
+	);
 
 	const filterParam = url.searchParams.get('filter');
 	const filter: Filter = FILTERS.includes(filterParam as Filter) ? (filterParam as Filter) : 'open';
