@@ -103,3 +103,7 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/5-1-admin-cross-class-oversight-data-deletion.md`
   summary: Only 1 of the 6 `loadError` OR-chain branches (`historyError`) in `admin/+page.server.ts` is exercised by any test; dropping any of the other five terms would silently suppress that query's error banner without a test failing.
   evidence: Story 5-1's own bmad-build review (verification-gap layer, pre-verified) confirmed the five untested branches are structurally identical one-liners in a single boolean expression -- low risk relative to the story's patched findings, worth revisiting only if this file changes again.
+
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
+  summary: Month-grid calendar UI (user decision 2026-09-25) — replace/augment 6-1's month-scoped agenda list with a month grid where each day cell shows its sessions, selecting a day opens its session list with role-gated edit controls, keyboard-navigable and usable at phone width (compact cells, day detail below grid).
+  evidence: Split at the step-02 token gate: the 6-1 spec measured ~2,200 tokens (limit 1,600) and the user chose to defer the grid; 6-1 ships the same data, actions and month navigation with a list view, so the grid is purely a presentation layer over 6-1's `?month=` load and can ship independently.
