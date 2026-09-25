@@ -2,7 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import * as m from '$lib/paraglide/messages.js';
+import { shapeStudentBadges } from '$lib/server/badges';
 import { checkNewPassword } from '$lib/server/password-rules';
+import { shapeStudentStreak } from '$lib/server/streak';
+import { loadStudentClasses } from '$lib/server/student-homework';
+import { studentEmailToUsername } from '$lib/server/temp-password';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { Database } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -10,26 +14,72 @@ import type { Actions, PageServerLoad } from './$types';
 const MAX_NAME_LENGTH = 80;
 
 /**
- * Own-account page (#23) for admins and teachers. Students sign in with a
- * username + PIN that a teacher or admin issues, so they have no page here.
+ * Own-account page: name and password for admins and teachers (#23); for
+ * students (#44) their name, username, classes, streak and badges. Students
+ * sign in with a username + PIN a teacher or admin issues, so they can
+ * change their display name but not their PIN here.
  */
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, locals: { supabase } }) => {
 	const { session, profile } = await parent();
 
 	if (!session) {
 		throw redirect(303, '/login');
 	}
-	if (!profile || (profile.role !== 'admin' && profile.role !== 'teacher')) {
-		throw error(403, 'Admin and teacher accounts only.');
+	if (!profile) {
+		throw error(403, 'No account profile.');
 	}
 
-	return { displayName: profile.display_name ?? '', email: profile.email ?? session.user.email };
+	const displayName = profile.display_name ?? '';
+
+	if (profile.role !== 'student') {
+		return {
+			role: profile.role,
+			displayName,
+			email: profile.email ?? session.user.email
+		};
+	}
+
+	// Story 4-1 / 4-2 (moved from /student): student_streaks and badges_earned
+	// are trigger-written only (AD-3) -- plain reads, scoped by RLS to the
+	// caller's own rows; the explicit .eq is belt-and-suspenders. No row / no
+	// badges yet is a legitimate empty state, not a load error.
+	const [
+		{ classes, error: classesError },
+		{ data: streakRow, error: streakError },
+		{ data: badgeRows, error: badgesError }
+	] = await Promise.all([
+		loadStudentClasses(supabase, profile.id),
+		supabase
+			.from('student_streaks')
+			.select('current_streak, last_qualifying_week')
+			.eq('student_id', profile.id)
+			.maybeSingle(),
+		supabase
+			.from('badges_earned')
+			.select('badge_type, milestone, earned_at')
+			.eq('student_id', profile.id)
+			.order('badge_type')
+			.order('milestone', { ascending: true })
+	]);
+
+	return {
+		role: profile.role,
+		displayName,
+		username: profile.email ? studentEmailToUsername(profile.email) : null,
+		classes,
+		streak: shapeStudentStreak(streakRow),
+		badges: shapeStudentBadges(badgeRows),
+		loadError: Boolean(classesError || streakError || badgesError)
+	};
 };
 
-/** Same role gate as `load`, re-checked per action (a POST skips `load`). */
-async function requireStaff(
+type Role = Database['public']['Enums']['user_role'];
+
+/** The role gate, re-checked per action (a POST skips `load`). */
+async function requireRole(
 	supabase: App.Locals['supabase'],
-	safeGetSession: App.Locals['safeGetSession']
+	safeGetSession: App.Locals['safeGetSession'],
+	roles: Role[]
 ) {
 	const { user } = await safeGetSession();
 	if (!user) return null;
@@ -38,12 +88,12 @@ async function requireStaff(
 		.select('role')
 		.eq('id', user.id)
 		.single();
-	return profile && (profile.role === 'admin' || profile.role === 'teacher') ? user : null;
+	return profile && roles.includes(profile.role) ? user : null;
 }
 
 export const actions: Actions = {
 	updateName: async ({ request, locals: { supabase, safeGetSession } }) => {
-		const user = await requireStaff(supabase, safeGetSession);
+		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher', 'student']);
 		if (!user) return fail(403, { error: m.account_name_error_failed() });
 
 		const formData = await request.formData();
@@ -68,7 +118,8 @@ export const actions: Actions = {
 	},
 
 	changePassword: async ({ request, locals: { supabase, safeGetSession } }) => {
-		const user = await requireStaff(supabase, safeGetSession);
+		// Staff only: a student's PIN is reset by their teacher or an admin (#44).
+		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher']);
 		if (!user || !user.email) return fail(403, { error: m.account_password_error_failed() });
 
 		const formData = await request.formData();

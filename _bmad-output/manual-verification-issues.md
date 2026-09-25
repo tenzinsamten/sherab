@@ -50,8 +50,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
 | 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (needs 0016 pushed), to verify |
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (needs 0016 pushed), to verify |
-| 44 | Student side | Students have no "My profile" page | open |
-| 45 | `/student` | The student's class isn't shown on their page | open (cause: 0016 not pushed) |
+| 44 | Student side | Students have no "My profile" page | fixed (needs 0016 pushed), to verify |
+| 45 | `/student` | The student's class isn't shown on their page | push 0016; misleading empty state fixed, to verify |
 
 ---
 
@@ -777,6 +777,12 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - What a student can change: display name? their own PIN (the admin/teacher password page
     requires the current password and has its own rules)?
   - Reuse `/account` for students, or a separate `/student/profile`.
+- **Decided and fixed (2026-09-25):** students use `/account` ("My Account" in the menu now
+  shows for every signed-in user). A student sees: display name (editable), username (read-only,
+  with "Forgot your PIN? Ask your teacher to reset it."), My classes (with Syllabus links), and
+  the streak and badges tiles, which moved there from My Homework (`StudentProgressTiles.svelte`).
+  No password form for students: `changePassword` stays staff-only. Spec:
+  `src/routes/account/page.server.spec.ts`.
 
 ---
 
@@ -791,6 +797,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   is misleading.
 - **Next:** push `0016_class_enrollments.sql`, then check again. Separately, the empty state
   should not claim "not in a class" when the class query failed.
+- **Fix (2026-09-25):** on a failed load, `/student` (and the classes card on `/account`) say
+  "Couldn't load your homework. Please try again." instead.
 
 ---
 

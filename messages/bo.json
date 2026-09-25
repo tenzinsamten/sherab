@@ -515,5 +515,10 @@
 	"student_class_former": "Former class",
 	"student_homework_back": "Back to my homework",
 	"student_homework_no_details": "No description or links for this homework.",
-	"student_syllabus_empty": "There's no syllabus for this class yet."
+	"student_syllabus_empty": "There's no syllabus for this class yet.",
+	"account_username_label": "Username",
+	"account_pin_note": "Forgot your PIN? Ask your teacher to reset it.",
+	"account_classes_heading": "My classes",
+	"account_classes_empty": "You're not in a class yet.",
+	"student_homework_load_failed": "Couldn't load your homework. Please try again."
 }

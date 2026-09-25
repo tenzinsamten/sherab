@@ -25,15 +25,6 @@
 		return m.roster_skill_dance();
 	}
 
-	function badgeEntryLabel(badge: {
-		badgeType: 'attendance' | 'homework';
-		milestone: number;
-	}): string {
-		return badge.badgeType === 'homework'
-			? m.student_badges_entry_homework({ count: badge.milestone })
-			: m.student_badges_entry_attendance({ count: badge.milestone });
-	}
-
 	const listHref = resolve('/student');
 
 	function pageHref(filter: Filter, pageNumber: number): string {
@@ -66,48 +57,6 @@
 		</div>
 	</header>
 
-	<div class="tile-grid" style="margin-bottom: var(--space-4);">
-		<ix-card variant="outline" passive>
-			<ix-card-content>
-				<p class="section-label">{m.student_streak_label()}</p>
-				{#if data.loadError}
-					<!-- A failed fetch is unknown state, not a truthful zero: the
-					     layout shows the error toast, and this tile shows no value
-					     rather than the "no streak yet" copy. -->
-					<p class="stat-tile-value muted">—</p>
-				{:else if data.streak && data.streak.currentStreak > 0}
-					<p
-						class="stat-tile-value"
-						aria-label={m.student_streak_aria_label({ count: data.streak.currentStreak })}
-					>
-						{m.student_streak_weeks({ count: data.streak.currentStreak })}
-					</p>
-				{:else}
-					<p class="muted" style="margin:0;">{m.student_streak_empty()}</p>
-				{/if}
-			</ix-card-content>
-		</ix-card>
-
-		<ix-card variant="outline" passive>
-			<ix-card-content>
-				<p class="section-label">{m.student_badges_label()}</p>
-				{#if data.loadError}
-					<p class="stat-tile-value muted">—</p>
-				{:else if data.badges.length > 0}
-					<ul
-						style="list-style:none; padding:0; margin:0; display:flex; flex-wrap:wrap; gap: var(--space-1);"
-					>
-						{#each data.badges as badge (`${badge.badgeType}-${badge.milestone}`)}
-							<li><ix-pill variant="primary" icon="trophy">{badgeEntryLabel(badge)}</ix-pill></li>
-						{/each}
-					</ul>
-				{:else}
-					<p class="muted" style="margin:0;">{m.student_badges_empty()}</p>
-				{/if}
-			</ix-card-content>
-		</ix-card>
-	</div>
-
 	<nav class="actions filter-nav" aria-label={m.student_homework_heading()}>
 		{#each filters as f (f.value)}
 			<ix-button
@@ -121,8 +70,14 @@
 	</nav>
 
 	{#if data.groups.length === 0}
+		<!-- A failed load is unknown state, not "no classes" (#45); the layout
+		     also shows the error toast. -->
 		<ix-empty-state
-			header={data.filter === 'todo' ? m.student_no_classes() : m.student_done_empty()}
+			header={data.loadError
+				? m.student_homework_load_failed()
+				: data.filter === 'todo'
+					? m.student_no_classes()
+					: m.student_done_empty()}
 			icon="tasks-open"
 		></ix-empty-state>
 	{/if}

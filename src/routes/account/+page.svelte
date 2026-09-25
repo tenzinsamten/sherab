@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -49,10 +51,18 @@
 					value={data.displayName}
 				/>
 			</div>
-			<div class="field">
-				<label for="email">{m.account_email_label()}</label>
-				<input id="email" type="email" value={data.email ?? ''} readonly />
-			</div>
+			{#if data.role === 'student'}
+				<div class="field">
+					<label for="username">{m.account_username_label()}</label>
+					<input id="username" type="text" value={data.username ?? ''} readonly />
+					<p class="muted field-note">{m.account_pin_note()}</p>
+				</div>
+			{:else}
+				<div class="field">
+					<label for="email">{m.account_email_label()}</label>
+					<input id="email" type="email" value={data.email ?? ''} readonly />
+				</div>
+			{/if}
 			<ix-button
 				type="submit"
 				loading={pending.is('name') || undefined}
@@ -61,53 +71,102 @@
 		</form>
 	</section>
 
-	<section class="card">
-		<h2>{m.account_password_heading()}</h2>
-		<form
-			method="POST"
-			action="?/changePassword"
-			use:enhance={pending.submit('password')}
-			class="form-narrow"
-		>
-			<!-- Lets password managers match the change to the right account. -->
-			<input type="hidden" name="username" autocomplete="username" value={data.email ?? ''} />
-			<div class="field">
-				<label for="currentPassword">{m.account_current_password_label()}</label>
-				<input
-					id="currentPassword"
-					name="currentPassword"
-					type="password"
-					autocomplete="current-password"
-					required
-				/>
-			</div>
-			<div class="field">
-				<label for="password">{m.reset_password_label()}</label>
-				<input
-					id="password"
-					name="password"
-					type="password"
-					autocomplete="new-password"
-					minlength="6"
-					required
-				/>
-			</div>
-			<div class="field">
-				<label for="confirm">{m.reset_confirm_label()}</label>
-				<input
-					id="confirm"
-					name="confirm"
-					type="password"
-					autocomplete="new-password"
-					minlength="6"
-					required
-				/>
-			</div>
-			<ix-button
-				type="submit"
-				loading={pending.is('password') || undefined}
-				disabled={pending.busy || undefined}>{m.account_password_submit()}</ix-button
+	{#if data.role === 'student'}
+		<section class="card">
+			<h2>{m.account_classes_heading()}</h2>
+			{#if data.classes.length === 0}
+				<p class="muted" style="margin:0;">
+					{data.loadError ? m.student_homework_load_failed() : m.account_classes_empty()}
+				</p>
+			{:else}
+				<ul class="class-list">
+					{#each data.classes as cls (cls.id)}
+						<li>
+							<span>{cls.name}</span>
+							{#if cls.hasSyllabus}
+								<a href={resolve('/student/classes/[classId]/syllabus', { classId: cls.id })}>
+									{m.student_class_syllabus_link()}
+								</a>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+
+		<StudentProgressTiles streak={data.streak} badges={data.badges} loadError={data.loadError} />
+	{:else}
+		<section class="card">
+			<h2>{m.account_password_heading()}</h2>
+			<form
+				method="POST"
+				action="?/changePassword"
+				use:enhance={pending.submit('password')}
+				class="form-narrow"
 			>
-		</form>
-	</section>
+				<!-- Lets password managers match the change to the right account. -->
+				<input type="hidden" name="username" autocomplete="username" value={data.email ?? ''} />
+				<div class="field">
+					<label for="currentPassword">{m.account_current_password_label()}</label>
+					<input
+						id="currentPassword"
+						name="currentPassword"
+						type="password"
+						autocomplete="current-password"
+						required
+					/>
+				</div>
+				<div class="field">
+					<label for="password">{m.reset_password_label()}</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						autocomplete="new-password"
+						minlength="6"
+						required
+					/>
+				</div>
+				<div class="field">
+					<label for="confirm">{m.reset_confirm_label()}</label>
+					<input
+						id="confirm"
+						name="confirm"
+						type="password"
+						autocomplete="new-password"
+						minlength="6"
+						required
+					/>
+				</div>
+				<ix-button
+					type="submit"
+					loading={pending.is('password') || undefined}
+					disabled={pending.busy || undefined}>{m.account_password_submit()}</ix-button
+				>
+			</form>
+		</section>
+	{/if}
 </div>
+
+<style>
+	.field-note {
+		margin: var(--space-1) 0 0;
+	}
+
+	.class-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.class-list li {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding: var(--space-2) 0;
+	}
+
+	.class-list li + li {
+		border-top: 1px solid var(--theme-color-soft-bdr);
+	}
+</style>

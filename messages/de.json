@@ -515,5 +515,10 @@
 	"student_class_former": "Frühere Klasse",
 	"student_homework_back": "Zurück zu meinen Hausaufgaben",
 	"student_homework_no_details": "Keine Beschreibung oder Links für diese Hausaufgabe.",
-	"student_syllabus_empty": "Für diese Klasse gibt es noch keinen Lehrplan."
+	"student_syllabus_empty": "Für diese Klasse gibt es noch keinen Lehrplan.",
+	"account_username_label": "Benutzername",
+	"account_pin_note": "PIN vergessen? Bitte deine Lehrkraft, sie zurückzusetzen.",
+	"account_classes_heading": "Meine Klassen",
+	"account_classes_empty": "Du bist noch in keiner Klasse.",
+	"student_homework_load_failed": "Deine Hausaufgaben konnten nicht geladen werden. Bitte erneut versuchen."
 }

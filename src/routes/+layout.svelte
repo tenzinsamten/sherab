@@ -164,7 +164,7 @@
 					{item.label}
 				</ix-menu-item>
 			{/each}
-			{#if data.profile?.role === 'admin' || data.profile?.role === 'teacher'}
+			{#if data.profile}
 				<ix-menu-item
 					slot="bottom"
 					href={resolve('/account')}
