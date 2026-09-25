@@ -1,6 +1,6 @@
 ---
 id: SPEC-class-tracker
-companions: [roles-and-permissions.md, homework-workflow.md, gamification.md]
+companions: [roles-and-permissions.md, homework-workflow.md, gamification.md, calendar.md]
 sources: [../../../../class-tracker-requirements.md]
 ---
 
@@ -19,7 +19,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **success:** An unapproved student is invisible on every roster and leaderboard and cannot log any progress; once approved, they appear everywhere and can act. See `roles-and-permissions.md`.
 
 - **CAP-2**
-  - **intent:** Any teacher assigned to a class can view and edit that class's roster, mark weekly attendance, and set a per-student per-skill-area (language/song/dance) status of Not started/Learning/Confident, with full history retained and optional free-text notes.
+  - **intent:** Any teacher assigned to a class can view and edit that class's roster, mark attendance per scheduled session (CAP-10), and set a per-student per-skill-area (language/song/dance) status of Not started/Learning/Confident, with full history retained and optional free-text notes.
   - **success:** A substitute teacher opens a class they're assigned to and sees complete status history, not just the latest value; a teacher not assigned to that class cannot see it.
 
 - **CAP-3**
@@ -46,6 +46,18 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **intent:** A student can submit a data-deletion request from within the app; the admin must explicitly review and approve it before any of that student's profile, progress, or homework records are erased.
   - **success:** No deletion occurs without a recorded admin approval step, and once approved, all of that student's records are gone.
 
+- **CAP-9**
+  - **intent:** The admin marks the school-wide days on which classes happen; several classes can run on the same day.
+  - **success:** No class session can be scheduled on a day the admin has not marked, and every role sees the same class days. See `calendar.md`.
+
+- **CAP-10**
+  - **intent:** Each class has a default start time and duration; every class day gets a session for the class with those defaults, and any teacher assigned to the class can change a single day's start time and duration or cancel that day.
+  - **success:** Changing or cancelling one day leaves the default and all other days untouched, and the class's students see that day's actual start time and duration. See `calendar.md`.
+
+- **CAP-11**
+  - **intent:** A student marks each upcoming session of a class they are enrolled in as Coming or On leave, visible to that class's teachers, classmates, and the student's team.
+  - **success:** Before class, a teacher sees who is coming and who is on leave; an announced leave does not consume streak grace. See `calendar.md` and `gamification.md`.
+
 ## Constraints
 
 - Teachers are created and verified admin-side only — no teacher self-registration.
@@ -65,6 +77,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 - The Munich Tibetan group owns the app and its data long-term, not any individual — bears on hosting-account ownership, domain, and admin-access continuity.
 - Device access is confirmed reliable (phone/tablet per family) — no paper/offline fallback path is needed for homework or streak tracking.
 - Must be simple enough for non-technical volunteer teachers to use without training.
+- Class sessions exist only on admin-marked class days; a per-day start time or duration is an override on the class default, never a change to the default.
+- Scheduled sessions are the source of truth for attendance and for streak holidays: a week with no non-cancelled session for a class does not consume grace, and neither does a missed session with an announced leave.
 
 ## Non-goals
 
@@ -83,8 +97,18 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 ## Assumptions
 
 - Assumed a single admin role/account model for v1 — the source describes one admin view with no multi-admin delegation or admin-of-admins concerns.
+- Session times are Munich local time (Europe/Berlin); no multi-timezone support.
+- Leave protects a streak only when set before the session starts, so it cannot retroactively excuse an absence.
+- Streaks stay weekly: if a class meets on more than one day in a week, attending any session that week qualifies.
+- An unanswered session is shown as "not answered" and treated as expected; no reason is collected for leave.
+- Removing a class day cancels every class session on that day.
 
 ## Open Questions
 
 - Badge milestone step size (every 5 vs. every 10 attendances/homework-done) is explicitly left unresolved in the source — needs confirmation once building.
 - GDPR-specific obligations beyond the described consent-at-registration and admin-approved-deletion flow (data controller identity, retention limits, breach notification) are unaddressed, and this app stores EU minors' personal data — needs a compliance decision before real student data is stored. Sharper now that registration also collects and retains a guardian's real email address (an adult's personal data, processed to verify a minor's registration) on the student's profile.
+- Should students be notified (push/email) when a session is moved or cancelled, or is in-app display enough for v1?
+- Can a student set leave for a date range (e.g. a three-week holiday), or only per session?
+- Should the app warn when a student enrolled in two classes has overlapping sessions?
+- Is calendar export or sync (iCal, Google Calendar) wanted, or in-app only?
+- Leave is visible to the student's team across classes (nickname + Coming/On leave only). Confirm this fits the minimize-data-on-minors constraint.

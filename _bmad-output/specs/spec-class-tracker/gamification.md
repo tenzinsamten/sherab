@@ -6,6 +6,7 @@ Detail behind CAP-4, CAP-5, CAP-6. The kernel states the intents and success cri
 
 - Tracks consecutive weeks with **both** attendance and homework marked Done (Reviewed not required).
 - Grace period: a streak survives up to **2 missed weeks by default** — configurable by the admin, not hardcoded.
+- Holidays come from the calendar: a week with no non-cancelled session for the class does not consume grace. A missed session with an announced leave does not consume grace either. See `calendar.md`.
 
 ## Badges
 

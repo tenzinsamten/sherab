@@ -150,3 +150,58 @@
     parallel path. Deletion must never be a single click: require an
     explicit admin confirmation step and leave an audit trail of the
     approval.
+
+# Feature 6: Calendar (CAP-9, CAP-10, CAP-11)
+- id: "6-1"
+  title: Class days & sessions
+  description: >-
+    Admin marks school-wide class days (several classes per day); each
+    class gets a session per class day from its default start time and
+    duration, which any class teacher can override or cancel per day.
+    See SPEC.md CAP-9, CAP-10 and calendar.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Brownfield: SvelteKit + Supabase with append-only tables and
+    class-scoped RLS via is_admin()/is_teacher_of_class() — extend those,
+    do not reinvent. A per-day override must never rewrite the class
+    default or other days. Store times as Munich local (Europe/Berlin).
+    Add a calendar view reachable from the admin, teacher and student
+    menus (student menu from #46: Dashboard, My classes, My homework, Team
+    leaderboard). Do not touch attendance or streaks here — that is 6-2.
+    Paraglide keys in en/de/bo.
+
+- id: "6-2"
+  title: Attendance per session & calendar holidays
+  description: >-
+    Teachers mark attendance against a scheduled session instead of a
+    free-chosen date, and streak holidays come from the calendar (a week
+    with no non-cancelled session). See SPEC.md CAP-2, CAP-4 constraints
+    and calendar.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    attendance_records.session_date (0003) and the week bucketing plus
+    zero-rows-means-holiday rule in recompute_student_streak() (0007)
+    are what changes. Existing attendance history must be backfilled
+    onto sessions without losing or moving any mark, and every current
+    student's streak must be identical before and after the migration —
+    prove it with a test. Keep attendance_records append-only.
+
+- id: "6-3"
+  title: Student Coming / On leave
+  description: >-
+    A student marks each upcoming session of their enrolled classes as
+    Coming or On leave, visible to that class's teachers, classmates and
+    team; leave set before the session starts protects the streak. See
+    SPEC.md CAP-11, calendar.md and gamification.md.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Students can be enrolled in several classes (class_enrollments,
+    0016) — show intent per session across all of them. Collect no
+    leave reason (data minimization on minors). Leave only counts for
+    the streak when set before session start; a later change must not
+    retroactively excuse an absence. Open questions in SPEC.md
+    (date-range leave, notifications, overlap warning) are out of this
+    story unless resolved first.
