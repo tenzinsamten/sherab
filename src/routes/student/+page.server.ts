@@ -6,8 +6,9 @@ import {
 	type HomeworkHistoryRow
 } from '$lib/server/homework-status';
 import { shapeStudentBadges } from '$lib/server/badges';
+import { readReferenceLinks } from '$lib/server/homework-details';
 import { shapeStudentStreak } from '$lib/server/streak';
-import type { SkillArea } from '$lib/supabase/database.types';
+import type { HomeworkReferenceLink, SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
 const DEFAULT_LOOKAHEAD_DAYS = 14;
@@ -17,7 +18,8 @@ type HomeworkListItem = {
 	assignmentId: string;
 	title: string;
 	skillArea: SkillArea;
-	referenceLink: string | null;
+	description: string | null;
+	referenceLinks: HomeworkReferenceLink[];
 	dueDate: string;
 	status: 'assigned' | 'done' | 'reviewed';
 	overdue: boolean;
@@ -120,14 +122,15 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		id: string;
 		title: string;
 		skill_area: SkillArea;
-		reference_link: string | null;
+		description: string | null;
+		reference_links: unknown;
 		recurrence_rule: unknown | null;
 	}[] = [];
 	let assignmentsError = false;
 	if (assignmentIds.length > 0) {
 		const { data, error: assignErr } = await supabase
 			.from('homework_assignments')
-			.select('id, title, skill_area, reference_link, recurrence_rule')
+			.select('id, title, skill_area, description, reference_links, recurrence_rule')
 			.in('id', assignmentIds);
 		assignments = data ?? [];
 		assignmentsError = Boolean(assignErr);
@@ -153,7 +156,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 				assignmentId: assignment.id,
 				title: assignment.title,
 				skillArea: assignment.skill_area,
-				referenceLink: assignment.reference_link,
+				description: assignment.description,
+				referenceLinks: readReferenceLinks(assignment.reference_links),
 				dueDate: instance.due_date,
 				status,
 				overdue: isOverdue(instance.due_date, entry, today),

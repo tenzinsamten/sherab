@@ -3,7 +3,9 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import LinkRows from '$lib/components/LinkRows.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
+	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -12,7 +14,10 @@
 	const skillAreas: SkillArea[] = ['language', 'song', 'dance'];
 	let targetMode = $state<'all' | 'subset'>('all');
 	let assignmentMode = $state<'once' | 'weekly'>('once');
-	let creatingAssignment = $state(false);
+	const pending = createPending();
+	// Bumped after each successful create so the link rows start blank again
+	// (form.reset() clears the inputs but not LinkRows' own state).
+	let createCount = $state(0);
 
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
@@ -47,6 +52,7 @@
 		if (!form?.success) return;
 		switch (form.action) {
 			case 'createAssignment':
+				createCount++;
 				if (form.recurring)
 					showToast('success', m.homework_created_recurring_success({ title: form.title }));
 				else if (form.failedStudentIds.length > 0)
@@ -73,8 +79,8 @@
 			case 'archiveInstance':
 				showToast('success', m.homework_archived_success());
 				break;
-			case 'editSeries':
-				showToast('success', m.homework_series_edit_success());
+			case 'editAssignment':
+				showToast('success', m.homework_edit_success());
 				break;
 			case 'pauseSeries':
 				showToast('success', m.homework_series_paused_success());
@@ -104,17 +110,7 @@
 
 	<section class="card">
 		<h2>{m.homework_create_heading()}</h2>
-		<form
-			method="POST"
-			action="?/createAssignment"
-			use:enhance={() => {
-				creatingAssignment = true;
-				return async ({ update }) => {
-					await update();
-					creatingAssignment = false;
-				};
-			}}
-		>
+		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
 			<div class="field">
 				<label for="title">{m.homework_title_label()}</label>
 				<input id="title" name="title" type="text" required />
@@ -128,9 +124,12 @@
 				</select>
 			</div>
 			<div class="field">
-				<label for="referenceLink">{m.homework_reference_link_label()}</label>
-				<input id="referenceLink" name="referenceLink" type="text" />
+				<label for="description">{m.homework_description_label()}</label>
+				<textarea id="description" name="description" rows="4" maxlength="2000"></textarea>
 			</div>
+			{#key createCount}
+				<LinkRows idPrefix="create" />
+			{/key}
 
 			<fieldset class="check-list" style="margin-bottom: var(--space-4);">
 				<legend>{m.homework_mode_legend()}</legend>
@@ -203,8 +202,10 @@
 				</p>
 			{/if}
 
-			<ix-button type="submit" disabled={creatingAssignment || undefined}
-				>{m.homework_create_submit()}</ix-button
+			<ix-button
+				type="submit"
+				loading={pending.is('create') || undefined}
+				disabled={pending.busy || undefined}>{m.homework_create_submit()}</ix-button
 			>
 		</form>
 	</section>
@@ -241,19 +242,22 @@
 							</span>
 						</div>
 
-						{#if assignment.referenceLink}
-							<p style="margin: var(--space-1) 0;">
-								<!-- eslint-disable svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
-								<a
-									href={assignment.referenceLink}
-									target="_blank"
-									rel="noopener noreferrer"
-									style="font-size: var(--theme-font-size-default);"
-								>
-									{m.homework_reference_link_open()}
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							</p>
+						{#if assignment.description}
+							<p class="homework-description">{assignment.description}</p>
+						{/if}
+
+						{#if assignment.referenceLinks.length > 0}
+							<ul class="homework-links">
+								{#each assignment.referenceLinks as link, i (i)}
+									<li>
+										<!-- eslint-disable svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
+										<a href={link.url} target="_blank" rel="noopener noreferrer">
+											{link.label ?? link.url}
+										</a>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
+									</li>
+								{/each}
+							</ul>
 						{/if}
 
 						{#if seriesStatusLabel(assignment)}
@@ -264,37 +268,38 @@
 							</p>
 						{/if}
 
-						{#if assignment.isRecurring}
-							<details style="margin: var(--space-2) 0;">
-								<summary>{m.homework_series_edit_heading()}</summary>
-								<form
-									method="POST"
-									action="?/editSeries"
-									use:enhance
-									style="margin-top: var(--space-3);"
-								>
-									<input type="hidden" name="assignmentId" value={assignment.id} />
-									<div class="field">
-										<label for={`edit-title-${assignment.id}`}>{m.homework_title_label()}</label>
-										<input
-											id={`edit-title-${assignment.id}`}
-											name="title"
-											type="text"
-											value={assignment.title}
-											required
-										/>
-									</div>
-									<div class="field">
-										<label for={`edit-link-${assignment.id}`}
-											>{m.homework_reference_link_label()}</label
-										>
-										<input
-											id={`edit-link-${assignment.id}`}
-											name="referenceLink"
-											type="text"
-											value={assignment.referenceLink ?? ''}
-										/>
-									</div>
+						<details style="margin: var(--space-2) 0;">
+							<summary>{m.homework_edit_heading()}</summary>
+							<form
+								method="POST"
+								action="?/editAssignment"
+								use:enhance={pending.submit(`edit:${assignment.id}`)}
+								style="margin-top: var(--space-3);"
+							>
+								<input type="hidden" name="assignmentId" value={assignment.id} />
+								<div class="field">
+									<label for={`edit-title-${assignment.id}`}>{m.homework_title_label()}</label>
+									<input
+										id={`edit-title-${assignment.id}`}
+										name="title"
+										type="text"
+										value={assignment.title}
+										required
+									/>
+								</div>
+								<div class="field">
+									<label for={`edit-description-${assignment.id}`}
+										>{m.homework_description_label()}</label
+									>
+									<textarea
+										id={`edit-description-${assignment.id}`}
+										name="description"
+										rows="4"
+										maxlength="2000"
+										value={assignment.description ?? ''}></textarea>
+								</div>
+								<LinkRows idPrefix={`edit-${assignment.id}`} links={assignment.referenceLinks} />
+								{#if assignment.isRecurring}
 									<div class="field">
 										<label for={`edit-offset-${assignment.id}`}
 											>{m.homework_due_offset_label()}</label
@@ -311,29 +316,32 @@
 											required
 										/>
 									</div>
-									<ix-button variant="secondary" type="submit"
-										>{m.homework_series_edit_submit()}</ix-button
-									>
-								</form>
-
-								{#if !isSeriesInactive(assignment)}
-									<div style="display:flex; gap: var(--space-2); margin-top: var(--space-3);">
-										<form method="POST" action="?/pauseSeries" use:enhance>
-											<input type="hidden" name="assignmentId" value={assignment.id} />
-											<ix-button variant="secondary" type="submit"
-												>{m.homework_series_pause_action()}</ix-button
-											>
-										</form>
-										<form method="POST" action="?/endSeries" use:enhance>
-											<input type="hidden" name="assignmentId" value={assignment.id} />
-											<ix-button variant="secondary" type="submit"
-												>{m.homework_series_end_action()}</ix-button
-											>
-										</form>
-									</div>
 								{/if}
-							</details>
-						{/if}
+								<ix-button
+									variant="secondary"
+									type="submit"
+									loading={pending.is(`edit:${assignment.id}`) || undefined}
+									disabled={pending.busy || undefined}>{m.homework_edit_submit()}</ix-button
+								>
+							</form>
+
+							{#if assignment.isRecurring && !isSeriesInactive(assignment)}
+								<div style="display:flex; gap: var(--space-2); margin-top: var(--space-3);">
+									<form method="POST" action="?/pauseSeries" use:enhance>
+										<input type="hidden" name="assignmentId" value={assignment.id} />
+										<ix-button variant="secondary" type="submit"
+											>{m.homework_series_pause_action()}</ix-button
+										>
+									</form>
+									<form method="POST" action="?/endSeries" use:enhance>
+										<input type="hidden" name="assignmentId" value={assignment.id} />
+										<ix-button variant="secondary" type="submit"
+											>{m.homework_series_end_action()}</ix-button
+										>
+									</form>
+								</div>
+							{/if}
+						</details>
 
 						{#if assignment.instances.length === 0}
 							<p
@@ -372,6 +380,11 @@
 											>
 												<details>
 													<summary>{m.homework_student_status_heading()}</summary>
+													{#if instance.students.length === 0 && assignment.wholeClass}
+														<p class="muted" style="margin: var(--space-2) 0 0 0;">
+															{m.homework_no_students_yet()}
+														</p>
+													{/if}
 													<ul style="list-style:none; padding:0; margin: var(--space-2) 0 0 0;">
 														{#each instance.students as student (student.studentId)}
 															<li
@@ -471,3 +484,16 @@
 		{/if}
 	</section>
 </div>
+
+<style>
+	.homework-description {
+		margin: var(--space-2) 0;
+		white-space: pre-line;
+	}
+
+	.homework-links {
+		margin: var(--space-1) 0;
+		padding-left: var(--space-4);
+		font-size: var(--theme-font-size-default);
+	}
+</style>

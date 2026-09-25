@@ -5,8 +5,13 @@ import {
 	isOverdue,
 	type HomeworkHistoryRow
 } from '$lib/server/homework-status';
+import {
+	parseDescription,
+	parseReferenceLinks,
+	readReferenceLinks
+} from '$lib/server/homework-details';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
-import type { SkillArea } from '$lib/supabase/database.types';
+import type { HomeworkReferenceLink, SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
 const SKILL_AREAS: SkillArea[] = ['language', 'song', 'dance'];
@@ -59,9 +64,11 @@ type AssignmentView = {
 	id: string;
 	title: string;
 	skillArea: SkillArea;
-	referenceLink: string | null;
+	description: string | null;
+	referenceLinks: HomeworkReferenceLink[];
 	createdAt: string;
 	isRecurring: boolean;
+	wholeClass: boolean;
 	dueOffsetDays: number | null;
 	endsOn: string | null;
 	pausedAt: string | null;
@@ -105,7 +112,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	const { data: assignmentRows, error: assignmentsError } = await supabase
 		.from('homework_assignments')
 		.select(
-			'id, title, skill_area, reference_link, recurrence_rule, due_offset_days, ends_on, paused_at, created_at'
+			'id, title, skill_area, description, reference_links, whole_class, recurrence_rule, due_offset_days, ends_on, paused_at, created_at'
 		)
 		.eq('class_id', classId)
 		.order('created_at', { ascending: false });
@@ -224,9 +231,11 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			id: a.id,
 			title: a.title,
 			skillArea: a.skill_area,
-			referenceLink: a.reference_link,
+			description: a.description,
+			referenceLinks: readReferenceLinks(a.reference_links),
 			createdAt: a.created_at,
 			isRecurring: a.recurrence_rule !== null,
+			wholeClass: a.whole_class,
 			dueOffsetDays: a.due_offset_days,
 			endsOn: a.ends_on,
 			pausedAt: a.paused_at,
@@ -255,11 +264,24 @@ export const actions: Actions = {
 		const mode = String(formData.get('mode') ?? 'once');
 		const title = String(formData.get('title') ?? '').trim();
 		const skillArea = String(formData.get('skillArea') ?? '');
-		const referenceLinkRaw = String(formData.get('referenceLink') ?? '').trim();
+		const description = parseDescription(formData.get('description'));
+		const referenceLinks = parseReferenceLinks(formData);
 
 		if (!title) {
 			return fail(400, {
 				error: m.homework_error_title_required(),
+				action: 'createAssignment' as const
+			});
+		}
+		if (!description.ok) {
+			return fail(400, {
+				error: m.homework_error_description_too_long(),
+				action: 'createAssignment' as const
+			});
+		}
+		if (!referenceLinks.ok) {
+			return fail(400, {
+				error: m.homework_error_links_invalid(),
 				action: 'createAssignment' as const
 			});
 		}
@@ -305,7 +327,9 @@ export const actions: Actions = {
 				class_id: classId,
 				title,
 				skill_area: skillArea as SkillArea,
-				reference_link: referenceLinkRaw || null,
+				description: description.value,
+				reference_links: referenceLinks.value,
+				whole_class: true,
 				created_by: user.id,
 				recurrence_rule: { frequency: 'weekly' },
 				recurrence_start_date: startDate,
@@ -372,7 +396,10 @@ export const actions: Actions = {
 				? selectedStudentIds.filter((id) => approvedIds.has(id))
 				: Array.from(approvedIds);
 
-		if (targetIds.length === 0) {
+		// A whole-class assignment may start with no students: students
+		// approved later get it from the profiles_assign_open_homework trigger
+		// (0013). An empty *subset* is a mistake, so that still fails.
+		if (targetMode === 'subset' && targetIds.length === 0) {
 			return fail(400, {
 				error: m.homework_error_no_students(),
 				action: 'createAssignment' as const
@@ -385,7 +412,9 @@ export const actions: Actions = {
 				class_id: classId,
 				title,
 				skill_area: skillArea as SkillArea,
-				reference_link: referenceLinkRaw || null,
+				description: description.value,
+				reference_links: referenceLinks.value,
+				whole_class: targetMode === 'all',
 				created_by: user.id
 			})
 			.select('id')
@@ -448,7 +477,7 @@ export const actions: Actions = {
 			}
 		}
 
-		if (failedStudentIds.length === targetIds.length) {
+		if (targetIds.length > 0 && failedStudentIds.length === targetIds.length) {
 			// Same rollback as above -- every target failed, so the assignment
 			// and its instance are pure orphans (cascades away the instance too).
 			await createSupabaseAdminClient()
@@ -591,9 +620,12 @@ export const actions: Actions = {
 		return { success: true, action: 'archiveInstance' as const };
 	},
 
-	// Story 3-2: editing a series never touches homework_instances (Always
-	// boundary) -- this is a plain UPDATE on homework_assignments only.
-	editSeries: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+	// Edits an assignment's text and links, one-off or series (#26/#27). Never
+	// touches homework_instances or status history (Story 3-2's Always
+	// boundary), so existing Done/Reviewed marks are untouched. The due-date
+	// offset only exists on a series; a one-off's due date and targets stay
+	// fixed after creation.
+	editAssignment: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {
 			return fail(401, { error: m.homework_error_not_signed_in() });
@@ -602,26 +634,30 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const assignmentId = String(formData.get('assignmentId') ?? '');
 		const title = String(formData.get('title') ?? '').trim();
-		const referenceLinkRaw = String(formData.get('referenceLink') ?? '').trim();
-		const dueOffsetDaysRaw = String(formData.get('dueOffsetDays') ?? '');
+		const description = parseDescription(formData.get('description'));
+		const referenceLinks = parseReferenceLinks(formData);
 
 		if (!assignmentId || !title) {
 			return fail(400, {
 				error: m.homework_error_title_required(),
-				action: 'editSeries' as const
+				action: 'editAssignment' as const
 			});
 		}
-		const dueOffsetDays = parseNonNegativeInt(dueOffsetDaysRaw);
-		if (dueOffsetDays === null) {
+		if (!description.ok) {
 			return fail(400, {
-				error: m.homework_error_invalid_due_offset(),
-				action: 'editSeries' as const
+				error: m.homework_error_description_too_long(),
+				action: 'editAssignment' as const
+			});
+		}
+		if (!referenceLinks.ok) {
+			return fail(400, {
+				error: m.homework_error_links_invalid(),
+				action: 'editAssignment' as const
 			});
 		}
 
-		// RLS-gated read first: confirms this is a real recurring assignment of
-		// THIS class before attempting the update, mirroring the "read first"
-		// shape used throughout this codebase.
+		// RLS-gated read first: confirms the assignment belongs to THIS class,
+		// and tells a series (which has a due offset) from a one-off.
 		const { data: assignment, error: readError } = await supabase
 			.from('homework_assignments')
 			.select('id, recurrence_rule')
@@ -629,30 +665,48 @@ export const actions: Actions = {
 			.eq('class_id', params.id)
 			.single();
 
-		if (readError || !assignment || assignment.recurrence_rule === null) {
+		if (readError || !assignment) {
 			return fail(400, {
-				error: m.homework_series_error_save_failed(),
-				action: 'editSeries' as const
+				error: m.homework_edit_error_save_failed(),
+				action: 'editAssignment' as const
 			});
+		}
+
+		const updates: {
+			title: string;
+			description: string | null;
+			reference_links: HomeworkReferenceLink[];
+			due_offset_days?: number;
+		} = {
+			title,
+			description: description.value,
+			reference_links: referenceLinks.value
+		};
+
+		if (assignment.recurrence_rule !== null) {
+			const dueOffsetDays = parseNonNegativeInt(String(formData.get('dueOffsetDays') ?? ''));
+			if (dueOffsetDays === null) {
+				return fail(400, {
+					error: m.homework_error_invalid_due_offset(),
+					action: 'editAssignment' as const
+				});
+			}
+			updates.due_offset_days = dueOffsetDays;
 		}
 
 		const { error: updateError } = await supabase
 			.from('homework_assignments')
-			.update({
-				title,
-				reference_link: referenceLinkRaw || null,
-				due_offset_days: dueOffsetDays
-			})
+			.update(updates)
 			.eq('id', assignmentId);
 
 		if (updateError) {
 			return fail(400, {
-				error: m.homework_series_error_save_failed(),
-				action: 'editSeries' as const
+				error: m.homework_edit_error_save_failed(),
+				action: 'editAssignment' as const
 			});
 		}
 
-		return { success: true, action: 'editSeries' as const };
+		return { success: true, action: 'editAssignment' as const };
 	},
 
 	pauseSeries: async ({ request, params, locals: { supabase, safeGetSession } }) => {

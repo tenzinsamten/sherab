@@ -206,6 +206,7 @@ export type Database = {
 					class_id: string;
 					created_at: string;
 					created_by: string | null;
+					description: string | null;
 					due_offset_days: number | null;
 					ends_on: string | null;
 					id: string;
@@ -213,13 +214,16 @@ export type Database = {
 					recurrence_rule: unknown | null;
 					recurrence_start_date: string | null;
 					reference_link: string | null;
+					reference_links: HomeworkReferenceLink[];
 					skill_area: Database['public']['Enums']['skill_area'];
 					title: string;
+					whole_class: boolean;
 				};
 				Insert: {
 					class_id: string;
 					created_at?: string;
 					created_by?: string | null;
+					description?: string | null;
 					due_offset_days?: number | null;
 					ends_on?: string | null;
 					id?: string;
@@ -227,13 +231,16 @@ export type Database = {
 					recurrence_rule?: unknown | null;
 					recurrence_start_date?: string | null;
 					reference_link?: string | null;
+					reference_links?: HomeworkReferenceLink[];
 					skill_area: Database['public']['Enums']['skill_area'];
 					title: string;
+					whole_class?: boolean;
 				};
 				Update: {
 					class_id?: string;
 					created_at?: string;
 					created_by?: string | null;
+					description?: string | null;
 					due_offset_days?: number | null;
 					ends_on?: string | null;
 					id?: string;
@@ -241,8 +248,10 @@ export type Database = {
 					recurrence_rule?: unknown | null;
 					recurrence_start_date?: string | null;
 					reference_link?: string | null;
+					reference_links?: HomeworkReferenceLink[];
 					skill_area?: Database['public']['Enums']['skill_area'];
 					title?: string;
+					whole_class?: boolean;
 				};
 				Relationships: [
 					{
@@ -750,3 +759,5 @@ export type SkillArea = Database['public']['Enums']['skill_area'];
 export type SkillLevel = Database['public']['Enums']['skill_level'];
 export type HomeworkStatusValue = 'assigned' | 'done' | 'reviewed';
 export type BadgeType = 'attendance' | 'homework';
+/** One entry of homework_assignments.reference_links (0013). */
+export type HomeworkReferenceLink = { url: string; label: string | null };

@@ -103,13 +103,20 @@
 							<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>
 						{/if}
 					</p>
-					{#if item.referenceLink}
-						<p style="margin: 0 0 var(--space-2);">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
-							<a href={item.referenceLink} target="_blank" rel="noopener noreferrer">
-								{m.student_homework_reference_link()}
-							</a>
-						</p>
+					{#if item.description}
+						<p class="homework-description">{item.description}</p>
+					{/if}
+					{#if item.referenceLinks.length > 0}
+						<ul class="homework-links">
+							{#each item.referenceLinks as link, i (i)}
+								<li>
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
+									<a href={link.url} target="_blank" rel="noopener noreferrer">
+										{link.label ?? m.student_homework_reference_link()}
+									</a>
+								</li>
+							{/each}
+						</ul>
 					{/if}
 
 					<div class="actions" style="justify-content:space-between;">
@@ -135,6 +142,16 @@
 </div>
 
 <style>
+	.homework-description {
+		margin: 0 0 var(--space-2);
+		white-space: pre-line;
+	}
+
+	.homework-links {
+		margin: 0 0 var(--space-2);
+		padding-left: var(--space-4);
+	}
+
 	.homework-list {
 		display: flex;
 		flex-direction: column;
