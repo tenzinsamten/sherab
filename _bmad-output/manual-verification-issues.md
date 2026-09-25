@@ -46,7 +46,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 37 | Class page `/teacher/classes/[id]` | Cards differ in size; Syllabus should be a same-size card that opens its own page | fixed (needs 0015 pushed), to verify |
 | 38 | Class page `/teacher/classes/[id]` | Remove the "Homework" button at the top right (the Homework card already links there) | fixed, to verify |
 | 39 | Side menu (teacher) | Add a "My classes" section to the menu | open |
-| 40 | Whole app | Changing page flickers instead of a smooth transition | fixed (iX links now client-side), to verify signed in |
+| 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
 
 ---
 
