@@ -110,3 +110,40 @@ export async function showToast(type: ToastType, message: string) {
 	const ix = await setupIx();
 	await ix.toast({ type, message });
 }
+
+/**
+ * Client-side navigation for links rendered by iX (#40).
+ *
+ * `<ix-button href>` and `<ix-menu-item href>` render an `<a target="_self">`
+ * in their shadow DOM. SvelteKit treats any link with a `target` as external
+ * and lets the browser do a full page load, so every menu click reloaded the
+ * app and iX re-drew from scratch (the flicker). This catches those clicks
+ * first (capture phase) and hands same-origin ones to SvelteKit's router.
+ * Returns a cleanup function.
+ */
+export function routeIxLinks(): () => void {
+	const onClick = (event: MouseEvent) => {
+		if (event.defaultPrevented || event.button !== 0) return;
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+		const anchor = event
+			.composedPath()
+			.find((el): el is HTMLAnchorElement => el instanceof HTMLAnchorElement);
+		if (!anchor || !anchor.href || anchor.target !== '_self' || anchor.hasAttribute('download')) {
+			return;
+		}
+		// Only anchors iX renders inside its own components.
+		const root = anchor.getRootNode();
+		if (!(root instanceof ShadowRoot) || !root.host.tagName.startsWith('IX-')) return;
+
+		const url = new URL(anchor.href);
+		if (url.origin !== location.origin) return;
+
+		event.preventDefault();
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- iX hrefs are built with resolve() by the pages.
+		void goto(url.pathname + url.search + url.hash);
+	};
+
+	document.addEventListener('click', onClick, { capture: true });
+	return () => document.removeEventListener('click', onClick, { capture: true });
+}

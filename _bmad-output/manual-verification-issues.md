@@ -45,6 +45,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 36 | Side menu | Menu should be expanded (icons + labels) by default for every role | fixed, to verify |
 | 37 | Class page `/teacher/classes/[id]` | Cards differ in size; Syllabus should be a same-size card that opens its own page | fixed (needs 0015 pushed), to verify |
 | 38 | Class page `/teacher/classes/[id]` | Remove the "Homework" button at the top right (the Homework card already links there) | fixed, to verify |
+| 39 | Side menu (teacher) | Add a "My classes" section to the menu | open |
+| 40 | Whole app | Changing page flickers instead of a smooth transition | fixed (iX links now client-side), to verify signed in |
 
 ---
 
@@ -604,6 +606,65 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Change:** delete the button. The Homework card stays the way in; plan together with #37,
   which reworks the cards (make sure the Homework card still clearly looks clickable).
 - **Check:** the homework list's "Back to roster" button still returns to the class page.
+
+
+## 39. "My classes" in the side menu
+- **Request (user, 2026-09-25):** "In the menu, add my class section"
+- **Today:** the teacher menu is Dashboard, Requests, Leaderboard (+ My Account, Sign out at the
+  bottom). #24 turned the old "My classes" item into "Dashboard" (`/teacher`), whose class cards
+  are now the only way to reach a class. Inside a class (roster, homework, syllabus) no menu item
+  is highlighted, because Dashboard uses `exact: true`.
+- **Options (for planning):**
+  - **A. One item per class under a "My classes" group.** iX has `ix-menu-category` (a collapsible
+    group with sub-items): "My classes" → "Yaks", "Snow Lions", ... Each opens that class page,
+    and the current class is highlighted on its roster / homework / syllabus pages. Needs the
+    teacher's classes in the root layout load (one small `class_teachers` query, like the
+    pending-requests count).
+  - **B. A single "My classes" item** opening a new `/teacher/classes` list page (the class cards
+    moved off the dashboard, or shown in both places).
+- **Open questions:**
+  - A or B? (A is quicker to use for a teacher with 1–3 classes.)
+  - Should the dashboard keep its class cards?
+  - Admin too (e.g. a "Classes" group listing every class), or teachers only?
+
+
+## 40. Page changes flicker
+- **Seen (user, 2026-09-25):** "currently when i change the page, i have a flicker, its not smooth
+  transition"
+- **Not yet reproduced by me** (needs a signed-in browser session). Likely causes, to confirm:
+  1. **Full page reloads instead of client-side navigation.** If a click reloads the whole
+     document, every page starts with iX not loaded: `setupIx()` only runs in `onMount`
+     (`src/routes/+layout.svelte`), so `ix-*` elements render unstyled until their definitions
+     load, then snap into place (header, menu, cards, buttons). SvelteKit does follow links inside
+     iX's shadow DOM (`ix-menu-item`, `ix-button href`), so normal links *should* be client-side;
+     check the Network tab for a new document request per click.
+  2. **Content swaps with no loading state.** SvelteKit keeps the old page until the next page's
+     `load` finishes. Several pages now run several sequential Supabase queries against the
+     hosted DB, so the swap comes late and all at once.
+  3. **iX re-rendering on navigation**, e.g. cards (`ix-card`) or pills mounting fresh on each
+     page.
+- **Fix ideas (for planning):**
+  - Hide custom elements until iX has defined them (`:not(:defined) { visibility: hidden }`) and
+    start loading iX earlier, so a reload never shows the unstyled state.
+  - A slim top progress bar while `navigating` is set (SvelteKit `$app/state`), so a slow load
+    visibly starts at once.
+  - Cross-fade between pages with the View Transitions API (`onNavigate` +
+    `document.startViewTransition`), falling back to no animation where unsupported.
+  - Fewer sequential queries on the heaviest pages (class page, homework list).
+- **To confirm first:** which pages (all, or only some), and whether it's the whole screen or
+  only the content area.
+- **Cause (confirmed 2026-09-25 in the browser, signed out):** iX renders `<a target="_self">` inside
+  `ix-button href` and `ix-menu-item href` (its default `target`). SvelteKit treats any link with a
+  `target` as external (`get_link_info`: `external = !!target || ...`), so every such click was a
+  full page load: the app re-booted and iX re-drew from scratch. Plain `<a>` links were already
+  client-side. Checked with a `window` marker: lost after clicking "Sign in" before the fix, kept
+  after.
+- **Fix (user said "fix it", 2026-09-25):** `routeIxLinks()` in `src/lib/ix.ts`, registered in the
+  root layout's `onMount`. A capture-phase click handler takes same-origin `_self` links rendered
+  inside `ix-*` shadow DOM and navigates with `goto()`; modified clicks (new tab), downloads and
+  external links are left alone. Verified signed out: Sign in, Join a class, Back all stay in the
+  same document. Still to verify signed in (side menu items, dashboard / class cards' buttons).
+- **Not done (only if a flicker remains):** progress bar while loading, view-transition cross-fade.
 
 ---
 

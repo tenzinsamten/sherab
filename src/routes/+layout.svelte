@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import { headerHomeLink, setupIx, showToast } from '$lib/ix';
+	import { headerHomeLink, routeIxLinks, setupIx, showToast } from '$lib/ix';
 	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
@@ -22,6 +22,7 @@
 
 	onMount(() => {
 		setupIx();
+		return routeIxLinks();
 	});
 
 	// Every form action on every route returns `fail(..., { error })` on
