@@ -48,10 +48,10 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 39 | Side menu (teacher) | Add a "My classes" section to the menu | wontfix (not required, user 2026-09-25) |
 | 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
 | 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
-| 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (needs 0016 pushed), to verify |
-| 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (needs 0016 pushed), to verify |
-| 44 | Student side | Students have no "My profile" page | fixed (needs 0016 pushed), to verify |
-| 45 | `/student` | The student's class isn't shown on their page | push 0016; misleading empty state fixed, to verify |
+| 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (0016 pushed), to verify |
+| 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (0016 pushed), to verify |
+| 44 | Student side | Students have no "My profile" page | fixed, to verify |
+| 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
 
 ---
 
@@ -805,6 +805,9 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+- 2026-09-25: migration 0016 pushed to hosted by the user. Before that, pages using
+  `class_enrollments` returned 500; after the push the user reports the app working.
+
 - 2026-09-25: #41–#43 planned (`~/.claude/plans/woolly-sprouting-candle.md`). Decisions: #41 copy
   username and PIN separately plus "Copy both" (same for a teacher's temporary password), and
   the partial-approve credentials move from a toast to the persistent bar. #42 new
