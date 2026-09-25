@@ -21,6 +21,10 @@ export function setupIx() {
 		addIcons({
 			iconAdd: icons.iconAdd,
 			iconBook: icons.iconBook,
+			iconCalendar: icons.iconCalendar,
+			iconCancel: icons.iconCancel,
+			iconChevronLeft: icons.iconChevronLeft,
+			iconChevronRight: icons.iconChevronRight,
 			iconCopy: icons.iconCopy,
 			iconDashboard: icons.iconDashboard,
 			iconGlobe: icons.iconGlobe,
@@ -32,6 +36,7 @@ export function setupIx() {
 			iconTasksOpen: icons.iconTasksOpen,
 			iconTrashcan: icons.iconTrashcan,
 			iconTrophy: icons.iconTrophy,
+			iconUndo: icons.iconUndo,
 			iconUser: icons.iconUser,
 			iconUserCheck: icons.iconUserCheck,
 			iconUserGroup: icons.iconUserGroup,

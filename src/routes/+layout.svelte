@@ -77,12 +77,18 @@
 			label: m.nav_leaderboard(),
 			icon: 'trophy'
 		};
+		const calendar = {
+			href: resolve('/calendar'),
+			label: m.nav_calendar(),
+			icon: 'calendar'
+		};
 		if (role === 'admin') {
 			return [
 				{ href: resolve('/admin'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
 				{ href: resolve('/admin/classes'), label: m.nav_classes(), icon: 'book' },
 				{ href: resolve('/admin/teachers'), label: m.nav_teachers(), icon: 'user-reading' },
 				{ href: resolve('/admin/teams'), label: m.nav_teams(), icon: 'user-group' },
+				calendar,
 				requests,
 				leaderboard
 			];
@@ -90,6 +96,7 @@
 		if (role === 'teacher') {
 			return [
 				{ href: resolve('/teacher'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
+				calendar,
 				requests,
 				leaderboard
 			];
@@ -99,6 +106,7 @@
 				{ href: resolve('/student'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
 				{ href: resolve('/student/classes'), label: m.nav_my_classes(), icon: 'book' },
 				{ href: resolve('/student/homework'), label: m.nav_my_homework(), icon: 'tasks-open' },
+				calendar,
 				{ ...leaderboard, label: m.nav_team_leaderboard() }
 			];
 		}

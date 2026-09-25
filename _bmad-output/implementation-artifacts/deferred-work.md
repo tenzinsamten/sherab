@@ -107,3 +107,9 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
   summary: Month-grid calendar UI (user decision 2026-09-25) — replace/augment 6-1's month-scoped agenda list with a month grid where each day cell shows its sessions, selecting a day opens its session list with role-gated edit controls, keyboard-navigable and usable at phone width (compact cells, day detail below grid).
   evidence: Split at the step-02 token gate: the 6-1 spec measured ~2,200 tokens (limit 1,600) and the user chose to defer the grid; 6-1 ships the same data, actions and month navigation with a list view, so the grid is purely a presentation layer over 6-1's `?month=` load and can ship independently.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
+  summary: A class created mid-year gets sessions on every past class day; decide in 6-2 whether those count as missed for attendance and streaks.
+  evidence: create_sessions_for_class() in 0018 inserts for all existing class_days. Unverified medium: it only harms users if 6-2 treats sessions from before the class existed as missed; settle it when 6-2 defines which sessions count.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
+  summary: RLS suites (incl. Story 6-1) are skipped when no local Supabase is running, and there is no CI, so database regressions can pass `npm test`.
+  evidence: every block in src/lib/server/rls.spec.ts is describe.skipIf(!reachable); the repo has no .github/ workflow. Repo-wide, pre-existing pattern.

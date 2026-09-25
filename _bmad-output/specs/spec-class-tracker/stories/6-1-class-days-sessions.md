@@ -2,7 +2,8 @@
 title: 'Class days & sessions'
 type: 'feature'
 created: '2026-09-25'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '34213ddb60b8f47c9264227499610f98238b5959'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -58,14 +59,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `supabase/migrations/0018_calendar.sql` -- `classes.default_start_time time`, `classes.default_duration_minutes int` (check 15–480, nullable); `class_days(id, day date unique, cancelled, created_by, created_at)`; `class_sessions(id, class_id, class_day_id, start_time_override, duration_minutes_override, cancelled, updated_by, updated_at, unique(class_id, class_day_id))`; SECURITY DEFINER triggers creating sessions on class_day and class insert; `class_sessions_effective` view (`security_invoker`); RLS + column grants per Boundaries.
-- [ ] `src/lib/supabase/database.types.ts` -- regenerate via `npm run supabase:types`.
-- [ ] `src/lib/berlin-date.ts` + `.spec.ts` -- `todayInBerlin()`, `currentBerlinMonth()` via `Intl` Europe/Berlin; test UTC-midnight and DST boundaries.
-- [ ] `src/lib/server/calendar.ts` + `.spec.ts` -- `weeklyDates(start, end)` (validated, max 1 year) and month shaping into dates → sessions (effective start/end, status Scheduled/Cancelled/Time not set); unit-test pure matrix rows.
-- [ ] `src/routes/calendar/+page.server.ts` + `+page.svelte` -- `?month=YYYY-MM` (default current Berlin month) loads by role; actions `addClassDays`, `setClassDayCancelled`, `setClassDefault`, `updateSession`, `setSessionCancelled` with server validation; date-grouped list with prev/next month and today marker; student view read-only.
-- [ ] `src/routes/+layout.svelte` -- `nav_calendar` for admin, teacher, student.
-- [ ] `messages/{en,de,bo}.json` -- all new keys.
-- [ ] `src/lib/server/rls.spec.ts` -- Story 6-1 block: trigger creation, override isolation, day cancel/restore, role access.
+- [x] `supabase/migrations/0018_calendar.sql` -- `classes.default_start_time time`, `classes.default_duration_minutes int` (check 15–480, nullable); `class_days(id, day date unique, cancelled, created_by, created_at)`; `class_sessions(id, class_id, class_day_id, start_time_override, duration_minutes_override, cancelled, updated_by, updated_at, unique(class_id, class_day_id))`; SECURITY DEFINER triggers creating sessions on class_day and class insert; `class_sessions_effective` view (`security_invoker`); RLS + column grants per Boundaries.
+- [x] `src/lib/supabase/database.types.ts` -- regenerate via `npm run supabase:types`.
+- [x] `src/lib/berlin-date.ts` + `.spec.ts` -- `todayInBerlin()`, `currentBerlinMonth()` via `Intl` Europe/Berlin; test UTC-midnight and DST boundaries.
+- [x] `src/lib/server/calendar.ts` + `.spec.ts` -- `weeklyDates(start, end)` (validated, max 1 year) and month shaping into dates → sessions (effective start/end, status Scheduled/Cancelled/Time not set); unit-test pure matrix rows.
+- [x] `src/routes/calendar/+page.server.ts` + `+page.svelte` -- `?month=YYYY-MM` (default current Berlin month) loads by role; actions `addClassDays`, `setClassDayCancelled`, `setClassDefault`, `updateSession`, `setSessionCancelled` with server validation; date-grouped list with prev/next month and today marker; student view read-only.
+- [x] `src/routes/+layout.svelte` -- `nav_calendar` for admin, teacher, student.
+- [x] `messages/{en,de,bo}.json` -- all new keys.
+- [x] `src/lib/server/rls.spec.ts` -- Story 6-1 block: trigger creation, override isolation, day cancel/restore, role access.
 
 **Acceptance Criteria:**
 - Given the admin has added class days, when any signed-in user opens that month, then those dates are listed.
@@ -73,9 +74,44 @@ context:
 
 ## Implementation Notes
 
+- Class default is written through `set_class_default(class_id, start_time, duration)` (SECURITY DEFINER, checks `is_admin() or is_teacher_of_class()`), mirroring `set_class_syllabus` in 0014: a teacher UPDATE policy on `classes` would also expose `name`/`code`, which have no column grants.
+- `class_sessions.updated_by/updated_at` and `class_days.created_by` are stamped server-side (trigger / `auth.uid()` default); clients get column grants only for `class_days(day)` insert, `class_days(cancelled)` update and the session override/cancel columns. No delete grant on either table.
+- Bulk add uses `upsert(..., { onConflict: 'day', ignoreDuplicates: true })`; the returned rows are the newly added days, the rest are reported as "already existed".
+- A new class also gets sessions on cancelled class days, so restoring such a day brings them back.
+- `database.types.ts`: generated output merged by hand into the existing file to keep its hand-typed columns (`BadgeType`, `HomeworkReferenceLink[]`, …); `set_class_default` args typed nullable (NULL clears the default).
+- Added `calendar`, `cancel`, `chevron-left/right`, `undo` to the registered iX icons (`src/lib/ix.ts`).
+- `bo.json`: `nav_calendar`/`calendar_heading` in Tibetan (ལོ་ཐོ།); other new keys carry the English text, like the other recent keys in that file.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Iteration 0 (blind-hunter BH, edge-case-hunter EC, verification-gap VG).
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---------|---------|----------|-------|
+| EC1 | `weeklyDates` loops forever past year 9999 | high | Reproduced: after 9999-12-30, `addUtcDays` returns `+010000-01` (sorts before `9999`), which never advances. | patch (G1) |
+| EC2 | Non-admin can reach `addClassDays` validation | high | The action has no role check before `weeklyDates`, so a student POST can trigger EC1. | patch (G1) |
+| EC3 | `?month=9999-12` gives a 500 | low | `monthBounds` builds `10000-01-01`; `new Date` rejects it, so `toISOString` throws. | patch (G1) |
+| EC4 | `?month=0000-01` gives a bad prev link | low | Negative index gives `-1-00`. Same root cause as EC1: unbounded year. | patch (G1) |
+| EC5 / BH1 | `loadError` shows a blank list | medium | `{#if !data.loadError}` has no `{:else}`, so users see no error and no empty state. | patch |
+| EC6 | `today` and `currentMonth` from two clocks | low | Two `new Date()` calls can straddle Berlin midnight at a month end. Fix: pass one `now`. | patch |
+| EC7 | Concurrent class + class-day insert misses a session | low | Real under READ COMMITTED, but both inserts are admin-only and rare. The fix adds locking. | reject |
+| EC8 | Class delete cascades sessions | low | Only a class with no students can be deleted (0011), and its sessions go with it. Changing the FK would block class deletion. | reject |
+| VG1 / VG2 / BH12 | `/calendar` actions untested (zero-row fail, end fallback, error mapping, existed count) | gap | Pre-verified: no test calls the actions. | patch (G2) |
+| VG3 / BH11a | Admin path and NULL-clear of `set_class_default` untested | gap | Pre-verified: all 4 RPC calls in the 6-1 block are teacher or student. | patch |
+| VG4 | RLS block skipped without local Supabase | gap | Pre-existing repo-wide pattern (every story's RLS suite), no CI. | defer |
+| BH2 | "Cancel session" button beside a Cancelled pill on a cancelled day | low | The button reads `sessionCancelled` only, so it contradicts the visible status on every cancelled day. | patch |
+| BH3 | "min" hard-coded in the default hint | low | `defaultHint` puts English `${d} min` inside a de/bo message. | patch |
+| BH4 | "Time not set" shown twice | low | `timeText` and the status pill both render `calendar_status_unset`. | patch |
+| BH5 | New class gets sessions on past class days | maybe-false | Matrix says the class gets every existing day. Whether past ones should count as missed is a 6-2 attendance/streak question; if they would, severity is medium (unverified). | defer |
+| BH6 | No audit stamp on `class_days` cancel/restore | low | Not required by spec; single admin. The fix adds columns and a trigger. | reject |
+| BH7 | Pending or rejected accounts can read the calendar | false | Student credentials are created only at approval (0002 header), so pending or rejected users cannot sign in. | reject |
+| BH8 | Past and cancelled-day sessions editable | false | User decision (3) in the spec explicitly allows editing past sessions. | reject |
+| BH9 | One-year limit lenient from 29 Feb | low | One extra day, rarely hit. | reject |
+| BH10 | RLS test data accumulates; random-year collision | low | About 1/6000 flake; `supabase:reset` clears it. Matches the suite's existing no-cleanup pattern. | reject |
+| BH11b | Grants on `created_by`/`updated_by`/`day`, RPC range and cancelled-day sessions not asserted | low | Covered in part by the trigger-only test; the remaining assertions add little. | reject |
+| BH13 | Default/session RPC failures not tied to the row | low | Inputs are server-validated first, so only rare permission or constraint failures reach it; the generic toast still shows. | reject |
 
 ## Design Notes
 

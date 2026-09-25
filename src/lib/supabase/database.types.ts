@@ -136,6 +136,93 @@ export type Database = {
 					}
 				];
 			};
+			class_days: {
+				Row: {
+					cancelled: boolean;
+					created_at: string;
+					created_by: string | null;
+					day: string;
+					id: string;
+				};
+				Insert: {
+					cancelled?: boolean;
+					created_at?: string;
+					created_by?: string | null;
+					day: string;
+					id?: string;
+				};
+				Update: {
+					cancelled?: boolean;
+					created_at?: string;
+					created_by?: string | null;
+					day?: string;
+					id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_days_created_by_fkey';
+						columns: ['created_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
+			class_sessions: {
+				Row: {
+					cancelled: boolean;
+					class_day_id: string;
+					class_id: string;
+					duration_minutes_override: number | null;
+					id: string;
+					start_time_override: string | null;
+					updated_at: string;
+					updated_by: string | null;
+				};
+				Insert: {
+					cancelled?: boolean;
+					class_day_id: string;
+					class_id: string;
+					duration_minutes_override?: number | null;
+					id?: string;
+					start_time_override?: string | null;
+					updated_at?: string;
+					updated_by?: string | null;
+				};
+				Update: {
+					cancelled?: boolean;
+					class_day_id?: string;
+					class_id?: string;
+					duration_minutes_override?: number | null;
+					id?: string;
+					start_time_override?: string | null;
+					updated_at?: string;
+					updated_by?: string | null;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_sessions_class_day_id_fkey';
+						columns: ['class_day_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_days';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_sessions_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_sessions_updated_by_fkey';
+						columns: ['updated_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_teachers: {
 				Row: {
 					assigned_at: string;
@@ -251,6 +338,8 @@ export type Database = {
 					code: string;
 					created_at: string;
 					created_by: string | null;
+					default_duration_minutes: number | null;
+					default_start_time: string | null;
 					id: string;
 					name: string;
 					syllabus: string | null;
@@ -260,6 +349,8 @@ export type Database = {
 					code: string;
 					created_at?: string;
 					created_by?: string | null;
+					default_duration_minutes?: number | null;
+					default_start_time?: string | null;
 					id?: string;
 					name: string;
 					syllabus?: string | null;
@@ -269,6 +360,8 @@ export type Database = {
 					code?: string;
 					created_at?: string;
 					created_by?: string | null;
+					default_duration_minutes?: number | null;
+					default_start_time?: string | null;
 					id?: string;
 					name?: string;
 					syllabus?: string | null;
@@ -654,7 +747,39 @@ export type Database = {
 			};
 		};
 		Views: {
-			[_ in never]: never;
+			class_sessions_effective: {
+				Row: {
+					cancelled: boolean | null;
+					class_day_id: string | null;
+					class_id: string | null;
+					class_name: string | null;
+					day: string | null;
+					day_cancelled: boolean | null;
+					duration_minutes: number | null;
+					duration_minutes_override: number | null;
+					id: string | null;
+					session_cancelled: boolean | null;
+					start_time: string | null;
+					start_time_override: string | null;
+					updated_at: string | null;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_sessions_class_day_id_fkey';
+						columns: ['class_day_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_days';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_sessions_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 		};
 		Functions: {
 			check_registration_available: {
@@ -688,6 +813,14 @@ export type Database = {
 				Returns: boolean;
 			};
 			is_teacher_of_student: { Args: { p_student: string }; Returns: boolean };
+			set_class_default: {
+				Args: {
+					p_class_id: string;
+					p_duration_minutes: number | null;
+					p_start_time: string | null;
+				};
+				Returns: undefined;
+			};
 			set_class_syllabus: {
 				Args: { p_class_id: string; p_syllabus: string; p_links: HomeworkReferenceLink[] };
 				Returns: undefined;

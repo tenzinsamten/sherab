@@ -5114,3 +5114,453 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 		expect(studentVisibleProfiles).toEqual([{ id: signedInStudent.id }]);
 	});
 });
+
+describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherA2: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacherA = await createSignedInUser('teacher');
+		teacherA2 = await createSignedInUser('teacher');
+		teacherB = await createSignedInUser('teacher');
+	}, 30000);
+
+	/**
+	 * class_days.day is unique school-wide and the test database is shared by
+	 * every run, so each scenario works in its own random far-future year.
+	 */
+	function randomYear() {
+		return 3000 + Math.floor(Math.random() * 6000);
+	}
+
+	/** A class taught by teacherA (and optionally teacherA2). */
+	async function createClass(prefix: string, teachers = [teacherA.id]) {
+		const { data, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Story 6-1 ${prefix}`,
+				code: `S6${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		for (const teacherId of teachers) {
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: data.id, teacher_id: teacherId });
+			if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+		}
+		return data.id as string;
+	}
+
+	async function addDays(days: string[]) {
+		const { data, error } = await admin.client
+			.from('class_days')
+			.upsert(
+				days.map((day) => ({ day })),
+				{ onConflict: 'day', ignoreDuplicates: true }
+			)
+			.select('id, day');
+		if (error) throw new Error(`Failed to add class days: ${error.message}`);
+		return data ?? [];
+	}
+
+	async function dayId(day: string) {
+		const { data } = await adminClient.from('class_days').select('id').eq('day', day).single();
+		return data!.id as string;
+	}
+
+	async function sessionId(classId: string, day: string) {
+		const { data } = await adminClient
+			.from('class_sessions_effective')
+			.select('id')
+			.eq('class_id', classId)
+			.eq('day', day)
+			.single();
+		return data!.id as string;
+	}
+
+	async function effective(classId: string, day: string) {
+		const { data } = await adminClient
+			.from('class_sessions_effective')
+			.select('start_time, duration_minutes, cancelled, session_cancelled, day_cancelled')
+			.eq('class_id', classId)
+			.eq('day', day)
+			.single();
+		return data!;
+	}
+
+	async function createSignedInStudent(classIds: string[]) {
+		const email = `story-6-1-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password,
+			email_confirm: true,
+			user_metadata: { role: 'student' }
+		});
+		if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
+
+		// Approval enrolls into the registered class (0016 trigger); the rest
+		// are added the way enroll_student() would.
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: classIds[0],
+				status: 'approved',
+				registration_name: 'Story 6-1 Student',
+				display_name: 'Story 6-1 Student'
+			})
+			.eq('id', data.user.id);
+		if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
+		for (const classId of classIds.slice(1)) {
+			const { error: enrollError } = await adminClient
+				.from('class_enrollments')
+				.insert({ student_id: data.user.id, class_id: classId });
+			if (enrollError) throw new Error(`Failed to enroll student: ${enrollError.message}`);
+		}
+
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+		if (signInError) throw new Error(`Failed to sign in student: ${signInError.message}`);
+		return { id: data.user.id, client };
+	}
+
+	it('bulk add: existing dates are skipped and every class gets one session per new day', async () => {
+		const year = randomYear();
+		const classA = await createClass('Bulk A');
+		const classB = await createClass('Bulk B');
+
+		await addDays([`${year}-10-11`]);
+		const added = await addDays([
+			`${year}-10-04`,
+			`${year}-10-11`,
+			`${year}-10-18`,
+			`${year}-10-25`
+		]);
+		expect(added.map((d) => d.day).sort()).toEqual([
+			`${year}-10-04`,
+			`${year}-10-18`,
+			`${year}-10-25`
+		]);
+
+		const { data: sessions } = await adminClient
+			.from('class_sessions_effective')
+			.select('class_id, day')
+			.in('class_id', [classA, classB])
+			.gte('day', `${year}-10-01`)
+			.lte('day', `${year}-10-31`);
+		// 4 days x 2 classes, exactly one row per pair.
+		expect(sessions).toHaveLength(8);
+		const pairs = new Set((sessions ?? []).map((s) => `${s.class_id}:${s.day}`));
+		expect(pairs.size).toBe(8);
+	});
+
+	it('a class created after class days exist gets a session on each of them', async () => {
+		const year = randomYear();
+		await addDays([`${year}-03-01`, `${year}-03-08`, `${year}-03-15`]);
+		const classId = await createClass('Late Class');
+
+		const { data } = await adminClient
+			.from('class_sessions_effective')
+			.select('day')
+			.eq('class_id', classId)
+			.gte('day', `${year}-03-01`)
+			.lte('day', `${year}-03-31`)
+			.order('day');
+		expect((data ?? []).map((s) => s.day)).toEqual([
+			`${year}-03-01`,
+			`${year}-03-08`,
+			`${year}-03-15`
+		]);
+	});
+
+	it('class days are admin-write only, readable by every signed-in role, never deleted, and sessions are trigger-only', async () => {
+		const year = randomYear();
+		const classId = await createClass('Access Days');
+		const [created] = await addDays([`${year}-05-03`]);
+		const student = await createSignedInStudent([classId]);
+
+		const { error: teacherInsert } = await teacherA.client
+			.from('class_days')
+			.insert({ day: `${year}-05-10` });
+		expect(teacherInsert).not.toBeNull();
+		const { error: studentInsert } = await student.client
+			.from('class_days')
+			.insert({ day: `${year}-05-10` });
+		expect(studentInsert).not.toBeNull();
+
+		for (const client of [teacherA.client, teacherB.client, student.client]) {
+			const { data } = await client.from('class_days').select('id').eq('id', created.id);
+			expect(data).toEqual([{ id: created.id }]);
+		}
+		const { data: anonDays } = await anonClient()
+			.from('class_days')
+			.select('id')
+			.eq('id', created.id);
+		expect(anonDays ?? []).toEqual([]);
+
+		const { data: teacherCancel } = await teacherA.client
+			.from('class_days')
+			.update({ cancelled: true })
+			.eq('id', created.id)
+			.select('id');
+		expect(teacherCancel ?? []).toEqual([]);
+
+		// No hard delete, not even for the admin.
+		await admin.client.from('class_days').delete().eq('id', created.id);
+		const { data: stillThere } = await adminClient
+			.from('class_days')
+			.select('id')
+			.eq('id', created.id);
+		expect(stillThere).toHaveLength(1);
+
+		// No client insert into sessions, and a session can't be moved.
+		const { error: sessionInsert } = await admin.client
+			.from('class_sessions')
+			.insert({ class_id: classId, class_day_id: created.id });
+		expect(sessionInsert).not.toBeNull();
+		const otherClass = await createClass('Access Other');
+		const { error: moveError } = await teacherA.client
+			.from('class_sessions')
+			.update({ class_id: otherClass })
+			.eq('id', await sessionId(classId, `${year}-05-03`));
+		expect(moveError).not.toBeNull();
+	});
+
+	it('override one day: only that session changes; a default change reaches only non-overridden sessions', async () => {
+		const year = randomYear();
+		const classId = await createClass('Override');
+		await addDays([`${year}-06-07`, `${year}-06-14`]);
+
+		const { error: defaultError } = await teacherA.client.rpc('set_class_default', {
+			p_class_id: classId,
+			p_start_time: '10:00',
+			p_duration_minutes: 90
+		});
+		expect(defaultError).toBeNull();
+
+		const overridden = await sessionId(classId, `${year}-06-14`);
+		const { data: updated, error } = await teacherA.client
+			.from('class_sessions')
+			.update({ start_time_override: '11:00' })
+			.eq('id', overridden)
+			.select('id, updated_by');
+		expect(error).toBeNull();
+		expect(updated).toEqual([{ id: overridden, updated_by: teacherA.id }]);
+
+		expect(await effective(classId, `${year}-06-07`)).toMatchObject({
+			start_time: '10:00:00',
+			duration_minutes: 90
+		});
+		expect(await effective(classId, `${year}-06-14`)).toMatchObject({
+			start_time: '11:00:00',
+			duration_minutes: 90
+		});
+		const { data: cls } = await adminClient
+			.from('classes')
+			.select('default_start_time')
+			.eq('id', classId)
+			.single();
+		expect(cls?.default_start_time).toBe('10:00:00');
+
+		await teacherA.client.rpc('set_class_default', {
+			p_class_id: classId,
+			p_start_time: '09:30',
+			p_duration_minutes: 90
+		});
+		expect((await effective(classId, `${year}-06-07`)).start_time).toBe('09:30:00');
+		expect((await effective(classId, `${year}-06-14`)).start_time).toBe('11:00:00');
+
+		// Out-of-range duration is rejected by the check constraint.
+		const { error: rangeError } = await teacherA.client
+			.from('class_sessions')
+			.update({ duration_minutes_override: 5 })
+			.eq('id', overridden)
+			.select('id');
+		expect(rangeError).not.toBeNull();
+	});
+
+	it('admin sets the default of a class they do not teach, and NULL/NULL clears it again', async () => {
+		const year = randomYear();
+		const classId = await createClass('Admin Default', [teacherB.id]);
+		await addDays([`${year}-08-02`]);
+
+		const { error: setError } = await admin.client.rpc('set_class_default', {
+			p_class_id: classId,
+			p_start_time: '14:00',
+			p_duration_minutes: 60
+		});
+		expect(setError).toBeNull();
+		expect(await effective(classId, `${year}-08-02`)).toMatchObject({
+			start_time: '14:00:00',
+			duration_minutes: 60
+		});
+
+		const { error: clearError } = await admin.client.rpc('set_class_default', {
+			p_class_id: classId,
+			p_start_time: null,
+			p_duration_minutes: null
+		});
+		expect(clearError).toBeNull();
+		expect(await effective(classId, `${year}-08-02`)).toMatchObject({
+			start_time: null,
+			duration_minutes: null
+		});
+	});
+
+	it('no default: the effective start time stays null (Time not set)', async () => {
+		const year = randomYear();
+		const classId = await createClass('No Default');
+		await addDays([`${year}-07-05`]);
+		expect(await effective(classId, `${year}-07-05`)).toMatchObject({
+			start_time: null,
+			duration_minutes: null,
+			cancelled: false
+		});
+	});
+
+	it('cancel class day cancels every session; restore returns each session to its own prior state', async () => {
+		const year = randomYear();
+		const classA = await createClass('Cancel A');
+		const classB = await createClass('Cancel B');
+		const day = `${year}-09-06`;
+		await addDays([day]);
+		const id = await dayId(day);
+
+		// classA's session is cancelled on its own first.
+		const { data: ownCancel } = await teacherA.client
+			.from('class_sessions')
+			.update({ cancelled: true })
+			.eq('id', await sessionId(classA, day))
+			.select('id');
+		expect(ownCancel).toHaveLength(1);
+		expect((await effective(classB, day)).cancelled).toBe(false);
+
+		const { data: cancelled, error } = await admin.client
+			.from('class_days')
+			.update({ cancelled: true })
+			.eq('id', id)
+			.select('id');
+		expect(error).toBeNull();
+		expect(cancelled).toHaveLength(1);
+		expect((await effective(classA, day)).cancelled).toBe(true);
+		expect((await effective(classB, day)).cancelled).toBe(true);
+
+		await admin.client.from('class_days').update({ cancelled: false }).eq('id', id);
+		expect(await effective(classA, day)).toMatchObject({
+			cancelled: true,
+			session_cancelled: true,
+			day_cancelled: false
+		});
+		expect(await effective(classB, day)).toMatchObject({
+			cancelled: false,
+			session_cancelled: false
+		});
+	});
+
+	it('a teacher not assigned to the class is denied: no rows updated, default rpc refused', async () => {
+		const year = randomYear();
+		const classId = await createClass('Other Teacher');
+		await addDays([`${year}-04-04`]);
+		const id = await sessionId(classId, `${year}-04-04`);
+
+		const { data: visible } = await teacherB.client
+			.from('class_sessions')
+			.select('id')
+			.eq('id', id);
+		expect(visible ?? []).toEqual([]);
+
+		const { data: updated } = await teacherB.client
+			.from('class_sessions')
+			.update({ cancelled: true })
+			.eq('id', id)
+			.select('id');
+		expect(updated ?? []).toEqual([]);
+		expect((await effective(classId, `${year}-04-04`)).cancelled).toBe(false);
+
+		const { error } = await teacherB.client.rpc('set_class_default', {
+			p_class_id: classId,
+			p_start_time: '08:00',
+			p_duration_minutes: 60
+		});
+		expect(error).not.toBeNull();
+	});
+
+	it("a student sees both enrolled classes' sessions read-only and no other class's", async () => {
+		const year = randomYear();
+		const classA = await createClass('Student A');
+		const classB = await createClass('Student B');
+		const classC = await createClass('Student C');
+		const day = `${year}-11-01`;
+		await addDays([day]);
+		const student = await createSignedInStudent([classA, classB]);
+
+		const { data, error } = await student.client
+			.from('class_sessions_effective')
+			.select('id, class_id, class_name')
+			.eq('day', day);
+		expect(error).toBeNull();
+		const classIds = new Set((data ?? []).map((s) => s.class_id));
+		expect(classIds).toEqual(new Set([classA, classB]));
+		expect(classIds.has(classC)).toBe(false);
+		expect((data ?? []).every((s) => s.class_name?.startsWith('Story 6-1'))).toBe(true);
+
+		const { data: updated } = await student.client
+			.from('class_sessions')
+			.update({ cancelled: true })
+			.eq('id', await sessionId(classA, day))
+			.select('id');
+		expect(updated ?? []).toEqual([]);
+		expect((await effective(classA, day)).cancelled).toBe(false);
+
+		const { error: rpcError } = await student.client.rpc('set_class_default', {
+			p_class_id: classA,
+			p_start_time: '08:00',
+			p_duration_minutes: 60
+		});
+		expect(rpcError).not.toBeNull();
+	});
+
+	it('two teachers of one class editing different sessions at once both persist', async () => {
+		const year = randomYear();
+		const classId = await createClass('Concurrent', [teacherA.id, teacherA2.id]);
+		await addDays([`${year}-02-07`, `${year}-02-14`]);
+		const first = await sessionId(classId, `${year}-02-07`);
+		const second = await sessionId(classId, `${year}-02-14`);
+
+		const [a, b] = await Promise.all([
+			teacherA.client
+				.from('class_sessions')
+				.update({ start_time_override: '11:00' })
+				.eq('id', first)
+				.select('id'),
+			teacherA2.client
+				.from('class_sessions')
+				.update({ duration_minutes_override: 45 })
+				.eq('id', second)
+				.select('id')
+		]);
+		expect(a.data).toHaveLength(1);
+		expect(b.data).toHaveLength(1);
+
+		const { data } = await adminClient
+			.from('class_sessions')
+			.select('id, start_time_override, duration_minutes_override, updated_by')
+			.in('id', [first, second]);
+		const byId = new Map((data ?? []).map((s) => [s.id, s]));
+		expect(byId.get(first)).toMatchObject({
+			start_time_override: '11:00:00',
+			duration_minutes_override: null,
+			updated_by: teacherA.id
+		});
+		expect(byId.get(second)).toMatchObject({
+			start_time_override: null,
+			duration_minutes_override: 45,
+			updated_by: teacherA2.id
+		});
+	});
+});
