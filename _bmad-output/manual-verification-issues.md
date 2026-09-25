@@ -34,6 +34,12 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 25 | Homework create | One-off homework for the whole class fails when the class has no approved students | fixed (needs 0013 pushed), to verify |
 | 26 | Homework create | No field for a longer description / instructions, only title and one link | fixed (needs 0013 pushed), to verify |
 | 27 | Homework create | Only one reference link per homework; teachers need to add several | fixed (needs 0013 pushed), to verify |
+| 28 | Side menu | "My Account" menu item has no icon | fixed, to verify |
+| 29 | Date inputs | Calendar icon in the date field is white (invisible) on the create homework page | fixed, to verify |
+| 30 | Homework create | Creating one assignment shows several success toasts | fixed (create page redirects, #33), to verify |
+| 31 | Homework create | Create button keeps spinning after the assignment is created | fixed with #30, to verify |
+| 32 | Class page `/teacher/classes/[id]` | Summary cards: number of students, number of homework, and the class's reference / syllabus | fixed (needs 0014 pushed), to verify |
+| 33 | Homework page | List all homework with pagination; create homework on its own page and return to the list after creating | fixed, to verify |
 
 ---
 
@@ -419,11 +425,108 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - Still no URL validation (current rule: teachers are trusted), or at least require http(s)?
   - Plan together with #26 (description): one form/migration change for both.
 
+## 28. "My Account" menu item has no icon
+- **Seen (user, 2026-09-25, retest after #23):** "My account icon is missing."
+- **Cause:** the item uses `icon="user"`, but `setupIx()` (`src/lib/ix.ts`) only registers a fixed
+  list of icons with `addIcons()`, and `iconUser` isn't on it. An unregistered name renders blank.
+- **Fix idea:** add `iconUser` to the `addIcons()` list.
+
+## 29. Date field calendar icon is invisible
+- **Seen (user, 2026-09-25, create homework page):** "Due date calendar icon is not visible since it
+  was white."
+- **Cause:** iX's stylesheet sets `:root { color-scheme: light dark }`. On a Mac in dark mode the
+  browser draws native controls (the date picker's calendar icon) for dark mode, so the icon is
+  white. The app itself is forced light (#15), so the field background stays white.
+- **Scope:** every native `type="date"` input: homework due date and start date, and the roster's
+  attendance date. Possibly other native controls too (select arrows, scrollbars).
+- **Fix idea:** `:root { color-scheme: light; }` in `src/app.css` while the app is light-only.
+  Revisit with dark mode in phase 2 (#13).
+
+## 30. Several toasts for one created assignment
+- **Seen (user, 2026-09-25):** "When create assignment was in progress and done, it shows multiple
+  toast when we created only one assignment."
+- **Cause:** a bug from the #27 fix. The toast `$effect` in `homework/+page.svelte` does
+  `createCount++` (to reset the link rows). That both reads and writes `createCount`, so the effect
+  depends on the value it changes and re-runs itself. Each re-run shows the toast again, until
+  Svelte stops the loop.
+- **Fix idea:** reset the link rows outside the effect (in the create form's enhance callback,
+  after `update()`), or wrap the increment in `untrack()`.
+
+## 31. Create button keeps spinning after creation
+- **Seen (user, 2026-09-25):** "After completed, create button is still showing spinner."
+- **Likely cause:** the same loop as #30. When Svelte aborts the runaway effect it throws
+  (`effect_update_depth_exceeded`), which breaks the page update, so the button's `loading`
+  state (from `createPending()`) isn't re-rendered as cleared. To confirm after fixing #30. If it
+  still spins, check whether `ix-button`'s `loading` attribute is removed when the prop becomes
+  `undefined`.
+
+## 32. Summary cards on the class page
+- **Request (user, 2026-09-25):** "In the class details page, I want to see cards with number of
+  students, number of homework and card with reference or syllabus for the class"
+- **Page:** `/teacher/classes/[id]` (roster). Today its header shows only the class name, code and a
+  Homework button, then the attendance form and the skills table.
+- **What exists:**
+  - Student count: the page already loads the approved students, so this needs no new query.
+  - Homework count: not loaded on this page. `homework_assignments` has `class_id`, so a count
+    query is cheap.
+  - Syllabus: **nothing exists.** `classes` has only `name`, `code`, `created_by`, `created_at`
+    (0001_init.sql:45). Needs a migration (e.g. `syllabus text` plus links, like homework's
+    `description` / `reference_links` from 0013), an edit form, and RLS. Today only admins can
+    update `classes` (`classes_update_admin`, 0001_init.sql:189).
+- **Open questions:**
+  - Who writes the syllabus: the class's teacher, the admin, or both? Teachers editing would need
+    a new column-limited update policy on `classes`.
+  - What is it: text (plain, line breaks kept) plus labelled links, like homework? Or a file upload
+    (PDF)?
+  - Homework count: all assignments, only open ones (not archived / not past due), or split
+    (e.g. "3 open · 12 total")? Do weekly series count once or per week?
+  - Do the cards link somewhere (homework count → Homework page)?
+  - Should students see the syllabus too, e.g. on `/student`?
+  - Show the same cards on the teacher dashboard's class cards (#24)?
+
+## 33. Homework list with pagination, create on its own page
+- **Request (user, 2026-09-25):** "when clicked on home work, i want to see all the home work with
+  pagination and create home work in another page. once assignment is created then show the
+  homework again"
+- **Today:** `/teacher/classes/[id]/homework` is one long page: the create form on top, then every
+  assignment with its instances, student statuses, edit form and series controls. `load` reads
+  all assignments, instances and history for the class in one go, with no paging.
+- **Change needed (for planning):**
+  - `/teacher/classes/[id]/homework`: the list only, with a **Create homework** button and page
+    controls (e.g. `?page=2`). Server-side paging with `.range()` on `homework_assignments`
+    (ordered newest first), and instances/history loaded only for that page's assignments.
+  - New `/teacher/classes/[id]/homework/new`: the create form (moves `createAssignment` there). On
+    success, `redirect(303)` back to the list, with the success toast shown there (e.g. a
+    `?created=` flag, like `?justSignedUp`).
+  - Link rows reset (#30) no longer matters on the new page: each create starts from a fresh page.
+- **Open questions:**
+  - How many per page (10? 20?), and numbered pages or just Previous / Next?
+  - Sort: newest created first (today), or by next due date?
+  - Filters: open / archived / all, or one-off vs weekly? Should archived homework be hidden by
+    default?
+  - Keep each assignment's details (student statuses, mark done / reviewed, edit, pause / end)
+    inline in the list, or move them to a detail page per assignment
+    (`/homework/[assignmentId]`) with the list showing only a summary row (title, skill,
+    due, done x/y)?
+  - Edit on its own page too (reusing the create form), or keep it inline?
+- **Related:** #30/#31 (toast loop and spinner on create) are fixed by the same rework if create
+  moves to its own page, but should still be fixed on their own in case this is planned later.
+
 ---
 
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+
+- 2026-09-25: #28–#33 planned (`~/.claude/plans/bright-greeting-forest.md`) and built. Decisions:
+  #32 syllabus = plain text (max 5000) + up to 10 labelled links, edited by the class's teacher
+  (class page) and the admin (`/admin/classes`) through `set_class_syllabus()`, shown to the
+  class's students on `/student`; class page cards: Students, Homework (open / total), Syllabus.
+  #33 homework list 10 per page, newest first, Open / Archived / All (default Open; open = any
+  non-archived week, or an active series), summary rows opening `/homework/[assignmentId]`,
+  create at `/homework/new` redirecting back with one toast (which also removes the #30 loop).
+  Migration `0014_class_syllabus.sql` must be pushed before the class page, admin classes and
+  `/student` load on hosted.
 
 - 2026-09-25: teacher walkthrough #23–#27 planned (`~/.claude/plans/bright-greeting-forest.md`) and
   built in three commits. Decisions: #23 account page with display name + in-app password change

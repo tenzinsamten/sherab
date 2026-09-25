@@ -99,6 +99,27 @@ As Teacher A at `/teacher/classes/[id]`:
 - [ ] **Edit** works on one-off homework and on a series; Done/Reviewed marks unchanged
 - [ ] Existing homework's single link still shows after 0013 (backfilled)
 
+### Retest fixes (#28–#33, needs 0014 pushed)
+- [ ] "My Account" menu item shows its icon
+- [ ] Date fields (homework due / start date, attendance date) show a dark calendar icon, also
+      with the Mac in dark mode
+- [ ] **Homework list:** 10 per page with Previous / Next and "Page x of y"; filters Open /
+      Archived / All with counts (default Open)
+- [ ] Open hides fully archived one-offs and paused / ended series with nothing open;
+      Archived shows them
+- [ ] Row shows title, skill, Weekly pill, next due, Done x / y, Overdue / Archived pill, and
+      opens the detail page
+- [ ] **Create homework** opens `/homework/new`; after creating, back on the list with exactly one
+      toast and no spinner left; refreshing doesn't repeat the toast
+- [ ] **Detail page:** mark done / reviewed, archive, edit, pause / end all work, each with a
+      spinner; Back to homework returns to the list
+- [ ] **Class page cards:** Students count, Homework "open · total" (links to the list), Syllabus
+- [ ] Teacher edits the syllabus (text with line breaks + labelled links); clearing it shows
+      "No syllabus yet"
+- [ ] Admin edits the same syllabus from `/admin/classes` ("Edit syllabus" under each class)
+- [ ] Student sees the "Class syllabus" card on `/student` (hidden when empty)
+- [ ] Teacher B cannot save class 1's syllabus
+
 ## 4. Gamification (Epic 4)
 ### Streaks (`/student`)
 - [ ] Empty state before any streak
