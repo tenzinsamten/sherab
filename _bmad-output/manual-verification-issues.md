@@ -52,7 +52,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (0016 pushed), to verify |
 | 44 | Student side | Students have no "My profile" page | fixed, to verify |
 | 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
-| 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | fixed (needs 0017 pushed), to verify |
+| 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | fixed (0017 pushed), working per user |
 
 ---
 
@@ -839,6 +839,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+- 2026-09-25: migration 0017 pushed to hosted by the user; student menu (#46) reported working.
+
 - 2026-09-25: migration 0016 pushed to hosted by the user. Before that, pages using
   `class_enrollments` returned 500; after the push the user reports the app working.
 
