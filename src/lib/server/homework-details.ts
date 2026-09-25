@@ -5,6 +5,28 @@ export const MAX_DESCRIPTION_LENGTH = 2000;
 export const MAX_REFERENCE_LINKS = 10;
 export const MAX_LINK_URL_LENGTH = 2000;
 export const MAX_LINK_LABEL_LENGTH = 100;
+export const MAX_DUE_OFFSET_DAYS = 365;
+
+/**
+ * `YYYY-MM-DD`, and a real calendar date -- not just a truthy string. Guards
+ * against e.g. "2026-02-31", which `new Date(...)` would otherwise silently
+ * roll over to March rather than reject.
+ */
+export function isValidDate(value: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		return false;
+	}
+	const date = new Date(`${value}T00:00:00Z`);
+	return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+/** Integer >= 0 (and <= a sanity bound) -- used for due_offset_days. */
+export function parseNonNegativeInt(value: string): number | null {
+	if (!/^\d+$/.test(value)) return null;
+	const n = Number(value);
+	if (!Number.isSafeInteger(n) || n < 0 || n > MAX_DUE_OFFSET_DAYS) return null;
+	return n;
+}
 
 /**
  * Plain-text homework description: trimmed, empty becomes null. Returns
@@ -12,10 +34,11 @@ export const MAX_LINK_LABEL_LENGTH = 100;
  * show an error instead of letting the insert fail on the constraint.
  */
 export function parseDescription(
-	raw: FormDataEntryValue | null
+	raw: FormDataEntryValue | null,
+	max = MAX_DESCRIPTION_LENGTH
 ): { ok: true; value: string | null } | { ok: false } {
 	const value = String(raw ?? '').trim();
-	if (value.length > MAX_DESCRIPTION_LENGTH) return { ok: false };
+	if (value.length > max) return { ok: false };
 	return { ok: true, value: value || null };
 }
 

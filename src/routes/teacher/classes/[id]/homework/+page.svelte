@@ -1,23 +1,17 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
-	import LinkRows from '$lib/components/LinkRows.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
-	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
-	import type { ActionData, PageProps } from './$types';
+	import type { PageProps } from './$types';
 
-	let { data, form }: PageProps & { form: ActionData } = $props();
+	let { data }: PageProps = $props();
 
-	const skillAreas: SkillArea[] = ['language', 'song', 'dance'];
-	let targetMode = $state<'all' | 'subset'>('all');
-	let assignmentMode = $state<'once' | 'weekly'>('once');
-	const pending = createPending();
-	// Bumped after each successful create so the link rows start blank again
-	// (form.reset() clears the inputs but not LinkRows' own state).
-	let createCount = $state(0);
+	type Filter = 'open' | 'archived' | 'all';
 
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
@@ -25,70 +19,51 @@
 		return m.roster_skill_dance();
 	}
 
-	function studentName(studentId: string): string {
-		return data.students.find((s) => s.id === studentId)?.displayName ?? studentId;
+	let listHref = $derived(resolve('/teacher/classes/[id]/homework', { id: data.class.id }));
+
+	function pageHref(filter: Filter, pageNumber: number): string {
+		const parts: string[] = [];
+		if (filter !== 'open') parts.push(`filter=${filter}`);
+		if (pageNumber > 1) parts.push(`page=${pageNumber}`);
+		return parts.length > 0 ? `${listHref}?${parts.join('&')}` : listHref;
 	}
 
-	// Single source of truth for "is this series currently inactive"
-	// (review finding #8) -- reused by seriesStatusLabel() and the
-	// pause/end-buttons visibility guard below, which previously
-	// re-implemented this same check independently.
-	function isSeriesInactive(assignment: (typeof data.assignments)[number]): boolean {
-		return (
-			Boolean(assignment.pausedAt) || Boolean(assignment.endsOn && assignment.endsOn <= data.today)
-		);
-	}
+	let filters = $derived([
+		{ value: 'open' as const, label: m.homework_filter_open({ count: data.counts.open }) },
+		{
+			value: 'archived' as const,
+			label: m.homework_filter_archived({ count: data.counts.archived })
+		},
+		{ value: 'all' as const, label: m.homework_filter_all({ count: data.counts.all }) }
+	]);
 
-	function seriesStatusLabel(assignment: (typeof data.assignments)[number]): string | null {
-		if (!assignment.isRecurring) return null;
-		if (assignment.pausedAt) return m.homework_series_paused_label();
-		if (assignment.endsOn && assignment.endsOn <= data.today) {
-			return m.homework_series_ended_label({ date: assignment.endsOn });
-		}
-		return null;
-	}
+	let emptyText = $derived(
+		data.filter === 'open'
+			? m.homework_empty_open()
+			: data.filter === 'archived'
+				? m.homework_empty_archived()
+				: m.homework_empty()
+	);
 
+	// The create page redirects here with ?created=<count|weekly>[&failed=<n>].
+	// Show the toast once, then drop the params so a refresh doesn't repeat it.
 	$effect(() => {
-		if (!form?.success) return;
-		switch (form.action) {
-			case 'createAssignment':
-				createCount++;
-				if (form.recurring)
-					showToast('success', m.homework_created_recurring_success({ title: form.title }));
-				else if (form.failedStudentIds.length > 0)
-					showToast(
-						'error',
-						m.homework_created_partial({
-							title: form.title,
-							count: form.targetCount,
-							names: form.failedStudentIds.map(studentName).join(', ')
-						})
-					);
-				else
-					showToast(
-						'success',
-						m.homework_created_success({ title: form.title, count: form.targetCount })
-					);
-				break;
-			case 'markDone':
-				showToast('success', m.homework_mark_done_success());
-				break;
-			case 'markReviewed':
-				showToast('success', m.homework_mark_reviewed_success());
-				break;
-			case 'archiveInstance':
-				showToast('success', m.homework_archived_success());
-				break;
-			case 'editAssignment':
-				showToast('success', m.homework_edit_success());
-				break;
-			case 'pauseSeries':
-				showToast('success', m.homework_series_paused_success());
-				break;
-			case 'endSeries':
-				showToast('success', m.homework_series_ended_success());
-				break;
-		}
+		const created = page.url.searchParams.get('created');
+		if (created === null) return;
+		const failed = Number(page.url.searchParams.get('failed') ?? '0');
+		untrack(() => {
+			if (created === 'weekly') showToast('success', m.homework_created_weekly());
+			else if (failed > 0)
+				showToast('error', m.homework_created_partial_count({ count: created, failed }));
+			else if (created === '0') showToast('success', m.homework_created_empty());
+			else showToast('success', m.homework_created_count({ count: created }));
+
+			const url = new URL(page.url);
+			url.searchParams.delete('created');
+			url.searchParams.delete('failed');
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, only the query changes.
+			replaceState(url, page.state);
+		});
 	});
 </script>
 
@@ -103,397 +78,145 @@
 			<h1 class="page-heading">{m.homework_heading()}</h1>
 			<p class="page-subtitle">{data.class.name}</p>
 		</div>
-		<ix-button variant="secondary" href={resolve('/teacher/classes/[id]', { id: data.class.id })}>
-			{m.homework_back_to_roster()}
-		</ix-button>
+		<div class="actions">
+			<ix-button variant="secondary" href={resolve('/teacher/classes/[id]', { id: data.class.id })}>
+				{m.homework_back_to_roster()}
+			</ix-button>
+			<ix-button
+				icon="add"
+				href={resolve('/teacher/classes/[id]/homework/new', { id: data.class.id })}
+			>
+				{m.homework_create_button()}
+			</ix-button>
+		</div>
 	</header>
 
-	<section class="card">
-		<h2>{m.homework_create_heading()}</h2>
-		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
-			<div class="field">
-				<label for="title">{m.homework_title_label()}</label>
-				<input id="title" name="title" type="text" required />
-			</div>
-			<div class="field">
-				<label for="skillArea">{m.homework_skill_area_label()}</label>
-				<select id="skillArea" name="skillArea" required>
-					{#each skillAreas as area (area)}
-						<option value={area}>{skillLabel(area)}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="field">
-				<label for="description">{m.homework_description_label()}</label>
-				<textarea id="description" name="description" rows="4" maxlength="2000"></textarea>
-			</div>
-			{#key createCount}
-				<LinkRows idPrefix="create" />
-			{/key}
-
-			<fieldset class="check-list" style="margin-bottom: var(--space-4);">
-				<legend>{m.homework_mode_legend()}</legend>
-				<label
-					style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
-				>
-					<input type="radio" name="mode" value="once" bind:group={assignmentMode} />
-					{m.homework_mode_once()}
-				</label>
-				<label style="display:flex; align-items:center; gap: var(--space-2);">
-					<input type="radio" name="mode" value="weekly" bind:group={assignmentMode} />
-					{m.homework_mode_weekly()}
-				</label>
-			</fieldset>
-
-			{#if assignmentMode === 'once'}
-				<div class="field">
-					<label for="dueDate">{m.homework_due_date_label()}</label>
-					<input id="dueDate" name="dueDate" type="date" required />
-				</div>
-
-				<fieldset class="check-list" style="margin-bottom: var(--space-4);">
-					<legend>{m.homework_target_legend()}</legend>
-					<label
-						style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
-					>
-						<input type="radio" name="targetMode" value="all" bind:group={targetMode} />
-						{m.homework_target_all()}
-					</label>
-					<label
-						style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
-					>
-						<input type="radio" name="targetMode" value="subset" bind:group={targetMode} />
-						{m.homework_target_subset()}
-					</label>
-					{#if targetMode === 'subset'}
-						<ul style="list-style:none; padding:0; margin: var(--space-2) 0 0 0;">
-							{#each data.students as student (student.id)}
-								<li style="padding: var(--space-1) 0;">
-									<label style="display:flex; align-items:center; gap: var(--space-2);">
-										<input type="checkbox" name="studentIds" value={student.id} />
-										{student.displayName}
-									</label>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</fieldset>
-			{:else}
-				<div class="field">
-					<label for="startDate">{m.homework_start_date_label()}</label>
-					<input id="startDate" name="startDate" type="date" required />
-				</div>
-				<div class="field">
-					<label for="dueOffsetDays">{m.homework_due_offset_label()}</label>
-					<input
-						id="dueOffsetDays"
-						name="dueOffsetDays"
-						type="number"
-						inputmode="numeric"
-						min="0"
-						max="365"
-						step="1"
-						value="7"
-						required
-					/>
-				</div>
-				<p style="color: var(--theme-color-soft-text); font-size: var(--theme-font-size-default);">
-					{m.homework_recurring_note()}
-				</p>
-			{/if}
-
+	<nav
+		class="actions"
+		aria-label={m.homework_filter_label()}
+		style="margin-bottom: var(--space-4);"
+	>
+		{#each filters as f (f.value)}
 			<ix-button
-				type="submit"
-				loading={pending.is('create') || undefined}
-				disabled={pending.busy || undefined}>{m.homework_create_submit()}</ix-button
+				variant={data.filter === f.value ? 'primary' : 'secondary'}
+				href={pageHref(f.value, 1)}
+				aria-current={data.filter === f.value ? 'page' : undefined}
 			>
-		</form>
-	</section>
+				{f.label}
+			</ix-button>
+		{/each}
+	</nav>
 
 	<section class="card">
-		<h2>{m.homework_assignments_heading()}</h2>
-		{#if data.assignments.length === 0}
-			<p style="color: var(--theme-color-soft-text); margin:0;">{m.homework_empty()}</p>
+		{#if data.items.length === 0}
+			<p class="muted" style="margin:0;">{emptyText}</p>
 		{:else}
-			<ul
-				style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap: var(--space-4);"
-			>
-				{#each data.assignments as assignment (assignment.id)}
-					<li
-						style="border-bottom: 2px solid var(--theme-color-soft-bdr); padding-bottom: var(--space-4);"
-					>
-						<div
-							style="display:flex; align-items:center; justify-content:space-between; gap: var(--space-2); flex-wrap:wrap;"
+			<ul class="homework-list">
+				{#each data.items as item (item.id)}
+					<li>
+						<a
+							class="homework-row"
+							href={resolve('/teacher/classes/[id]/homework/[assignmentId]', {
+								id: data.class.id,
+								assignmentId: item.id
+							})}
 						>
-							<h3
-								style="margin: 0; font-size: var(--theme-font-size-l); display:flex; align-items:center; gap: var(--space-2);"
-							>
-								{assignment.title}
-								{#if assignment.isRecurring}
+							<span class="homework-row-title">
+								{item.title}
+								{#if item.isRecurring}
 									<ix-pill variant="neutral" outline
 										><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
 									>
 								{/if}
-							</h3>
-							<span
-								style="font-size: var(--theme-font-size-default); color: var(--theme-color-soft-text);"
-							>
-								{skillLabel(assignment.skillArea)}
-							</span>
-						</div>
-
-						{#if assignment.description}
-							<p class="homework-description">{assignment.description}</p>
-						{/if}
-
-						{#if assignment.referenceLinks.length > 0}
-							<ul class="homework-links">
-								{#each assignment.referenceLinks as link, i (i)}
-									<li>
-										<!-- eslint-disable svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
-										<a href={link.url} target="_blank" rel="noopener noreferrer">
-											{link.label ?? link.url}
-										</a>
-										<!-- eslint-enable svelte/no-navigation-without-resolve -->
-									</li>
-								{/each}
-							</ul>
-						{/if}
-
-						{#if seriesStatusLabel(assignment)}
-							<p
-								style="font-weight:700; font-size: var(--theme-font-size-default); margin: var(--space-1) 0;"
-							>
-								{seriesStatusLabel(assignment)}
-							</p>
-						{/if}
-
-						<details style="margin: var(--space-2) 0;">
-							<summary>{m.homework_edit_heading()}</summary>
-							<form
-								method="POST"
-								action="?/editAssignment"
-								use:enhance={pending.submit(`edit:${assignment.id}`)}
-								style="margin-top: var(--space-3);"
-							>
-								<input type="hidden" name="assignmentId" value={assignment.id} />
-								<div class="field">
-									<label for={`edit-title-${assignment.id}`}>{m.homework_title_label()}</label>
-									<input
-										id={`edit-title-${assignment.id}`}
-										name="title"
-										type="text"
-										value={assignment.title}
-										required
-									/>
-								</div>
-								<div class="field">
-									<label for={`edit-description-${assignment.id}`}
-										>{m.homework_description_label()}</label
-									>
-									<textarea
-										id={`edit-description-${assignment.id}`}
-										name="description"
-										rows="4"
-										maxlength="2000"
-										value={assignment.description ?? ''}></textarea>
-								</div>
-								<LinkRows idPrefix={`edit-${assignment.id}`} links={assignment.referenceLinks} />
-								{#if assignment.isRecurring}
-									<div class="field">
-										<label for={`edit-offset-${assignment.id}`}
-											>{m.homework_due_offset_label()}</label
-										>
-										<input
-											id={`edit-offset-${assignment.id}`}
-											name="dueOffsetDays"
-											type="number"
-											inputmode="numeric"
-											min="0"
-											max="365"
-											step="1"
-											value={assignment.dueOffsetDays ?? 0}
-											required
-										/>
-									</div>
+								{#if item.archived}
+									<ix-pill variant="neutral">{m.homework_archived_label()}</ix-pill>
+								{:else if item.overdue}
+									<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill>
 								{/if}
-								<ix-button
-									variant="secondary"
-									type="submit"
-									loading={pending.is(`edit:${assignment.id}`) || undefined}
-									disabled={pending.busy || undefined}>{m.homework_edit_submit()}</ix-button
-								>
-							</form>
-
-							{#if assignment.isRecurring && !isSeriesInactive(assignment)}
-								<div style="display:flex; gap: var(--space-2); margin-top: var(--space-3);">
-									<form method="POST" action="?/pauseSeries" use:enhance>
-										<input type="hidden" name="assignmentId" value={assignment.id} />
-										<ix-button variant="secondary" type="submit"
-											>{m.homework_series_pause_action()}</ix-button
-										>
-									</form>
-									<form method="POST" action="?/endSeries" use:enhance>
-										<input type="hidden" name="assignmentId" value={assignment.id} />
-										<ix-button variant="secondary" type="submit"
-											>{m.homework_series_end_action()}</ix-button
-										>
-									</form>
-								</div>
-							{/if}
-						</details>
-
-						{#if assignment.instances.length === 0}
-							<p
-								style="color: var(--theme-color-soft-text); font-size: var(--theme-font-size-default); margin: var(--space-2) 0 0 0;"
-							>
-								{m.homework_instances_empty()}
-							</p>
-						{:else}
-							<table style="margin-top: var(--space-2);">
-								<thead>
-									<tr>
-										<th>{m.homework_col_due()}</th>
-										<th>{m.homework_col_done()}</th>
-										<th>{m.homework_col_reviewed()}</th>
-										<th>{m.homework_col_status()}</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each assignment.instances as instance (instance.id)}
-										<tr>
-											<td>{instance.dueDate}</td>
-											<td>{instance.doneCount} / {instance.students.length}</td>
-											<td>{instance.reviewedCount} / {instance.students.length}</td>
-											<td>
-												{#if instance.archivedAt}
-													<ix-pill variant="neutral">{m.homework_archived_label()}</ix-pill>
-												{:else if instance.students.some((s) => s.overdue)}
-													<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill>
-												{/if}
-											</td>
-										</tr>
-										<tr>
-											<td
-												colspan="4"
-												style="border-bottom: 2px solid var(--theme-color-soft-bdr); padding-top:0;"
-											>
-												<details>
-													<summary>{m.homework_student_status_heading()}</summary>
-													{#if instance.students.length === 0 && assignment.wholeClass}
-														<p class="muted" style="margin: var(--space-2) 0 0 0;">
-															{m.homework_no_students_yet()}
-														</p>
-													{/if}
-													<ul style="list-style:none; padding:0; margin: var(--space-2) 0 0 0;">
-														{#each instance.students as student (student.studentId)}
-															<li
-																style="border-bottom: 1px solid var(--theme-color-soft-bdr); padding: var(--space-2) 0;"
-															>
-																<div
-																	style="display:flex; align-items:center; justify-content:space-between; gap: var(--space-2); flex-wrap:wrap;"
-																>
-																	<span>
-																		<strong>{student.displayName}</strong>
-																		—
-																		{#if student.reviewedAt}
-																			{m.homework_status_reviewed()}
-																		{:else if student.doneAt}
-																			{m.homework_status_done()}
-																		{:else}
-																			{m.homework_status_assigned()}
-																		{/if}
-																		{#if student.overdue}
-																			<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill
-																			>
-																		{/if}
-																	</span>
-																	{#if !instance.archivedAt}
-																		<span style="display:flex; gap: var(--space-2);">
-																			{#if !student.doneAt}
-																				<form method="POST" action="?/markDone" use:enhance>
-																					<input
-																						type="hidden"
-																						name="instanceId"
-																						value={instance.id}
-																					/>
-																					<input
-																						type="hidden"
-																						name="studentId"
-																						value={student.studentId}
-																					/>
-																					<ix-button
-																						variant="secondary"
-																						type="submit"
-																						aria-label={m.homework_mark_done_for({
-																							name: student.displayName
-																						})}>{m.homework_mark_done()}</ix-button
-																					>
-																				</form>
-																			{/if}
-																			{#if student.doneAt && !student.reviewedAt}
-																				<form method="POST" action="?/markReviewed" use:enhance>
-																					<input
-																						type="hidden"
-																						name="instanceId"
-																						value={instance.id}
-																					/>
-																					<input
-																						type="hidden"
-																						name="studentId"
-																						value={student.studentId}
-																					/>
-																					<ix-button
-																						variant="secondary"
-																						type="submit"
-																						aria-label={m.homework_mark_reviewed_for({
-																							name: student.displayName
-																						})}>{m.homework_mark_reviewed()}</ix-button
-																					>
-																				</form>
-																			{/if}
-																		</span>
-																	{/if}
-																</div>
-															</li>
-														{/each}
-													</ul>
-													{#if !instance.archivedAt}
-														<form
-															method="POST"
-															action="?/archiveInstance"
-															use:enhance
-															style="margin-top: var(--space-3);"
-														>
-															<input type="hidden" name="instanceId" value={instance.id} />
-															<ix-button variant="secondary" type="submit"
-																>{m.homework_archive_action()}</ix-button
-															>
-														</form>
-													{/if}
-												</details>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						{/if}
+							</span>
+							<span class="muted homework-row-meta">
+								{skillLabel(item.skillArea)}
+								{#if item.nextDue}
+									· {m.homework_row_due({ date: item.nextDue })}
+								{/if}
+								· {m.homework_row_done({ done: item.latestDone, total: item.latestTotal })}
+							</span>
+						</a>
 					</li>
 				{/each}
 			</ul>
 		{/if}
 	</section>
+
+	{#if data.pageCount > 1}
+		<nav
+			class="pager"
+			aria-label={m.homework_pager_status({ page: data.page, total: data.pageCount })}
+		>
+			<ix-button
+				variant="secondary"
+				disabled={data.page <= 1 || undefined}
+				href={data.page > 1 ? pageHref(data.filter, data.page - 1) : undefined}
+			>
+				{m.homework_pager_prev()}
+			</ix-button>
+			<span class="muted"
+				>{m.homework_pager_status({ page: data.page, total: data.pageCount })}</span
+			>
+			<ix-button
+				variant="secondary"
+				disabled={data.page >= data.pageCount || undefined}
+				href={data.page < data.pageCount ? pageHref(data.filter, data.page + 1) : undefined}
+			>
+				{m.homework_pager_next()}
+			</ix-button>
+		</nav>
+	{/if}
 </div>
 
 <style>
-	.homework-description {
-		margin: var(--space-2) 0;
-		white-space: pre-line;
+	.homework-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
 	}
 
-	.homework-links {
-		margin: var(--space-1) 0;
-		padding-left: var(--space-4);
+	.homework-list li + li {
+		border-top: 1px solid var(--theme-color-soft-bdr);
+	}
+
+	.homework-row {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		padding: var(--space-3) 0;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.homework-row:hover .homework-row-title,
+	.homework-row:focus-visible .homework-row-title {
+		text-decoration: underline;
+	}
+
+	.homework-row-title {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		font-weight: 700;
+		font-size: var(--theme-font-size-l);
+	}
+
+	.homework-row-meta {
 		font-size: var(--theme-font-size-default);
+	}
+
+	.pager {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-3);
+		margin-top: var(--space-4);
 	}
 </style>
