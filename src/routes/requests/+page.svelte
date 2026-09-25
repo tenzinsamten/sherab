@@ -2,9 +2,12 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const pending = createPending();
 
 	// Approval shows the student's one-time username/PIN, so it stays on
 	// screen; rejected/cleared are short confirmations, so they're toasts.
@@ -88,7 +91,7 @@
 										<form
 											method="POST"
 											action="?/approve"
-											use:enhance
+											use:enhance={pending.submit(`approve:${student.id}`)}
 											class="actions"
 											style="align-items:flex-end;"
 										>
@@ -111,16 +114,27 @@
 											</div>
 											<ix-button
 												type="submit"
-												disabled={data.teams.length === 0 || !student.emailConfirmedAt || undefined}
+												loading={pending.is(`approve:${student.id}`) || undefined}
+												disabled={data.teams.length === 0 ||
+													!student.emailConfirmedAt ||
+													pending.busy ||
+													undefined}
 											>
 												{m.requests_approve()}
 											</ix-button>
 										</form>
-										<form method="POST" action="?/reject" use:enhance>
+										<form
+											method="POST"
+											action="?/reject"
+											use:enhance={pending.submit(`reject:${student.id}`)}
+										>
 											<input type="hidden" name="studentId" value={student.id} />
 											<input type="hidden" name="studentName" value={student.registrationName} />
-											<ix-button type="submit" variant="danger-secondary"
-												>{m.requests_reject()}</ix-button
+											<ix-button
+												type="submit"
+												variant="danger-secondary"
+												loading={pending.is(`reject:${student.id}`) || undefined}
+												disabled={pending.busy || undefined}>{m.requests_reject()}</ix-button
 											>
 										</form>
 									</div>
@@ -167,10 +181,20 @@
 								<td class:muted={student.status === 'rejected'}>{student.registrationName}</td>
 								<td style="text-align:right;">
 									{#if student.status === 'rejected'}
-										<form method="POST" action="?/clearRejected" use:enhance>
+										<form
+											method="POST"
+											action="?/clearRejected"
+											use:enhance={pending.submit(`clear:${student.id}`)}
+										>
 											<input type="hidden" name="studentId" value={student.id} />
 											<input type="hidden" name="studentName" value={student.registrationName} />
-											<ix-button type="submit" variant="tertiary" icon="trashcan">
+											<ix-button
+												type="submit"
+												variant="tertiary"
+												icon="trashcan"
+												loading={pending.is(`clear:${student.id}`) || undefined}
+												disabled={pending.busy || undefined}
+											>
 												{m.requests_clear_rejected()}
 											</ix-button>
 										</form>

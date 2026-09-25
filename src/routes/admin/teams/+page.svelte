@@ -3,9 +3,12 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
+	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const pending = createPending();
 
 	$effect(() => {
 		if (form && 'team' in form && form.team)
@@ -46,7 +49,13 @@
 
 	<section class="card">
 		<h2>{m.teams_create_heading()}</h2>
-		<form method="POST" action="?/create" use:enhance class="actions" style="align-items:flex-end;">
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={pending.submit('create')}
+			class="actions"
+			style="align-items:flex-end;"
+		>
 			<div class="field" style="flex:1; min-width:14rem; margin:0;">
 				<label for="name">{m.teams_name_label()}</label>
 				<input
@@ -57,7 +66,12 @@
 					value={form?.success ? '' : (form && 'name' in form && form.name) || ''}
 				/>
 			</div>
-			<ix-button type="submit" icon="add">{m.teams_create_submit()}</ix-button>
+			<ix-button
+				type="submit"
+				icon="add"
+				loading={pending.is('create') || undefined}
+				disabled={pending.busy || undefined}>{m.teams_create_submit()}</ix-button
+			>
 		</form>
 	</section>
 
@@ -87,6 +101,8 @@
 										<ix-button
 											variant="danger-tertiary"
 											icon="trashcan"
+											loading={pending.is(`delete:${team.id}`) || undefined}
+											disabled={pending.busy || undefined}
 											onclick={() => deleteTeam(team)}
 										>
 											{m.teams_delete()}
@@ -101,7 +117,13 @@
 		{/if}
 	</section>
 
-	<form bind:this={deleteForm} method="POST" action="?/delete" use:enhance hidden>
+	<form
+		bind:this={deleteForm}
+		method="POST"
+		action="?/delete"
+		use:enhance={pending.submit(() => `delete:${deleteTarget.id}`)}
+		hidden
+	>
 		<input type="hidden" name="teamId" value={deleteTarget.id} />
 		<input type="hidden" name="teamName" value={deleteTarget.name} />
 	</form>

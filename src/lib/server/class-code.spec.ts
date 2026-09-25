@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	CLASS_CODE_CONSTRAINT,
 	CLASS_CODE_LENGTH,
 	generateClassCode,
 	insertClassWithUniqueCode,
@@ -28,6 +29,15 @@ describe('generateClassCode', () => {
 	});
 });
 
+const codeCollision = {
+	code: UNIQUE_VIOLATION_CODE,
+	message: `duplicate key value violates unique constraint "${CLASS_CODE_CONSTRAINT}"`
+};
+const nameCollision = {
+	code: UNIQUE_VIOLATION_CODE,
+	message: 'duplicate key value violates unique constraint "classes_name_unique_idx"'
+};
+
 describe('insertClassWithUniqueCode', () => {
 	it('returns the inserted row on the first successful attempt', async () => {
 		const insertAttempt = vi.fn(async (code: string) => ({
@@ -49,7 +59,7 @@ describe('insertClassWithUniqueCode', () => {
 			seenCodes.push(code);
 			attempts++;
 			if (attempts < 3) {
-				return { data: null, error: { code: UNIQUE_VIOLATION_CODE, message: 'duplicate key' } };
+				return { data: null, error: codeCollision };
 			}
 			return { data: { id: '1', code }, error: null };
 		});
@@ -66,7 +76,7 @@ describe('insertClassWithUniqueCode', () => {
 	it('gives up after maxAttempts consecutive collisions', async () => {
 		const insertAttempt = vi.fn(async () => ({
 			data: null,
-			error: { code: UNIQUE_VIOLATION_CODE, message: 'duplicate key' }
+			error: codeCollision
 		}));
 
 		const { data, error } = await insertClassWithUniqueCode(insertAttempt, { maxAttempts: 4 });
@@ -86,6 +96,16 @@ describe('insertClassWithUniqueCode', () => {
 
 		expect(data).toBeNull();
 		expect(error?.message).toBe('foreign key violation');
+		expect(insertAttempt).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not retry when the class name is already taken', async () => {
+		const insertAttempt = vi.fn(async () => ({ data: null, error: nameCollision }));
+
+		const { data, error } = await insertClassWithUniqueCode(insertAttempt);
+
+		expect(data).toBeNull();
+		expect(error).toBe(nameCollision);
 		expect(insertAttempt).toHaveBeenCalledTimes(1);
 	});
 });

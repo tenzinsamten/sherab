@@ -27,6 +27,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 18 | Home `/` (signed in) | No separate home page after login; land on the dashboard | fixed, to verify signed in |
 | 19 | `/admin` dashboard | iX cards overlap each other | fixed, to verify |
 | 20 | Toasts | Toasts appear bottom right; should be top right | fixed |
+| 21 | Admin create / delete actions | No progress indicator while a create or delete is running | fixed, to verify |
+| 22 | `/admin/classes` | Two classes can have the same name | fixed (0012 pushed 2026-09-25), to verify in UI |
 
 ---
 
@@ -279,6 +281,38 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Fix:** `ix.setToastPosition('top-right')` once in `setupIx()` (`src/lib/ix.ts`), so it applies
   to every toast. Verified: a wrong-password login shows the error toast at the top right
   (container `position` = `top-right`).
+
+## 21. No feedback while create / delete is in progress
+- **Request (user, 2026-09-25):** "For action like, create and delete, if it takes time then it
+  should have progress bar to show something is happening"
+- **Seen:** after clicking Create or Delete, nothing changes until the server responds, so on a slow
+  request it looks like nothing happened.
+- **Scope (to confirm when planning):** create and delete on teams, classes and teachers. Possibly
+  other form submits too (teacher edit, reset password, approvals).
+- **Decided (user, 2026-09-25):** a spinner on the clicked button is enough, no page-wide bar.
+- **Draft fix:** `createPending()` (`src/lib/pending.svelte.ts`) wraps `use:enhance`. The clicked
+  button gets iX's `loading` spinner, every action button on the page is disabled until the
+  server answers, and a second submit (e.g. Enter in the name field) is cancelled. Applied to
+  create/delete on teams and classes, create/save classes/reset password/remove on teachers,
+  and approve/reject/clear on `/requests`.
+
+## 22. Duplicate class names allowed
+- **Seen (user, 2026-09-25):** three classes all named "Yaks" (codes RV7V4W, VVXAVT, EW6BKB) were
+  created without error.
+- **Background:** #3 only made **team** names unique. Class names were left non-unique on purpose:
+  `0001_init.sql` says a class is identified by its code and duplicate names are allowed, and
+  `0010_team_names_and_delete.sql` repeats this. #3's open question on classes was never answered.
+- **User expectation:** class names should be unique, like team names.
+- **To decide when planning:** unique across the whole app, or only per teacher? How to handle
+  any duplicates already in the hosted DB (such as the three "Yaks" test classes) before adding
+  the index?
+- **Decided (user, 2026-09-25):** unique across the whole app (only admins create classes).
+- **Draft fix:** `0012_class_names_unique.sql` adds `classes_name_unique_idx` on
+  `lower(btrim(name))`. `insertClassWithUniqueCode` now retries only when the clash is on
+  `classes_code_key`, so a duplicate name no longer turns into 5 retries and "could not generate
+  a class code". The create action shows `classes_error_duplicate_name` instead. Unit test added.
+- **Before pushing 0012:** remove or rename duplicate class names in the hosted DB (at least the
+  three "Yaks" test classes), or the migration will fail.
 
 ---
 

@@ -89,6 +89,7 @@
 	"classes_created_success": "Klasse \"{name}\" mit Code {code} erstellt.",
 	"classes_error_name_required": "Klassenname ist erforderlich.",
 	"classes_code_generation_failed": "Es konnte kein eindeutiger Klassencode erzeugt werden. Bitte erneut versuchen.",
+	"classes_error_duplicate_name": "Eine Klasse namens „{name}“ gibt es bereits.",
 	"classes_col_name": "Name",
 	"classes_col_code": "Code",
 	"classes_col_created": "Erstellt",

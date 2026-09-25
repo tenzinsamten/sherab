@@ -3,11 +3,14 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
+	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	type Teacher = (typeof data.teachers)[number];
+
+	const pending = createPending();
 
 	// ix-checkbox has no form-reset support, so the create form is re-mounted
 	// (fresh, unchecked) after each successful create.
@@ -27,6 +30,8 @@
 
 	let actionForm: HTMLFormElement | undefined = $state();
 	let actionTarget = $state({ action: '', teacherId: '' });
+	// Pending key for a row's reset/remove, shared by the hidden form and its button.
+	const rowKey = (action: string, teacherId: string) => `${action}:${teacherId}`;
 
 	function teacherName(t: Teacher) {
 		return t.display_name ?? t.email;
@@ -39,7 +44,7 @@
 				: m.teachers_reset_confirm({ name: teacherName(teacher) });
 		const okay = action === 'remove' ? m.teachers_remove() : m.teachers_reset_password();
 		if (!(await confirmAction(m.common_confirm_title(), message, okay, m.common_cancel()))) return;
-		actionTarget = { action: `?/${action}`, teacherId: teacher.id };
+		actionTarget = { action, teacherId: teacher.id };
 		await tick();
 		actionForm?.requestSubmit();
 	}
@@ -80,7 +85,12 @@
 			<p class="muted">{m.teachers_need_class_first()}</p>
 		{:else}
 			{#key createKey}
-				<form method="POST" action="?/create" use:enhance class="form-narrow">
+				<form
+					method="POST"
+					action="?/create"
+					use:enhance={pending.submit('create')}
+					class="form-narrow"
+				>
 					<div class="field">
 						<label for="email">{m.teachers_email_label()}</label>
 						<input
@@ -122,7 +132,12 @@
 							{/each}
 						</div>
 					</fieldset>
-					<ix-button type="submit" icon="add">{m.teachers_create_submit()}</ix-button>
+					<ix-button
+						type="submit"
+						icon="add"
+						loading={pending.is('create') || undefined}
+						disabled={pending.busy || undefined}>{m.teachers_create_submit()}</ix-button
+					>
 				</form>
 			{/key}
 		{/if}
@@ -160,6 +175,7 @@
 										<ix-button
 											variant="tertiary"
 											icon="pen"
+											disabled={pending.busy || undefined}
 											onclick={() => (editingId = editingId === teacher.id ? null : teacher.id)}
 										>
 											{m.teachers_edit_classes()}
@@ -167,6 +183,8 @@
 										<ix-button
 											variant="tertiary"
 											icon="key"
+											loading={pending.is(rowKey('resetPassword', teacher.id)) || undefined}
+											disabled={pending.busy || undefined}
 											onclick={() => runConfirmed('resetPassword', teacher)}
 										>
 											{m.teachers_reset_password()}
@@ -174,6 +192,8 @@
 										<ix-button
 											variant="danger-tertiary"
 											icon="trashcan"
+											loading={pending.is(rowKey('remove', teacher.id)) || undefined}
+											disabled={pending.busy || undefined}
 											onclick={() => runConfirmed('remove', teacher)}
 										>
 											{m.teachers_remove()}
@@ -184,7 +204,11 @@
 							{#if editingId === teacher.id}
 								<tr>
 									<td colspan="4">
-										<form method="POST" action="?/updateClasses" use:enhance>
+										<form
+											method="POST"
+											action="?/updateClasses"
+											use:enhance={pending.submit(rowKey('updateClasses', teacher.id))}
+										>
 											<input type="hidden" name="teacherId" value={teacher.id} />
 											<fieldset>
 												<legend
@@ -202,8 +226,17 @@
 												</div>
 											</fieldset>
 											<div class="actions">
-												<ix-button type="submit">{m.teachers_save_classes()}</ix-button>
-												<ix-button variant="secondary" onclick={() => (editingId = null)}>
+												<ix-button
+													type="submit"
+													loading={pending.is(rowKey('updateClasses', teacher.id)) || undefined}
+													disabled={pending.busy || undefined}
+													>{m.teachers_save_classes()}</ix-button
+												>
+												<ix-button
+													variant="secondary"
+													disabled={pending.busy || undefined}
+													onclick={() => (editingId = null)}
+												>
 													{m.common_cancel()}
 												</ix-button>
 											</div>
@@ -218,7 +251,13 @@
 		{/if}
 	</section>
 
-	<form bind:this={actionForm} method="POST" action={actionTarget.action} use:enhance hidden>
+	<form
+		bind:this={actionForm}
+		method="POST"
+		action={`?/${actionTarget.action}`}
+		use:enhance={pending.submit(() => rowKey(actionTarget.action, actionTarget.teacherId))}
+		hidden
+	>
 		<input type="hidden" name="teacherId" value={actionTarget.teacherId} />
 	</form>
 </div>

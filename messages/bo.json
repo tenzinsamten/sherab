@@ -89,6 +89,7 @@
 	"classes_created_success": "Class \"{name}\" created with code {code}.",
 	"classes_error_name_required": "Class name is required.",
 	"classes_code_generation_failed": "Could not generate a unique class code after several attempts. Please try again.",
+	"classes_error_duplicate_name": "A class called “{name}” already exists.",
 	"classes_col_name": "Name",
 	"classes_col_code": "Code",
 	"classes_col_created": "Created",

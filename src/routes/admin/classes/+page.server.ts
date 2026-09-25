@@ -1,5 +1,9 @@
 import { fail } from '@sveltejs/kit';
-import { insertClassWithUniqueCode, UNIQUE_VIOLATION_CODE } from '$lib/server/class-code';
+import {
+	insertClassWithUniqueCode,
+	isClassCodeCollision,
+	UNIQUE_VIOLATION_CODE
+} from '$lib/server/class-code';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -58,11 +62,16 @@ export const actions: Actions = {
 		});
 
 		if (error) {
+			// Any other unique violation is classes_name_unique_idx (0012): the
+			// name is taken, and the DB is the real guarantee (AD-2).
+			if (error.code === UNIQUE_VIOLATION_CODE && !isClassCodeCollision(error)) {
+				return fail(400, { error: m.classes_error_duplicate_name({ name }), name });
+			}
 			// insertClassWithUniqueCode exhausts its retries with the last
-			// unique-violation (23505) error still attached -- that's a
-			// code-generation failure, not a client-facing DB error, so it must
-			// map to the friendly message too, not leak the raw Postgres text.
-			const isCodeGenerationFailure = !error.code || error.code === UNIQUE_VIOLATION_CODE;
+			// code-collision error still attached -- that's a code-generation
+			// failure, not a client-facing DB error, so it must map to the
+			// friendly message too, not leak the raw Postgres text.
+			const isCodeGenerationFailure = !error.code || isClassCodeCollision(error);
 			return fail(isCodeGenerationFailure ? 500 : 400, {
 				error: isCodeGenerationFailure ? m.classes_code_generation_failed() : error.message,
 				name
