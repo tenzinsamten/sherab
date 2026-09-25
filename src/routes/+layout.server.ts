@@ -1,10 +1,20 @@
+import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
+export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safeGetSession } }) => {
 	const { session, user } = await safeGetSession();
+	// Read here so the menu is rendered expanded or collapsed from the start,
+	// with no flash after hydration.
+	const menuExpanded = cookies.get(MENU_COOKIE) !== MENU_COLLAPSED;
 
 	if (!session || !user) {
-		return { session: null, profile: null, pendingRequestsCount: 0, loadError: false };
+		return {
+			session: null,
+			profile: null,
+			pendingRequestsCount: 0,
+			menuExpanded,
+			loadError: false
+		};
 	}
 
 	// RLS's profiles_select_own policy scopes this to the caller's own row.
@@ -34,6 +44,7 @@ export const load: LayoutServerLoad = async ({ locals: { supabase, safeGetSessio
 		session,
 		profile: profile ?? null,
 		pendingRequestsCount,
+		menuExpanded,
 		loadError: Boolean(error || countError)
 	};
 };

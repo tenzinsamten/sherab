@@ -8,6 +8,7 @@
 	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
 	import { headerHomeLink, setupIx, showToast } from '$lib/ix';
+	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
 
@@ -151,7 +152,7 @@
 			{@render headerItems()}
 		</ix-application-header>
 
-		<ix-menu>
+		<ix-menu start-expanded={data.menuExpanded || undefined} use:rememberMenuExpand>
 			{#each navItems as item (item.href)}
 				<ix-menu-item href={item.href} icon={item.icon} active={isActive(item) || undefined}>
 					{item.label}
