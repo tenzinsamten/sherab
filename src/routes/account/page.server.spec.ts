@@ -3,9 +3,9 @@ import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
 import { actions, load } from './+page.server';
 
 /**
- * /account (#23, #44). `load` reads the layout's profile via `parent()`;
- * student reads and the actions go through a mocked `locals.supabase` chain,
- * one queued result per table.
+ * /account (#23, #44, #46). `load` reads the layout's profile via
+ * `parent()`; the actions go through a mocked `locals.supabase` chain, one
+ * queued result per table.
  */
 type Result = { data?: unknown; error: unknown };
 
@@ -29,10 +29,9 @@ function fakeSupabase(results: Record<string, Result>) {
 
 const session = { user: { id: 'u1', email: 'x@example.com' } };
 
-function runLoad(profile: Record<string, unknown> | null, results: Record<string, Result> = {}) {
+function runLoad(profile: Record<string, unknown> | null) {
 	return load({
-		parent: async () => ({ session, profile }),
-		locals: { supabase: fakeSupabase(results) }
+		parent: async () => ({ session, profile })
 	} as unknown as Parameters<typeof load>[0]);
 }
 
@@ -47,45 +46,14 @@ describe('account load', () => {
 		expect(result).toEqual({ role: 'teacher', displayName: 'Pema', email: 'pema@example.com' });
 	});
 
-	it('gives a student their username, classes, streak and badges', async () => {
-		const result = await runLoad(
-			{
-				id: 'u1',
-				role: 'student',
-				display_name: 'Tashi',
-				email: `tashi-d@${STUDENT_EMAIL_DOMAIN}`
-			},
-			{
-				class_enrollments: { data: [{ class_id: 'c1' }], error: null },
-				classes: { data: [{ id: 'c1', name: 'Yaks' }], error: null },
-				class_syllabi: { data: [{ class_id: 'c1' }], error: null },
-				student_streaks: {
-					data: { current_streak: 3, last_qualifying_week: '2026-09-21' },
-					error: null
-				},
-				badges_earned: {
-					data: [{ badge_type: 'homework', milestone: 5, earned_at: '2026-09-20T00:00:00Z' }],
-					error: null
-				}
-			}
-		);
-		expect(result).toMatchObject({
+	it('gives a student their name and username only (#46)', async () => {
+		const result = await runLoad({
+			id: 'u1',
 			role: 'student',
-			displayName: 'Tashi',
-			username: 'tashi-d',
-			classes: [{ id: 'c1', name: 'Yaks', hasSyllabus: true }],
-			streak: { currentStreak: 3 },
-			badges: [{ badgeType: 'homework', milestone: 5 }],
-			loadError: false
+			display_name: 'Tashi',
+			email: `tashi-d@${STUDENT_EMAIL_DOMAIN}`
 		});
-	});
-
-	it('flags a failed student read', async () => {
-		const result = await runLoad(
-			{ id: 'u1', role: 'student', display_name: 'Tashi', email: null },
-			{ class_enrollments: { data: null, error: { message: 'missing table' } } }
-		);
-		expect(result).toMatchObject({ classes: [], loadError: true });
+		expect(result).toEqual({ role: 'student', displayName: 'Tashi', username: 'tashi-d' });
 	});
 
 	it('refuses a session without a profile', async () => {

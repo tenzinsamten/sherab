@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
-	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -71,31 +69,7 @@
 		</form>
 	</section>
 
-	{#if data.role === 'student'}
-		<section class="card">
-			<h2>{m.account_classes_heading()}</h2>
-			{#if data.classes.length === 0}
-				<p class="muted" style="margin:0;">
-					{data.loadError ? m.student_homework_load_failed() : m.account_classes_empty()}
-				</p>
-			{:else}
-				<ul class="class-list">
-					{#each data.classes as cls (cls.id)}
-						<li>
-							<span>{cls.name}</span>
-							{#if cls.hasSyllabus}
-								<a href={resolve('/student/classes/[classId]/syllabus', { classId: cls.id })}>
-									{m.student_class_syllabus_link()}
-								</a>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</section>
-
-		<StudentProgressTiles streak={data.streak} badges={data.badges} loadError={data.loadError} />
-	{:else}
+	{#if data.role !== 'student'}
 		<section class="card">
 			<h2>{m.account_password_heading()}</h2>
 			<form
@@ -151,22 +125,5 @@
 <style>
 	.field-note {
 		margin: var(--space-1) 0 0;
-	}
-
-	.class-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-
-	.class-list li {
-		display: flex;
-		justify-content: space-between;
-		gap: var(--space-3);
-		padding: var(--space-2) 0;
-	}
-
-	.class-list li + li {
-		border-top: 1px solid var(--theme-color-soft-bdr);
 	}
 </style>

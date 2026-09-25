@@ -662,6 +662,10 @@ export type Database = {
 				Returns: boolean;
 			};
 			generate_recurring_homework_instances: { Args: never; Returns: number };
+			class_people: {
+				Args: { p_class_id: string };
+				Returns: { person_id: string; display_name: string; is_teacher: boolean }[];
+			};
 			enroll_student: {
 				Args: { p_class_id: string; p_student_id: string };
 				Returns: undefined;

@@ -52,7 +52,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (0016 pushed), to verify |
 | 44 | Student side | Students have no "My profile" page | fixed, to verify |
 | 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
-| 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | open |
+| 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | fixed (needs 0017 pushed), to verify |
 
 ---
 
@@ -823,6 +823,16 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - What a class page shows: syllabus, that class's homework, teacher name, classmates?
   - Whether "My classes" on `/account` stays or moves entirely to the new page; whether streak and
     badges move from My Account to the dashboard.
+- **Decided and fixed (2026-09-25):** menu Dashboard (`/student`, landing page) · My classes
+  (`/student/classes`) · My homework (`/student/homework`, the #43 list moved unchanged) · Team
+  leaderboard (`/leaderboard`). Dashboard: To do / Overdue / Done this week tiles, My team with
+  rank ("#2 of 5"), streak and badges, the next 3 homework due, and a card per class. My classes:
+  a card per class with its teachers and To do count. Class page (`/student/classes/[classId]`,
+  replaces `/syllabus`): teachers, this year's syllabus, that class's homework (To do / Done,
+  Mark done) and classmates. My Account for students is back to name + username. Teachers and
+  classmates come from `class_people()` (`0017_class_people.sql`, display names only, for people
+  in the class) because students can't read other profiles. Shared UI: `StudentHomeworkRows`,
+  `Pager`. Migration 0017 checked with a Postgres parser only (Docker off).
 
 ---
 

@@ -5,6 +5,8 @@ import {
 	isTodoVisible,
 	loadStudentHomework,
 	splitProgress,
+	teamRank,
+	weekStart,
 	type StudentHomeworkItem
 } from './student-homework';
 
@@ -126,6 +128,7 @@ describe('loadStudentHomework', () => {
 		{
 			id: 'h1',
 			instance_id: 'i1',
+			class_id: 'c1',
 			student_id: 'me',
 			status: 'assigned',
 			recorded_by: null,
@@ -134,6 +137,7 @@ describe('loadStudentHomework', () => {
 		{
 			id: 'h2',
 			instance_id: 'i2',
+			class_id: 'left',
 			student_id: 'me',
 			status: 'assigned',
 			recorded_by: null,
@@ -142,6 +146,7 @@ describe('loadStudentHomework', () => {
 		{
 			id: 'h3',
 			instance_id: 'i3',
+			class_id: 'c1',
 			student_id: 'me',
 			status: 'assigned',
 			recorded_by: null,
@@ -150,6 +155,7 @@ describe('loadStudentHomework', () => {
 		{
 			id: 'h4',
 			instance_id: 'i3',
+			class_id: 'c1',
 			student_id: 'me',
 			status: 'done',
 			recorded_by: 'me',
@@ -201,6 +207,39 @@ describe('loadStudentHomework', () => {
 		expect(result.pageCount).toBe(1);
 	});
 
+	it('counts homework finished since Monday', async () => {
+		const withRecent = {
+			...tables,
+			homework_status_history: {
+				data: [
+					...history,
+					{ ...history[0], id: 'h5', status: 'done', recorded_at: '2026-09-22T08:00:00Z' }
+				],
+				error: null
+			}
+		};
+		const result = await loadStudentHomework(fakeSupabase(withRecent), 'me', {
+			filter: 'todo',
+			page: 1,
+			enrolledClassIds: new Set(['c1']),
+			today: TODAY
+		});
+		expect(result.doneThisWeek).toBe(1);
+		expect(result.counts).toEqual({ todo: 0, done: 2 });
+	});
+
+	it("reads only one class's history when given a class", async () => {
+		const result = await loadStudentHomework(fakeSupabase(tables), 'me', {
+			filter: 'done',
+			page: 1,
+			enrolledClassIds: new Set(['left']),
+			today: TODAY,
+			classId: 'left'
+		});
+		expect(result.counts).toEqual({ todo: 1, done: 0 });
+		expect(result.items).toEqual([]);
+	});
+
 	it('flags a failed history read', async () => {
 		const result = await loadStudentHomework(
 			fakeSupabase({ ...tables, homework_status_history: { data: null, error: { message: 'x' } } }),
@@ -208,5 +247,29 @@ describe('loadStudentHomework', () => {
 			{ filter: 'todo', page: 1, enrolledClassIds: new Set(['c1']), today: TODAY }
 		);
 		expect(result.error).toBe(true);
+	});
+});
+
+describe('weekStart', () => {
+	it('returns the Monday of the week', () => {
+		expect(weekStart('2026-09-25')).toBe('2026-09-21');
+		expect(weekStart('2026-09-21')).toBe('2026-09-21');
+		expect(weekStart('2026-09-27')).toBe('2026-09-21');
+	});
+});
+
+describe('teamRank', () => {
+	const teams = [
+		{ teamId: 't1', teamName: 'Snow Lions' },
+		{ teamId: 't2', teamName: 'Yaks' }
+	];
+
+	it("gives the team's place on the leaderboard", () => {
+		expect(teamRank(teams, 't2')).toEqual({ name: 'Yaks', rank: 2, total: 2 });
+	});
+
+	it('is null without a team or when the team is not listed', () => {
+		expect(teamRank(teams, null)).toBeNull();
+		expect(teamRank(teams, 'gone')).toBeNull();
 	});
 });

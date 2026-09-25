@@ -27,8 +27,8 @@
 	// Back to the list the student came from (To do or Done).
 	let backHref = $derived(
 		page.url.searchParams.get('from') === 'done'
-			? `${resolve('/student')}?filter=done`
-			: resolve('/student')
+			? `${resolve('/student/homework')}?filter=done`
+			: resolve('/student/homework')
 	);
 </script>
 
@@ -39,7 +39,15 @@
 <div class="page">
 	<header class="page-header">
 		<div>
-			<p class="page-kicker">{data.className ?? m.student_class_former()}</p>
+			<p class="page-kicker">
+				{#if data.className}
+					<a href={resolve('/student/classes/[classId]', { classId: data.item.classId })}>
+						{data.className}
+					</a>
+				{:else}
+					{m.student_class_former()}
+				{/if}
+			</p>
 			<h1 class="page-heading actions">
 				{data.item.title}
 				{#if data.item.isRecurring}

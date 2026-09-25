@@ -71,6 +71,13 @@ export function addDays(isoDate: string, days: number): string {
 	return date.toISOString().slice(0, 10);
 }
 
+/** The Monday (UTC) of the week containing `isoDate`, as YYYY-MM-DD. */
+export function weekStart(isoDate: string): string {
+	const date = new Date(`${isoDate}T00:00:00Z`);
+	const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+	return addDays(isoDate, -daysSinceMonday);
+}
+
 export function toItem(
 	instance: InstanceRow,
 	assignment: AssignmentRow,
@@ -203,6 +210,8 @@ export async function loadStudentClasses(
 export type StudentHomeworkList = {
 	items: StudentHomeworkItem[];
 	counts: { todo: number; done: number };
+	/** Finished (done or reviewed) since this week's Monday. */
+	doneThisWeek: number;
 	page: number;
 	pageCount: number;
 	error: boolean;
@@ -216,12 +225,19 @@ export type StudentHomeworkList = {
 export async function loadStudentHomework(
 	supabase: Client,
 	studentId: string,
-	opts: { filter: StudentFilter; page: number; enrolledClassIds: Set<string>; today: string }
+	opts: {
+		filter: StudentFilter;
+		page: number;
+		enrolledClassIds: Set<string>;
+		today: string;
+		/** Only this class's homework (the student's class page, #46). */
+		classId?: string;
+	}
 ): Promise<StudentHomeworkList> {
 	// RLS scopes history to the caller's own rows; fetchAllHistoryRows pages
 	// past PostgREST's row cap.
 	const [{ rows: history, error: historyError }, days] = await Promise.all([
-		fetchAllHistoryRows(supabase),
+		fetchAllHistoryRows(supabase, opts.classId ? [opts.classId] : undefined),
 		lookaheadDays(supabase)
 	]);
 	const { todo, done } = splitProgress(history, studentId);
@@ -237,6 +253,10 @@ export async function loadStudentHomework(
 		isTodoVisible(i, opts.enrolledClassIds, cutoffDate)
 	);
 	const counts = { todo: visibleTodo.length, done: done.length };
+	const monday = weekStart(opts.today);
+	const doneThisWeek = done.filter(
+		(p) => (p.doneAt ?? p.reviewedAt ?? '').slice(0, 10) >= monday
+	).length;
 
 	let pageEntries: HomeworkStudentProgress[];
 	let instances: InstanceRow[];
@@ -281,6 +301,7 @@ export async function loadStudentHomework(
 	return {
 		items,
 		counts,
+		doneThisWeek,
 		page,
 		pageCount,
 		error: Boolean(historyError || instancesError || assignments.error)
@@ -375,4 +396,36 @@ export async function markHomeworkDone({
 	}
 
 	return { success: true, action: 'markDone' as const };
+}
+
+export type TeamStanding = { name: string; rank: number; total: number };
+
+/** The student's team and its place on the leaderboard (1 = top), if any. */
+export function teamRank(
+	teams: { teamId: string; teamName: string }[],
+	teamId: string | null
+): TeamStanding | null {
+	const index = teams.findIndex((t) => t.teamId === teamId);
+	if (!teamId || index === -1) return null;
+	return { name: teams[index].teamName, rank: index + 1, total: teams.length };
+}
+
+export type ClassPerson = { id: string; name: string };
+
+/**
+ * A class's teachers and students by name (#46), through class_people()
+ * (0017) -- students can't read other people's profiles directly.
+ */
+export async function loadClassPeople(
+	supabase: Client,
+	classId: string
+): Promise<{ teachers: ClassPerson[]; students: ClassPerson[]; error: boolean }> {
+	const { data, error } = await supabase.rpc('class_people', { p_class_id: classId });
+	const rows = data ?? [];
+	const person = (r: (typeof rows)[number]) => ({ id: r.person_id, name: r.display_name });
+	return {
+		teachers: rows.filter((r) => r.is_teacher).map(person),
+		students: rows.filter((r) => !r.is_teacher).map(person),
+		error: Boolean(error)
+	};
 }

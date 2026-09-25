@@ -96,8 +96,10 @@
 		}
 		if (role === 'student') {
 			return [
-				{ href: resolve('/student'), label: m.nav_my_homework(), icon: 'tasks-open' },
-				leaderboard
+				{ href: resolve('/student'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
+				{ href: resolve('/student/classes'), label: m.nav_my_classes(), icon: 'book' },
+				{ href: resolve('/student/homework'), label: m.nav_my_homework(), icon: 'tasks-open' },
+				{ ...leaderboard, label: m.nav_team_leaderboard() }
 			];
 		}
 		return [];

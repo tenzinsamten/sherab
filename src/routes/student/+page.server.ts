@@ -1,21 +1,23 @@
 import { redirect } from '@sveltejs/kit';
-import * as m from '$lib/paraglide/messages.js';
+import { shapeStudentBadges } from '$lib/server/badges';
+import { shapeTeamLeaderboard } from '$lib/server/leaderboard';
+import { shapeStudentStreak } from '$lib/server/streak';
 import {
-	groupByClass,
 	loadStudentClasses,
 	loadStudentHomework,
 	markHomeworkDone,
-	STUDENT_FILTERS,
-	type StudentFilter
+	teamRank
 } from '$lib/server/student-homework';
 import type { Actions, PageServerLoad } from './$types';
 
+/** How many upcoming homework the dashboard lists. */
+const NEXT_DUE_COUNT = 3;
+
 /**
- * The student's homework (#43): To do / Done grouped by class (#42). Each
- * row opens /student/homework/[instanceId]. Streak and badges moved to
- * /account (#44).
+ * Student dashboard (#46): homework tiles, streak and badges, team standing,
+ * the next homework due, and a card per class. The student's landing page.
  */
-export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
+export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) {
 		throw redirect(303, '/login');
@@ -23,48 +25,64 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 
 	const { data: profile } = await supabase
 		.from('profiles')
-		.select('role')
+		.select('role, team_id')
 		.eq('id', user.id)
 		.single();
 
-	// This route is student-facing only (Code Map) -- a non-student who
-	// somehow lands here (e.g. a stale bookmark) is sent home rather than
-	// shown an empty homework list. RLS would return nothing useful to them
-	// here regardless, so this is UX-only, not the real barrier (AD-2).
+	// Student-facing only (Code Map) -- UX, not the real barrier (AD-2).
 	if (!profile || profile.role !== 'student') {
 		throw redirect(303, '/');
 	}
 
-	const filterParam = url.searchParams.get('filter');
-	const filter: StudentFilter = STUDENT_FILTERS.includes(filterParam as StudentFilter)
-		? (filterParam as StudentFilter)
-		: 'todo';
-	const pageParam = Number.parseInt(url.searchParams.get('page') ?? '1', 10);
 	const today = new Date().toISOString().slice(0, 10);
-
 	const { classes, error: classesError } = await loadStudentClasses(supabase, user.id);
 
-	const homework = await loadStudentHomework(supabase, user.id, {
-		filter,
-		page: Number.isFinite(pageParam) ? pageParam : 1,
-		enrolledClassIds: new Set(classes.map((c) => c.id)),
-		today
-	});
+	// student_streaks / badges_earned are trigger-written (AD-3), read here
+	// scoped by RLS to the caller's own rows; team_leaderboard() is readable
+	// by every signed-in role (0009).
+	const [
+		homework,
+		{ data: streakRow, error: streakError },
+		{ data: badgeRows, error: badgesError },
+		{ data: teamRows, error: teamError }
+	] = await Promise.all([
+		loadStudentHomework(supabase, user.id, {
+			filter: 'todo',
+			page: 1,
+			enrolledClassIds: new Set(classes.map((c) => c.id)),
+			today
+		}),
+		supabase
+			.from('student_streaks')
+			.select('current_streak, last_qualifying_week')
+			.eq('student_id', user.id)
+			.maybeSingle(),
+		supabase
+			.from('badges_earned')
+			.select('badge_type, milestone, earned_at')
+			.eq('student_id', user.id)
+			.order('badge_type')
+			.order('milestone', { ascending: true }),
+		supabase.rpc('team_leaderboard')
+	]);
+
+	const todoByClass = new Map<string, number>();
+	for (const item of homework.items) {
+		todoByClass.set(item.classId, (todoByClass.get(item.classId) ?? 0) + 1);
+	}
 
 	return {
-		filter,
-		classes,
-		// Grouped by class (#42): on To do every class shows, even with
-		// nothing due; on Done only classes with finished homework on this
-		// page, including one the student has since left.
-		groups: groupByClass(homework.items, classes, {
-			includeEmpty: filter === 'todo',
-			formerLabel: m.student_class_former()
-		}),
-		counts: homework.counts,
-		page: homework.page,
-		pageCount: homework.pageCount,
-		loadError: Boolean(classesError || homework.error)
+		tiles: {
+			todo: homework.counts.todo,
+			overdue: homework.items.filter((i) => i.overdue).length,
+			doneThisWeek: homework.doneThisWeek
+		},
+		team: teamRank(shapeTeamLeaderboard(teamRows), profile.team_id),
+		streak: shapeStudentStreak(streakRow),
+		badges: shapeStudentBadges(badgeRows),
+		nextDue: homework.items.slice(0, NEXT_DUE_COUNT),
+		classes: classes.map((c) => ({ ...c, todo: todoByClass.get(c.id) ?? 0 })),
+		loadError: Boolean(classesError || homework.error || streakError || badgesError || teamError)
 	};
 };
 
