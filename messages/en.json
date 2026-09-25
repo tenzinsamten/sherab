@@ -138,6 +138,18 @@
 	"teacher_class_code_label": "Code: {code}",
 	"teacher_view_roster": "View roster",
 
+	"syllabus_heading": "Syllabus",
+	"syllabus_empty": "No syllabus yet.",
+	"syllabus_edit": "Edit syllabus",
+	"syllabus_label": "Syllabus (optional)",
+	"syllabus_links_legend": "Syllabus links (optional)",
+	"syllabus_submit": "Save syllabus",
+	"syllabus_saved": "Syllabus saved.",
+	"syllabus_error_length": "The syllabus can be at most 5000 characters.",
+	"syllabus_error_failed": "Could not save the syllabus. Please try again.",
+	"student_syllabus_heading": "Class syllabus",
+	"class_homework_count": "{open} open · {total} total",
+
 	"roster_section_label": "02 / Roster",
 	"roster_heading": "Roster",
 	"roster_empty": "No approved students in this class yet.",

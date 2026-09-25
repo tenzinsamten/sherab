@@ -1,5 +1,8 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
+import { parseSyllabusForm, saveSyllabus } from '$lib/server/class-syllabus';
+import { readReferenceLinks } from '$lib/server/homework-details';
+import { loadAssignmentIndex } from '$lib/server/homework-view';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
 import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -46,7 +49,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// UX-only" convention already used by requests/+page.server.ts).
 	const { data: cls, error: classError } = await supabase
 		.from('classes')
-		.select('id, name, code')
+		.select('id, name, code, syllabus, syllabus_links')
 		.eq('id', classId)
 		.single();
 
@@ -132,17 +135,56 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// screen -- inline "view history" expansion, per Intent).
 	const currentSkills = pickCurrentSkillStatuses(skillHistory);
 
+	// Homework card (#32): open / total, with the homework list's own
+	// open-vs-archived rule.
+	const today = new Date().toISOString().slice(0, 10);
+	const homeworkIndex = await loadAssignmentIndex(supabase, classId, today);
+
 	return {
-		class: cls,
+		class: {
+			id: cls.id,
+			name: cls.name,
+			code: cls.code,
+			syllabus: cls.syllabus,
+			syllabusLinks: readReferenceLinks(cls.syllabus_links)
+		},
 		students,
 		skillHistory,
 		attendance,
 		currentSkills,
-		loadError: Boolean(studentsError || skillError || attendanceError)
+		homeworkCounts: {
+			open: homeworkIndex.entries.filter((e) => e.open).length,
+			total: homeworkIndex.entries.length
+		},
+		loadError: Boolean(studentsError || skillError || attendanceError || homeworkIndex.error)
 	};
 };
 
 export const actions: Actions = {
+	// #32: the class's teacher (or the admin) edits the syllabus.
+	// set_class_syllabus() is the real permission check (0014).
+	setSyllabus: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.roster_error_not_signed_in() });
+		}
+
+		const parsed = parseSyllabusForm(await request.formData());
+		if (!parsed.ok) {
+			return fail(400, {
+				error:
+					parsed.problem === 'length' ? m.syllabus_error_length() : m.homework_error_links_invalid()
+			});
+		}
+
+		const { error: saveError } = await saveSyllabus(supabase, params.id, parsed.value);
+		if (saveError) {
+			return fail(400, { error: m.syllabus_error_failed() });
+		}
+
+		return { success: true, action: 'syllabus' as const };
+	},
+
 	setSkillStatus: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {

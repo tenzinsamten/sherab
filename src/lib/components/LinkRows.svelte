@@ -3,15 +3,21 @@
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 
 	/**
-	 * Editable list of homework reference links (#27). Each row submits a
+	 * Editable list of reference links: homework (#27) and class syllabus (#32). Each row submits a
 	 * `linkUrl` and a `linkLabel` field, read in order by parseReferenceLinks()
 	 * in $lib/server/homework-details.ts. A row with an empty URL is ignored.
 	 */
 	let {
 		idPrefix,
 		links = [],
-		max = 10
-	}: { idPrefix: string; links?: HomeworkReferenceLink[]; max?: number } = $props();
+		max = 10,
+		legend = m.homework_links_legend()
+	}: {
+		idPrefix: string;
+		links?: HomeworkReferenceLink[];
+		max?: number;
+		legend?: string;
+	} = $props();
 
 	type Row = { key: number; url: string; label: string };
 	let nextKey = 0;
@@ -37,7 +43,7 @@
 </script>
 
 <fieldset class="check-list" style="margin-bottom: var(--space-4);">
-	<legend>{m.homework_links_legend()}</legend>
+	<legend>{legend}</legend>
 	{#each rows as row, i (row.key)}
 		<div class="link-row">
 			<div class="field" style="margin:0;">

@@ -176,6 +176,8 @@ export type Database = {
 					created_by: string | null;
 					id: string;
 					name: string;
+					syllabus: string | null;
+					syllabus_links: HomeworkReferenceLink[];
 				};
 				Insert: {
 					code: string;
@@ -183,6 +185,8 @@ export type Database = {
 					created_by?: string | null;
 					id?: string;
 					name: string;
+					syllabus?: string | null;
+					syllabus_links?: HomeworkReferenceLink[];
 				};
 				Update: {
 					code?: string;
@@ -190,6 +194,8 @@ export type Database = {
 					created_by?: string | null;
 					id?: string;
 					name?: string;
+					syllabus?: string | null;
+					syllabus_links?: HomeworkReferenceLink[];
 				};
 				Relationships: [
 					{
@@ -579,6 +585,10 @@ export type Database = {
 				Returns: boolean;
 			};
 			generate_recurring_homework_instances: { Args: never; Returns: number };
+			set_class_syllabus: {
+				Args: { p_class_id: string; p_syllabus: string; p_links: HomeworkReferenceLink[] };
+				Returns: undefined;
+			};
 			is_admin: { Args: never; Returns: boolean };
 			is_targeted_for_homework_assignment: {
 				Args: { target_assignment_id: string };

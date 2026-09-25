@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
+	import SyllabusForm from '$lib/components/SyllabusForm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -19,6 +20,9 @@
 		}
 		if (form && 'deleted' in form && form.deleted) {
 			showToast('success', m.classes_deleted_success({ name: form.deleted }));
+		}
+		if (form && 'action' in form && form.action === 'syllabus') {
+			showToast('success', m.syllabus_saved());
 		}
 	});
 
@@ -126,6 +130,22 @@
 									{/if}
 								</td>
 							</tr>
+							<tr class="syllabus-row">
+								<td colspan="5">
+									<details>
+										<summary>{m.syllabus_edit()}</summary>
+										<div style="margin-top: var(--space-3); max-width: 48rem;">
+											<SyllabusForm
+												action="?/setSyllabus"
+												idPrefix={`syllabus-${cls.id}`}
+												classId={cls.id}
+												syllabus={cls.syllabus}
+												links={cls.syllabusLinks}
+											/>
+										</div>
+									</details>
+								</td>
+							</tr>
 						{/each}
 					</tbody>
 				</table>
@@ -144,3 +164,14 @@
 		<input type="hidden" name="className" value={deleteTarget.name} />
 	</form>
 </div>
+
+<style>
+	/* The syllabus editor belongs to the class row above it. */
+	tr:has(+ .syllabus-row) td {
+		border-bottom: none;
+	}
+
+	.syllabus-row td {
+		padding-top: 0;
+	}
+</style>

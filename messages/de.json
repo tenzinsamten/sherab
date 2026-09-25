@@ -138,6 +138,18 @@
 	"teacher_class_code_label": "Code: {code}",
 	"teacher_view_roster": "Klassenliste ansehen",
 
+	"syllabus_heading": "Lehrplan",
+	"syllabus_empty": "Noch kein Lehrplan.",
+	"syllabus_edit": "Lehrplan bearbeiten",
+	"syllabus_label": "Lehrplan (optional)",
+	"syllabus_links_legend": "Lehrplan-Links (optional)",
+	"syllabus_submit": "Lehrplan speichern",
+	"syllabus_saved": "Lehrplan gespeichert.",
+	"syllabus_error_length": "Der Lehrplan darf höchstens 5000 Zeichen lang sein.",
+	"syllabus_error_failed": "Der Lehrplan konnte nicht gespeichert werden. Bitte versuche es erneut.",
+	"student_syllabus_heading": "Lehrplan der Klasse",
+	"class_homework_count": "{open} offen · {total} gesamt",
+
 	"roster_section_label": "02 / Klassenliste",
 	"roster_heading": "Klassenliste",
 	"roster_empty": "Noch keine genehmigten Schüler:innen in dieser Klasse.",

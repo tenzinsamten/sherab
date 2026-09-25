@@ -3,6 +3,8 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import SyllabusForm from '$lib/components/SyllabusForm.svelte';
+	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -57,6 +59,7 @@
 			}
 		}
 		if (form.action === 'skillStatus') showToast('success', m.roster_skill_saved());
+		if (form.action === 'syllabus') showToast('success', m.syllabus_saved());
 	});
 </script>
 
@@ -79,6 +82,54 @@
 			{m.homework_heading()}
 		</ix-button>
 	</header>
+
+	<div class="class-cards">
+		<ix-card variant="outline" passive>
+			<ix-card-content>
+				<p class="section-label">{m.dashboard_tile_students()}</p>
+				<p class={data.students.length === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
+					{data.students.length}
+				</p>
+			</ix-card-content>
+		</ix-card>
+		<a href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })} class="tile-link">
+			<ix-card variant="outline">
+				<ix-card-content>
+					<p class="section-label">{m.homework_heading()}</p>
+					<p class={data.homeworkCounts.total === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
+						{data.homeworkCounts.open}
+					</p>
+					<p class="muted" style="margin:0;">
+						{m.class_homework_count({
+							open: data.homeworkCounts.open,
+							total: data.homeworkCounts.total
+						})}
+					</p>
+				</ix-card-content>
+			</ix-card>
+		</a>
+		<ix-card variant="outline" passive class="syllabus-card">
+			<ix-card-content>
+				<p class="section-label">{m.syllabus_heading()}</p>
+				<TextWithLinks
+					text={data.class.syllabus}
+					links={data.class.syllabusLinks}
+					empty={m.syllabus_empty()}
+				/>
+				<details>
+					<summary>{m.syllabus_edit()}</summary>
+					<div style="margin-top: var(--space-3);">
+						<SyllabusForm
+							action="?/setSyllabus"
+							idPrefix="syllabus"
+							syllabus={data.class.syllabus}
+							links={data.class.syllabusLinks}
+						/>
+					</div>
+				</details>
+			</ix-card-content>
+		</ix-card>
+	</div>
 
 	{#if data.students.length === 0}
 		<ix-empty-state header={m.roster_empty()} icon="user-group"></ix-empty-state>
@@ -214,3 +265,22 @@
 		</section>
 	{/if}
 </div>
+
+<style>
+	.class-cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: var(--space-4);
+		margin-bottom: var(--space-6);
+		align-items: start;
+	}
+
+	.class-cards .section-label {
+		margin: 0 0 var(--space-1);
+	}
+
+	/* The syllabus holds text and a form, so it takes a full row. */
+	.class-cards :global(.syllabus-card) {
+		grid-column: 1 / -1;
+	}
+</style>

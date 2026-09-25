@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
+	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { showToast } from '$lib/ix';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
@@ -81,6 +82,13 @@
 			</ix-card-content>
 		</ix-card>
 	</div>
+
+	{#if data.syllabus}
+		<section class="card" style="margin-bottom: var(--space-4);">
+			<h2>{m.student_syllabus_heading()}</h2>
+			<TextWithLinks text={data.syllabus.text} links={data.syllabus.links} />
+		</section>
+	{/if}
 
 	{#if data.items.length === 0}
 		<ix-empty-state header={m.student_homework_empty()} icon="tasks-open"></ix-empty-state>
