@@ -120,6 +120,14 @@ As Teacher A at `/teacher/classes/[id]`:
 - [ ] Student sees the "Class syllabus" card on `/student` (hidden when empty)
 - [ ] Teacher B cannot save class 1's syllabus
 
+### Menu and error pages (#34–#36)
+- [ ] On `/account` the My Account menu item is blue with white text; Sign out hover is readable
+- [ ] Class page loads after 0014 is pushed; Teacher B opening class 1's URL gets 404
+- [ ] Wide window (1280px+): menu starts expanded; collapse it, reload / change page → stays
+      collapsed; expand again → stays expanded
+- [ ] Narrow window: menu starts collapsed; opening / closing it there doesn't change the
+      wide-screen choice
+
 ## 4. Gamification (Epic 4)
 ### Streaks (`/student`)
 - [ ] Empty state before any streak

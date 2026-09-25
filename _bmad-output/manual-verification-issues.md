@@ -40,6 +40,9 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 31 | Homework create | Create button keeps spinning after the assignment is created | fixed with #30, to verify |
 | 32 | Class page `/teacher/classes/[id]` | Summary cards: number of students, number of homework, and the class's reference / syllabus | fixed (needs 0014 pushed), to verify |
 | 33 | Homework page | List all homework with pagination; create homework on its own page and return to the list after creating | fixed, to verify |
+| 34 | Side menu | Selected "My Account" item turns into a white bar; its icon and text are invisible | fixed, to verify |
+| 35 | Class page `/teacher/classes/[id]` | Opening a class shows "404 Class not found" | fixed (errors now 500; still needs 0014 pushed), to verify |
+| 36 | Side menu | Menu should be expanded (icons + labels) by default for every role | fixed, to verify |
 
 ---
 
@@ -512,11 +515,65 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Related:** #30/#31 (toast loop and spinner on create) are fixed by the same rework if create
   moves to its own page, but should still be fixed on their own in case this is planned later.
 
+
+## 34. Selected "My Account" menu item is unreadable
+- **Seen (user, 2026-09-25, screenshot on `/account` as a teacher):** "when my profile is selected.
+  text is not visible". The item above Sign out shows as a plain white bar; icon and label are
+  both invisible.
+- **Cause:** "My Account" sits in `ix-menu`'s `bottom` slot. iX styles bottom-slot items as
+  *secondary* nav items (`--theme-nav-item-secondary--*`, e.g.
+  `--theme-nav-item-secondary--background--selected`), and the navy frame override (#12,
+  `src/app.css`) only sets the *primary* ones. So the selected bottom item gets iX's light
+  selected background while its text and icon stay white. Sign out never looks selected, so it
+  wasn't noticed before.
+- **Fix idea:** add the matching `--theme-nav-item-secondary-*` overrides (colour, icon colour,
+  hover / active / selected background = primary blue for selected) next to the primary ones.
+  Check hover on Sign out too.
+
+
+## 35. Class page shows "404 Class not found"
+- **Seen (user, 2026-09-25, screenshot):** selecting a class on the teacher dashboard opens
+  `/teacher/classes/<id>` with "404 — Class not found."
+- **Cause (confirmed):** `supabase migration list --linked` shows 0014 is **not applied** on the
+  hosted project (0001–0013 are). Since #32 the class page selects `syllabus, syllabus_links`,
+  which don't exist yet, so the query errors. The load treats *any* error on the class query
+  as "not found" and throws 404.
+- **Fix:** push 0014 (`npx supabase db push`). `/admin/classes` and `/student` read the same
+  columns and fail until then too.
+- **Underlying gap (open):** a database error shows as a 404, which points at the wrong
+  problem. The same `classError || !cls → 404` pattern is on the roster, homework list, create
+  and detail pages. Proposal: 404 only when the query succeeds with no row (RLS hides it or
+  it doesn't exist); a real error becomes a 500 ("Something went wrong loading this page").
+  Also worth a deploy check that the hosted DB has every local migration (see #5).
+
+
+## 36. Side menu expanded by default
+- **Request (user, 2026-09-25):** "I want the dashboard opened by default for all". Clarified:
+  the **side menu** should start expanded (icons and labels: Dashboard, Requests, Leaderboard,
+  ...) for everyone, not collapsed to icons only.
+- **Today:** `<ix-menu>` in `src/routes/+layout.svelte` has no expand settings, so iX starts it
+  collapsed on every page load. The user can expand it with the « / » toggle, but that isn't
+  remembered.
+- **Fix idea:** iX's `start-expanded` attribute on `ix-menu`. iX applies it only at its large
+  (`lg`) breakpoint; on smaller screens the menu opens as an overlay and should stay collapsed so
+  it doesn't cover the page.
+- **Open questions:**
+  - Remember the user's choice (collapse / expand) across pages and visits (cookie or
+    localStorage), or always start expanded?
+  - Phones / tablets: keep collapsed there (recommended), or expanded too?
+  - `pinned` (menu stays open next to the content instead of overlaying) on wide screens?
+
 ---
 
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+
+- 2026-09-25: #34–#36 fixed. #34 secondary nav-item colours for bottom-slot menu items.
+  #35 `rowOr404()` (`src/lib/server/class-access.ts`): no row → 404, query error → logged 500, on
+  the four teacher class routes. The actual 404 came from 0014 not being pushed (user step).
+  #36 decided: menu starts expanded on wide screens (iX `lg`, 1280px+), a collapse there is
+  remembered in the `sherab-menu` cookie, smaller screens stay collapsed.
 
 - 2026-09-25: #28–#33 planned (`~/.claude/plans/bright-greeting-forest.md`) and built. Decisions:
   #32 syllabus = plain text (max 5000) + up to 10 labelled links, edited by the class's teacher
