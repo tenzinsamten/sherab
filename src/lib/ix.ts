@@ -31,6 +31,7 @@ export function setupIx() {
 			iconTasksOpen: icons.iconTasksOpen,
 			iconTrashcan: icons.iconTrashcan,
 			iconTrophy: icons.iconTrophy,
+			iconUser: icons.iconUser,
 			iconUserCheck: icons.iconUserCheck,
 			iconUserGroup: icons.iconUserGroup,
 			iconUserReading: icons.iconUserReading

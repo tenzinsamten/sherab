@@ -20,6 +20,15 @@
 	--content-max: 72rem;
 }
 
+/* iX sets `:root { color-scheme: light dark }`, so on a dark-mode OS the
+   browser draws native controls (the date picker's calendar icon, select
+   arrows) for dark mode: white on the app's white fields (#29). The app is
+   light-only in phase 1, so pin native controls to light. More specific than
+   `:root`. Revisit with dark mode in phase 2 (#13). */
+html[data-ix-color-schema='light'] {
+	color-scheme: light;
+}
+
 /* Sherab keeps its own primary blue on top of iX classic. The selector is
    more specific than iX's `[data-ix-theme][data-ix-color-schema]` rules. */
 html[data-ix-theme='classic'][data-ix-color-schema] {
