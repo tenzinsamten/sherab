@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { RECOVERY_COOKIE } from '$lib/server/password-reset';
+import { checkNewPassword } from '$lib/server/password-rules';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -24,10 +25,11 @@ export const actions: Actions = {
 		const password = String(formData.get('password') ?? '');
 		const confirm = String(formData.get('confirm') ?? '');
 
-		if (password.length < 6) {
+		const problem = checkNewPassword(password, confirm);
+		if (problem === 'length') {
 			return fail(400, { error: m.reset_error_length() });
 		}
-		if (password !== confirm) {
+		if (problem === 'mismatch') {
 			return fail(400, { error: m.reset_error_mismatch() });
 		}
 

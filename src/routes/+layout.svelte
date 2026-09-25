@@ -157,6 +157,16 @@
 					{item.label}
 				</ix-menu-item>
 			{/each}
+			{#if data.profile?.role === 'admin' || data.profile?.role === 'teacher'}
+				<ix-menu-item
+					slot="bottom"
+					href={resolve('/account')}
+					icon="user"
+					active={page.url.pathname.endsWith('/account') || undefined}
+				>
+					{m.nav_account()}
+				</ix-menu-item>
+			{/if}
 			<ix-menu-item slot="bottom" icon="log-out" onclick={() => signOutForm?.requestSubmit()}>
 				{m.nav_sign_out()}
 			</ix-menu-item>
