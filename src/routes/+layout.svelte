@@ -82,7 +82,7 @@
 		}
 		if (role === 'teacher') {
 			return [
-				{ href: resolve('/teacher'), label: m.nav_my_classes(), icon: 'book' },
+				{ href: resolve('/teacher'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
 				requests,
 				leaderboard
 			];

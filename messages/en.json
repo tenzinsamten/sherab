@@ -8,7 +8,6 @@
 	"nav_teams": "Teams",
 	"nav_requests": "Requests",
 	"nav_requests_with_count": "Requests {count}",
-	"nav_my_classes": "My Classes",
 	"nav_my_homework": "My Homework",
 	"nav_leaderboard": "Leaderboard",
 	"nav_dashboard": "Dashboard",
@@ -115,7 +114,7 @@
 	"teachers_error_assign_failed": "Teacher account created, but class assignment failed: {message}. Assign classes manually.",
 	"teachers_created_success": "Teacher account created for {email}. One-time temporary password (share it with them directly — it will not be shown again): {password}",
 
-	"teacher_section_label": "01 / My Classes",
+	"teacher_section_label": "01 / Dashboard",
 	"teacher_my_classes_heading": "My Classes",
 	"teacher_no_classes": "You haven't been assigned to any classes yet. Ask the admin to assign you to a class.",
 	"teacher_class_code_label": "Code: {code}",
@@ -305,6 +304,9 @@
 	"dashboard_tile_homework_assignments": "Homework Assignments",
 	"dashboard_tile_completion": "Homework Completion",
 	"dashboard_tile_completion_value": "{percent}%",
+	"dashboard_tile_due_this_week": "Due This Week",
+	"dashboard_tile_overdue": "Overdue",
+	"dashboard_tile_awaiting_review": "Waiting for Review",
 
 	"leaderboard_section_label": "Leaderboard",
 	"leaderboard_heading": "Team Leaderboard",

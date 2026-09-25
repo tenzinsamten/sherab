@@ -8,7 +8,6 @@
 	"nav_teams": "Teams",
 	"nav_requests": "Anfragen",
 	"nav_requests_with_count": "Anfragen {count}",
-	"nav_my_classes": "Meine Klassen",
 	"nav_my_homework": "Meine Hausaufgaben",
 	"nav_leaderboard": "Rangliste",
 	"nav_dashboard": "Übersicht",
@@ -115,7 +114,7 @@
 	"teachers_error_assign_failed": "Lehrkraft-Konto wurde erstellt, aber die Klassenzuweisung ist fehlgeschlagen: {message}. Bitte Klassen manuell zuweisen.",
 	"teachers_created_success": "Lehrkraft-Konto für {email} erstellt. Einmaliges temporäres Passwort (bitte direkt weitergeben — es wird nicht erneut angezeigt): {password}",
 
-	"teacher_section_label": "01 / Meine Klassen",
+	"teacher_section_label": "01 / Übersicht",
 	"teacher_my_classes_heading": "Meine Klassen",
 	"teacher_no_classes": "Du bist noch keiner Klasse zugewiesen. Bitte den Admin, dich einer Klasse zuzuweisen.",
 	"teacher_class_code_label": "Code: {code}",
@@ -305,6 +304,9 @@
 	"dashboard_tile_homework_assignments": "Hausaufgaben",
 	"dashboard_tile_completion": "Erledigungsquote",
 	"dashboard_tile_completion_value": "{percent}%",
+	"dashboard_tile_due_this_week": "Diese Woche fällig",
+	"dashboard_tile_overdue": "Überfällig",
+	"dashboard_tile_awaiting_review": "Warten auf Durchsicht",
 
 	"leaderboard_section_label": "Rangliste",
 	"leaderboard_heading": "Team-Rangliste",

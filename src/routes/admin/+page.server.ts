@@ -1,52 +1,6 @@
-import { buildHomeworkProgress, type HomeworkHistoryRow } from '$lib/server/homework-status';
+import { fetchAllHistoryRows } from '$lib/server/history-rows';
+import { buildHomeworkProgress } from '$lib/server/homework-status';
 import type { PageServerLoad } from './$types';
-
-type HistoryQuerySupabase = Parameters<PageServerLoad>[0]['locals']['supabase'];
-
-/**
- * PostgREST caps every unfiltered select at `api.max_rows` (1000 locally,
- * `supabase/config.toml`) -- confirmed empirically during this story's own
- * review: `homework_status_history` already holds 1091 rows in this dev
- * database, so a single unpaged `.select()` here silently truncates and
- * undercounts the completion percentage once a real school's history grows
- * past that cap. `.range()` in a loop until a page comes back short of the
- * page size avoids a second migration/RPC (Boundaries: "no new migration")
- * while still reading the whole table.
- */
-async function fetchAllHistoryRows(
-	supabase: HistoryQuerySupabase
-): Promise<{ rows: HomeworkHistoryRow[]; error: { message: string } | null }> {
-	const pageSize = 1000;
-	const rows: HomeworkHistoryRow[] = [];
-	let from = 0;
-
-	for (;;) {
-		const { data, error } = await supabase
-			.from('homework_status_history')
-			.select('id, instance_id, student_id, status, recorded_by, recorded_at')
-			.order('id', { ascending: true })
-			.range(from, from + pageSize - 1);
-
-		if (error) return { rows: [], error };
-
-		const page = data ?? [];
-		for (const r of page) {
-			rows.push({
-				id: r.id,
-				instanceId: r.instance_id,
-				studentId: r.student_id,
-				status: r.status,
-				recordedBy: r.recorded_by,
-				recordedAt: r.recorded_at
-			});
-		}
-
-		if (page.length < pageSize) break;
-		from += pageSize;
-	}
-
-	return { rows, error: null };
-}
 
 /**
  * Cross-class aggregate stat tiles for the admin dashboard (Story 5-1). Every
