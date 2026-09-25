@@ -72,6 +72,22 @@ ix-menu {
 	--theme-nav-item-primary--background--selected: #2563eb;
 	--theme-nav-item-primary--border-color--selected: #2563eb;
 
+	/* Bottom-slot items (My Account, Sign out) use iX's *secondary* nav-item
+	   variables. Without these, a selected bottom item got iX's light
+	   background under white text (#34). */
+	--theme-nav-item-secondary--color: var(--sherab-frame-text);
+	--theme-nav-item-secondary--color--hover: var(--sherab-frame-text);
+	--theme-nav-item-secondary--color--active: var(--sherab-frame-text);
+	--theme-nav-item-secondary--color--selected: var(--sherab-frame-text);
+	--theme-nav-item-secondary-icon--color: var(--sherab-frame-text);
+	--theme-nav-item-secondary-icon--color--hover: var(--sherab-frame-text);
+	--theme-nav-item-secondary-icon--color--active: var(--sherab-frame-text);
+	--theme-nav-item-secondary-icon--color--selected: var(--sherab-frame-text);
+	--theme-nav-item-secondary--background--hover: var(--sherab-frame-hover);
+	--theme-nav-item-secondary--background--active: var(--sherab-frame-active);
+	--theme-nav-item-secondary--background--selected: #2563eb;
+	--theme-nav-item-secondary--border-color--selected: #2563eb;
+
 	--theme-menu-btn--color: var(--sherab-frame-text);
 	--theme-menu-btn--color--hover: var(--sherab-frame-text);
 	--theme-menu-btn--color--active: var(--sherab-frame-text);
