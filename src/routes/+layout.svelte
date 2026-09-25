@@ -51,6 +51,11 @@
 		if (page.url.searchParams.has('justSignedUp')) showToast('success', m.home_just_signed_up());
 	});
 
+	// resolve() for an arbitrary pathname. Passing a Pathname union straight to
+	// resolve()'s per-route overloads stops type-checking once the app has more
+	// than 25 routes (TypeScript's union comparison limit).
+	const resolvePathname = (path: string) => (resolve as (p: Pathname) => string)(path as Pathname);
+
 	let homeHref = $derived(resolve(roleHome(data.profile?.role) ?? '/'));
 
 	let signOutForm: HTMLFormElement | undefined = $state();
@@ -127,7 +132,7 @@
 				checked={getLocale() === locale || undefined}
 				lang={locale}
 				onclick={() =>
-					window.location.assign(resolve(localizeHref(page.url.pathname, { locale }) as Pathname))}
+					window.location.assign(resolvePathname(localizeHref(page.url.pathname, { locale })))}
 			>
 				<span class="locale-option">
 					{#if flag?.icon}

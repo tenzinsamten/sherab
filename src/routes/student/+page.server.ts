@@ -6,7 +6,9 @@ import {
 	type HomeworkHistoryRow
 } from '$lib/server/homework-status';
 import { shapeStudentBadges } from '$lib/server/badges';
+import { listSyllabi, pickStudentSyllabus, type Syllabus } from '$lib/server/class-syllabus';
 import { readReferenceLinks } from '$lib/server/homework-details';
+import { currentSchoolYear } from '$lib/school-year';
 import { shapeStudentStreak } from '$lib/server/streak';
 import type { HomeworkReferenceLink, SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -197,21 +199,16 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	const badges = shapeStudentBadges(badgeRows);
 
-	// Class syllabus card (#32). classes_select_own_student (0014) lets an
-	// approved student read just their own class's row.
-	let syllabus: { text: string | null; links: HomeworkReferenceLink[] } | null = null;
+	// Class syllabus card (#37): the current school year's syllabus, or the
+	// newest one. class_syllabi_select (0015) lets an approved student read
+	// their own class's syllabi.
+	let syllabus: Syllabus | null = null;
 	let syllabusError = false;
 	if (profile.class_id) {
-		const { data: cls, error: classError } = await supabase
-			.from('classes')
-			.select('syllabus, syllabus_links')
-			.eq('id', profile.class_id)
-			.maybeSingle();
-		syllabusError = Boolean(classError);
-		const links = readReferenceLinks(cls?.syllabus_links);
-		if (cls && (cls.syllabus || links.length > 0)) {
-			syllabus = { text: cls.syllabus, links };
-		}
+		const result = await listSyllabi(supabase, profile.class_id);
+		syllabusError = result.error;
+		syllabus = pickStudentSyllabus(result.syllabi, currentSchoolYear());
+		if (syllabus && !syllabus.content && syllabus.links.length === 0) syllabus = null;
 	}
 
 	return {

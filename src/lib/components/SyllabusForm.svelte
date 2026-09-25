@@ -6,45 +6,46 @@
 	import LinkRows from './LinkRows.svelte';
 
 	/**
-	 * Edit form for a class syllabus (#32), posting `syllabus` plus LinkRows'
-	 * link fields to `action`. `classId` is sent as a hidden field for pages
-	 * that list several classes (/admin/classes); the teacher class page takes
-	 * it from the route instead.
+	 * Edit form for one class syllabus (#37), posting `syllabusId`, `syllabus`
+	 * and LinkRows' link fields to `?/update`. `oncancel` shows a Cancel button.
 	 */
 	let {
-		action,
-		idPrefix,
+		syllabusId,
 		syllabus,
 		links,
-		classId
+		oncancel
 	}: {
-		action: string;
-		idPrefix: string;
+		syllabusId: string;
 		syllabus: string | null;
 		links: HomeworkReferenceLink[];
-		classId?: string;
+		oncancel?: () => void;
 	} = $props();
 
 	const pending = createPending();
 </script>
 
-<form method="POST" {action} use:enhance={pending.submit('syllabus')}>
-	{#if classId}
-		<input type="hidden" name="classId" value={classId} />
-	{/if}
+<form method="POST" action="?/update" use:enhance={pending.submit('syllabus')}>
+	<input type="hidden" name="syllabusId" value={syllabusId} />
 	<div class="field">
-		<label for="{idPrefix}-syllabus">{m.syllabus_label()}</label>
+		<label for="syllabus-{syllabusId}">{m.syllabus_label()}</label>
 		<textarea
-			id="{idPrefix}-syllabus"
+			id="syllabus-{syllabusId}"
 			name="syllabus"
-			rows="6"
+			rows="10"
 			maxlength="5000"
 			value={syllabus ?? ''}></textarea>
 	</div>
-	<LinkRows {idPrefix} {links} legend={m.syllabus_links_legend()} />
-	<ix-button
-		type="submit"
-		loading={pending.is('syllabus') || undefined}
-		disabled={pending.busy || undefined}>{m.syllabus_submit()}</ix-button
-	>
+	<LinkRows idPrefix="syllabus-{syllabusId}" {links} legend={m.syllabus_links_legend()} />
+	<div class="actions">
+		<ix-button
+			type="submit"
+			loading={pending.is('syllabus') || undefined}
+			disabled={pending.busy || undefined}>{m.syllabus_submit()}</ix-button
+		>
+		{#if oncancel}
+			<ix-button variant="secondary" disabled={pending.busy || undefined} onclick={oncancel}>
+				{m.common_cancel()}
+			</ix-button>
+		{/if}
+	</div>
 </form>

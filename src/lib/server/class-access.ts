@@ -33,3 +33,8 @@ export const HOMEWORK_MESSAGES = {
 	notFound: 'Homework not found.',
 	failed: 'Could not load this homework. Please try again.'
 };
+
+export const SYLLABUS_MESSAGES = {
+	notFound: 'Syllabus not found.',
+	failed: 'Could not load this syllabus. Please try again.'
+};

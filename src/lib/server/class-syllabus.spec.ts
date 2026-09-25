@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SYLLABUS_LENGTH, parseSyllabusForm } from './class-syllabus';
+import { MAX_SYLLABUS_LENGTH, parseSyllabusForm, pickStudentSyllabus } from './class-syllabus';
 
 function form(syllabus: string, links: [string, string][] = []): FormData {
 	const fd = new FormData();
@@ -45,5 +45,29 @@ describe('parseSyllabusForm', () => {
 			(_, i) => [`https://x.example/${i}`, ''] as [string, string]
 		);
 		expect(parseSyllabusForm(form('', tooMany))).toEqual({ ok: false, problem: 'links' });
+	});
+});
+
+describe('pickStudentSyllabus', () => {
+	const syllabus = (schoolYear: number) => ({
+		id: `s${schoolYear}`,
+		schoolYear,
+		content: null,
+		links: [],
+		updatedAt: '2026-09-25T00:00:00Z'
+	});
+
+	it("prefers the current school year's syllabus", () => {
+		expect(pickStudentSyllabus([syllabus(2026), syllabus(2025), syllabus(2024)], 2025)?.id).toBe(
+			's2025'
+		);
+	});
+
+	it('falls back to the newest one when this year has none', () => {
+		expect(pickStudentSyllabus([syllabus(2024), syllabus(2023)], 2025)?.id).toBe('s2024');
+	});
+
+	it('is null when the class has no syllabus', () => {
+		expect(pickStudentSyllabus([], 2025)).toBeNull();
 	});
 });

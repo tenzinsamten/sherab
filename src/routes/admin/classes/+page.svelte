@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
-	import SyllabusForm from '$lib/components/SyllabusForm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -20,9 +20,6 @@
 		}
 		if (form && 'deleted' in form && form.deleted) {
 			showToast('success', m.classes_deleted_success({ name: form.deleted }));
-		}
-		if (form && 'action' in form && form.action === 'syllabus') {
-			showToast('success', m.syllabus_saved());
 		}
 	});
 
@@ -96,6 +93,7 @@
 							<th>{m.classes_col_name()}</th>
 							<th>{m.classes_col_code()}</th>
 							<th>{m.classes_col_students()}</th>
+							<th>{m.classes_col_syllabi()}</th>
 							<th>{m.classes_col_created()}</th>
 							<th><span class="sr-only">{m.classes_col_actions()}</span></th>
 						</tr>
@@ -115,6 +113,11 @@
 										{/if}
 									</span>
 								</td>
+								<td>
+									<a href={resolve('/admin/classes/[id]/syllabus', { id: cls.id })}>
+										{cls.syllabusCount} · {m.classes_syllabi_open()}
+									</a>
+								</td>
 								<td class="muted">{new Date(cls.created_at).toLocaleDateString()}</td>
 								<td style="text-align:right;">
 									{#if cls.approvedCount === 0 && cls.pendingCount === 0}
@@ -128,22 +131,6 @@
 											{m.common_delete()}
 										</ix-button>
 									{/if}
-								</td>
-							</tr>
-							<tr class="syllabus-row">
-								<td colspan="5">
-									<details>
-										<summary>{m.syllabus_edit()}</summary>
-										<div style="margin-top: var(--space-3); max-width: 48rem;">
-											<SyllabusForm
-												action="?/setSyllabus"
-												idPrefix={`syllabus-${cls.id}`}
-												classId={cls.id}
-												syllabus={cls.syllabus}
-												links={cls.syllabusLinks}
-											/>
-										</div>
-									</details>
 								</td>
 							</tr>
 						{/each}
@@ -164,14 +151,3 @@
 		<input type="hidden" name="className" value={deleteTarget.name} />
 	</form>
 </div>
-
-<style>
-	/* The syllabus editor belongs to the class row above it. */
-	tr:has(+ .syllabus-row) td {
-		border-bottom: none;
-	}
-
-	.syllabus-row td {
-		padding-top: 0;
-	}
-</style>

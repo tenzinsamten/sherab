@@ -169,6 +169,47 @@ export type Database = {
 					}
 				];
 			};
+			class_syllabi: {
+				Row: {
+					class_id: string;
+					content: string | null;
+					created_at: string;
+					created_by: string | null;
+					id: string;
+					links: HomeworkReferenceLink[];
+					school_year: number;
+					updated_at: string;
+				};
+				Insert: {
+					class_id: string;
+					content?: string | null;
+					created_at?: string;
+					created_by?: string | null;
+					id?: string;
+					links?: HomeworkReferenceLink[];
+					school_year: number;
+					updated_at?: string;
+				};
+				Update: {
+					class_id?: string;
+					content?: string | null;
+					created_at?: string;
+					created_by?: string | null;
+					id?: string;
+					links?: HomeworkReferenceLink[];
+					school_year?: number;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_syllabi_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			classes: {
 				Row: {
 					code: string;

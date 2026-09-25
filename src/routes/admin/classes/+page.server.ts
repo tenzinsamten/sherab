@@ -4,20 +4,28 @@ import {
 	isClassCodeCollision,
 	UNIQUE_VIOLATION_CODE
 } from '$lib/server/class-code';
-import { parseSyllabusForm, saveSyllabus } from '$lib/server/class-syllabus';
-import { readReferenceLinks } from '$lib/server/homework-details';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
-	const [{ data: classes, error }, { data: students, error: studentsError }] = await Promise.all([
+	const [
+		{ data: classes, error },
+		{ data: students, error: studentsError },
+		{ data: syllabi, error: syllabiError }
+	] = await Promise.all([
 		supabase
 			.from('classes')
-			.select('id, name, code, created_at, syllabus, syllabus_links')
+			.select('id, name, code, created_at')
 			.order('created_at', { ascending: false }),
-		supabase.from('profiles').select('class_id, status').eq('role', 'student')
+		supabase.from('profiles').select('class_id, status').eq('role', 'student'),
+		supabase.from('class_syllabi').select('class_id')
 	]);
+
+	const syllabusCounts = new Map<string, number>();
+	for (const row of syllabi ?? []) {
+		syllabusCounts.set(row.class_id, (syllabusCounts.get(row.class_id) ?? 0) + 1);
+	}
 
 	const counts = new Map<string, { approved: number; pending: number }>();
 	for (const s of students ?? []) {
@@ -30,40 +38,15 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	return {
 		classes: (classes ?? []).map((cls) => ({
 			...cls,
-			syllabusLinks: readReferenceLinks(cls.syllabus_links),
+			syllabusCount: syllabusCounts.get(cls.id) ?? 0,
 			approvedCount: counts.get(cls.id)?.approved ?? 0,
 			pendingCount: counts.get(cls.id)?.pending ?? 0
 		})),
-		loadError: Boolean(error || studentsError)
+		loadError: Boolean(error || studentsError || syllabiError)
 	};
 };
 
 export const actions: Actions = {
-	// #32: same save path as the teacher class page; set_class_syllabus()
-	// checks the caller is the admin (or that class's teacher).
-	setSyllabus: async ({ request, locals: { supabase } }) => {
-		const formData = await request.formData();
-		const classId = String(formData.get('classId') ?? '');
-		if (!classId) {
-			return fail(400, { error: m.syllabus_error_failed() });
-		}
-
-		const parsed = parseSyllabusForm(formData);
-		if (!parsed.ok) {
-			return fail(400, {
-				error:
-					parsed.problem === 'length' ? m.syllabus_error_length() : m.homework_error_links_invalid()
-			});
-		}
-
-		const { error: saveError } = await saveSyllabus(supabase, classId, parsed.value);
-		if (saveError) {
-			return fail(400, { error: m.syllabus_error_failed() });
-		}
-
-		return { success: true, action: 'syllabus' as const };
-	},
-
 	create: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {
