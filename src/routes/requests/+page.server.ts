@@ -223,9 +223,11 @@ export const actions: Actions = {
 			// simply regenerates fresh credentials, which is safe since no one
 			// has seen the stale ones yet.
 			return fail(500, {
-				error: m.requests_error_approve_partial({ username, pin }),
+				error: m.requests_error_approve_partial(),
 				studentId,
-				studentName
+				studentName,
+				username,
+				pin
 			});
 		}
 

@@ -21,6 +21,7 @@ export function setupIx() {
 		addIcons({
 			iconAdd: icons.iconAdd,
 			iconBook: icons.iconBook,
+			iconCopy: icons.iconCopy,
 			iconDashboard: icons.iconDashboard,
 			iconGlobe: icons.iconGlobe,
 			iconHome: icons.iconHome,

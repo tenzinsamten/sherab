@@ -47,6 +47,9 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 38 | Class page `/teacher/classes/[id]` | Remove the "Homework" button at the top right (the Homework card already links there) | fixed, to verify |
 | 39 | Side menu (teacher) | Add a "My classes" section to the menu | wontfix (not required, user 2026-09-25) |
 | 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
+| 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
+| 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | planned |
+| 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | planned |
 
 ---
 
@@ -670,9 +673,87 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 
 ---
 
+## 41. Copy the new student's username and PIN
+- **Asked (user, 2026-09-25):** "when username and pin is created. we should be able to copy it"
+- **Where it shows today:** approving a pending student on `/requests`
+  (`src/routes/requests/+page.svelte`) shows the one-time username and PIN as one sentence inside
+  a persistent `ix-message-bar` (`m.requests_outcome_approved`). The only way to copy them is to
+  select the text by hand. The same kind of one-time credential appears for new teachers on
+  `/admin/teachers`, and in the partial-approval error (`m.requests_error_approve_partial`).
+- **To decide when planning:** copy username and PIN separately, both together (e.g.
+  "Username: … / PIN: …"), or both; whether the teacher credential on `/admin/teachers` gets the
+  same treatment; feedback after copying (toast or icon change).
+- **Fix (2026-09-25):** `CredentialFields` / `CopyField` (`src/lib/components/`) with
+  `copyText()` (`src/lib/clipboard.ts`): each value has a copy icon, plus "Copy both"
+  ("Username: …" / "PIN: …" lines), toast "Copied"; when the clipboard is unavailable the value
+  is selected and an error toast says to copy manually. Used on `/requests` (approval, and the
+  partial-approval case, which now shows the details in a warning bar instead of an error toast)
+  and `/admin/teachers` (email + temporary password).
+
+---
+
+## 42. A student can only belong to one class
+- **Asked (user, 2026-09-25):** "curently student page shows only one class but student can be
+  enrolled in multiple classes"
+- **Cause: the data model, not just the page.** `profiles.class_id` (added in
+  `0002_student_registration.sql`) is a single column, so a student belongs to exactly one class.
+  `/student` (`src/routes/student/+page.server.ts`) reads that one `class_id` for the syllabus
+  card. Homework already works per student (assigned rows in `homework_status_history`), so
+  homework from several classes would list fine; it's class membership that is single.
+- **What depends on the single `class_id` today:** registration and approval (`/requests`,
+  sign-up with a class, `check_registration_available`), class roster and student count on
+  `/teacher/classes/[id]`, whole-class homework and the late-joiner trigger
+  (`profiles_assign_open_homework`, 0013), syllabus access (`class_syllabi_select`, 0015), the
+  class delete guard (0011), streaks (`student_streaks.class_id`, 0007), `/admin/classes`, and
+  the RLS helpers that check "student of this class".
+- **Likely direction (for planning):** a `class_enrollments` (student, class) join table with the
+  existing `class_id` data moved into it, then the places above switched over.
+- **To decide when planning:**
+  - How a student joins a second class: teacher or admin adds an existing student to a class,
+    the student requests to join another class, or both.
+  - `/student` layout: homework grouped by class, a class switcher, or one combined list with a
+    class label per item; one syllabus card per class.
+  - Streaks: one per student (across classes) or one per class.
+  - Team (`profiles.team_id`): stays one per student, or per class.
+  - Leaving a class: what happens to that class's open homework.
+
+---
+
+## 43. Student homework: list plus a detail page
+- **Asked (user, 2026-09-25):** "there could be multiple homework and currently homework detail
+  page is there."
+- **Today:** students have no homework detail page. `/student` (`src/routes/student/+page.svelte`)
+  shows every homework item in the look-ahead window (default 14 days, `homework_lookahead_days`)
+  as a full card: title, skill area, due date, status, the whole description and every reference
+  link, plus the Done action. With several homework items (more so across several classes, #42),
+  the page becomes a long scroll. Teachers already have a list + detail layout
+  (`/teacher/classes/[id]/homework` and `/homework/[assignmentId]`, #33).
+- **My reading (to confirm when planning):** show homework on `/student` as a compact list
+  (title, class, due date, status) where each row opens a student homework detail page with the
+  description, links and the Done action. The user's sentence was ambiguous ("is there"), so check
+  that this is what's wanted.
+- **To decide when planning:**
+  - Route, e.g. `/student/homework/[instanceId]` (one due date of a series) vs per assignment.
+  - Whether Done can still be marked straight from the list.
+  - Pagination / filters (Open, Done, Overdue), and whether past homework outside the look-ahead
+    window becomes visible.
+  - How this fits with the several-classes layout from #42.
+
+---
+
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+- 2026-09-25: #41–#43 planned (`~/.claude/plans/woolly-sprouting-candle.md`). Decisions: #41 copy
+  username and PIN separately plus "Copy both" (same for a teacher's temporary password), and
+  the partial-approve credentials move from a toast to the persistent bar. #42 new
+  `class_enrollments` table (0016) is the source of truth for class membership;
+  `profiles.class_id` stays as "class registered into"; a teacher (class page) or admin
+  (`/admin/classes/[id]/students`) adds an existing student to another class, and can't remove
+  a student's last class; streak and team stay per student; removing a student hides their open
+  homework from that class and keeps done/reviewed history. #43 `/student` grouped by class,
+  To do / Done filters with pagination, rows open `/student/homework/[instanceId]`, Done on
+  rows and on the detail page, syllabus on its own page per class.
 
 - 2026-09-25: #37/#38 planned and built. Decisions: one syllabus per class per **school year**
   (Sept–Aug, stored by starting year, 2025 = 2025/26) in the new `class_syllabi` table (0015);

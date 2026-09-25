@@ -4,6 +4,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -51,9 +52,16 @@
 
 	let credential = $derived(
 		form && 'tempPassword' in form && form.tempPassword
-			? 'reset' in form && form.reset
-				? m.teachers_reset_success({ email: form.email ?? '', password: form.tempPassword })
-				: m.teachers_created_success({ email: form.email ?? '', password: form.tempPassword })
+			? {
+					message:
+						'reset' in form && form.reset
+							? m.teachers_reset_success({ email: form.email ?? '' })
+							: m.teachers_created_success({ email: form.email ?? '' }),
+					fields: [
+						{ label: m.credential_email(), value: form.email ?? '' },
+						{ label: m.teachers_credential_heading(), value: form.tempPassword }
+					]
+				}
 			: null
 	);
 </script>
@@ -74,8 +82,8 @@
 	{#if credential}
 		<!-- One-time credential: stays until dismissed, unlike a toast. -->
 		<ix-message-bar type="success" persistent style="display:block; margin-bottom: var(--space-4);">
-			<strong>{m.teachers_credential_heading()}:</strong>
-			<span class="credential">{credential}</span>
+			<span>{credential.message}</span>
+			<CredentialFields fields={credential.fields} />
 		</ix-message-bar>
 	{/if}
 

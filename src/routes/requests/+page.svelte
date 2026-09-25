@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -11,13 +12,20 @@
 
 	// Approval shows the student's one-time username/PIN, so it stays on
 	// screen; rejected/cleared are short confirmations, so they're toasts.
+	// A partial approval (credentials live, record not saved) shows them too,
+	// as a warning -- its error toast no longer carries them (#41).
 	let credential = $derived(
-		form?.success && form.action === 'approved'
-			? m.requests_outcome_approved({
-					name: form.studentName || '',
-					username: form.username,
-					pin: form.pin
-				})
+		form && 'username' in form && form.username && form.pin
+			? {
+					partial: !form.success,
+					message: form.success
+						? m.requests_outcome_approved({ name: form.studentName || '' })
+						: m.requests_error_approve_partial(),
+					fields: [
+						{ label: m.credential_username(), value: form.username },
+						{ label: m.credential_pin(), value: form.pin }
+					]
+				}
 			: null
 	);
 
@@ -48,8 +56,13 @@
 	</header>
 
 	{#if credential}
-		<ix-message-bar type="success" persistent style="display:block; margin-bottom: var(--space-4);">
-			<span class="credential">{credential}</span>
+		<ix-message-bar
+			type={credential.partial ? 'warning' : 'success'}
+			persistent
+			style="display:block; margin-bottom: var(--space-4);"
+		>
+			<span>{credential.message}</span>
+			<CredentialFields fields={credential.fields} />
 		</ix-message-bar>
 	{/if}
 
