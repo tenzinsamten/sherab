@@ -43,6 +43,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 34 | Side menu | Selected "My Account" item turns into a white bar; its icon and text are invisible | fixed, to verify |
 | 35 | Class page `/teacher/classes/[id]` | Opening a class shows "404 Class not found" | fixed (errors now 500; still needs 0014 pushed), to verify |
 | 36 | Side menu | Menu should be expanded (icons + labels) by default for every role | fixed, to verify |
+| 37 | Class page `/teacher/classes/[id]` | Cards differ in size; Syllabus should be a same-size card that opens its own page | fixed (needs 0015 pushed), to verify |
+| 38 | Class page `/teacher/classes/[id]` | Remove the "Homework" button at the top right (the Homework card already links there) | fixed, to verify |
 
 ---
 
@@ -563,11 +565,60 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - Phones / tablets: keep collapsed there (recommended), or expanded too?
   - `pinned` (menu stays open next to the content instead of overlaying) on wide screens?
 
+
+## 37. Class page cards: same size, syllabus on its own page
+- **Seen (user, 2026-09-25, screenshot of class "Yaks"):** "keep same card size irrespective of data
+  or not. Syllabus is also a card and diff page"
+- **Today (#32):**
+  - Students and Homework are separate cards with different heights: Homework has an extra
+    "1 open · 1 total" line, and the grid uses `align-items: start`, so each card is only as tall
+    as its content.
+  - Syllabus is a full-width card below them with the text, links and an inline "Edit syllabus"
+    form.
+- **Wanted:**
+  - All cards the same size whether they have data or not.
+  - Syllabus is one more card of the same size in that row (e.g. a short status like "No
+    syllabus yet" / "3 links"), and clicking it opens a separate syllabus page.
+- **Change needed (for planning):**
+  - Cards: one equal-height grid (`align-items: stretch`, same min-height), each card with
+    label, big number/status, and an optional one-line note, so empty and filled cards match.
+  - New route `/teacher/classes/[id]/syllabus`: shows the syllabus text and links, with the edit
+    form (`SyllabusForm`, `set_class_syllabus`) on that page. Move the `setSyllabus` action there
+    from the class page.
+  - Class page: remove the inline syllabus block.
+- **Open questions:**
+  - What does the Syllabus card show: "Added" / "Not added yet", the first line of the text, or
+    the number of links?
+  - Syllabus page: view first with an **Edit** button, or the form directly?
+  - Should the Students card link somewhere too (e.g. scroll to the roster), so all three cards
+    are clickable?
+  - Same card style on the admin side (admin edits the syllabus inline on `/admin/classes`
+    today)?
+
+
+## 38. Remove the Homework button from the class page header
+- **Request (user, 2026-09-25):** "remove the Homework button on the top right"
+- **Today:** the class page header (`src/routes/teacher/classes/[id]/+page.svelte`) has an
+  `ix-button` "Homework" (icon `tasks-open`) linking to `/teacher/classes/[id]/homework`. Since
+  #32 the Homework card links to the same page, so the button is a duplicate.
+- **Change:** delete the button. The Homework card stays the way in; plan together with #37,
+  which reworks the cards (make sure the Homework card still clearly looks clickable).
+- **Check:** the homework list's "Back to roster" button still returns to the class page.
+
 ---
 
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+
+- 2026-09-25: #37/#38 planned and built. Decisions: one syllabus per class per **school year**
+  (Sept–Aug, stored by starting year, 2025 = 2025/26) in the new `class_syllabi` table (0015);
+  the 0014 single syllabus moves into the current year. Syllabus card shows how many syllabi a
+  class has and whether this year's exists; it opens a list page, each syllabus a view page
+  with Edit / Delete. Students see the current year's (or the newest). Admin gets the same pages
+  from a Syllabi column in `/admin/classes` (inline editor removed). Three equal clickable class
+  cards; Students jumps to the roster. Header Homework button removed. Migration
+  `0015_class_syllabi.sql` must be pushed.
 
 - 2026-09-25: #34–#36 fixed. #34 secondary nav-item colours for bottom-slot menu items.
   #35 `rowOr404()` (`src/lib/server/class-access.ts`): no row → 404, query error → logged 500, on

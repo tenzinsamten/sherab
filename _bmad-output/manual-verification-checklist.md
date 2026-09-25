@@ -128,6 +128,18 @@ As Teacher A at `/teacher/classes/[id]`:
 - [ ] Narrow window: menu starts collapsed; opening / closing it there doesn't change the
       wide-screen choice
 
+### Class cards and syllabi per school year (#37, #38, needs 0015 pushed)
+- [ ] Class page: no Homework button in the header; three cards (Students, Homework, Syllabi)
+      the same size with or without data, all clickable; Students jumps to the roster
+- [ ] Syllabi card: count, and "2025/26 added" / "None for 2025/26"
+- [ ] The syllabus saved before 0015 shows as the current school year's
+- [ ] Add a syllabus for another year → opens in edit mode; save → view shows text and links
+- [ ] A year that already has a syllabus isn't offered again
+- [ ] Edit / Cancel / Delete (with confirm, then back on the list with a toast)
+- [ ] Admin: `/admin/classes` Syllabi column → same list and detail pages work
+- [ ] Student: `/student` shows "Class syllabus 2025/26" (current year, else newest)
+- [ ] Teacher B can't open class 1's syllabus pages (404)
+
 ## 4. Gamification (Epic 4)
 ### Streaks (`/student`)
 - [ ] Empty state before any streak
