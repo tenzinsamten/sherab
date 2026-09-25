@@ -45,7 +45,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 36 | Side menu | Menu should be expanded (icons + labels) by default for every role | fixed, to verify |
 | 37 | Class page `/teacher/classes/[id]` | Cards differ in size; Syllabus should be a same-size card that opens its own page | fixed (needs 0015 pushed), to verify |
 | 38 | Class page `/teacher/classes/[id]` | Remove the "Homework" button at the top right (the Homework card already links there) | fixed, to verify |
-| 39 | Side menu (teacher) | Add a "My classes" section to the menu | open |
+| 39 | Side menu (teacher) | Add a "My classes" section to the menu | wontfix (not required, user 2026-09-25) |
 | 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
 
 ---
@@ -626,6 +626,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - A or B? (A is quicker to use for a teacher with 1–3 classes.)
   - Should the dashboard keep its class cards?
   - Admin too (e.g. a "Classes" group listing every class), or teachers only?
+- **Closed (user, 2026-09-25):** "leave 39, not required. we can mark as done". Classes stay
+  reachable from the dashboard's class cards.
 
 
 ## 40. Page changes flicker
