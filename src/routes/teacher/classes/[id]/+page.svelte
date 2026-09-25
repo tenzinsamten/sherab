@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import EnrollmentPanel from '$lib/components/EnrollmentPanel.svelte';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
@@ -260,6 +261,12 @@
 			</section>
 		{/if}
 	</div>
+
+	<EnrollmentPanel
+		className={data.class.name}
+		students={data.students}
+		enrollable={data.enrollable}
+	/>
 </div>
 
 <style>

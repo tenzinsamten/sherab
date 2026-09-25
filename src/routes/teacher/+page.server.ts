@@ -1,3 +1,4 @@
+import { enrolledStudentIds } from '$lib/server/enrollments';
 import { fetchAllHistoryRows } from '$lib/server/history-rows';
 import { buildTeacherHomeworkTiles } from '$lib/server/teacher-dashboard';
 import type { PageServerLoad } from './$types';
@@ -36,16 +37,12 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	const classIds = classes.map((c) => c.id);
 
 	const [
-		{ count: studentsCount, error: studentsError },
+		{ ids: studentIds, error: studentsError },
 		{ data: instanceRows, error: instancesError },
 		{ rows: history, error: historyError }
 	] = await Promise.all([
-		supabase
-			.from('profiles')
-			.select('id', { count: 'exact', head: true })
-			.eq('role', 'student')
-			.eq('status', 'approved')
-			.in('class_id', classIds),
+		// A student in two of this teacher's classes counts once (#42).
+		enrolledStudentIds(supabase, classIds),
 		// One class generates about one instance a week, so a teacher's
 		// instances stay well under PostgREST's 1000-row cap; history is the
 		// table that needs paging.
@@ -69,7 +66,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	return {
 		classes,
-		studentsCount: studentsCount ?? 0,
+		studentsCount: studentIds.length,
 		...tiles,
 		loadError: Boolean(studentsError || instancesError || historyError)
 	};

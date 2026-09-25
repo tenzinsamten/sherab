@@ -190,7 +190,13 @@ export function buildAssignmentViews(
 	instanceRows: InstanceRow[],
 	history: HomeworkHistoryRow[],
 	studentNameById: Map<string, string>,
-	today: string
+	today: string,
+	/**
+	 * The class's current roster (#42). A targeted student who has since left
+	 * the class is dropped unless they already did the homework: their open
+	 * homework is hidden, their done/reviewed history stays.
+	 */
+	enrolledIds?: Set<string>
 ): AssignmentView[] {
 	const instancesByAssignmentId = new Map<string, InstanceRow[]>();
 	for (const inst of instanceRows) {
@@ -235,6 +241,13 @@ export function buildAssignmentViews(
 							overdue: isOverdue(instance.due_date, entry, today)
 						};
 					})
+					.filter(
+						(s) =>
+							!enrolledIds ||
+							enrolledIds.has(s.studentId) ||
+							s.doneAt !== null ||
+							s.reviewedAt !== null
+					)
 					.sort((x, y) => x.displayName.localeCompare(y.displayName));
 
 				return {

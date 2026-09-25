@@ -2,6 +2,12 @@ import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import * as m from '$lib/paraglide/messages.js';
 import { listSyllabi } from '$lib/server/class-syllabus';
+import {
+	enrollStudent,
+	loadClassRoster,
+	loadEnrollableStudents,
+	unenrollStudent
+} from '$lib/server/enrollments';
 import { currentSchoolYear } from '$lib/school-year';
 import { loadAssignmentIndex } from '$lib/server/homework-view';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
@@ -53,21 +59,15 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		CLASS_MESSAGES
 	);
 
-	// Roster reads are scoped to approved students only (Boundaries):
-	// Pending/Rejected students never appear here, matching how
-	// requests/+page.server.ts is the only place that surfaces them.
-	const { data: studentRows, error: studentsError } = await supabase
-		.from('profiles')
-		.select('id, display_name, registration_name')
-		.eq('class_id', classId)
-		.eq('role', 'student')
-		.eq('status', 'approved')
-		.order('display_name', { ascending: true });
-
-	const students: StudentRow[] = (studentRows ?? []).map((s) => ({
-		id: s.id,
-		displayName: s.display_name ?? s.registration_name ?? s.id
-	}));
+	// Roster = the class's enrolled students (#42, class_enrollments), approved
+	// only (Boundaries): Pending/Rejected students never appear here, matching
+	// how requests/+page.server.ts is the only place that surfaces them.
+	const [roster, enrollable] = await Promise.all([
+		loadClassRoster(supabase, classId),
+		loadEnrollableStudents(supabase, classId)
+	]);
+	const students: StudentRow[] = roster.students;
+	const studentsError = roster.error;
 
 	const studentIds = students.map((s) => s.id);
 
@@ -143,6 +143,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	return {
 		class: cls,
 		students,
+		enrollable: enrollable.students,
 		skillHistory,
 		attendance,
 		currentSkills,
@@ -156,12 +157,27 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		},
 		currentYear,
 		loadError: Boolean(
-			studentsError || skillError || attendanceError || homeworkIndex.error || syllabusList.error
+			studentsError ||
+			enrollable.error ||
+			skillError ||
+			attendanceError ||
+			homeworkIndex.error ||
+			syllabusList.error
 		)
 	};
 };
 
 export const actions: Actions = {
+	enroll: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		return enrollStudent({ request, classId: params.id, supabase, user });
+	},
+
+	unenroll: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		return unenrollStudent({ request, classId: params.id, supabase, user });
+	},
+
 	setSkillStatus: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {

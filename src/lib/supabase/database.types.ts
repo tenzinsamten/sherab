@@ -169,6 +169,42 @@ export type Database = {
 					}
 				];
 			};
+			class_enrollments: {
+				Row: {
+					class_id: string;
+					enrolled_at: string;
+					enrolled_by: string | null;
+					student_id: string;
+				};
+				Insert: {
+					class_id: string;
+					enrolled_at?: string;
+					enrolled_by?: string | null;
+					student_id: string;
+				};
+				Update: {
+					class_id?: string;
+					enrolled_at?: string;
+					enrolled_by?: string | null;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_enrollments_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_enrollments_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_syllabi: {
 				Row: {
 					class_id: string;
@@ -626,6 +662,28 @@ export type Database = {
 				Returns: boolean;
 			};
 			generate_recurring_homework_instances: { Args: never; Returns: number };
+			enroll_student: {
+				Args: { p_class_id: string; p_student_id: string };
+				Returns: undefined;
+			};
+			unenroll_student: {
+				Args: { p_class_id: string; p_student_id: string };
+				Returns: undefined;
+			};
+			list_enrollable_students: {
+				Args: { p_class_id: string };
+				Returns: {
+					id: string;
+					display_name: string | null;
+					email: string | null;
+					class_names: string;
+				}[];
+			};
+			is_enrolled_in_class: {
+				Args: { p_student: string; p_class: string };
+				Returns: boolean;
+			};
+			is_teacher_of_student: { Args: { p_student: string }; Returns: boolean };
 			set_class_syllabus: {
 				Args: { p_class_id: string; p_syllabus: string; p_links: HomeworkReferenceLink[] };
 				Returns: undefined;

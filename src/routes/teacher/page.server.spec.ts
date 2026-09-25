@@ -55,7 +55,17 @@ describe('teacher dashboard +page.server.ts load', () => {
 	it('returns the classes and counts when every query succeeds', async () => {
 		const result = await run({
 			class_teachers: oneClass,
-			profiles: { data: [], count: 4, error: null }
+			// s2 is in two of the teacher's classes and counts once (#42).
+			class_enrollments: {
+				data: [
+					{ student_id: 's1' },
+					{ student_id: 's2' },
+					{ student_id: 's2' },
+					{ student_id: 's3' },
+					{ student_id: 's4' }
+				],
+				error: null
+			}
 		});
 		expect(result).toMatchObject({
 			classes: [{ id: 'c1', name: 'Yaks', code: 'RV7V4W' }],
@@ -64,7 +74,7 @@ describe('teacher dashboard +page.server.ts load', () => {
 		});
 	});
 
-	it.each(['profiles', 'homework_instances', 'homework_status_history'])(
+	it.each(['class_enrollments', 'homework_instances', 'homework_status_history'])(
 		'sets loadError when the %s query fails',
 		async (table) => {
 			const result = await run({

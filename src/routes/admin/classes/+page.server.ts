@@ -11,14 +11,18 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	const [
 		{ data: classes, error },
-		{ data: students, error: studentsError },
+		{ data: pending, error: pendingError },
+		{ data: enrollments, error: enrollmentsError },
 		{ data: syllabi, error: syllabiError }
 	] = await Promise.all([
 		supabase
 			.from('classes')
 			.select('id, name, code, created_at')
 			.order('created_at', { ascending: false }),
-		supabase.from('profiles').select('class_id, status').eq('role', 'student'),
+		// Pending = registrations into the class; approved = enrolled
+		// students (#42), who may be in several classes.
+		supabase.from('profiles').select('class_id').eq('role', 'student').eq('status', 'pending'),
+		supabase.from('class_enrollments').select('class_id'),
 		supabase.from('class_syllabi').select('class_id')
 	]);
 
@@ -28,12 +32,14 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	}
 
 	const counts = new Map<string, { approved: number; pending: number }>();
-	for (const s of students ?? []) {
-		if (!s.class_id || (s.status !== 'approved' && s.status !== 'pending')) continue;
-		const c = counts.get(s.class_id) ?? { approved: 0, pending: 0 };
-		c[s.status] += 1;
-		counts.set(s.class_id, c);
-	}
+	const bump = (classId: string | null, key: 'approved' | 'pending') => {
+		if (!classId) return;
+		const c = counts.get(classId) ?? { approved: 0, pending: 0 };
+		c[key] += 1;
+		counts.set(classId, c);
+	};
+	for (const e of enrollments ?? []) bump(e.class_id, 'approved');
+	for (const p of pending ?? []) bump(p.class_id, 'pending');
 
 	return {
 		classes: (classes ?? []).map((cls) => ({
@@ -42,7 +48,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			approvedCount: counts.get(cls.id)?.approved ?? 0,
 			pendingCount: counts.get(cls.id)?.pending ?? 0
 		})),
-		loadError: Boolean(error || studentsError || syllabiError)
+		loadError: Boolean(error || pendingError || enrollmentsError || syllabiError)
 	};
 };
 
@@ -100,19 +106,24 @@ export const actions: Actions = {
 		const classId = String(formData.get('classId') ?? '');
 		const className = String(formData.get('className') ?? '');
 
-		// RLS-gated read (admins see every student row): the friendly check
+		// RLS-gated reads (admins see every student row): the friendly check
 		// before the privileged cleanup below. The real guarantee that no
-		// approved/pending student is orphaned is the
-		// classes_prevent_delete_with_students trigger (0011).
-		const { data: students, error: studentsError } = await supabase
-			.from('profiles')
-			.select('id, status')
-			.eq('role', 'student')
-			.eq('class_id', classId);
-		if (studentsError) {
+		// enrolled or pending student is orphaned is the
+		// classes_prevent_delete_with_students trigger (0011, 0016).
+		const [
+			{ data: students, error: studentsError },
+			{ count: enrolledCount, error: enrolledError }
+		] = await Promise.all([
+			supabase.from('profiles').select('id, status').eq('role', 'student').eq('class_id', classId),
+			supabase
+				.from('class_enrollments')
+				.select('student_id', { count: 'exact', head: true })
+				.eq('class_id', classId)
+		]);
+		if (studentsError || enrolledError) {
 			return fail(400, { error: m.classes_error_delete_failed() });
 		}
-		if (students.some((s) => s.status === 'approved' || s.status === 'pending')) {
+		if ((enrolledCount ?? 0) > 0 || students.some((s) => s.status === 'pending')) {
 			return fail(400, { error: m.classes_error_delete_has_students({ name: className }) });
 		}
 

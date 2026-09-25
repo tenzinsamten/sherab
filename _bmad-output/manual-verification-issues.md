@@ -48,7 +48,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 39 | Side menu (teacher) | Add a "My classes" section to the menu | wontfix (not required, user 2026-09-25) |
 | 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
 | 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
-| 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | planned |
+| 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (needs 0016 pushed), to verify |
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | planned |
 
 ---
@@ -716,6 +716,19 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - Streaks: one per student (across classes) or one per class.
   - Team (`profiles.team_id`): stays one per student, or per class.
   - Leaving a class: what happens to that class's open homework.
+- **Fix (2026-09-25):** `0016_class_enrollments.sql` adds `class_enrollments` (backfilled from
+  approved students' `class_id`), filled on approval by `profiles_enroll_on_approval`. The
+  late-joiner trigger now fires per enrollment (`class_enrollments_assign_open_homework`). RLS
+  checks that used `profiles.class_id` now use `is_enrolled_in_class()` /
+  `is_teacher_of_student()`, as do the recurring-homework generator, the class delete guard, and
+  the teacher's view of streaks. The streak's holiday weeks look at all of the student's classes.
+  `enroll_student`, `unenroll_student` (refuses the last class) and `list_enrollable_students`
+  are the only writers. App: `src/lib/server/enrollments.ts` (roster, counts, actions) and
+  `EnrollmentPanel.svelte` on the teacher class page and `/admin/classes/[id]/students` (linked
+  from the Students column). Teacher homework views drop a student who left the class unless they
+  already did the homework. The migration was checked with a Postgres parser only; it was not
+  run (Docker off), and no RLS integration tests were added for it yet. The `/student` side is
+  #43.
 
 ---
 

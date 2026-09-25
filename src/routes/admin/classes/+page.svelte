@@ -105,7 +105,9 @@
 								<td><code>{cls.code}</code></td>
 								<td>
 									<span class="actions">
-										{m.classes_students_summary({ approved: cls.approvedCount })}
+										<a href={resolve('/admin/classes/[id]/students', { id: cls.id })}>
+											{m.classes_students_summary({ approved: cls.approvedCount })}
+										</a>
 										{#if cls.pendingCount > 0}
 											<ix-pill variant="warning">
 												{m.classes_pending_summary({ pending: cls.pendingCount })}

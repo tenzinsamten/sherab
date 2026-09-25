@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
+import { loadClassRoster } from '$lib/server/enrollments';
 import * as m from '$lib/paraglide/messages.js';
 import {
 	isValidDate,
@@ -26,21 +27,12 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		CLASS_MESSAGES
 	);
 
-	const { data: studentRows, error: studentsError } = await supabase
-		.from('profiles')
-		.select('id, display_name, registration_name')
-		.eq('class_id', params.id)
-		.eq('role', 'student')
-		.eq('status', 'approved')
-		.order('display_name', { ascending: true });
+	const roster = await loadClassRoster(supabase, params.id);
 
 	return {
 		class: cls,
-		students: (studentRows ?? []).map((s) => ({
-			id: s.id,
-			displayName: s.display_name ?? s.registration_name ?? s.id
-		})),
-		loadError: Boolean(studentsError)
+		students: roster.students,
+		loadError: roster.error
 	};
 };
 
@@ -161,29 +153,25 @@ export const actions: Actions = {
 		// target list against real, approved students of THIS class, the same
 		// "RLS-gated fetch first, privileged action after" shape used
 		// elsewhere in this codebase (e.g. requests/+page.server.ts).
-		const { data: studentRows, error: studentsError } = await supabase
-			.from('profiles')
-			.select('id')
-			.eq('class_id', classId)
-			.eq('role', 'student')
-			.eq('status', 'approved');
+		const roster = await loadClassRoster(supabase, classId);
 
-		if (studentsError) {
+		if (roster.error) {
 			return fail(400, {
 				error: m.homework_error_create_failed(),
 				action: 'createAssignment' as const
 			});
 		}
 
-		const approvedIds = new Set((studentRows ?? []).map((s) => s.id));
+		const approvedIds = new Set(roster.students.map((s) => s.id));
 		const targetIds =
 			targetMode === 'subset'
 				? selectedStudentIds.filter((id) => approvedIds.has(id))
 				: Array.from(approvedIds);
 
 		// A whole-class assignment may start with no students: students
-		// approved later get it from the profiles_assign_open_homework trigger
-		// (0013). An empty *subset* is a mistake, so that still fails.
+		// approved or added to the class later get it from the
+		// class_enrollments_assign_open_homework trigger (0013, 0016). An
+		// empty *subset* is a mistake, so that still fails.
 		if (targetMode === 'subset' && targetIds.length === 0) {
 			return fail(400, {
 				error: m.homework_error_no_students(),

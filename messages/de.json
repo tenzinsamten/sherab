@@ -490,5 +490,20 @@
 	"copy_failed": "Kopieren nicht möglich — bitte markieren und manuell kopieren.",
 	"credential_username": "Benutzername",
 	"credential_pin": "PIN",
-	"credential_email": "E-Mail"
+	"credential_email": "E-Mail",
+	"enroll_heading": "Klassenmitglieder",
+	"enroll_intro": "Füge eine Schülerin oder einen Schüler aus einer anderen Klasse hinzu oder entferne jemanden aus dieser Klasse. Aus der einzigen Klasse kann niemand entfernt werden.",
+	"enroll_none_available": "Alle genehmigten Schüler sind bereits in dieser Klasse.",
+	"enroll_student_label": "Schüler/in",
+	"enroll_student_placeholder": "Schüler/in auswählen",
+	"enroll_button": "Zur Klasse hinzufügen",
+	"enroll_success": "Zur Klasse hinzugefügt.",
+	"enroll_error_pick": "Bitte eine Schülerin oder einen Schüler auswählen.",
+	"enroll_error_failed": "Hinzufügen fehlgeschlagen. Bitte erneut versuchen.",
+	"unenroll_button": "Aus Klasse entfernen",
+	"unenroll_confirm": "{name} aus {className} entfernen? Offene Hausaufgaben dieser Klasse werden ausgeblendet; erledigte bleiben im Verlauf.",
+	"unenroll_success": "Aus der Klasse entfernt.",
+	"unenroll_error_failed": "Entfernen fehlgeschlagen. Bitte erneut versuchen.",
+	"unenroll_error_last_class": "Das ist die einzige Klasse dieser Person, daher kann sie nicht entfernt werden.",
+	"homework_former_student": "Ehemalige/r Schüler/in"
 }

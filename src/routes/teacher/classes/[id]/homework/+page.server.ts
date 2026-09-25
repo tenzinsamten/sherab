@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
+import { enrolledStudentIds } from '$lib/server/enrollments';
 import {
 	ASSIGNMENT_COLUMNS,
 	buildAssignmentViews,
@@ -69,11 +70,21 @@ export const load: PageServerLoad = async ({
 		rows = (data ?? []) as AssignmentRow[];
 		rowsError = Boolean(assignmentsError);
 	}
-	const details = await fetchInstancesAndHistory(supabase, pageIds);
+	const [details, roster] = await Promise.all([
+		fetchInstancesAndHistory(supabase, pageIds),
+		enrolledStudentIds(supabase, [params.id])
+	]);
 
 	// Keep the index's newest-first order (an `.in()` select doesn't).
 	const order = new Map(pageIds.map((id, i) => [id, i]));
-	const views = buildAssignmentViews(rows, details.instances, details.history, new Map(), today);
+	const views = buildAssignmentViews(
+		rows,
+		details.instances,
+		details.history,
+		new Map(),
+		today,
+		new Set(roster.ids)
+	);
 	const items = views
 		.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
 		.map((view) => summarise(view, openById.get(view.id) ?? true, today));
@@ -85,6 +96,6 @@ export const load: PageServerLoad = async ({
 		counts,
 		page,
 		pageCount,
-		loadError: index.error || rowsError || details.error
+		loadError: index.error || rowsError || details.error || roster.error
 	};
 };

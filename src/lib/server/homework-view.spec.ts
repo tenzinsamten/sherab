@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	buildAssignmentViews,
 	isOpen,
 	summarise,
 	type AssignmentInstanceView,
@@ -124,5 +125,57 @@ describe('summarise', () => {
 			latestTotal: 0,
 			overdue: false
 		});
+	});
+});
+
+describe('buildAssignmentViews with a roster (#42)', () => {
+	const row = {
+		id: 'a1',
+		title: 'Song practice',
+		skill_area: 'song' as const,
+		description: null,
+		reference_links: [],
+		whole_class: true,
+		recurrence_rule: null,
+		due_offset_days: null,
+		ends_on: null,
+		paused_at: null,
+		created_at: '2026-09-01T00:00:00Z'
+	};
+	const inst = {
+		id: 'i1',
+		assignment_id: 'a1',
+		period_start: '2026-09-20',
+		due_date: '2026-09-27',
+		archived_at: null
+	};
+	const history = (studentId: string, status: 'assigned' | 'done' | 'reviewed') => ({
+		id: `${studentId}-${status}`,
+		instanceId: 'i1',
+		studentId,
+		status,
+		recordedBy: null,
+		recordedAt: '2026-09-21T00:00:00Z'
+	});
+	const rows = [
+		history('stay', 'assigned'),
+		history('leftOpen', 'assigned'),
+		history('leftDone', 'assigned'),
+		history('leftDone', 'done')
+	];
+
+	it('keeps every targeted student without a roster', () => {
+		const [v] = buildAssignmentViews([row], [inst], rows, new Map(), TODAY);
+		expect(v.instances[0].students.map((s) => s.studentId).sort()).toEqual([
+			'leftDone',
+			'leftOpen',
+			'stay'
+		]);
+	});
+
+	it('drops a student who left the class unless they already did it', () => {
+		const [v] = buildAssignmentViews([row], [inst], rows, new Map(), TODAY, new Set(['stay']));
+		expect(v.instances[0].students.map((s) => s.studentId).sort()).toEqual(['leftDone', 'stay']);
+		expect(v.instances[0].doneCount).toBe(1);
 	});
 });

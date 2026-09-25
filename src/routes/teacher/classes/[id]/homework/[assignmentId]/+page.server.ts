@@ -6,6 +6,7 @@ import {
 	parseNonNegativeInt,
 	parseReferenceLinks
 } from '$lib/server/homework-details';
+import { loadClassRoster, studentDisplayName } from '$lib/server/enrollments';
 import {
 	ASSIGNMENT_COLUMNS,
 	buildAssignmentViews,
@@ -38,33 +39,43 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		HOMEWORK_MESSAGES
 	);
 
-	const [{ data: studentRows, error: studentsError }, details] = await Promise.all([
-		supabase
-			.from('profiles')
-			.select('id, display_name, registration_name')
-			.eq('class_id', params.id)
-			.eq('role', 'student')
-			.eq('status', 'approved'),
+	const [roster, details] = await Promise.all([
+		loadClassRoster(supabase, params.id),
 		fetchInstancesAndHistory(supabase, [assignmentRow.id])
 	]);
 
-	const studentNameById = new Map(
-		(studentRows ?? []).map((s) => [s.id, s.display_name ?? s.registration_name ?? s.id])
+	// Names: the roster, plus anyone who did this homework before leaving the
+	// class (#42) -- RLS may hide a former student's profile, hence the
+	// fallback label.
+	const studentNameById = new Map(roster.students.map((s) => [s.id, s.displayName]));
+	const formerIds = Array.from(new Set(details.history.map((h) => h.studentId))).filter(
+		(id) => !studentNameById.has(id)
 	);
+	if (formerIds.length > 0) {
+		const { data: formerRows } = await supabase
+			.from('profiles')
+			.select('id, display_name, registration_name')
+			.in('id', formerIds);
+		for (const row of formerRows ?? []) studentNameById.set(row.id, studentDisplayName(row));
+		for (const id of formerIds) {
+			if (!studentNameById.has(id)) studentNameById.set(id, m.homework_former_student());
+		}
+	}
 	const today = new Date().toISOString().slice(0, 10);
 	const [assignment] = buildAssignmentViews(
 		[assignmentRow as AssignmentRow],
 		details.instances,
 		details.history,
 		studentNameById,
-		today
+		today,
+		new Set(roster.students.map((s) => s.id))
 	);
 
 	return {
 		class: cls,
 		assignment,
 		today,
-		loadError: Boolean(studentsError || details.error)
+		loadError: Boolean(roster.error || details.error)
 	};
 };
 
