@@ -52,6 +52,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (0016 pushed), to verify |
 | 44 | Student side | Students have no "My profile" page | fixed, to verify |
 | 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
+| 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | open |
 
 ---
 
@@ -799,6 +800,29 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   should not claim "not in a class" when the class query failed.
 - **Fix (2026-09-25):** on a failed load, `/student` (and the classes card on `/account`) say
   "Couldn't load your homework. Please try again." instead.
+
+---
+
+## 46. Student menu: Dashboard, My classes, My homework, Team leaderboard
+- **Asked (user, 2026-09-25):** "i want following menu items for student: 1. dashboard, which has
+  summary of all 2. My classes 3. My home work 4. Team leaderboard"
+- **Today:** the student menu (`src/routes/+layout.svelte`, the `role === 'student'` branch of
+  `navItems`) has My Homework (`/student`, also the landing page via `roleHome()` in
+  `src/lib/role-home.ts`) and Leaderboard (`/leaderboard`), plus My Account at the bottom (#44).
+  The student's classes are listed on `/account` (#44); each class's syllabus is at
+  `/student/classes/[classId]/syllabus`.
+- **Likely shape (for planning):** Dashboard becomes the student's landing page with summary
+  tiles, like the teacher dashboard (#24); My classes gets its own page (list of classes, each
+  opening a class page with syllabus and that class's homework); My homework stays the current
+  `/student` list; Team leaderboard is the existing `/leaderboard` renamed in the menu.
+- **To decide when planning:**
+  - What the dashboard summarises: homework due this week / overdue / done, streak and badges
+    (currently on My Account since #44), team rank, classes count, next due homework?
+  - Routes: e.g. `/student` = dashboard, `/student/homework` = My homework,
+    `/student/classes` = My classes (moving the current list off `/student`).
+  - What a class page shows: syllabus, that class's homework, teacher name, classmates?
+  - Whether "My classes" on `/account` stays or moves entirely to the new page; whether streak and
+    badges move from My Account to the dashboard.
 
 ---
 
