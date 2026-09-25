@@ -50,6 +50,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
 | 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (needs 0016 pushed), to verify |
 | 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (needs 0016 pushed), to verify |
+| 44 | Student side | Students have no "My profile" page | open |
+| 45 | `/student` | The student's class isn't shown on their page | open (cause: 0016 not pushed) |
 
 ---
 
@@ -760,6 +762,35 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   has left, under "Former class". Each row opens `/student/homework/[instanceId]` with the
   description, links, status and Mark done. Shared code: `src/lib/server/student-homework.ts`
   (+ spec). Not checked in the browser yet: the hosted DB needs 0016 first.
+
+---
+
+## 44. Students have no profile page
+- **Asked (user, 2026-09-25):** "for student, there is no my profile page for students."
+- **Today:** `/account` (#23) is for admins and teachers only. `src/routes/account/+page.server.ts`
+  returns 403 for other roles, with the comment "Students sign in with a username + PIN that a
+  teacher or admin issues, so they have no page here". The student menu has only My Homework and
+  Leaderboard.
+- **To decide when planning:**
+  - What a student profile shows: name, username, their classes (#42), team, streak and badges
+    (these are on `/student` today)?
+  - What a student can change: display name? their own PIN (the admin/teacher password page
+    requires the current password and has its own rules)?
+  - Reuse `/account` for students, or a separate `/student/profile`.
+
+---
+
+## 45. The student's class isn't shown on their page
+- **Seen (user, 2026-09-25):** "I do not see the class that student joined in their page"
+- **Cause (checked 2026-09-25):** the hosted database doesn't have `class_enrollments` yet
+  (PostgREST answers `PGRST205 Could not find the table 'public.class_enrollments'`), so
+  migration 0016 (#42) hasn't been pushed. `/student` (#43) reads the student's classes from
+  that table, so it finds no class and shows "You're not in a class yet."
+- **Also wrong:** when loading the classes fails, `/student` says "You're not in a class yet"
+  instead of making clear the page failed to load. The error toast shows, but the empty state
+  is misleading.
+- **Next:** push `0016_class_enrollments.sql`, then check again. Separately, the empty state
+  should not claim "not in a class" when the class query failed.
 
 ---
 
