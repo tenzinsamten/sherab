@@ -81,6 +81,24 @@ As Teacher A at `/teacher/classes/[id]`:
 - [ ] Edit series → title updates on existing instances, Done statuses untouched
 - [ ] Pause series, end series
 
+### Teacher walkthrough fixes (#23–#27, needs 0013 pushed)
+- [ ] Teacher lands on **Dashboard** (`/teacher`): tiles for students, pending requests (links to
+      `/requests`), due this week, overdue, waiting for review, completion; class cards below
+- [ ] Teacher B's tiles don't include class 1's numbers
+- [ ] **My Account** (bottom of side menu, admin + teacher): change display name, shows in
+      `/admin/teachers`
+- [ ] Change password: wrong current password → error; new password works after sign-out, old
+      one doesn't; other signed-in devices are signed out
+- [ ] `/account` as a student → 403
+- [ ] Whole-class homework on a class with no approved students is created, shows "No students
+      yet"; approve a student → they see it on `/student`
+- [ ] Archived or past-due whole-class homework is not given to a newly approved student
+- [ ] Subset homework with no students ticked → error
+- [ ] Description with line breaks and several labelled links: shown to teacher and student
+- [ ] Add / remove link rows (max 10); a label with no URL is ignored
+- [ ] **Edit** works on one-off homework and on a series; Done/Reviewed marks unchanged
+- [ ] Existing homework's single link still shows after 0013 (backfilled)
+
 ## 4. Gamification (Epic 4)
 ### Streaks (`/student`)
 - [ ] Empty state before any streak

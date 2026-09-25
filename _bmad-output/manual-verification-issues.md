@@ -29,6 +29,11 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 20 | Toasts | Toasts appear bottom right; should be top right | fixed |
 | 21 | Admin create / delete actions | No progress indicator while a create or delete is running | fixed, to verify |
 | 22 | `/admin/classes` | Two classes can have the same name | fixed (0012 pushed 2026-09-25), to verify in UI |
+| 23 | Teacher account | A signed-in teacher can't update their own details or change their password | fixed (`/account`), to verify |
+| 24 | Teacher landing page | Teachers need a dashboard as their landing page (today they land on My classes) | fixed, to verify |
+| 25 | Homework create | One-off homework for the whole class fails when the class has no approved students | fixed (needs 0013 pushed), to verify |
+| 26 | Homework create | No field for a longer description / instructions, only title and one link | fixed (needs 0013 pushed), to verify |
+| 27 | Homework create | Only one reference link per homework; teachers need to add several | fixed (needs 0013 pushed), to verify |
 
 ---
 
@@ -314,11 +319,122 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Before pushing 0012:** remove or rename duplicate class names in the hosted DB (at least the
   three "Yaks" test classes), or the migration will fail.
 
+## 23. Teacher can't edit their own details or change their password
+- **Seen (user, 2026-09-25, teacher walkthrough step 1):** "as teacher logged, there is no option for
+  teacher to update his/her details. or to reset the password"
+- **What exists today:**
+  - No account/profile page for any signed-in role. The side menu has only My classes, Requests
+    and Leaderboard.
+  - Password: only the signed-out **Forgot password** link on `/login` (email reset link).
+    `/forgot-password` redirects signed-in users to `/`, so a teacher has to sign out first.
+    The admin can also reset it from `/admin/teachers` (#9), which issues a new temporary password.
+  - Teachers keep the temporary password from creation forever unless they use one of the above.
+    Nothing prompts them to change it.
+  - RLS: `profiles` has select-own but **no update-own policy** (0001_init.sql:171), so a
+    self-edit needs a new policy limited to safe columns, or a server action using the admin client.
+- **Open questions:**
+  - Which details can a teacher edit? Display name for sure. Email is the login identity
+    (needs the Auth Admin API / re-confirmation). Any other fields (phone, etc.)?
+  - Change password in-app: ask for the current password first, or only the new one twice?
+  - Force a password change on first login with the temporary password?
+  - Same account page for admins (and students, who use username + PIN)?
+
+## 24. Teacher dashboard as the landing page
+- **Request (user, 2026-09-25, teacher walkthrough):** "teacher also need a dashboard as landing page."
+- **Background:** #18 sends signed-in users to their role's start page (`roleHome()` in
+  `src/lib/role-home.ts`). It assumed teachers have no dashboard, so they land on `/teacher`
+  (My classes: one card per class with a View roster button). This answers #18's
+  "confirm this is wanted": not for teachers.
+- **Related:** #16's superseded idea of signed-in summary cards ("Teacher: their classes as cards
+  linking to each roster"), and the admin dashboard `/admin` (story 5-1) as the pattern to follow.
+- **Open questions (what goes on it):**
+  - Tiles like the admin one, scoped to the teacher's classes? Candidates: number of classes and
+    students, pending requests, homework due this week, overdue homework, homework completion %,
+    items waiting for review (Done but not Reviewed), last attendance date per class.
+  - Keep the class cards on the dashboard, or keep My classes as a separate menu item?
+  - Quick actions (mark attendance today, create homework) from the dashboard?
+  - Route: new `/teacher` dashboard with classes moved to `/teacher/classes`, or a new
+    `/teacher/dashboard`?
+  - Should students also get a dashboard (streak, badges, next homework), or stay on My homework?
+
+## 25. Whole-class homework fails on a class with no students
+- **Seen (user, 2026-09-25, teacher walkthrough step 5):** "Create assignment, I assigned to whole
+  class but it failed since no student is there."
+- **Cause (by design today):** a one-off assignment creates one status row per targeted student.
+  `createAssignment` (`src/routes/teacher/classes/[id]/homework/+page.server.ts:375`) returns
+  `fail(400)` with "No students to assign this to." (`homework_error_no_students`) when the class
+  has no **approved** students. Pending students don't count. The root layout shows it as an error
+  toast.
+- **Gaps:**
+  - The form doesn't warn beforehand: "Whole class" and Create stay enabled on an empty roster,
+    so the teacher fills in everything and only then gets the error.
+  - Students approved later never receive a one-off assignment made earlier (only the targets at
+    creation time get a row). So allowing an empty-class assignment would need new behaviour.
+  - Weekly (recurring) mode doesn't hit this check. Not yet verified what the generator does for
+    an empty class.
+- **Open questions:**
+  - Allow creating homework for an empty class, and have students approved later pick up the
+    class's open (not archived, not past due) whole-class assignments automatically?
+  - Or keep the rule and make it clear up front: a message on the homework page when the
+    roster is empty, and "Whole class" / Create disabled, with a clearer text such as
+    "This class has no approved students yet. Approve students in Requests first."
+  - Does the entered form data survive the error (title, link, date), or does the teacher have to
+    retype it? To check.
+
+## 26. Homework has no description field
+- **Seen (user, 2026-09-25, teacher walkthrough step 5):** "In create homework, there is no option to
+  add more detailed text"
+- **What exists:** the create form has title, skill area, reference link, and due date / weekly
+  settings. `homework_assignments` (0004_homework.sql:37) has `title`, `skill_area`,
+  `reference_link`, `recurrence_rule`, no description column.
+- **Change needed (for planning):**
+  - Migration: nullable `description text` on `homework_assignments` (with a length limit).
+  - Create form: a multi-line textarea. Recurring **Edit series** form too.
+  - Show it to students on `/student` and to teachers in the assignment list, with line breaks kept.
+    Plain text only, rendered escaped (no HTML).
+  - en/de/bo strings.
+- **Open questions:**
+  - Plain text, or basic formatting (bold, lists, clickable links)?
+  - Max length?
+  - For a weekly series: one description for every week, or editable per week's instance?
+  - Required or optional? Should a one-off be editable after creation (today only series can be
+    edited)?
+  - Several links: split out as #27. File attachments (e.g. an audio file for a song)?
+
+## 27. Only one reference link per homework
+- **Seen (user, 2026-09-25, teacher walkthrough step 5):** "it has option to add only one
+  reference. it should be able to take more"
+- **What exists:** a single `reference_link text` column on `homework_assignments`
+  (0004_homework.sql:42), one text input on the create form and the Edit series form, and one
+  "Open reference" link shown to students.
+- **Change needed (for planning):**
+  - Storage: either a `reference_links text[]` / jsonb column, or a child table
+    `homework_links (assignment_id, url, label, position)`. Migrate the existing `reference_link`
+    values into it.
+  - Form: an "Add link" button that adds another row, and remove per row. Same on Edit series.
+  - Display: list every link for teachers and on `/student`.
+- **Open questions:**
+  - Maximum number of links?
+  - Each link with a label ("Song recording", "Lyrics sheet"), or just the URL?
+  - Still no URL validation (current rule: teachers are trusted), or at least require http(s)?
+  - Plan together with #26 (description): one form/migration change for both.
+
 ---
 
 ## Log
 
 <!-- New issues get appended below as they're reported. -->
+
+- 2026-09-25: teacher walkthrough #23–#27 planned (`~/.claude/plans/bright-greeting-forest.md`) and
+  built in three commits. Decisions: #23 account page with display name + in-app password change
+  (current password required, no email change, no forced change on first login), also for admins;
+  #24 teacher dashboard (tiles + class cards) at `/teacher`, menu item renamed Dashboard;
+  #25 whole-class homework allowed on an empty class, and students approved later get the class's
+  open (not archived, not past due) whole-class homework via trigger
+  `profiles_assign_open_homework`; #26/#27 plain-text description (max 2000) and up to 10 links
+  with optional labels, one-off homework editable too. Migration
+  `0013_homework_details_and_late_joiners.sql` must be pushed before the homework pages work on
+  hosted. It was not run locally (Docker was off).
 
 - 2026-09-23: plan approved (`~/.claude/plans/lets-plan-it-now-snappy-steele.md`). iX 5.2 classic
   migrated app-wide; every error and confirmation is an iX toast; one-time credentials stay in a
