@@ -505,5 +505,15 @@
 	"unenroll_success": "Student removed from the class.",
 	"unenroll_error_failed": "Could not remove this student. Please try again.",
 	"unenroll_error_last_class": "This is the student's only class, so they can't be removed from it.",
-	"homework_former_student": "Former student"
+	"homework_former_student": "Former student",
+	"student_filter_todo": "To do ({count})",
+	"student_filter_done": "Done ({count})",
+	"student_no_classes": "You're not in a class yet.",
+	"student_done_empty": "No finished homework yet.",
+	"student_class_nothing_due": "Nothing due for this class right now.",
+	"student_class_syllabus_link": "Syllabus",
+	"student_class_former": "Former class",
+	"student_homework_back": "Back to my homework",
+	"student_homework_no_details": "No description or links for this homework.",
+	"student_syllabus_empty": "There's no syllabus for this class yet."
 }

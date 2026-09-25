@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
-	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
-	import { formatSchoolYear } from '$lib/school-year';
 	import { showToast } from '$lib/ix';
+	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const pending = createPending();
+
+	type Filter = 'todo' | 'done';
+	type Item = (typeof data.groups)[number]['items'][number];
 
 	$effect(() => {
 		if (form?.success) showToast('success', m.student_homework_mark_done_success());
@@ -28,6 +33,25 @@
 			? m.student_badges_entry_homework({ count: badge.milestone })
 			: m.student_badges_entry_attendance({ count: badge.milestone });
 	}
+
+	const listHref = resolve('/student');
+
+	function pageHref(filter: Filter, pageNumber: number): string {
+		const parts: string[] = [];
+		if (filter !== 'todo') parts.push(`filter=${filter}`);
+		if (pageNumber > 1) parts.push(`page=${pageNumber}`);
+		return parts.length > 0 ? `${listHref}?${parts.join('&')}` : listHref;
+	}
+
+	function detailHref(item: Item): string {
+		const href = resolve('/student/homework/[instanceId]', { instanceId: item.instanceId });
+		return data.filter === 'done' ? `${href}?from=done` : href;
+	}
+
+	let filters = $derived([
+		{ value: 'todo' as const, label: m.student_filter_todo({ count: data.counts.todo }) },
+		{ value: 'done' as const, label: m.student_filter_done({ count: data.counts.done }) }
+	]);
 </script>
 
 <svelte:head>
@@ -84,92 +108,192 @@
 		</ix-card>
 	</div>
 
-	{#if data.syllabus}
-		<section class="card" style="margin-bottom: var(--space-4);">
-			<h2>{m.student_syllabus_heading({ year: formatSchoolYear(data.syllabus.schoolYear) })}</h2>
-			<TextWithLinks text={data.syllabus.content} links={data.syllabus.links} />
-		</section>
+	<nav class="actions filter-nav" aria-label={m.student_homework_heading()}>
+		{#each filters as f (f.value)}
+			<ix-button
+				variant={data.filter === f.value ? 'primary' : 'secondary'}
+				href={pageHref(f.value, 1)}
+				aria-current={data.filter === f.value ? 'page' : undefined}
+			>
+				{f.label}
+			</ix-button>
+		{/each}
+	</nav>
+
+	{#if data.groups.length === 0}
+		<ix-empty-state
+			header={data.filter === 'todo' ? m.student_no_classes() : m.student_done_empty()}
+			icon="tasks-open"
+		></ix-empty-state>
 	{/if}
 
-	{#if data.items.length === 0}
-		<ix-empty-state header={m.student_homework_empty()} icon="tasks-open"></ix-empty-state>
-	{:else}
-		<ul class="homework-list">
-			{#each data.items as item (item.instanceId)}
-				<li class="card">
-					<p class="section-label">{skillLabel(item.skillArea)}</p>
-					<h2 class="actions" style="margin: 0 0 var(--space-2);">
-						{item.title}
-						{#if item.isRecurring}
-							<ix-pill variant="neutral" outline
-								><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
-							>
-						{/if}
-					</h2>
-					<p class="actions muted" style="margin: 0 0 var(--space-2);">
-						{m.student_homework_due_label({ date: item.dueDate })}
-						{#if item.overdue}
-							<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>
-						{/if}
-					</p>
-					{#if item.description}
-						<p class="homework-description">{item.description}</p>
-					{/if}
-					{#if item.referenceLinks.length > 0}
-						<ul class="homework-links">
-							{#each item.referenceLinks as link, i (i)}
-								<li>
-									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
-									<a href={link.url} target="_blank" rel="noopener noreferrer">
-										{link.label ?? m.student_homework_reference_link()}
-									</a>
-								</li>
-							{/each}
-						</ul>
-					{/if}
+	{#each data.groups as group (group.classId)}
+		<section class="card class-group">
+			<div class="class-group-header">
+				<h2>{group.name}</h2>
+				{#if group.hasSyllabus}
+					<a href={resolve('/student/classes/[classId]/syllabus', { classId: group.classId })}>
+						{m.student_class_syllabus_link()}
+					</a>
+				{/if}
+			</div>
 
-					<div class="actions" style="justify-content:space-between;">
-						{#if item.status === 'reviewed'}
-							<ix-pill variant="success">{m.student_homework_status_reviewed()}</ix-pill>
-						{:else if item.status === 'done'}
-							<ix-pill variant="info">{m.student_homework_status_done()}</ix-pill>
-						{:else}
-							<ix-pill variant="neutral">{m.student_homework_status_assigned()}</ix-pill>
-						{/if}
+			{#if group.items.length === 0}
+				<p class="muted" style="margin:0;">{m.student_class_nothing_due()}</p>
+			{:else}
+				<ul class="homework-list">
+					{#each group.items as item (item.instanceId)}
+						<li>
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- detailHref() builds on resolve() and only adds ?from=done. -->
+							<a class="homework-row" href={detailHref(item)}>
+								<span class="homework-row-title">
+									{item.title}
+									{#if item.isRecurring}
+										<ix-pill variant="neutral" outline
+											><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
+										>
+									{/if}
+									{#if item.overdue}
+										<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>
+									{/if}
+								</span>
+								<span class="muted homework-row-meta">
+									{skillLabel(item.skillArea)} · {m.student_homework_due_label({
+										date: item.dueDate
+									})}
+								</span>
+							</a>
+							<div class="homework-row-side">
+								{#if item.status === 'reviewed'}
+									<ix-pill variant="success">{m.student_homework_status_reviewed()}</ix-pill>
+								{:else if item.status === 'done'}
+									<ix-pill variant="info">{m.student_homework_status_done()}</ix-pill>
+								{:else}
+									<form
+										method="POST"
+										action="?/markDone"
+										use:enhance={pending.submit(`done:${item.instanceId}`)}
+									>
+										<input type="hidden" name="instanceId" value={item.instanceId} />
+										<ix-button
+											type="submit"
+											variant="secondary"
+											loading={pending.is(`done:${item.instanceId}`) || undefined}
+											disabled={pending.busy || undefined}
+										>
+											{m.student_homework_mark_done()}
+										</ix-button>
+									</form>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/each}
 
-						{#if item.status === 'assigned'}
-							<form method="POST" action="?/markDone" use:enhance>
-								<input type="hidden" name="instanceId" value={item.instanceId} />
-								<ix-button type="submit">{m.student_homework_mark_done()}</ix-button>
-							</form>
-						{/if}
-					</div>
-				</li>
-			{/each}
-		</ul>
+	{#if data.filter === 'done' && data.pageCount > 1}
+		<nav
+			class="pager"
+			aria-label={m.homework_pager_status({ page: data.page, total: data.pageCount })}
+		>
+			<ix-button
+				variant="secondary"
+				disabled={data.page <= 1 || undefined}
+				href={data.page > 1 ? pageHref('done', data.page - 1) : undefined}
+			>
+				{m.homework_pager_prev()}
+			</ix-button>
+			<span class="muted"
+				>{m.homework_pager_status({ page: data.page, total: data.pageCount })}</span
+			>
+			<ix-button
+				variant="secondary"
+				disabled={data.page >= data.pageCount || undefined}
+				href={data.page < data.pageCount ? pageHref('done', data.page + 1) : undefined}
+			>
+				{m.homework_pager_next()}
+			</ix-button>
+		</nav>
 	{/if}
 </div>
 
 <style>
-	.homework-description {
-		margin: 0 0 var(--space-2);
-		white-space: pre-line;
+	.filter-nav {
+		margin-bottom: var(--space-4);
 	}
 
-	.homework-links {
-		margin: 0 0 var(--space-2);
-		padding-left: var(--space-4);
+	.class-group + .class-group {
+		margin-top: var(--space-4);
+	}
+
+	.class-group-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-3);
+		margin-bottom: var(--space-2);
+	}
+
+	.class-group-header h2 {
+		margin: 0;
 	}
 
 	.homework-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+
+	.homework-list li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.homework-list li + li {
+		border-top: 1px solid var(--theme-color-soft-bdr);
+	}
+
+	.homework-row {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-4);
-		margin: 0;
-		padding: 0;
-		list-style: none;
+		gap: var(--space-1);
+		padding: var(--space-3) 0;
+		color: inherit;
+		text-decoration: none;
 	}
-	.homework-list .card + .card {
-		margin-top: 0;
+
+	.homework-row:hover .homework-row-title,
+	.homework-row:focus-visible .homework-row-title {
+		text-decoration: underline;
+	}
+
+	.homework-row-title {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		font-weight: 700;
+		font-size: var(--theme-font-size-l);
+	}
+
+	.homework-row-meta {
+		font-size: var(--theme-font-size-default);
+	}
+
+	.homework-row-side {
+		flex-shrink: 0;
+	}
+
+	.pager {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-3);
+		margin-top: var(--space-4);
 	}
 </style>

@@ -49,7 +49,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 40 | Whole app | Changing page flickers instead of a smooth transition | fixed, verified by user 2026-09-25 |
 | 41 | `/requests` (student approval) | Username and PIN shown after approving a student can't be copied easily; needs a copy action | fixed, to verify |
 | 42 | `/student` + data model | Student page shows only one class; a student can be enrolled in several classes | fixed (needs 0016 pushed), to verify |
-| 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | planned |
+| 43 | `/student` homework | All homework details are shown inline on one page; with many homework it needs a list + a homework detail page | fixed (needs 0016 pushed), to verify |
 
 ---
 
@@ -751,6 +751,15 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - Pagination / filters (Open, Done, Overdue), and whether past homework outside the look-ahead
     window becomes visible.
   - How this fits with the several-classes layout from #42.
+- **Fix (2026-09-25):** `/student` keeps the streak and badges tiles, then To do / Done buttons
+  (`?filter=done`, `?page=`) and one card per class (#42) with a Syllabus link
+  (`/student/classes/[classId]/syllabus`) and compact rows: title, recurring and overdue pills,
+  skill · due date, and a "Mark done" button (To do) or the status pill (Done). To do shows every
+  class, even with nothing due; it keeps the look-ahead window and hides homework from a class the
+  student has left. Done is 10 per page, latest finished first, and includes classes the student
+  has left, under "Former class". Each row opens `/student/homework/[instanceId]` with the
+  description, links, status and Mark done. Shared code: `src/lib/server/student-homework.ts`
+  (+ spec). Not checked in the browser yet: the hosted DB needs 0016 first.
 
 ---
 

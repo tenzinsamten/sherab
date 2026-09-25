@@ -505,5 +505,15 @@
 	"unenroll_success": "Aus der Klasse entfernt.",
 	"unenroll_error_failed": "Entfernen fehlgeschlagen. Bitte erneut versuchen.",
 	"unenroll_error_last_class": "Das ist die einzige Klasse dieser Person, daher kann sie nicht entfernt werden.",
-	"homework_former_student": "Ehemalige/r Schüler/in"
+	"homework_former_student": "Ehemalige/r Schüler/in",
+	"student_filter_todo": "Offen ({count})",
+	"student_filter_done": "Erledigt ({count})",
+	"student_no_classes": "Du bist noch in keiner Klasse.",
+	"student_done_empty": "Noch keine erledigten Hausaufgaben.",
+	"student_class_nothing_due": "Für diese Klasse ist gerade nichts fällig.",
+	"student_class_syllabus_link": "Lehrplan",
+	"student_class_former": "Frühere Klasse",
+	"student_homework_back": "Zurück zu meinen Hausaufgaben",
+	"student_homework_no_details": "Keine Beschreibung oder Links für diese Hausaufgabe.",
+	"student_syllabus_empty": "Für diese Klasse gibt es noch keinen Lehrplan."
 }
