@@ -113,3 +113,7 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
   summary: RLS suites (incl. Story 6-1) are skipped when no local Supabase is running, and there is no CI, so database regressions can pass `npm test`.
   evidence: every block in src/lib/server/rls.spec.ts is describe.skipIf(!reachable); the repo has no .github/ workflow. Repo-wide, pre-existing pattern.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-47-calendar-month-grid.md`
+  summary: The Tibetan (`bo`) message file carries English copies for new calendar dialog strings (and earlier keys); they need real translations.
+  evidence: `messages/bo.json` calendar_dialog_close, calendar_time_label, calendar_date_label, calendar_class_day_chip, calendar_day_button_label, calendar_admin_click_hint are identical to `en.json`.

@@ -557,7 +557,6 @@
 	"calendar_cancel_day_confirm": "Jede Klasse am {date} absagen? Wird der Tag später wiederhergestellt, kehrt jede Stunde in ihren vorherigen Zustand zurück.",
 	"calendar_cancel_session": "Stunde absagen",
 	"calendar_restore_session": "Stunde wiederherstellen",
-	"calendar_edit_session": "Uhrzeit ändern",
 	"calendar_start_time_label": "Beginn",
 	"calendar_duration_label": "Dauer (Minuten)",
 	"calendar_session_hint": "Leer lassen, um die Standardzeit der Klasse zu verwenden.",
@@ -584,5 +583,11 @@
 	"calendar_error_end_before_start": "Das Enddatum muss am oder nach dem Startdatum liegen.",
 	"calendar_error_range_too_long": "Füge höchstens ein Jahr auf einmal hinzu.",
 	"calendar_error_time_invalid": "Gib eine Uhrzeit als HH:MM ein.",
-	"calendar_error_duration_invalid": "Gib eine Dauer zwischen 15 und 480 Minuten ein."
+	"calendar_error_duration_invalid": "Gib eine Dauer zwischen 15 und 480 Minuten ein.",
+	"calendar_dialog_close": "Schließen",
+	"calendar_time_label": "Uhrzeit",
+	"calendar_date_label": "Datum",
+	"calendar_class_day_chip": "Unterrichtstag",
+	"calendar_day_button_label": "{date}: Unterrichtstage hinzufügen oder verwalten",
+	"calendar_admin_click_hint": "Wähle einen Tag im Kalender, um dort Unterrichtstage hinzuzufügen oder einen Unterrichtstag abzusagen oder wiederherzustellen."
 }

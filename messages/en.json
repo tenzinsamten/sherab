@@ -557,7 +557,6 @@
 	"calendar_cancel_day_confirm": "Cancel every class on {date}? Restoring the day later brings back each session as it was.",
 	"calendar_cancel_session": "Cancel session",
 	"calendar_restore_session": "Restore session",
-	"calendar_edit_session": "Change time",
 	"calendar_start_time_label": "Start time",
 	"calendar_duration_label": "Duration (minutes)",
 	"calendar_session_hint": "Leave empty to use the class default.",
@@ -584,5 +583,11 @@
 	"calendar_error_end_before_start": "The end date must be on or after the start date.",
 	"calendar_error_range_too_long": "Add at most one year of dates at a time.",
 	"calendar_error_time_invalid": "Enter a time as HH:MM.",
-	"calendar_error_duration_invalid": "Enter a duration between 15 and 480 minutes."
+	"calendar_error_duration_invalid": "Enter a duration between 15 and 480 minutes.",
+	"calendar_dialog_close": "Close",
+	"calendar_time_label": "Time",
+	"calendar_date_label": "Date",
+	"calendar_class_day_chip": "Class day",
+	"calendar_day_button_label": "{date}: add or manage class days",
+	"calendar_admin_click_hint": "Select a day in the calendar to add class days there, or to cancel or restore a class day."
 }
