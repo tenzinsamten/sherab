@@ -5,6 +5,12 @@ import {
 	UNIQUE_VIOLATION_CODE
 } from '$lib/server/class-code';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
+import { todayInBerlin } from '$lib/berlin-date';
+import {
+	parseScheduleInput,
+	scheduleErrorMessages,
+	scheduleFormValues
+} from '$lib/server/calendar';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -48,6 +54,8 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			approvedCount: counts.get(cls.id)?.approved ?? 0,
 			pendingCount: counts.get(cls.id)?.pending ?? 0
 		})),
+		// Default "From" of a new class's schedule (Story 6-4).
+		today: todayInBerlin(),
 		loadError: Boolean(error || pendingError || enrollmentsError || syllabiError)
 	};
 };
@@ -61,10 +69,25 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const name = String(formData.get('name') ?? '').trim();
+		// Story 6-4: the class's schedule is part of the create form; an
+		// invalid one creates nothing.
+		const schedule = scheduleFormValues(formData);
 
-		if (!name) {
-			return fail(400, { error: m.classes_error_name_required(), name });
+		// Name and schedule are validated together, so every problem shows at once.
+		const parsed = parseScheduleInput(schedule);
+		if (!name || !parsed.ok) {
+			return fail(400, {
+				...(name ? {} : { error: m.classes_error_name_required() }),
+				...(parsed.ok ? {} : { scheduleErrors: scheduleErrorMessages(parsed.errors) }),
+				name,
+				schedule
+			});
 		}
+
+		// The schedule goes into the insert itself: the insert trigger then
+		// creates the class's sessions on every class day it matches, earlier
+		// ones included when "From" is in the past.
+		const { weekdays, startTime, durationMinutes, startsOn, endsOn } = parsed.value;
 
 		// The unique constraint on classes.code is the real guarantee (AD-2:
 		// enforced in Postgres, not just here) -- insertClassWithUniqueCode only
@@ -72,7 +95,16 @@ export const actions: Actions = {
 		const { data: created, error } = await insertClassWithUniqueCode(async (code) => {
 			const result = await supabase
 				.from('classes')
-				.insert({ name, code, created_by: user.id })
+				.insert({
+					name,
+					code,
+					created_by: user.id,
+					schedule_weekdays: weekdays,
+					schedule_starts_on: startsOn,
+					schedule_ends_on: endsOn,
+					default_start_time: startTime,
+					default_duration_minutes: durationMinutes
+				})
 				.select('id, name, code, created_at')
 				.single();
 			return { data: result.data, error: result.error };
@@ -82,7 +114,7 @@ export const actions: Actions = {
 			// Any other unique violation is classes_name_unique_idx (0012): the
 			// name is taken, and the DB is the real guarantee (AD-2).
 			if (error.code === UNIQUE_VIOLATION_CODE && !isClassCodeCollision(error)) {
-				return fail(400, { error: m.classes_error_duplicate_name({ name }), name });
+				return fail(400, { error: m.classes_error_duplicate_name({ name }), name, schedule });
 			}
 			// insertClassWithUniqueCode exhausts its retries with the last
 			// code-collision error still attached -- that's a code-generation
@@ -91,7 +123,8 @@ export const actions: Actions = {
 			const isCodeGenerationFailure = !error.code || isClassCodeCollision(error);
 			return fail(isCodeGenerationFailure ? 500 : 400, {
 				error: isCodeGenerationFailure ? m.classes_code_generation_failed() : error.message,
-				name
+				name,
+				schedule
 			});
 		}
 

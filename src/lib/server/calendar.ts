@@ -1,8 +1,12 @@
 /**
- * Pure helpers for the /calendar page (Story 6-1): bulk class-day dates,
- * month navigation, form parsing and shaping the month's class days and
- * sessions into a date-grouped list. No I/O here; the route does the reads.
+ * Pure helpers for the /calendar page (Stories 6-1, 6-4): bulk class-day
+ * dates, month navigation, form parsing (incl. class schedules) and shaping
+ * the month's class days and sessions into a date-grouped list. No I/O here;
+ * the routes do the reads. Schedule errors are mapped to Paraglide messages
+ * here so /calendar and /admin/classes show the same wording.
  */
+
+import * as m from '$lib/paraglide/messages.js';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -99,6 +103,104 @@ export function parseDurationInput(value: string): Parsed<number | null> {
 		: { ok: false };
 }
 
+export type ScheduleInput = {
+	/** Sorted, distinct ISO weekdays (1-7), at least one. */
+	weekdays: number[];
+	startTime: string | null;
+	durationMinutes: number | null;
+	startsOn: string;
+	endsOn: string | null;
+};
+
+export type ScheduleField = 'weekdays' | 'startTime' | 'durationMinutes' | 'startsOn' | 'endsOn';
+
+export type ScheduleProblem = 'required' | 'invalid' | 'order';
+
+export type ScheduleParse =
+	| { ok: true; value: ScheduleInput }
+	| { ok: false; errors: Partial<Record<ScheduleField, ScheduleProblem>> };
+
+export type ScheduleFormValues = {
+	weekdays: string[];
+	startTime: string;
+	durationMinutes: string;
+	startsOn: string;
+	endsOn: string;
+};
+
+/** The raw schedule fields of a form (`weekday` checkboxes, `startTime`, `durationMinutes`, `startsOn`, `endsOn`). */
+export function scheduleFormValues(formData: FormData): ScheduleFormValues {
+	return {
+		weekdays: formData.getAll('weekday').map((v) => String(v)),
+		startTime: String(formData.get('startTime') ?? ''),
+		durationMinutes: String(formData.get('durationMinutes') ?? ''),
+		startsOn: String(formData.get('startsOn') ?? '').trim(),
+		endsOn: String(formData.get('endsOn') ?? '').trim()
+	};
+}
+
+/**
+ * Validates a class schedule (Story 6-4): at least one weekday 1-7, an
+ * optional `HH:MM` time and 15-480 minute duration (empty = not set), a
+ * required start date and an optional end date on or after it. Every field's
+ * problem is reported at once so the form can show them inline.
+ */
+export function parseScheduleInput(values: ScheduleFormValues): ScheduleParse {
+	const errors: Partial<Record<ScheduleField, ScheduleProblem>> = {};
+
+	const weekdays = [...new Set(values.weekdays.map((v) => v.trim()))];
+	if (weekdays.length === 0) errors.weekdays = 'required';
+	else if (!weekdays.every((v) => /^[1-7]$/.test(v))) errors.weekdays = 'invalid';
+
+	const startTime = parseTimeInput(values.startTime);
+	if (!startTime.ok) errors.startTime = 'invalid';
+	const duration = parseDurationInput(values.durationMinutes);
+	if (!duration.ok) errors.durationMinutes = 'invalid';
+
+	const startsOn = values.startsOn.trim();
+	if (startsOn === '') errors.startsOn = 'required';
+	else if (!isIsoDate(startsOn)) errors.startsOn = 'invalid';
+
+	const endsOnRaw = values.endsOn.trim();
+	const endsOn = endsOnRaw === '' ? null : endsOnRaw;
+	if (endsOn !== null) {
+		if (!isIsoDate(endsOn)) errors.endsOn = 'invalid';
+		else if (!errors.startsOn && endsOn < startsOn) errors.endsOn = 'order';
+	}
+
+	if (Object.keys(errors).length > 0 || !startTime.ok || !duration.ok) {
+		return { ok: false, errors };
+	}
+	return {
+		ok: true,
+		value: {
+			weekdays: weekdays.map(Number).sort((a, b) => a - b),
+			startTime: startTime.value,
+			durationMinutes: duration.value,
+			startsOn,
+			endsOn
+		}
+	};
+}
+
+/** The inline message for each invalid schedule field. */
+export function scheduleErrorMessages(
+	errors: Partial<Record<ScheduleField, ScheduleProblem>>
+): Partial<Record<ScheduleField, string>> {
+	const messages: Partial<Record<ScheduleField, string>> = {};
+	if (errors.weekdays) messages.weekdays = m.calendar_error_weekdays_required();
+	if (errors.startTime) messages.startTime = m.calendar_error_time_invalid();
+	if (errors.durationMinutes) messages.durationMinutes = m.calendar_error_duration_invalid();
+	if (errors.startsOn) messages.startsOn = m.calendar_error_date_invalid();
+	if (errors.endsOn) {
+		messages.endsOn =
+			errors.endsOn === 'order'
+				? m.calendar_error_until_before_from()
+				: m.calendar_error_date_invalid();
+	}
+	return messages;
+}
+
 /** `HH:MM[:SS]` -> `HH:MM`. */
 export function toHhMm(time: string): string {
 	return time.slice(0, 5);
@@ -127,6 +229,8 @@ export type EffectiveSessionRow = {
 	duration_minutes_override: number | null;
 	session_cancelled: boolean | null;
 	day_cancelled: boolean | null;
+	/** Story 6-4: a one-off session outside the class's schedule. */
+	extra?: boolean | null;
 };
 
 export type CalendarSession = {
@@ -141,6 +245,8 @@ export type CalendarSession = {
 	durationOverride: number | null;
 	/** The session's own flag, independent of the day's. */
 	sessionCancelled: boolean;
+	/** A one-off session outside the class's schedule (Story 6-4). */
+	extra: boolean;
 	status: SessionStatus;
 };
 
@@ -175,6 +281,7 @@ export function shapeSession(row: EffectiveSessionRow): CalendarSession {
 		startOverride: row.start_time_override ? toHhMm(row.start_time_override) : null,
 		durationOverride: row.duration_minutes_override,
 		sessionCancelled: Boolean(row.session_cancelled),
+		extra: Boolean(row.extra),
 		status: sessionStatus(row)
 	};
 }

@@ -5,6 +5,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -22,6 +23,29 @@
 			showToast('success', m.classes_deleted_success({ name: form.deleted }));
 		}
 	});
+
+	// A failed create keeps what was entered; otherwise the new-class default
+	// schedule: Sunday, from today (Berlin), no end, time unset (Story 6-4).
+	let schedule = $derived(
+		form && 'schedule' in form && form.schedule
+			? {
+					weekdays: form.schedule.weekdays.map(Number),
+					startTime: form.schedule.startTime,
+					durationMinutes: form.schedule.durationMinutes,
+					startsOn: form.schedule.startsOn,
+					endsOn: form.schedule.endsOn
+				}
+			: {
+					weekdays: [7],
+					startTime: null,
+					durationMinutes: null,
+					startsOn: data.today,
+					endsOn: null
+				}
+	);
+	let scheduleErrors = $derived(
+		form && 'scheduleErrors' in form && form.scheduleErrors ? form.scheduleErrors : {}
+	);
 
 	let deleteForm: HTMLFormElement | undefined = $state();
 	let deleteTarget = $state({ id: '', name: '' });
@@ -55,14 +79,8 @@
 
 	<section class="card">
 		<h2>{m.classes_create_heading()}</h2>
-		<form
-			method="POST"
-			action="?/create"
-			use:enhance={pending.submit('create')}
-			class="actions"
-			style="align-items:flex-end;"
-		>
-			<div class="field" style="flex:1; min-width:14rem; margin:0;">
+		<form method="POST" action="?/create" use:enhance={pending.submit('create')} novalidate>
+			<div class="field" style="max-width:32rem;">
 				<label for="name">{m.classes_name_label()}</label>
 				<input
 					id="name"
@@ -72,6 +90,18 @@
 					value={form?.success ? '' : (form && 'name' in form && form.name) || ''}
 				/>
 			</div>
+			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
+			{#key form}
+				<ScheduleFields
+					idPrefix="new-class"
+					weekdays={schedule.weekdays}
+					startTime={schedule.startTime}
+					durationMinutes={schedule.durationMinutes}
+					startsOn={schedule.startsOn}
+					endsOn={schedule.endsOn}
+					errors={scheduleErrors}
+				/>
+			{/key}
 			<ix-button
 				type="submit"
 				icon="add"
@@ -153,3 +183,10 @@
 		<input type="hidden" name="className" value={deleteTarget.name} />
 	</form>
 </div>
+
+<style>
+	.schedule-heading {
+		margin: var(--space-2) 0 var(--space-2);
+		font-size: var(--theme-font-size-l);
+	}
+</style>

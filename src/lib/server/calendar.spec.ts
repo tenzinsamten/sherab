@@ -5,7 +5,9 @@ import {
 	monthBounds,
 	parseDurationInput,
 	parseMonth,
+	parseScheduleInput,
 	parseTimeInput,
+	scheduleFormValues,
 	shapeMonth,
 	shiftMonth,
 	weeklyDates,
@@ -216,5 +218,129 @@ describe('shapeMonth', () => {
 			'2026-10-01'
 		);
 		expect(day.sessions.map((s) => s.id)).toEqual(['w', 'z', 'y', 'x']);
+	});
+});
+
+describe('class schedules (Story 6-4)', () => {
+	const valid = {
+		weekdays: ['7', '3'],
+		startTime: '10:00',
+		durationMinutes: '90',
+		startsOn: '2026-10-01',
+		endsOn: '2026-12-20'
+	};
+
+	it('parses a valid schedule: weekdays sorted and distinct, open end allowed', () => {
+		expect(parseScheduleInput({ ...valid, weekdays: ['7', '3', '7'] })).toEqual({
+			ok: true,
+			value: {
+				weekdays: [3, 7],
+				startTime: '10:00',
+				durationMinutes: 90,
+				startsOn: '2026-10-01',
+				endsOn: '2026-12-20'
+			}
+		});
+		const open = parseScheduleInput({ ...valid, endsOn: '', startTime: '', durationMinutes: '' });
+		expect(open).toMatchObject({
+			ok: true,
+			value: { endsOn: null, startTime: null, durationMinutes: null }
+		});
+		// Until = from is one day.
+		expect(parseScheduleInput({ ...valid, endsOn: valid.startsOn }).ok).toBe(true);
+	});
+
+	it('invalid schedule: no weekday, until before from, duration out of range, bad time', () => {
+		expect(parseScheduleInput({ ...valid, weekdays: [] })).toEqual({
+			ok: false,
+			errors: { weekdays: 'required' }
+		});
+		expect(parseScheduleInput({ ...valid, weekdays: ['0'] })).toEqual({
+			ok: false,
+			errors: { weekdays: 'invalid' }
+		});
+		expect(parseScheduleInput({ ...valid, weekdays: ['8'] })).toMatchObject({
+			errors: { weekdays: 'invalid' }
+		});
+		expect(parseScheduleInput({ ...valid, endsOn: '2026-09-30' })).toEqual({
+			ok: false,
+			errors: { endsOn: 'order' }
+		});
+		for (const durationMinutes of ['14', '481', '1.5', 'abc']) {
+			expect(parseScheduleInput({ ...valid, durationMinutes })).toEqual({
+				ok: false,
+				errors: { durationMinutes: 'invalid' }
+			});
+		}
+		expect(parseScheduleInput({ ...valid, startTime: '25:00' })).toEqual({
+			ok: false,
+			errors: { startTime: 'invalid' }
+		});
+		expect(parseScheduleInput({ ...valid, startsOn: '' })).toEqual({
+			ok: false,
+			errors: { startsOn: 'required' }
+		});
+		expect(parseScheduleInput({ ...valid, startsOn: '2026-02-31' })).toEqual({
+			ok: false,
+			errors: { startsOn: 'invalid' }
+		});
+	});
+
+	it('reports every invalid field at once', () => {
+		const result = parseScheduleInput({
+			weekdays: [],
+			startTime: 'x',
+			durationMinutes: '5',
+			startsOn: '2026-10-10',
+			endsOn: '2026-10-01'
+		});
+		expect(result).toEqual({
+			ok: false,
+			errors: {
+				weekdays: 'required',
+				startTime: 'invalid',
+				durationMinutes: 'invalid',
+				endsOn: 'order'
+			}
+		});
+	});
+
+	it('reads the schedule fields of a form', () => {
+		const form = new FormData();
+		form.append('weekday', '7');
+		form.append('weekday', '3');
+		form.set('startTime', '10:00');
+		form.set('durationMinutes', '90');
+		form.set('startsOn', ' 2026-10-01 ');
+		expect(scheduleFormValues(form)).toEqual({
+			weekdays: ['7', '3'],
+			startTime: '10:00',
+			durationMinutes: '90',
+			startsOn: '2026-10-01',
+			endsOn: ''
+		});
+	});
+
+	it('carries the extra flag into the shaped session', () => {
+		const [day] = shapeMonth(
+			[{ id: 'd1', day: '2026-10-10', cancelled: false }],
+			[
+				{
+					id: 's1',
+					class_id: 'c1',
+					class_name: 'Song',
+					class_day_id: 'd1',
+					start_time: '14:00:00',
+					duration_minutes: 60,
+					start_time_override: '14:00:00',
+					duration_minutes_override: 60,
+					session_cancelled: false,
+					day_cancelled: false,
+					extra: true
+				}
+			],
+			'2026-10-01'
+		);
+		expect(day.sessions[0]).toMatchObject({ extra: true, start: '14:00', end: '15:00' });
 	});
 });

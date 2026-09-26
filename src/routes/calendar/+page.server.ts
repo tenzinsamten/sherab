@@ -5,7 +5,10 @@ import {
 	monthBounds,
 	parseDurationInput,
 	parseMonth,
+	parseScheduleInput,
 	parseTimeInput,
+	scheduleErrorMessages,
+	scheduleFormValues,
 	shapeMonth,
 	shiftMonth,
 	toHhMm,
@@ -13,15 +16,24 @@ import {
 } from '$lib/server/calendar';
 import type { Actions, PageServerLoad } from './$types';
 
-export type ClassDefault = {
+/** A class the caller may edit, with its schedule (Story 6-4). */
+export type ClassSchedule = {
 	id: string;
 	name: string;
+	/** ISO weekdays 1 = Mon .. 7 = Sun. */
+	weekdays: number[];
 	startTime: string | null;
 	durationMinutes: number | null;
+	startsOn: string;
+	endsOn: string | null;
 };
 
+/** Postgres error codes the schedule / extra-session functions raise. */
+const INSUFFICIENT_PRIVILEGE = '42501';
+const UNIQUE_VIOLATION = '23505';
+
 /**
- * Calendar (Story 6-1): one month's class days and sessions, for every
+ * Calendar (Stories 6-1, 6-4): one month's class days and sessions, for every
  * signed-in role. RLS is the real barrier: class days are readable by
  * everyone, sessions only for the admin, the class's teachers and its
  * enrolled students. `role` here only decides which edit controls render.
@@ -56,23 +68,30 @@ export const load: PageServerLoad = async ({
 		supabase
 			.from('class_sessions_effective')
 			.select(
-				'id, class_id, class_name, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled'
+				'id, class_id, class_name, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled, extra'
 			)
 			.gte('day', first)
 			.lte('day', last),
 		canEdit
 			? supabase
 					.from('classes')
-					.select('id, name, default_start_time, default_duration_minutes')
+					.select(
+						'id, name, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on'
+					)
 					.order('name')
 			: Promise.resolve({ data: [], error: null })
 	]);
 
-	const classDefaults: ClassDefault[] = (classesResult.data ?? []).map((c) => ({
+	// RLS scopes this to every class for the admin and the assigned classes
+	// for a teacher: exactly the classes the caller may edit.
+	const classSchedules: ClassSchedule[] = (classesResult.data ?? []).map((c) => ({
 		id: c.id,
 		name: c.name,
+		weekdays: [...(c.schedule_weekdays ?? [])].sort((a, b) => a - b),
 		startTime: c.default_start_time ? toHhMm(c.default_start_time) : null,
-		durationMinutes: c.default_duration_minutes
+		durationMinutes: c.default_duration_minutes,
+		startsOn: c.schedule_starts_on,
+		endsOn: c.schedule_ends_on
 	}));
 
 	return {
@@ -85,7 +104,7 @@ export const load: PageServerLoad = async ({
 		nextMonth: shiftMonth(month, 1),
 		today,
 		days: shapeMonth(daysResult.data ?? [], sessionsResult.data ?? [], today),
-		classDefaults,
+		classSchedules,
 		loadError: Boolean(daysResult.error || sessionsResult.error || classesResult.error)
 	};
 };
@@ -170,32 +189,81 @@ export const actions: Actions = {
 		};
 	},
 
-	/** Admin or a teacher of the class: the class's default start time and duration. */
-	setClassDefault: async ({ request, locals: { supabase, safeGetSession } }) => {
+	/**
+	 * Admin or a teacher of the class: the class's schedule (weekdays, time,
+	 * duration, from, until). The function regenerates sessions from today
+	 * (Berlin) on; earlier sessions are never changed.
+	 */
+	setClassSchedule: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { error: m.calendar_error_failed() });
 
 		const formData = await request.formData();
 		const classId = String(formData.get('classId') ?? '');
+		const parsed = parseScheduleInput(scheduleFormValues(formData));
+		if (!parsed.ok) {
+			return fail(400, { scheduleErrors: scheduleErrorMessages(parsed.errors), classId });
+		}
+
+		const { weekdays, startTime, durationMinutes, startsOn, endsOn } = parsed.value;
+		const { error } = await supabase.rpc('set_class_schedule', {
+			p_class_id: classId,
+			p_weekdays: weekdays,
+			p_start_time: startTime,
+			p_duration_minutes: durationMinutes,
+			p_starts_on: startsOn,
+			p_ends_on: endsOn
+		});
+		// 42501 (not a teacher of the class), P0002 (no such class) or a
+		// check violation: the generic message, never the raw Postgres text.
+		if (error) return fail(400, { error: m.calendar_error_failed() });
+
+		return { success: true, action: 'scheduleSaved' as const };
+	},
+
+	/**
+	 * Admin or a teacher of the class: a one-off session on a class day
+	 * outside the class's schedule. Empty time / duration = the class's.
+	 */
+	addExtraSession: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { error: m.calendar_error_failed() });
+
+		const formData = await request.formData();
+		const classId = String(formData.get('classId') ?? '').trim();
+		const dayId = String(formData.get('dayId') ?? '').trim();
 		const startTime = parseTimeInput(String(formData.get('startTime') ?? ''));
 		const duration = parseDurationInput(String(formData.get('durationMinutes') ?? ''));
-		if (!startTime.ok || !duration.ok) {
+		if (!classId || !dayId || !startTime.ok || !duration.ok) {
 			return fail(400, {
-				defaultError: !startTime.ok
-					? m.calendar_error_time_invalid()
-					: m.calendar_error_duration_invalid(),
-				classId
+				extraError: !classId
+					? m.calendar_error_class_required()
+					: !dayId
+						? m.calendar_error_failed()
+						: !startTime.ok
+							? m.calendar_error_time_invalid()
+							: m.calendar_error_duration_invalid(),
+				dayId
 			});
 		}
 
-		const { error } = await supabase.rpc('set_class_default', {
+		const { error } = await supabase.rpc('add_extra_session', {
 			p_class_id: classId,
+			p_class_day_id: dayId,
 			p_start_time: startTime.value,
 			p_duration_minutes: duration.value
 		});
-		if (error) return fail(400, { error: m.calendar_error_failed() });
+		if (error) {
+			return fail(error.code === INSUFFICIENT_PRIVILEGE ? 403 : 400, {
+				extraError:
+					error.code === UNIQUE_VIOLATION
+						? m.calendar_error_extra_exists()
+						: m.calendar_error_failed(),
+				dayId
+			});
+		}
 
-		return { success: true, action: 'defaultSaved' as const };
+		return { success: true, action: 'extraAdded' as const };
 	},
 
 	/** Admin or a teacher of the class: one session's overrides. Empty = follow the class default. */

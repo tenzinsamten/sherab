@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
 	berlinToday,
 	createCalendarFixture,
+	isoWeekday,
 	openCalendar,
 	service,
 	signIn,
@@ -359,6 +360,232 @@ test.describe('wide screen (1280px)', () => {
 		} finally {
 			// Remove it again (its sessions cascade) so later tests see 3 days.
 			await service.from('class_days').delete().eq('day', first);
+		}
+	});
+});
+
+test.describe('class schedules & extra sessions (Story 6-4)', () => {
+	test.use({ viewport: WIDE });
+
+	const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+	const weekdayLabel = (isoDay: number) => WEEKDAY_LABELS[isoDay - 1];
+
+	/**
+	 * An extra class day three days after the first fixture day: another
+	 * weekday, so no fixture class is scheduled on it. Removed again (its
+	 * sessions cascade) so the phone test still sees six chips.
+	 */
+	async function withOtherWeekdayClassDay(run: (date: string) => Promise<void>) {
+		const date = `${fx.month}-07`;
+		const { error } = await service.from('class_days').insert({ day: date });
+		if (error) throw new Error(`add class day: ${error.message}`);
+		try {
+			await run(date);
+		} finally {
+			await service.from('class_days').delete().eq('day', date);
+		}
+	}
+
+	test('teacher edits a schedule: sessions move to the new weekday, the form keeps it', async ({
+		page
+	}) => {
+		// Its own class (taught by the fixture teacher), so the other tests'
+		// sessions and ids stay as they are.
+		const name = `E2E47 ${fx.tag} D`;
+		const { data: cls, error } = await service
+			.from('classes')
+			.insert({
+				name,
+				code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+				default_start_time: '09:00',
+				default_duration_minutes: 45,
+				schedule_weekdays: [fx.weekday],
+				schedule_starts_on: `${fx.year}-01-01`,
+				schedule_ends_on: `${fx.year}-12-20`
+			})
+			.select('id')
+			.single();
+		if (error || !cls) throw new Error(`create class D: ${error?.message}`);
+		try {
+			const { error: assignError } = await service
+				.from('class_teachers')
+				.insert({ class_id: cls.id, teacher_id: fx.teacher.id });
+			if (assignError) throw new Error(`assign D: ${assignError.message}`);
+
+			await withOtherWeekdayClassDay(async (date) => {
+				const other = isoWeekday(date);
+				await signIn(page, fx.teacher);
+				await openCalendar(page, fx.month);
+				const chipsOfD = page.locator('.ec-event.chip').filter({ hasText: name });
+				await expect(chipsOfD).toHaveCount(3);
+
+				const form = page.locator(`form.schedule-form[data-class-id="${cls.id}"]`);
+				await expect(form.getByRole('heading', { name })).toBeVisible();
+				const current = form.getByRole('checkbox', { name: weekdayLabel(fx.weekday) });
+				const next = form.getByRole('checkbox', { name: weekdayLabel(other) });
+				await expect(current).toBeChecked();
+				await expect(next).not.toBeChecked();
+				const until = form.locator(`#schedule-${cls.id}-until`);
+				await expect(until).toHaveValue(`${fx.year}-12-20`);
+
+				// No weekday: inline error, nothing saved.
+				await current.uncheck();
+				await form.getByRole('button', { name: 'Save' }).click();
+				await expect(form.locator('.field-error')).toHaveText('Pick at least one weekday.');
+				await expect(current).toHaveAttribute('aria-invalid', 'true');
+				await expect(current).toHaveAccessibleDescription('Pick at least one weekday.');
+				// The failed save keeps what was entered.
+				await expect(current).not.toBeChecked();
+				await expect(until).toHaveValue(`${fx.year}-12-20`);
+				await expect(chipsOfD).toHaveCount(3);
+
+				await next.check();
+				await form.getByRole('button', { name: 'Save' }).click();
+				await expect(page.locator('ix-toast').getByText('Schedule saved.')).toBeVisible();
+
+				// Future sessions follow the new schedule.
+				await expect(chipsOfD).toHaveCount(1);
+				expect(await inside(chipsOfD.first(), gridCell(page, date))).toBe(true);
+				await expect(chipsOfD.first()).toHaveText(`09:00 ${name}`);
+				await expect(form.locator('.field-error')).toHaveCount(0);
+				await expect(next).toBeChecked();
+				await expect(current).not.toBeChecked();
+				await expect(next).not.toHaveAttribute('aria-invalid');
+				// "Until" survives a save that only changed the weekdays.
+				await expect(until).toHaveValue(`${fx.year}-12-20`);
+				const { data: saved } = await service
+					.from('classes')
+					.select('schedule_ends_on')
+					.eq('id', cls.id)
+					.single();
+				expect(saved?.schedule_ends_on).toBe(`${fx.year}-12-20`);
+				// Other classes are untouched.
+				await expect(fixtureChips(page)).toHaveCount(6);
+			});
+		} finally {
+			await service.from('classes').delete().eq('id', cls.id);
+		}
+	});
+
+	test('admin adds an extra session from the day dialog: chip on that day, marked Extra', async ({
+		page
+	}) => {
+		await withOtherWeekdayClassDay(async (date) => {
+			await signIn(page, fx.admin);
+			await openCalendar(page, fx.month);
+			const modal = dayModal(page);
+			const chipOfA = page
+				.locator('.ec-event.chip')
+				.filter({ hasText: fx.classA.name })
+				.filter({ hasText: 'Extra' });
+			await expect(chipOfA).toHaveCount(0);
+
+			await page.locator(`button.day-button[data-date="${date}"]`).click();
+			await expect(isOpen(modal)).toBeVisible();
+			await expect(modal.getByRole('heading', { name: 'Add extra session' })).toBeVisible();
+			await modal.locator('#extra-class').selectOption({ label: fx.classA.name });
+			await modal.locator('#extra-start').fill('14:00');
+			await modal.locator('#extra-duration').fill('60');
+			await modal.getByRole('button', { name: 'Add extra session' }).click();
+			await expect(isOpen(modal)).toHaveCount(0);
+
+			await expect(chipOfA).toHaveCount(1);
+			await expect(chipOfA).toHaveText(`14:00 ${fx.classA.name} Extra`);
+			expect(await inside(chipOfA, gridCell(page, date))).toBe(true);
+
+			// The session dialog says Extra too; the class is no longer offered.
+			await chipOfA.click();
+			const sessionDialog = sessionModal(page);
+			await expect(isOpen(sessionDialog)).toBeVisible();
+			await expect(sessionDialog.locator('.extra-pill')).toHaveText('Extra');
+			await expect(sessionDialog).toContainText('14:00–15:00');
+			await page.keyboard.press('Escape');
+			await expect(isOpen(sessionDialog)).toHaveCount(0);
+
+			await page.locator(`button.day-button[data-date="${date}"]`).click();
+			await expect(isOpen(modal)).toBeVisible();
+			await expect(modal.locator('#extra-class option', { hasText: fx.classA.name })).toHaveCount(
+				0
+			);
+		});
+	});
+
+	test('teacher opens a class day: extra-session form lists only their classes without a session', async ({
+		page
+	}) => {
+		await signIn(page, fx.teacher);
+		await openCalendar(page, fx.month);
+		const modal = dayModal(page);
+
+		// A class day where both of the teacher's classes already have a session.
+		await page.locator(`button.day-button[data-date="${fx.days[2]}"]`).click();
+		await expect(isOpen(modal)).toBeVisible();
+		await expect(modal).toContainText(
+			'Every class you can edit already has a session on this day.'
+		);
+		await expect(modal.getByRole('button', { name: 'Cancel day' })).toHaveCount(0);
+		await page.keyboard.press('Escape');
+
+		// Not a class day: no dialog for teachers.
+		await expect(page.locator(`button.day-button[data-date="${fx.emptyDate}"]`)).toHaveCount(0);
+	});
+});
+
+test.describe('admin creates a class with a schedule (Story 6-4)', () => {
+	test.use({ viewport: WIDE });
+
+	test('form defaults to Sunday from today; the class is created with the chosen schedule', async ({
+		page
+	}) => {
+		const name = `E2E47 ${fx.tag} New`;
+		try {
+			await signIn(page, fx.admin);
+			await page.goto('/admin/classes');
+			await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await page.waitForLoadState('networkidle');
+
+			// Defaults: Sunday only, From = today (Berlin), no Until.
+			for (const [label, checked] of [
+				['Mon', false],
+				['Wed', false],
+				['Sat', false],
+				['Sun', true]
+			] as const) {
+				const box = page.getByRole('checkbox', { name: label, exact: true });
+				if (checked) await expect(box).toBeChecked();
+				else await expect(box).not.toBeChecked();
+			}
+			await expect(page.locator('#new-class-from')).toHaveValue(berlinToday());
+			await expect(page.locator('#new-class-until')).toHaveValue('');
+
+			await page.locator('#name').fill(name);
+			await page.getByRole('checkbox', { name: 'Wed', exact: true }).check();
+			await page.locator('#new-class-start').fill('10:00');
+			await page.locator('#new-class-duration').fill('90');
+			await page.locator('#new-class-until').fill(`${fx.year}-12-20`);
+			await page.getByRole('button', { name: 'Create class' }).click();
+
+			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
+			await expect(page.getByRole('cell', { name, exact: true })).toBeVisible();
+			const { data } = await service
+				.from('classes')
+				.select(
+					'schedule_weekdays, schedule_starts_on, schedule_ends_on, default_start_time, default_duration_minutes'
+				)
+				.eq('name', name)
+				.single();
+			expect(data).toEqual({
+				schedule_weekdays: [3, 7],
+				schedule_starts_on: berlinToday(),
+				schedule_ends_on: `${fx.year}-12-20`,
+				default_start_time: '10:00:00',
+				default_duration_minutes: 90
+			});
+			// The form is back to the defaults for the next class.
+			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).not.toBeChecked();
+			await expect(page.getByRole('checkbox', { name: 'Sun', exact: true })).toBeChecked();
+		} finally {
+			await service.from('classes').delete().eq('name', name);
 		}
 	});
 });

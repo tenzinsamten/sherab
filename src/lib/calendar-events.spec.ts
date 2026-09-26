@@ -18,6 +18,7 @@ function session(overrides: Partial<CalendarSession> = {}): CalendarSession {
 		startOverride: null,
 		durationOverride: null,
 		sessionCancelled: false,
+		extra: false,
 		status: 'scheduled',
 		...overrides
 	};

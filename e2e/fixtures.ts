@@ -48,6 +48,8 @@ export type CalendarFixture = {
 	days: string[];
 	/** A date in the month that is not a class day. */
 	emptyDate: string;
+	/** ISO weekday (1 = Mon .. 7 = Sun) of the class days: every fixture class's schedule. */
+	weekday: number;
 	classA: { id: string; name: string };
 	classB: { id: string; name: string };
 	/** No teacher and no default start time: only the admin sees it, as "Time not set". */
@@ -92,6 +94,15 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 	const month = `${year}-10`;
 	const days = [`${month}-04`, `${month}-11`, `${month}-18`];
 	const emptyDate = `${month}-06`;
+	// Story 6-4: a class only gets sessions on class days its schedule
+	// matches, so every fixture class is scheduled on the class days'
+	// weekday for the whole year (set before the class days are added).
+	const weekday = isoWeekday(days[0]);
+	const schedule = {
+		schedule_weekdays: [weekday],
+		schedule_starts_on: `${year}-01-01`,
+		schedule_ends_on: `${year}-12-31`
+	};
 
 	const userIds: string[] = [];
 	const classIds: string[] = [];
@@ -129,7 +140,8 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 						name,
 						code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
 						default_start_time: start,
-						default_duration_minutes: duration
+						default_duration_minutes: duration,
+						...schedule
 					})
 					.select('id')
 					.single(),
@@ -148,7 +160,11 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 		classC.id = check(
 			await service
 				.from('classes')
-				.insert({ name: classC.name, code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.insert({
+					name: classC.name,
+					code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+					...schedule
+				})
 				.select('id')
 				.single(),
 			'create class C'
@@ -237,6 +253,7 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 			month,
 			days,
 			emptyDate,
+			weekday,
 			classA,
 			classB,
 			classC,
@@ -271,6 +288,11 @@ export async function openCalendar(page: Page, month?: string) {
 	await page.locator('.ec').waitFor();
 	// iX components (the dialogs) upgrade asynchronously.
 	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+}
+
+/** ISO weekday (1 = Mon .. 7 = Sun) of a `YYYY-MM-DD` date. */
+export function isoWeekday(date: string): number {
+	return new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
 }
 
 /** Today's date in Europe/Berlin (`YYYY-MM-DD`). */

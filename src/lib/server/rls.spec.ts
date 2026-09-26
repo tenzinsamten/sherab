@@ -5136,13 +5136,20 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 		return 3000 + Math.floor(Math.random() * 6000);
 	}
 
-	/** A class taught by teacherA (and optionally teacherA2). */
+	/**
+	 * A class taught by teacherA (and optionally teacherA2). Story 6-4: its
+	 * schedule covers every weekday since 1900, so -- as these 6-1 scenarios
+	 * assume -- it has a session on every class day.
+	 */
 	async function createClass(prefix: string, teachers = [teacherA.id]) {
 		const { data, error } = await admin.client
 			.from('classes')
 			.insert({
-				name: `Story 6-1 ${prefix}`,
-				code: `S6${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				// Unique per run: class names are unique (0012) and runs leave rows behind.
+				name: `Story 6-1 ${prefix} ${crypto.randomUUID().slice(0, 6)}`,
+				code: `S6${crypto.randomUUID().slice(0, 4).toUpperCase()}`,
+				schedule_weekdays: [1, 2, 3, 4, 5, 6, 7],
+				schedule_starts_on: '1900-01-01'
 			})
 			.select('id')
 			.single();
@@ -5259,7 +5266,7 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 		expect(pairs.size).toBe(8);
 	});
 
-	it('a class created after class days exist gets a session on each of them', async () => {
+	it('a class created after class days exist gets a session on each one its schedule matches', async () => {
 		const year = randomYear();
 		await addDays([`${year}-03-01`, `${year}-03-08`, `${year}-03-15`]);
 		const classId = await createClass('Late Class');
@@ -5564,3 +5571,469 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 		});
 	});
 });
+
+describe.skipIf(!reachable)(
+	'Story 6-4 class schedules & extra sessions (requires local Supabase)',
+	() => {
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacherA = await createSignedInUser('teacher');
+			teacherB = await createSignedInUser('teacher');
+		}, 30000);
+
+		const SUN = 7;
+		const WED = 3;
+		const SAT = 6;
+
+		/** A random far-future year (class days are unique school-wide). */
+		function futureYear() {
+			return 3000 + Math.floor(Math.random() * 6000);
+		}
+		/** A random past year: before today (Berlin) whatever day the suite runs. */
+		function pastYear() {
+			return 1901 + Math.floor(Math.random() * 99);
+		}
+
+		function berlinToday() {
+			return new Intl.DateTimeFormat('en-CA', {
+				timeZone: 'Europe/Berlin',
+				year: 'numeric',
+				month: '2-digit',
+				day: '2-digit'
+			}).format(new Date());
+		}
+
+		/** The first date on or after `from` that falls on ISO weekday `dow`. */
+		function onOrAfter(from: string, dow: number) {
+			const date = new Date(`${from}T00:00:00Z`);
+			while ((date.getUTCDay() || 7) !== dow) date.setUTCDate(date.getUTCDate() + 1);
+			return date.toISOString().slice(0, 10);
+		}
+
+		function plusDays(from: string, days: number) {
+			const date = new Date(`${from}T00:00:00Z`);
+			date.setUTCDate(date.getUTCDate() + days);
+			return date.toISOString().slice(0, 10);
+		}
+
+		/** A class taught by `teachers`, with the new-class default schedule. */
+		async function createClass(prefix: string, teachers = [teacherA.id]) {
+			const { data, error } = await admin.client
+				.from('classes')
+				.insert({
+					name: `Story 6-4 ${prefix} ${crypto.randomUUID().slice(0, 6)}`,
+					code: `S4${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+			for (const teacherId of teachers) {
+				const { error: assignError } = await admin.client
+					.from('class_teachers')
+					.insert({ class_id: data.id, teacher_id: teacherId });
+				if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+			}
+			return data.id as string;
+		}
+
+		async function addDays(days: string[]) {
+			const { error } = await admin.client.from('class_days').upsert(
+				days.map((day) => ({ day })),
+				{ onConflict: 'day', ignoreDuplicates: true }
+			);
+			if (error) throw new Error(`Failed to add class days: ${error.message}`);
+		}
+
+		async function dayId(day: string) {
+			const { data } = await adminClient.from('class_days').select('id').eq('day', day).single();
+			return data!.id as string;
+		}
+
+		/**
+		 * The class's sessions on `days`. Class days are shared by every test run
+		 * (other runs' far-future days stay behind), and an open-ended schedule
+		 * picks those up too, so each test looks at its own dates only.
+		 */
+		async function sessionsOf(classId: string, days: string[]) {
+			const { data, error } = await adminClient
+				.from('class_sessions_effective')
+				.select(
+					'id, day, start_time, duration_minutes, start_time_override, session_cancelled, extra'
+				)
+				.eq('class_id', classId)
+				.in('day', days)
+				.order('day');
+			if (error) throw new Error(`Failed to read sessions: ${error.message}`);
+			return data ?? [];
+		}
+
+		async function sessionDays(classId: string, days: string[]) {
+			return (await sessionsOf(classId, days)).map((s) => s.day);
+		}
+
+		type Schedule = {
+			weekdays: number[];
+			startsOn: string;
+			endsOn?: string | null;
+			startTime?: string | null;
+			duration?: number | null;
+		};
+
+		function setSchedule(
+			client: typeof adminClient,
+			classId: string,
+			{ weekdays, startsOn, endsOn = null, startTime = null, duration = null }: Schedule
+		) {
+			return client.rpc('set_class_schedule', {
+				p_class_id: classId,
+				p_weekdays: weekdays,
+				p_start_time: startTime,
+				p_duration_minutes: duration,
+				p_starts_on: startsOn,
+				p_ends_on: endsOn
+			});
+		}
+
+		async function createSignedInStudent(classId: string) {
+			const email = `story-6-4-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const password = crypto.randomUUID();
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password,
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update({
+					class_id: classId,
+					status: 'approved',
+					registration_name: 'Story 6-4 Student',
+					display_name: 'Story 6-4 Student'
+				})
+				.eq('id', data.user.id);
+			if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
+			const client = anonClient();
+			const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+			if (signInError) throw new Error(`Failed to sign in student: ${signInError.message}`);
+			return { id: data.user.id, client };
+		}
+
+		it('a new class defaults to Sunday only, from today (Berlin), no end', async () => {
+			const classId = await createClass('Default');
+			const { data } = await adminClient
+				.from('classes')
+				.select('schedule_weekdays, schedule_starts_on, schedule_ends_on, default_start_time')
+				.eq('id', classId)
+				.single();
+			expect(data).toEqual({
+				schedule_weekdays: [SUN],
+				schedule_starts_on: berlinToday(),
+				schedule_ends_on: null,
+				default_start_time: null
+			});
+		});
+
+		it('schedule match: Sun+Wed from 10-01 until 12-20 gets sessions only on those class days', async () => {
+			const year = futureYear();
+			const classId = await createClass('Match');
+			const { error } = await setSchedule(teacherA.client, classId, {
+				weekdays: [SUN, WED],
+				startsOn: `${year}-10-01`,
+				endsOn: `${year}-12-20`,
+				startTime: '10:00',
+				duration: 90
+			});
+			expect(error).toBeNull();
+
+			const sun = onOrAfter(`${year}-10-01`, SUN);
+			const wed = onOrAfter(`${year}-10-01`, WED);
+			const sat = onOrAfter(`${year}-10-01`, SAT);
+			const sunAfterEnd = onOrAfter(`${year}-12-21`, SUN);
+			const sunBeforeStart = plusDays(sun, -7);
+			const days = [sun, wed, sat, sunAfterEnd, sunBeforeStart];
+			await addDays(days);
+
+			expect(await sessionDays(classId, days)).toEqual([sun, wed].sort());
+			const [first] = await sessionsOf(classId, days);
+			expect(first).toMatchObject({ start_time: '10:00:00', duration_minutes: 90, extra: false });
+		});
+
+		it('adding a class day creates sessions only for classes whose schedule includes and covers it', async () => {
+			const year = futureYear();
+			const wedClass = await createClass('Wed');
+			const sunClass = await createClass('Sun');
+			const endedClass = await createClass('Ended');
+			await setSchedule(admin.client, wedClass, { weekdays: [WED], startsOn: `${year}-01-01` });
+			await setSchedule(admin.client, sunClass, { weekdays: [SUN], startsOn: `${year}-01-01` });
+			await setSchedule(admin.client, endedClass, {
+				weekdays: [WED],
+				startsOn: `${year}-01-01`,
+				endsOn: `${year}-06-30`
+			});
+
+			const wed = onOrAfter(`${year}-10-10`, WED);
+			await addDays([wed]);
+			expect(await sessionDays(wedClass, [wed])).toEqual([wed]);
+			expect(await sessionDays(sunClass, [wed])).toEqual([]);
+			expect(await sessionDays(endedClass, [wed])).toEqual([]);
+		});
+
+		it('schedule edit: past sessions unchanged, future non-matching removed, missing added, still-matching keep override and cancel, extras stay', async () => {
+			const past = pastYear();
+			const year = futureYear();
+			const classId = await createClass('Edit');
+			const { error: firstError } = await setSchedule(teacherA.client, classId, {
+				weekdays: [SUN],
+				startsOn: '1900-01-01',
+				startTime: '10:00',
+				duration: 90
+			});
+			expect(firstError).toBeNull();
+
+			const pastSun = onOrAfter(`${past}-03-01`, SUN);
+			const pastSat = plusDays(pastSun, 6);
+			// Past, following the class time (no override of its own).
+			const pastSun2 = plusDays(pastSun, 7);
+			const sun1 = onOrAfter(`${year}-10-01`, SUN);
+			const sun2 = plusDays(sun1, 7);
+			const sat1 = plusDays(sun1, 6);
+			const tue = plusDays(sun1, 2);
+			const days = [pastSun, pastSat, pastSun2, sun1, sun2, sat1, tue];
+			await addDays(days);
+			expect(await sessionDays(classId, days)).toEqual([pastSun, pastSun2, sun1, sun2]);
+			expect((await sessionsOf(classId, [pastSun2]))[0]).toMatchObject({
+				start_time: '10:00:00',
+				duration_minutes: 90
+			});
+
+			// The past session and a future one get their own time and cancel flag.
+			const byDay = new Map((await sessionsOf(classId, days)).map((s) => [s.day, s.id!]));
+			for (const day of [pastSun, sun1]) {
+				const { data } = await teacherA.client
+					.from('class_sessions')
+					.update({ start_time_override: '11:00', cancelled: true })
+					.eq('id', byDay.get(day)!)
+					.select('id');
+				expect(data).toHaveLength(1);
+			}
+			// An extra session on the Tuesday.
+			const { error: extraError } = await teacherA.client.rpc('add_extra_session', {
+				p_class_id: classId,
+				p_class_day_id: await dayId(tue),
+				p_start_time: '18:00',
+				p_duration_minutes: 60
+			});
+			expect(extraError).toBeNull();
+
+			// Sun -> Sun + Sat: sun1 still matches and keeps its override and cancel;
+			// the future Saturday gets a session, the past Saturday does not.
+			await setSchedule(teacherA.client, classId, { weekdays: [SUN, SAT], startsOn: '1900-01-01' });
+			let sessions = await sessionsOf(classId, days);
+			expect(sessions.map((s) => s.day)).toEqual([pastSun, pastSun2, sun1, sat1, tue, sun2].sort());
+			const sun1Session = sessions.find((s) => s.day === sun1)!;
+			expect(sun1Session).toMatchObject({
+				id: byDay.get(sun1),
+				start_time_override: '11:00:00',
+				session_cancelled: true
+			});
+
+			// Sun + Sat -> Sat: future Sundays go, the past Sunday and the extra stay.
+			await setSchedule(teacherA.client, classId, { weekdays: [SAT], startsOn: '1900-01-01' });
+			sessions = await sessionsOf(classId, days);
+			expect(sessions.map((s) => s.day)).toEqual([pastSun, pastSun2, sat1, tue].sort());
+			// The class time changed (10:00 / 90 -> not set), yet the past session
+			// without an override still shows the time it had.
+			expect(sessions.find((s) => s.day === pastSun2)).toMatchObject({
+				start_time: '10:00:00',
+				duration_minutes: 90
+			});
+			expect(sessions.find((s) => s.day === pastSun)).toMatchObject({
+				id: byDay.get(pastSun),
+				start_time_override: '11:00:00',
+				session_cancelled: true,
+				extra: false
+			});
+			expect(sessions.find((s) => s.day === tue)).toMatchObject({
+				extra: true,
+				start_time: '18:00:00',
+				duration_minutes: 60
+			});
+			// The schedule time follows the last save (NULL = not set).
+			expect(sessions.find((s) => s.day === sat1)).toMatchObject({ start_time: null });
+		});
+
+		it('extra session: on a class day outside the schedule, marked extra; a second one that day errors', async () => {
+			const year = futureYear();
+			const classId = await createClass('Extra');
+			await setSchedule(admin.client, classId, {
+				weekdays: [SUN],
+				startsOn: `${year}-01-01`,
+				startTime: '10:00',
+				duration: 90
+			});
+			const sun = onOrAfter(`${year}-10-04`, SUN);
+			const sat = plusDays(sun, 6);
+			await addDays([sun, sat]);
+			expect(await sessionDays(classId, [sun, sat])).toEqual([sun]);
+
+			const { data: id, error } = await admin.client.rpc('add_extra_session', {
+				p_class_id: classId,
+				p_class_day_id: await dayId(sat),
+				p_start_time: '14:00',
+				p_duration_minutes: 60
+			});
+			expect(error).toBeNull();
+			const extra = (await sessionsOf(classId, [sat])).find((s) => s.day === sat);
+			expect(extra).toMatchObject({
+				id,
+				extra: true,
+				start_time: '14:00:00',
+				duration_minutes: 60
+			});
+
+			// One session per class per day: again on the Saturday, or on the
+			// scheduled Sunday.
+			for (const day of [sat, sun]) {
+				const { error: dupError } = await admin.client.rpc('add_extra_session', {
+					p_class_id: classId,
+					p_class_day_id: await dayId(day),
+					p_start_time: '15:00',
+					p_duration_minutes: null
+				});
+				expect(dupError?.code).toBe('23505');
+			}
+			expect(await sessionDays(classId, [sun, sat])).toEqual([sun, sat]);
+
+			// Not on a cancelled class day (22023).
+			const cancelledSat = plusDays(sat, 7);
+			await addDays([cancelledSat]);
+			await admin.client
+				.from('class_days')
+				.update({ cancelled: true })
+				.eq('id', await dayId(cancelledSat));
+			const { error: cancelledError } = await admin.client.rpc('add_extra_session', {
+				p_class_id: classId,
+				p_class_day_id: await dayId(cancelledSat),
+				p_start_time: '14:00',
+				p_duration_minutes: 60
+			});
+			expect(cancelledError?.code).toBe('22023');
+			expect(await sessionDays(classId, [cancelledSat])).toEqual([]);
+		});
+
+		it('invalid schedules are refused by the function and save nothing', async () => {
+			const year = futureYear();
+			const classId = await createClass('Invalid');
+			const cases: Schedule[] = [
+				{ weekdays: [], startsOn: `${year}-01-01` },
+				{ weekdays: [0], startsOn: `${year}-01-01` },
+				{ weekdays: [8], startsOn: `${year}-01-01` },
+				{ weekdays: [SUN], startsOn: `${year}-02-01`, endsOn: `${year}-01-01` },
+				{ weekdays: [SUN], startsOn: `${year}-01-01`, duration: 5 }
+			];
+			for (const schedule of cases) {
+				const { error } = await setSchedule(admin.client, classId, schedule);
+				expect(error, JSON.stringify(schedule)).not.toBeNull();
+			}
+			const { data } = await adminClient
+				.from('classes')
+				.select('schedule_weekdays')
+				.eq('id', classId)
+				.single();
+			expect(data?.schedule_weekdays).toEqual([SUN]);
+		});
+
+		it('another teacher or a student cannot set the schedule or add an extra session (42501); the admin can', async () => {
+			const year = futureYear();
+			const classId = await createClass('Access');
+			const sat = onOrAfter(`${year}-10-01`, SAT);
+			await addDays([sat]);
+			const student = await createSignedInStudent(classId);
+			const schedule = { weekdays: [SAT], startsOn: `${year}-01-01` };
+
+			for (const client of [teacherB.client, student.client]) {
+				const { error } = await setSchedule(client, classId, schedule);
+				expect(error?.code).toBe('42501');
+				const { error: extraError } = await client.rpc('add_extra_session', {
+					p_class_id: classId,
+					p_class_day_id: await dayId(sat),
+					p_start_time: null,
+					p_duration_minutes: null
+				});
+				expect(extraError?.code).toBe('42501');
+			}
+			expect(await sessionDays(classId, [sat])).toEqual([]);
+
+			// Still no client insert into sessions, not even as an extra.
+			const { error: insertError } = await admin.client
+				.from('class_sessions')
+				.insert({ class_id: classId, class_day_id: await dayId(sat), extra: true });
+			expect(insertError).not.toBeNull();
+
+			// The admin need not teach the class.
+			const { error } = await setSchedule(admin.client, classId, schedule);
+			expect(error).toBeNull();
+			expect(await sessionDays(classId, [sat])).toEqual([sat]);
+
+			// The student reads the extra flag through the view.
+			const { data: visible } = await student.client
+				.from('class_sessions_effective')
+				.select('day, extra')
+				.eq('class_id', classId)
+				.eq('day', sat);
+			expect(visible).toEqual([{ day: sat, extra: false }]);
+		});
+
+		it('backfill rule: weekdays and start derive from existing sessions, else Sunday from today', async () => {
+			const year = futureYear();
+			const classId = await createClass('Backfill');
+			// Sessions on two Sundays (one cancelled) and a Wednesday. The schedule
+			// spans exactly sun1..sun2, so no other run's class day can add one.
+			const sun1 = onOrAfter(`${year}-05-01`, SUN);
+			const wed = plusDays(sun1, 3);
+			const sun2 = plusDays(sun1, 7);
+			await setSchedule(admin.client, classId, {
+				weekdays: [SUN, WED],
+				startsOn: sun1,
+				endsOn: sun2
+			});
+			await addDays([sun1, wed, sun2]);
+			const sessions = await sessionsOf(classId, [sun1, wed, sun2]);
+			expect(sessions).toHaveLength(3);
+			await adminClient
+				.from('class_sessions')
+				.update({ cancelled: true })
+				.eq('id', sessions[0].id!);
+
+			const { data, error } = await adminClient.rpc('class_schedule_from_sessions', {
+				p_class_id: classId
+			});
+			expect(error).toBeNull();
+			expect(data).toEqual({ weekdays: [WED, SUN], starts_on: sun1 });
+
+			// A class without sessions: Sunday, from today.
+			const empty = await createClass('Backfill Empty');
+			await setSchedule(admin.client, empty, {
+				weekdays: [SAT],
+				startsOn: `${year}-01-01`,
+				endsOn: `${year}-01-01`
+			});
+			const { data: none } = await adminClient.rpc('class_schedule_from_sessions', {
+				p_class_id: empty
+			});
+			expect(none).toEqual({ weekdays: [SUN], starts_on: berlinToday() });
+
+			// Clients cannot call it.
+			const { error: clientError } = await admin.client.rpc('class_schedule_from_sessions', {
+				p_class_id: classId
+			});
+			expect(clientError).not.toBeNull();
+		});
+	}
+);

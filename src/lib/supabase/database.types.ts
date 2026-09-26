@@ -174,6 +174,7 @@ export type Database = {
 					class_day_id: string;
 					class_id: string;
 					duration_minutes_override: number | null;
+					extra: boolean;
 					id: string;
 					start_time_override: string | null;
 					updated_at: string;
@@ -184,6 +185,7 @@ export type Database = {
 					class_day_id: string;
 					class_id: string;
 					duration_minutes_override?: number | null;
+					extra?: boolean;
 					id?: string;
 					start_time_override?: string | null;
 					updated_at?: string;
@@ -194,6 +196,7 @@ export type Database = {
 					class_day_id?: string;
 					class_id?: string;
 					duration_minutes_override?: number | null;
+					extra?: boolean;
 					id?: string;
 					start_time_override?: string | null;
 					updated_at?: string;
@@ -342,6 +345,9 @@ export type Database = {
 					default_start_time: string | null;
 					id: string;
 					name: string;
+					schedule_ends_on: string | null;
+					schedule_starts_on: string;
+					schedule_weekdays: number[];
 					syllabus: string | null;
 					syllabus_links: HomeworkReferenceLink[];
 				};
@@ -353,6 +359,9 @@ export type Database = {
 					default_start_time?: string | null;
 					id?: string;
 					name: string;
+					schedule_ends_on?: string | null;
+					schedule_starts_on?: string;
+					schedule_weekdays?: number[];
 					syllabus?: string | null;
 					syllabus_links?: HomeworkReferenceLink[];
 				};
@@ -364,6 +373,9 @@ export type Database = {
 					default_start_time?: string | null;
 					id?: string;
 					name?: string;
+					schedule_ends_on?: string | null;
+					schedule_starts_on?: string;
+					schedule_weekdays?: number[];
 					syllabus?: string | null;
 					syllabus_links?: HomeworkReferenceLink[];
 				};
@@ -757,6 +769,7 @@ export type Database = {
 					day_cancelled: boolean | null;
 					duration_minutes: number | null;
 					duration_minutes_override: number | null;
+					extra: boolean | null;
 					id: string | null;
 					session_cancelled: boolean | null;
 					start_time: string | null;
@@ -820,6 +833,30 @@ export type Database = {
 					p_start_time: string | null;
 				};
 				Returns: undefined;
+			};
+			set_class_schedule: {
+				Args: {
+					p_class_id: string;
+					p_weekdays: number[];
+					p_start_time: string | null;
+					p_duration_minutes: number | null;
+					p_starts_on: string;
+					p_ends_on: string | null;
+				};
+				Returns: undefined;
+			};
+			class_schedule_from_sessions: {
+				Args: { p_class_id: string };
+				Returns: { weekdays: number[]; starts_on: string };
+			};
+			add_extra_session: {
+				Args: {
+					p_class_id: string;
+					p_class_day_id: string;
+					p_start_time: string | null;
+					p_duration_minutes: number | null;
+				};
+				Returns: string;
 			};
 			set_class_syllabus: {
 				Args: { p_class_id: string; p_syllabus: string; p_links: HomeworkReferenceLink[] };

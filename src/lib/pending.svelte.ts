@@ -11,6 +11,9 @@ import type { SubmitFunction } from '@sveltejs/kit';
  *
  * `key` may be a function for shared hidden forms (e.g. one delete form for
  * every row); it is read at submit time, after the row's target is set.
+ * `{ reset: false }` keeps the form's fields after a successful submit (for
+ * forms whose values come back from the reloaded page data, like checkboxes,
+ * which a reset would return to their server-rendered state).
  */
 export function createPending() {
 	let current = $state<string | null>(null);
@@ -22,14 +25,14 @@ export function createPending() {
 		is(key: string) {
 			return current === key;
 		},
-		submit(key: string | (() => string)): SubmitFunction {
+		submit(key: string | (() => string), options: { reset?: boolean } = {}): SubmitFunction {
 			return ({ cancel }) => {
 				// Enter in a text field still submits while the button is disabled.
 				if (current !== null) return cancel();
 				current = typeof key === 'function' ? key() : key;
 				return async ({ update }) => {
 					try {
-						await update();
+						await update({ reset: options.reset ?? true });
 					} finally {
 						current = null;
 					}

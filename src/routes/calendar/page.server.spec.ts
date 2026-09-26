@@ -3,14 +3,20 @@ import * as m from '$lib/paraglide/messages.js';
 import { actions } from './+page.server';
 
 /**
- * /calendar actions (Story 6-1): FormData event + a fake `locals.supabase`
- * chain, one queued result per table. `upserted` records the rows
- * addClassDays sent.
+ * /calendar actions (Stories 6-1, 6-4): FormData event + a fake
+ * `locals.supabase` chain, one queued result per table. `upserted` records
+ * the rows addClassDays sent, `rpcCalls` every function call (answered with
+ * `rpcResult`).
  */
 type Result = { data?: unknown; error: unknown };
 
-function fakeSupabase(results: Record<string, Result>, role = 'admin') {
+function fakeSupabase(
+	results: Record<string, Result>,
+	role = 'admin',
+	rpcResult: { error: unknown } = { error: null }
+) {
 	const upserted: unknown[] = [];
+	const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
 	function chain(result: Result) {
 		const c = {
 			select: () => c,
@@ -27,6 +33,7 @@ function fakeSupabase(results: Record<string, Result>, role = 'admin') {
 	}
 	return {
 		upserted,
+		rpcCalls,
 		client: {
 			from: (table: string) =>
 				chain(
@@ -34,17 +41,22 @@ function fakeSupabase(results: Record<string, Result>, role = 'admin') {
 						? { data: { role }, error: null }
 						: (results[table] ?? { data: [], error: null })
 				),
-			rpc: async () => ({ error: null })
+			rpc: async (fn: string, args: Record<string, unknown>) => {
+				rpcCalls.push({ fn, args });
+				return rpcResult;
+			}
 		}
 	};
 }
 
 function event(
-	fields: Record<string, string>,
+	fields: Record<string, string | string[]>,
 	supabase: ReturnType<typeof fakeSupabase>['client']
 ) {
 	const body = new FormData();
-	for (const [k, v] of Object.entries(fields)) body.set(k, v);
+	for (const [k, v] of Object.entries(fields)) {
+		for (const value of Array.isArray(v) ? v : [v]) body.append(k, value);
+	}
 	return {
 		request: new Request('http://localhost/calendar', { method: 'POST', body }),
 		locals: {
@@ -112,5 +124,133 @@ describe('calendar actions', () => {
 		);
 		expect(result).toMatchObject({ status: 403, data: { error: m.calendar_error_failed() } });
 		expect(fake.upserted).toEqual([]);
+	});
+});
+
+describe('class schedule actions (Story 6-4)', () => {
+	const schedule = {
+		classId: 'c1',
+		weekday: ['7', '3'],
+		startTime: '10:00',
+		durationMinutes: '90',
+		startsOn: '2026-10-01',
+		endsOn: '2026-12-20'
+	};
+
+	it('setClassSchedule sends the parsed schedule to set_class_schedule', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.setClassSchedule(event(schedule, fake.client));
+		expect(result).toEqual({ success: true, action: 'scheduleSaved' });
+		expect(fake.rpcCalls).toEqual([
+			{
+				fn: 'set_class_schedule',
+				args: {
+					p_class_id: 'c1',
+					p_weekdays: [3, 7],
+					p_start_time: '10:00',
+					p_duration_minutes: 90,
+					p_starts_on: '2026-10-01',
+					p_ends_on: '2026-12-20'
+				}
+			}
+		]);
+	});
+
+	it('setClassSchedule: an empty until means no end, empty time means not set', async () => {
+		const fake = fakeSupabase({});
+		await actions.setClassSchedule(
+			event({ ...schedule, endsOn: '', startTime: '', durationMinutes: '' }, fake.client)
+		);
+		expect(fake.rpcCalls[0].args).toMatchObject({
+			p_ends_on: null,
+			p_start_time: null,
+			p_duration_minutes: null
+		});
+	});
+
+	it('setClassSchedule: an invalid schedule saves nothing and reports each field', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.setClassSchedule(
+			event({ ...schedule, weekday: [], endsOn: '2026-09-01', durationMinutes: '500' }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: {
+				classId: 'c1',
+				scheduleErrors: {
+					weekdays: m.calendar_error_weekdays_required(),
+					durationMinutes: m.calendar_error_duration_invalid(),
+					endsOn: m.calendar_error_until_before_from()
+				}
+			}
+		});
+		expect(fake.rpcCalls).toEqual([]);
+	});
+
+	it('setClassSchedule: a denied call (42501) gives the generic error', async () => {
+		const fake = fakeSupabase({}, 'teacher', { error: { code: '42501', message: 'no' } });
+		const result = await actions.setClassSchedule(event(schedule, fake.client));
+		expect(result).toMatchObject({ status: 400, data: { error: m.calendar_error_failed() } });
+	});
+
+	it('addExtraSession sends the class, day and time to add_extra_session', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.addExtraSession(
+			event({ classId: 'c1', dayId: 'd1', startTime: '14:00', durationMinutes: '60' }, fake.client)
+		);
+		expect(result).toEqual({ success: true, action: 'extraAdded' });
+		expect(fake.rpcCalls).toEqual([
+			{
+				fn: 'add_extra_session',
+				args: {
+					p_class_id: 'c1',
+					p_class_day_id: 'd1',
+					p_start_time: '14:00',
+					p_duration_minutes: 60
+				}
+			}
+		]);
+	});
+
+	it('addExtraSession: the class already has a session that day (23505) errors in the dialog', async () => {
+		const fake = fakeSupabase({}, 'admin', { error: { code: '23505', message: 'dup' } });
+		const result = await actions.addExtraSession(
+			event({ classId: 'c1', dayId: 'd1', startTime: '', durationMinutes: '' }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { extraError: m.calendar_error_extra_exists(), dayId: 'd1' }
+		});
+	});
+
+	it('addExtraSession: denied (42501) gives the generic error', async () => {
+		const fake = fakeSupabase({}, 'student', { error: { code: '42501', message: 'no' } });
+		const result = await actions.addExtraSession(
+			event({ classId: 'c1', dayId: 'd1', startTime: '', durationMinutes: '' }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 403,
+			data: { extraError: m.calendar_error_failed() }
+		});
+	});
+
+	it('addExtraSession validates class, time and duration before calling the database', async () => {
+		const fake = fakeSupabase({});
+		expect(
+			await actions.addExtraSession(
+				event({ classId: '', dayId: 'd1', startTime: '', durationMinutes: '' }, fake.client)
+			)
+		).toMatchObject({ status: 400, data: { extraError: m.calendar_error_class_required() } });
+		expect(
+			await actions.addExtraSession(
+				event({ classId: 'c1', dayId: 'd1', startTime: '25:00', durationMinutes: '' }, fake.client)
+			)
+		).toMatchObject({ status: 400, data: { extraError: m.calendar_error_time_invalid() } });
+		expect(
+			await actions.addExtraSession(
+				event({ classId: 'c1', dayId: 'd1', startTime: '', durationMinutes: '5' }, fake.client)
+			)
+		).toMatchObject({ status: 400, data: { extraError: m.calendar_error_duration_invalid() } });
+		expect(fake.rpcCalls).toEqual([]);
 	});
 });
