@@ -23,6 +23,7 @@ import {
 	studentUsernameToEmail
 } from './temp-password';
 import { updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
+import { todayInBerlin } from '$lib/berlin-date';
 import type { Database } from './../supabase/database.types';
 
 const adminClient = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -66,6 +67,27 @@ async function createSignedInUser(role: 'admin' | 'teacher') {
 
 	return { id: data.user.id, email, client };
 }
+
+/**
+ * Story 6-2: attendance marks reference a class session. Returns the session
+ * of `classId` on `day`, creating the class day and an extra session if
+ * needed -- through the 0021 backfill function (service role), so fixtures
+ * map a (class, date) onto a session exactly the way the migration did.
+ */
+async function sessionFor(classId: string, day: string): Promise<string> {
+	const { data, error } = await adminClient.rpc('attendance_backfill_session', {
+		p_class_id: classId,
+		p_day: day
+	});
+	if (error || !data) throw new Error(`Failed to get a session: ${error?.message}`);
+	return data;
+}
+
+/**
+ * The past day Story 2-1's attendance fixtures use. Far in the past, so the
+ * shared calendar's real (recent) class days are left alone.
+ */
+const ATTENDANCE_DAY = '1899-09-17';
 
 const reachable = await isSupabaseReachable();
 
@@ -1095,6 +1117,7 @@ describe.skipIf(!reachable)(
 		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
 		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
 		let classAId: string;
+		let attendanceSessionId: string;
 		let teamId: string;
 
 		/**
@@ -1164,6 +1187,8 @@ describe.skipIf(!reachable)(
 				.insert({ class_id: classAId, teacher_id: teacherA.id });
 			if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
 
+			attendanceSessionId = await sessionFor(classAId, ATTENDANCE_DAY);
+
 			const { data: team, error: teamError } = await admin.client
 				.from('teams')
 				.insert({ name: `Story 2-1 Team ${crypto.randomUUID().slice(0, 6)}` })
@@ -1186,7 +1211,7 @@ describe.skipIf(!reachable)(
 					student_id: studentId,
 					class_id: classAId,
 					present: true,
-					session_date: '2026-09-13',
+					class_session_id: attendanceSessionId,
 					recorded_by: teacherA.id
 				})
 				.select('present, session_date')
@@ -1194,7 +1219,7 @@ describe.skipIf(!reachable)(
 
 			expect(error).toBeNull();
 			expect(data?.present).toBe(true);
-			expect(data?.session_date).toBe('2026-09-13');
+			expect(data?.session_date).toBe(ATTENDANCE_DAY);
 		});
 
 		it('skill-status is append-only: three entries for the same (student, skill_area) all persist, and the latest by timestamp is current', async () => {
@@ -1320,7 +1345,7 @@ describe.skipIf(!reachable)(
 				student_id: studentId,
 				class_id: classAId,
 				present: true,
-				session_date: '2026-09-13'
+				class_session_id: attendanceSessionId
 			});
 			expect(writeAttendance.error).not.toBeNull();
 
@@ -1360,7 +1385,7 @@ describe.skipIf(!reachable)(
 				student_id: pendingStudentId,
 				class_id: classAId,
 				present: true,
-				session_date: '2026-09-13'
+				class_session_id: attendanceSessionId
 			});
 			expect(writeAttendance.error).not.toBeNull();
 
@@ -1412,7 +1437,7 @@ describe.skipIf(!reachable)(
 				student_id: otherClassStudentId,
 				class_id: classAId,
 				present: true,
-				session_date: '2026-09-13',
+				class_session_id: attendanceSessionId,
 				recorded_by: teacherA.id
 			});
 			expect(writeAttendance.error).not.toBeNull();
@@ -1521,7 +1546,7 @@ describe.skipIf(!reachable)(
 				student_id: studentId,
 				class_id: classAId,
 				present: false,
-				session_date: '2026-09-13',
+				class_session_id: attendanceSessionId,
 				recorded_by: teacherA.id
 			});
 			expect(first.error).toBeNull();
@@ -1530,7 +1555,7 @@ describe.skipIf(!reachable)(
 				student_id: studentId,
 				class_id: classAId,
 				present: true,
-				session_date: '2026-09-13',
+				class_session_id: attendanceSessionId,
 				recorded_by: teacherA.id
 			});
 			expect(second.error).toBeNull();
@@ -1539,7 +1564,7 @@ describe.skipIf(!reachable)(
 				.from('attendance_records')
 				.select('present, recorded_at')
 				.eq('student_id', studentId)
-				.eq('session_date', '2026-09-13')
+				.eq('class_session_id', attendanceSessionId)
 				.order('recorded_at', { ascending: false });
 			expect(rows).toHaveLength(2);
 			// Latest-by-timestamp query returns the newer one.
@@ -1597,7 +1622,7 @@ describe.skipIf(!reachable)(
 					student_id: studentId,
 					class_id: classAId,
 					present: true,
-					session_date: '2026-09-13',
+					class_session_id: attendanceSessionId,
 					recorded_by: teacherA.id
 				})
 				.select('id')
@@ -3372,7 +3397,8 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 		return d.toISOString().slice(0, 10);
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	// Berlin, like the streak walk's current week (Story 6-2).
+	const today = todayInBerlin();
 	/** ISO date for the Nth week offset from today (0 = this week, -1 = last week, ...). */
 	function weekOffset(n: number): string {
 		return addDays(today, n * 7);
@@ -3393,7 +3419,7 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 		const { error } = await adminClient.from('attendance_records').insert({
 			student_id: params.studentId,
 			class_id: params.classId,
-			session_date: params.sessionDate,
+			class_session_id: await sessionFor(params.classId, params.sessionDate),
 			present: params.present,
 			recorded_by: teacherA.id
 		});
@@ -3661,27 +3687,34 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 	});
 
 	it('exercises the exact streak_grace_weeks = 2 boundary: 2 consecutive misses preserved, 3 resets to 0', async () => {
-		const classId = await createClass('Grace Boundary');
+		// Each student gets their own class: since 6-2 a session week is one
+		// with a marked session in the student's classes, so a shared class
+		// would turn the "reset" student's extra week into a miss for the
+		// "preserved" student too.
+		const preservedClassId = await createClass('Grace Boundary Preserved');
+		const resetClassId = await createClass('Grace Boundary Reset');
 		const preservedStudent = await createStudent({
-			classId,
+			classId: preservedClassId,
 			name: `Grace Boundary Preserved ${crypto.randomUUID().slice(0, 6)}`
 		});
 		const resetStudent = await createStudent({
-			classId,
+			classId: resetClassId,
 			name: `Grace Boundary Reset ${crypto.randomUUID().slice(0, 6)}`
 		});
-		const assignmentId = await createAssignment(classId);
 
 		// Both students qualify at the same earlier week, then diverge: the
 		// "preserved" student misses exactly 2 consecutive weeks (== the
 		// shipped default streak_grace_weeks), the "reset" student misses 3.
 		const qualifyingPeriod = weekOffset(-5);
-		const instanceId = await createInstance({
-			assignmentId,
-			classId,
-			periodStart: qualifyingPeriod
-		});
-		for (const student of [preservedStudent, resetStudent]) {
+		for (const [student, classId] of [
+			[preservedStudent, preservedClassId],
+			[resetStudent, resetClassId]
+		] as const) {
+			const instanceId = await createInstance({
+				assignmentId: await createAssignment(classId),
+				classId,
+				periodStart: qualifyingPeriod
+			});
 			await markAttendance({
 				studentId: student,
 				classId,
@@ -3694,7 +3727,7 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 		for (const offset of [-4, -3]) {
 			await markAttendance({
 				studentId: preservedStudent,
-				classId,
+				classId: preservedClassId,
 				sessionDate: weekOffset(offset),
 				present: false
 			});
@@ -3702,7 +3735,7 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 		for (const offset of [-4, -3, -2]) {
 			await markAttendance({
 				studentId: resetStudent,
-				classId,
+				classId: resetClassId,
 				sessionDate: weekOffset(offset),
 				present: false
 			});
@@ -4142,7 +4175,9 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		return d.toISOString().slice(0, 10);
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	// Badges ignore dates, so marks go on far-past days (Story 6-2: each needs a
+	// class session), leaving the shared calendar's recent days alone.
+	const today = '1890-06-30';
 	/** A distinct, deterministic session_date/period_start for the Nth mark in a scenario. */
 	function dayOffset(n: number): string {
 		return addDays(today, -n);
@@ -4162,7 +4197,7 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		const { error } = await adminClient.from('attendance_records').insert({
 			student_id: params.studentId,
 			class_id: params.classId,
-			session_date: params.sessionDate,
+			class_session_id: await sessionFor(params.classId, params.sessionDate),
 			present: params.present,
 			recorded_by: teacherA.id
 		});
@@ -4395,10 +4430,12 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		// thresholds 1, 5, and 10 (default [1, 5, 10, 25, 50, 100]) together,
 		// simulating a student whose substantial history predates ever
 		// triggering a recompute.
-		const rows = Array.from({ length: 12 }, (_, i) => ({
+		const sessionIds: string[] = [];
+		for (let i = 0; i < 12; i++) sessionIds.push(await sessionFor(classId, dayOffset(i)));
+		const rows = sessionIds.map((sessionId) => ({
 			student_id: student,
 			class_id: classId,
-			session_date: dayOffset(i),
+			class_session_id: sessionId,
 			present: true,
 			recorded_by: teacherA.id
 		}));
@@ -6211,6 +6248,684 @@ describe.skipIf(!reachable)(
 				p_class_id: classId
 			});
 			expect(clientError).not.toBeNull();
+		});
+	}
+);
+
+describe.skipIf(!reachable)(
+	'Story 6-2 attendance per session & calendar holidays (requires local Supabase)',
+	() => {
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
+		let graceWeeks: number;
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacherA = await createSignedInUser('teacher');
+			const { data } = await adminClient
+				.from('app_settings')
+				.select('value')
+				.eq('key', 'streak_grace_weeks')
+				.single();
+			graceWeeks = (data?.value as { weeks?: number } | undefined)?.weeks ?? 2;
+		}, 30000);
+
+		const SUN = 7;
+
+		/**
+		 * A random past year within the streak walk's 50-year reach from today
+		 * (class days are unique school-wide, so each scenario gets its own).
+		 */
+		function pastYear() {
+			const thisYear = Number(todayInBerlin().slice(0, 4));
+			return thisYear - 45 + Math.floor(Math.random() * 40);
+		}
+		function futureYear() {
+			return 3000 + Math.floor(Math.random() * 6000);
+		}
+
+		function plusDays(from: string, days: number) {
+			const date = new Date(`${from}T00:00:00Z`);
+			date.setUTCDate(date.getUTCDate() + days);
+			return date.toISOString().slice(0, 10);
+		}
+		function isoDow(day: string) {
+			return new Date(`${day}T00:00:00Z`).getUTCDay() || 7;
+		}
+		/** Monday of the ISO week containing `day` (the SQL date_trunc('week', ...)). */
+		function mondayOf(day: string) {
+			return plusDays(day, 1 - isoDow(day));
+		}
+		/** `count` consecutive Sundays from the first one on/after March 1st of `year`. */
+		function sundays(year: number, count: number) {
+			let first = `${year}-03-01`;
+			while (isoDow(first) !== SUN) first = plusDays(first, 1);
+			return Array.from({ length: count }, (_, i) => plusDays(first, 7 * i));
+		}
+
+		/**
+		 * Taught by teacherA; its schedule covers `weekdays` (default: every
+		 * weekday) since 1900, so it has a session on every matching class day,
+		 * existing or added later.
+		 */
+		async function createClass(prefix: string, weekdays = [1, 2, 3, 4, 5, 6, 7]) {
+			const { data, error } = await admin.client
+				.from('classes')
+				.insert({
+					name: `Story 6-2 ${prefix} ${crypto.randomUUID().slice(0, 6)}`,
+					code: `S62${crypto.randomUUID().slice(0, 4).toUpperCase()}`,
+					schedule_weekdays: weekdays,
+					schedule_starts_on: '1900-01-01'
+				})
+				.select('id')
+				.single();
+			if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: data.id, teacher_id: teacherA.id });
+			if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+			return data.id as string;
+		}
+
+		/** An approved student, enrolled in `classId` by the approval trigger. */
+		async function createStudent(classId: string) {
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email: `story-6-2-student-${crypto.randomUUID()}@students.internal.invalid`,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				user_metadata: { role: 'student' }
+			});
+			if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
+			const { error: updateError } = await adminClient
+				.from('profiles')
+				.update({
+					class_id: classId,
+					status: 'approved',
+					registration_name: 'Story 6-2 Student',
+					display_name: 'Story 6-2 Student'
+				})
+				.eq('id', data.user.id);
+			if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
+			return data.user.id;
+		}
+
+		async function addDays(days: string[]) {
+			const { error } = await admin.client.from('class_days').upsert(
+				days.map((day) => ({ day })),
+				{ onConflict: 'day', ignoreDuplicates: true }
+			);
+			if (error) throw new Error(`Failed to add class days: ${error.message}`);
+		}
+
+		async function dayId(day: string) {
+			const { data } = await adminClient.from('class_days').select('id').eq('day', day).single();
+			return data!.id as string;
+		}
+
+		/** The class's session on `day` (the class day must exist). */
+		async function sessionOf(classId: string, day: string) {
+			const { data, error } = await adminClient
+				.from('class_sessions_effective')
+				.select('id')
+				.eq('class_id', classId)
+				.eq('day', day)
+				.single();
+			if (error || !data) throw new Error(`No session on ${day}: ${error?.message}`);
+			return data.id as string;
+		}
+
+		/** A service-role mark (no RLS), like the migration's own data. */
+		function serviceMark(params: {
+			studentId: string;
+			classId: string;
+			sessionId: string;
+			present: boolean;
+		}) {
+			return adminClient.from('attendance_records').insert({
+				student_id: params.studentId,
+				class_id: params.classId,
+				class_session_id: params.sessionId,
+				present: params.present,
+				recorded_by: teacherA.id
+			});
+		}
+
+		/** A teacher's mark; throws if it is refused. */
+		async function teacherMark(params: {
+			studentId: string;
+			classId: string;
+			sessionId: string;
+			present: boolean;
+		}) {
+			const { error } = await teacherA.client.from('attendance_records').insert({
+				student_id: params.studentId,
+				class_id: params.classId,
+				class_session_id: params.sessionId,
+				present: params.present,
+				recorded_by: teacherA.id
+			});
+			if (error) throw new Error(`Failed to mark attendance: ${error.message}`);
+		}
+
+		const assignments = new Map<string, string>();
+		/** Homework of `classId` for the week of `day`, marked Done by the student. */
+		async function homeworkDone(classId: string, studentId: string, day: string) {
+			let assignmentId = assignments.get(classId);
+			if (!assignmentId) {
+				const { data, error } = await adminClient
+					.from('homework_assignments')
+					.insert({
+						class_id: classId,
+						title: `Story 6-2 HW ${crypto.randomUUID().slice(0, 6)}`,
+						skill_area: 'language',
+						created_by: teacherA.id
+					})
+					.select('id')
+					.single();
+				if (error || !data) throw new Error(`Failed to create assignment: ${error?.message}`);
+				assignmentId = data.id as string;
+				assignments.set(classId, assignmentId);
+			}
+			const periodStart = mondayOf(day);
+			const { data: existing } = await adminClient
+				.from('homework_instances')
+				.select('id')
+				.eq('assignment_id', assignmentId)
+				.eq('period_start', periodStart)
+				.maybeSingle();
+			let instanceId = existing?.id as string | undefined;
+			if (!instanceId) {
+				const { data, error } = await adminClient
+					.from('homework_instances')
+					.insert({
+						assignment_id: assignmentId,
+						class_id: classId,
+						period_start: periodStart,
+						due_date: plusDays(periodStart, 6)
+					})
+					.select('id')
+					.single();
+				if (error || !data) throw new Error(`Failed to create instance: ${error?.message}`);
+				instanceId = data.id as string;
+			}
+			for (const status of ['assigned', 'done'] as const) {
+				const { error } = await adminClient.from('homework_status_history').insert({
+					instance_id: instanceId,
+					student_id: studentId,
+					class_id: classId,
+					status,
+					recorded_by: teacherA.id
+				});
+				if (error) throw new Error(`Failed to mark homework ${status}: ${error.message}`);
+			}
+		}
+
+		async function readStreak(studentId: string) {
+			const { data } = await adminClient
+				.from('student_streaks')
+				.select('current_streak, last_qualifying_week')
+				.eq('student_id', studentId)
+				.maybeSingle();
+			return data;
+		}
+
+		it('a teacher marks a non-cancelled session held today: the row references the session, carries its day, and the streak is recomputed', async () => {
+			const today = todayInBerlin();
+			const classId = await createClass('Today');
+			const student = await createStudent(classId);
+			await addDays([today]);
+			const sessionId = await sessionOf(classId, today);
+			await homeworkDone(classId, student, today);
+
+			const { data, error } = await teacherA.client
+				.from('attendance_records')
+				.insert({
+					student_id: student,
+					class_id: classId,
+					class_session_id: sessionId,
+					present: true,
+					// Ignored: the day always comes from the session.
+					session_date: '2000-01-01',
+					recorded_by: teacherA.id
+				})
+				.select('class_session_id, session_date')
+				.single();
+			expect(error).toBeNull();
+			expect(data).toEqual({ class_session_id: sessionId, session_date: today });
+
+			expect(await readStreak(student)).toEqual({
+				current_streak: 1,
+				last_qualifying_week: mondayOf(today)
+			});
+		});
+
+		it('a session after today (Berlin) is refused, for the admin too', async () => {
+			const day = `${futureYear()}-06-01`;
+			const classId = await createClass('Future');
+			const student = await createStudent(classId);
+			await addDays([day]);
+			const sessionId = await sessionOf(classId, day);
+
+			const byTeacher = await teacherA.client.from('attendance_records').insert({
+				student_id: student,
+				class_id: classId,
+				class_session_id: sessionId,
+				present: true,
+				recorded_by: teacherA.id
+			});
+			expect(byTeacher.error).not.toBeNull();
+
+			const byAdmin = await admin.client.from('attendance_records').insert({
+				student_id: student,
+				class_id: classId,
+				class_session_id: sessionId,
+				present: true,
+				recorded_by: admin.id
+			});
+			expect(byAdmin.error).not.toBeNull();
+
+			const { data } = await adminClient
+				.from('attendance_records')
+				.select('id')
+				.eq('student_id', student);
+			expect(data).toEqual([]);
+		});
+
+		it('a cancelled session, or a session on a cancelled class day, is refused', async () => {
+			const [open, cancelledSession, cancelledDay] = sundays(pastYear(), 3);
+			const classId = await createClass('Cancelled');
+			const student = await createStudent(classId);
+			await addDays([open, cancelledSession, cancelledDay]);
+
+			const { data: updated, error: sessionError } = await teacherA.client
+				.from('class_sessions')
+				.update({ cancelled: true })
+				.eq('id', await sessionOf(classId, cancelledSession))
+				.select('id');
+			expect(sessionError).toBeNull();
+			expect(updated).toHaveLength(1);
+			const { error: dayError } = await admin.client
+				.from('class_days')
+				.update({ cancelled: true })
+				.eq('id', await dayId(cancelledDay));
+			expect(dayError).toBeNull();
+
+			try {
+				for (const day of [cancelledSession, cancelledDay]) {
+					const { error } = await teacherA.client.from('attendance_records').insert({
+						student_id: student,
+						class_id: classId,
+						class_session_id: await sessionOf(classId, day),
+						present: true,
+						recorded_by: teacherA.id
+					});
+					expect(error).not.toBeNull();
+				}
+
+				// The same student on an open session of the same class is fine.
+				await teacherMark({
+					studentId: student,
+					classId,
+					sessionId: await sessionOf(classId, open),
+					present: true
+				});
+			} finally {
+				const { error } = await admin.client
+					.from('class_days')
+					.update({ cancelled: false })
+					.eq('id', await dayId(cancelledDay));
+				expect(error).toBeNull();
+			}
+		});
+
+		it('a session of another class is refused, and the foreign key refuses it even for the service role', async () => {
+			const [day] = sundays(pastYear(), 1);
+			const classA = await createClass('Wrong A');
+			const classB = await createClass('Wrong B');
+			const student = await createStudent(classA);
+			await addDays([day]);
+			const sessionB = await sessionOf(classB, day);
+
+			const byTeacher = await teacherA.client.from('attendance_records').insert({
+				student_id: student,
+				class_id: classA,
+				class_session_id: sessionB,
+				present: true,
+				recorded_by: teacherA.id
+			});
+			expect(byTeacher.error).not.toBeNull();
+
+			const byService = await serviceMark({
+				studentId: student,
+				classId: classA,
+				sessionId: sessionB,
+				present: true
+			});
+			expect(byService.error?.code).toBe('23503');
+		});
+
+		it('weeks whose sessions are all cancelled are holidays: they neither extend nor break the streak, and (un)cancelling recomputes it', async () => {
+			const [s0, s1, s2, s3, s4] = sundays(pastYear(), 5);
+			const classId = await createClass('Holiday');
+			const x = await createStudent(classId);
+			const y = await createStudent(classId);
+			await addDays([s0, s1, s2, s3, s4]);
+
+			// X qualifies in the first and last week and misses the three between
+			// (Y attends them, so the class met) -- three misses exceed the default
+			// grace of two, so only the last week counts.
+			for (const day of [s0, s4]) {
+				await homeworkDone(classId, x, day);
+				await teacherMark({
+					studentId: x,
+					classId,
+					sessionId: await sessionOf(classId, day),
+					present: true
+				});
+			}
+			for (const day of [s1, s2, s3]) {
+				const sessionId = await sessionOf(classId, day);
+				await teacherMark({ studentId: x, classId, sessionId, present: false });
+				await teacherMark({ studentId: y, classId, sessionId, present: true });
+			}
+			expect(graceWeeks).toBe(2);
+			expect(await readStreak(x)).toEqual({
+				current_streak: 1,
+				last_qualifying_week: mondayOf(s4)
+			});
+
+			// Cancelling one missed session after marking makes its week a holiday:
+			// two misses are within grace, so the streak reaches back to s0.
+			const s1Session = await sessionOf(classId, s1);
+			expect(
+				(
+					await teacherA.client
+						.from('class_sessions')
+						.update({ cancelled: true })
+						.eq('id', s1Session)
+				).error
+			).toBeNull();
+			expect(await readStreak(x)).toEqual({
+				current_streak: 2,
+				last_qualifying_week: mondayOf(s4)
+			});
+
+			// Restoring it counts the week again.
+			expect(
+				(
+					await teacherA.client
+						.from('class_sessions')
+						.update({ cancelled: false })
+						.eq('id', s1Session)
+				).error
+			).toBeNull();
+			expect((await readStreak(x))?.current_streak).toBe(1);
+
+			// Cancelling the whole class day works the same way.
+			const s2Day = await dayId(s2);
+			expect(
+				(await admin.client.from('class_days').update({ cancelled: true }).eq('id', s2Day)).error
+			).toBeNull();
+			try {
+				// Two, not three: the holiday week doesn't extend the streak either.
+				expect((await readStreak(x))?.current_streak).toBe(2);
+			} finally {
+				expect(
+					(await admin.client.from('class_days').update({ cancelled: false }).eq('id', s2Day)).error
+				).toBeNull();
+			}
+			expect((await readStreak(x))?.current_streak).toBe(1);
+		});
+
+		it('an admin can delete a class that has attendance marks once nobody is enrolled: the marks go with it', async () => {
+			const [day] = sundays(pastYear(), 1);
+			const classId = await createClass('Delete');
+			const otherClass = await createClass('Delete Other');
+			const student = await createStudent(classId);
+			await addDays([day]);
+			await teacherMark({
+				studentId: student,
+				classId,
+				sessionId: await sessionOf(classId, day),
+				present: true
+			});
+
+			// The 0011 guard needs the class empty; unenrolling needs another class.
+			const { error: enrollError } = await adminClient
+				.from('class_enrollments')
+				.insert({ class_id: otherClass, student_id: student });
+			expect(enrollError).toBeNull();
+			const { error: unenrollError } = await admin.client.rpc('unenroll_student', {
+				p_class_id: classId,
+				p_student_id: student
+			});
+			expect(unenrollError).toBeNull();
+
+			const { data: deleted, error: deleteError } = await admin.client
+				.from('classes')
+				.delete()
+				.eq('id', classId)
+				.select('id');
+			expect(deleteError).toBeNull();
+			expect(deleted).toHaveLength(1);
+
+			const { data: marks } = await adminClient
+				.from('attendance_records')
+				.select('id')
+				.eq('class_id', classId);
+			expect(marks).toEqual([]);
+		});
+
+		it('a session nobody was marked on is a holiday, until its first mark makes the week count for the whole class', async () => {
+			const [s0, s1, s2, s3] = sundays(pastYear(), 4);
+			const classId = await createClass('First Mark');
+			const x = await createStudent(classId);
+			const y = await createStudent(classId);
+			await addDays([s0, s1, s2, s3]);
+
+			await homeworkDone(classId, x, s0);
+			await teacherMark({
+				studentId: x,
+				classId,
+				sessionId: await sessionOf(classId, s0),
+				present: true
+			});
+			// s1..s3 have sessions but no marks: holidays, no grace used.
+			expect(await readStreak(x)).toEqual({
+				current_streak: 1,
+				last_qualifying_week: mondayOf(s0)
+			});
+
+			// Y's marks turn those weeks into session weeks X missed -- X's streak
+			// is recomputed although X was never marked on them.
+			for (const day of [s1, s2, s3]) {
+				await teacherMark({
+					studentId: y,
+					classId,
+					sessionId: await sessionOf(classId, day),
+					present: true
+				});
+			}
+			expect((await readStreak(x))?.current_streak).toBe(0);
+		});
+
+		it('a schedule change keeps a today-session that has marks and still drops an unmarked one', async () => {
+			const today = todayInBerlin();
+			const others = [1, 2, 3, 4, 5, 6, 7].filter((d) => d !== isoDow(today));
+			const marked = await createClass('Regen Marked');
+			const unmarked = await createClass('Regen Unmarked');
+			const student = await createStudent(marked);
+			await addDays([today]);
+			const sessionId = await sessionOf(marked, today);
+			await teacherMark({ studentId: student, classId: marked, sessionId, present: true });
+
+			for (const classId of [marked, unmarked]) {
+				const { error } = await admin.client.rpc('set_class_schedule', {
+					p_class_id: classId,
+					p_weekdays: others,
+					p_start_time: null,
+					p_duration_minutes: null,
+					p_starts_on: '1900-01-01',
+					p_ends_on: null
+				});
+				expect(error).toBeNull();
+			}
+
+			const { data: kept } = await adminClient
+				.from('class_sessions_effective')
+				.select('id, extra')
+				.in('class_id', [marked, unmarked])
+				.eq('day', today);
+			expect(kept).toEqual([{ id: sessionId, extra: false }]);
+		});
+
+		/**
+		 * The pre-0021 rule (0016), ported: attendance weeks = weeks of the
+		 * student's present marks; session weeks = weeks with any mark in the
+		 * class; walk back from `asOfWeek`, skipping non-session weeks.
+		 */
+		function legacyStreak(params: {
+			marks: { student: string; day: string; present: boolean }[];
+			doneDays: string[];
+			student: string;
+			asOfWeek: string;
+			grace: number;
+		}) {
+			const attendanceWeeks = new Set(
+				params.marks
+					.filter((m) => m.student === params.student && m.present)
+					.map((m) => mondayOf(m.day))
+			);
+			const doneWeeks = new Set(params.doneDays.map(mondayOf));
+			const qualifying = new Set([...attendanceWeeks].filter((w) => doneWeeks.has(w)));
+			const sessionWeeks = new Set(params.marks.map((m) => mondayOf(m.day)));
+			const earliest = [...sessionWeeks].sort()[0];
+			let streak = 0;
+			let last: string | null = null;
+			let gap = 0;
+			if (qualifying.size === 0) return { current_streak: 0, last_qualifying_week: null };
+			for (let week = params.asOfWeek; week >= earliest; week = plusDays(week, -7)) {
+				if (!sessionWeeks.has(week)) continue;
+				if (qualifying.has(week)) {
+					streak += 1;
+					gap = 0;
+					last ??= week;
+				} else {
+					gap += 1;
+					if (gap > params.grace) break;
+				}
+			}
+			return { current_streak: streak, last_qualifying_week: last };
+		}
+
+		it('migration equivalence: legacy (class, date) marks map onto sessions unchanged, and every streak matches the pre-0021 rule', async () => {
+			const year = pastYear();
+			const sun = sundays(year, 10);
+			// Sunday-only schedule, so a Saturday mark needs an extra session.
+			const classId = await createClass('Backfill', [SUN]);
+			const x = await createStudent(classId);
+			const y = await createStudent(classId);
+
+			// sun[0] already has a class day (and so a session); the others don't.
+			await addDays([sun[0]]);
+			const existingSession = await sessionOf(classId, sun[0]);
+
+			const saturday = plusDays(sun[6], -1);
+			const marks = [
+				...[0, 1, 2, 4, 5, 8, 9].flatMap((i) => [
+					{ student: x, day: sun[i], present: i !== 5 },
+					{ student: y, day: sun[i], present: i % 2 === 0 }
+				]),
+				// Week 3 and 7: no marks (holidays). Week 6: a Saturday session.
+				{ student: x, day: saturday, present: true },
+				{ student: y, day: saturday, present: true },
+				// A duplicate, later mark for the same (student, day).
+				{ student: y, day: sun[1], present: true }
+			];
+			const doneDays = [0, 1, 2, 4, 6, 8, 9].map((i) => sun[i]);
+
+			for (const student of [x, y]) {
+				for (const day of doneDays) await homeworkDone(classId, student, day);
+			}
+
+			// Legacy marks: (class, date) -> the backfill's session.
+			const sessionByDay = new Map<string, string>();
+			for (const m of marks) {
+				let sessionId = sessionByDay.get(m.day);
+				if (!sessionId) {
+					sessionId = await sessionFor(classId, m.day);
+					sessionByDay.set(m.day, sessionId);
+				}
+				const { error } = await serviceMark({
+					studentId: m.student,
+					classId,
+					sessionId,
+					present: m.present
+				});
+				expect(error).toBeNull();
+			}
+
+			// Existing sessions are reused; a scheduled day gets a regular session;
+			// an off-schedule day gets an extra one; a second call is idempotent.
+			expect(sessionByDay.get(sun[0])).toBe(existingSession);
+			expect(await sessionFor(classId, sun[1])).toBe(sessionByDay.get(sun[1]));
+			const { data: kinds } = await adminClient
+				.from('class_sessions_effective')
+				.select('day, extra, cancelled')
+				.eq('class_id', classId)
+				.in('day', [sun[1], saturday])
+				.order('day');
+			expect(kinds).toEqual([
+				{ day: sun[1], extra: false, cancelled: false },
+				{ day: saturday, extra: true, cancelled: false }
+			]);
+
+			// Every mark keeps student, class, present and day.
+			const { data: rows } = await adminClient
+				.from('attendance_records')
+				.select('student_id, class_id, present, session_date, class_session_id')
+				.eq('class_id', classId);
+			expect(rows).toHaveLength(marks.length);
+			const got = (rows ?? []).map((r) => `${r.student_id}|${r.session_date}|${r.present}`).sort();
+			const want = marks.map((m) => `${m.student}|${m.day}|${m.present}`).sort();
+			expect(got).toEqual(want);
+			for (const r of rows ?? []) {
+				expect(r.class_session_id).toBe(sessionByDay.get(r.session_date));
+			}
+
+			// Streaks: the calendar rule equals the pre-0021 rule, at several
+			// points in time.
+			for (const asOf of [sun[9], sun[7], sun[5], plusDays(sun[9], 21)]) {
+				const asOfWeek = mondayOf(asOf);
+				for (const student of [x, y]) {
+					const { data, error } = await adminClient.rpc('compute_student_streak', {
+						p_student_id: student,
+						p_class_id: classId,
+						p_as_of_week: asOfWeek
+					});
+					expect(error).toBeNull();
+					expect(data).toEqual(
+						legacyStreak({ marks, doneDays, student, asOfWeek, grace: graceWeeks })
+					);
+				}
+			}
+			// The scenario is not trivial.
+			expect(
+				legacyStreak({ marks, doneDays, student: x, asOfWeek: mondayOf(sun[9]), grace: graceWeeks })
+					.current_streak
+			).toBeGreaterThan(2);
+
+			// Clients can't call the backfill or the pure rule.
+			const backfill = await admin.client.rpc('attendance_backfill_session', {
+				p_class_id: classId,
+				p_day: sun[0]
+			});
+			expect(backfill.error).not.toBeNull();
+			const compute = await admin.client.rpc('compute_student_streak', {
+				p_student_id: x,
+				p_class_id: classId
+			});
+			expect(compute.error).not.toBeNull();
 		});
 	}
 );

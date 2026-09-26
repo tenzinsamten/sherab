@@ -65,7 +65,6 @@
 	"account_password_error_same": "The new password must be different from your current one.",
 	"account_password_error_failed": "Could not change your password. Please try again.",
 
-
 	"home_poster_eyebrow": "Munich Tibetan Sunday School",
 	"home_poster_hero": "Class Tracker",
 	"home_poster_blurb": "Attendance, homework and skills for every Sunday class — one shared record.",
@@ -166,7 +165,8 @@
 	"roster_heading": "Roster",
 	"roster_empty": "No approved students in this class yet.",
 	"roster_attendance_heading": "Mark attendance",
-	"roster_attendance_date_label": "Session date",
+	"roster_attendance_session_label": "Session",
+	"roster_attendance_no_sessions": "No session to mark yet. Sessions come from the calendar: only non-cancelled sessions from today or earlier can be marked.",
 	"roster_attendance_submit": "Save attendance",
 	"roster_attendance_saved": "Attendance recorded for {date}.",
 	"roster_attendance_saved_partial": "Attendance recorded for {date}, but saving failed for: {names}. Please try again for them.",
@@ -192,8 +192,8 @@
 	"roster_error_invalid_skill": "Choose a valid skill area.",
 	"roster_error_invalid_level": "Choose a valid level.",
 	"roster_error_skill_save_failed": "Could not save this status. Please try again.",
-	"roster_error_session_date_required": "Choose a session date.",
-	"roster_error_invalid_session_date": "Enter a valid session date.",
+	"roster_error_session_required": "Choose a session.",
+	"roster_error_session_not_markable": "This session can't be marked: it is cancelled, in the future or not a session of this class.",
 	"roster_error_no_students": "No students to mark attendance for.",
 	"roster_error_attendance_save_failed": "Could not save attendance. Please try again.",
 

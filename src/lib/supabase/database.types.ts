@@ -52,6 +52,7 @@ export type Database = {
 			attendance_records: {
 				Row: {
 					class_id: string;
+					class_session_id: string;
 					id: string;
 					notes: string | null;
 					present: boolean;
@@ -62,6 +63,7 @@ export type Database = {
 				};
 				Insert: {
 					class_id: string;
+					class_session_id: string;
 					id?: string;
 					notes?: string | null;
 					present: boolean;
@@ -72,6 +74,7 @@ export type Database = {
 				};
 				Update: {
 					class_id?: string;
+					class_session_id?: string;
 					id?: string;
 					notes?: string | null;
 					present?: boolean;
@@ -87,6 +90,13 @@ export type Database = {
 						isOneToOne: false;
 						referencedRelation: 'classes';
 						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'attendance_records_class_session_fkey';
+						columns: ['class_session_id', 'class_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_sessions';
+						referencedColumns: ['id', 'class_id'];
 					},
 					{
 						foreignKeyName: 'attendance_records_recorded_by_fkey';
@@ -848,6 +858,14 @@ export type Database = {
 			class_schedule_from_sessions: {
 				Args: { p_class_id: string };
 				Returns: { weekdays: number[]; starts_on: string };
+			};
+			attendance_backfill_session: {
+				Args: { p_class_id: string; p_day: string };
+				Returns: string;
+			};
+			compute_student_streak: {
+				Args: { p_student_id: string; p_class_id: string; p_as_of_week?: string };
+				Returns: { current_streak: number; last_qualifying_week: string | null };
 			};
 			add_extra_session: {
 				Args: {

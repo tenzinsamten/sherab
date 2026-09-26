@@ -110,6 +110,7 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
   summary: A class created mid-year gets sessions on every past class day; decide in 6-2 whether those count as missed for attendance and streaks.
   evidence: create_sessions_for_class() in 0018 inserts for all existing class_days. Unverified medium: it only harms users if 6-2 treats sessions from before the class existed as missed; settle it when 6-2 defines which sessions count.
+  resolved: 0019's schedule_starts_on limits a new class's sessions to its schedule start, and in 6-2 (0021) a session only counts as a session week once it has a mark, so unmarked past sessions are holidays. Weeks before a student's enrollment only end a streak that has already ended, so they need no extra rule.
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-1-class-days-sessions.md`
   summary: RLS suites (incl. Story 6-1) are skipped when no local Supabase is running, and there is no CI, so database regressions can pass `npm test`.
   evidence: every block in src/lib/server/rls.spec.ts is describe.skipIf(!reachable); the repo has no .github/ workflow. Repo-wide, pre-existing pattern.
@@ -130,3 +131,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-student-class-visibility-test.md`
   summary: classes_select_own_student (0014, via is_enrolled_in_class since 0016) has no dedicated RLS tests; nothing checks that a pending student with profiles.class_id set sees no classes, or that a student enrolled in two classes sees both but never an unenrolled class.
   evidence: The only student `classes` read in rls.spec.ts is the Story 5-1 regression assertion (single approved enrollment). The gap dates from 0014/0016, which added the policy without tests.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
+  summary: The attendance session picker doesn't preselect the students' current marks or show which sessions are already marked, so correcting an earlier session re-marks every unticked student absent.
+  evidence: 6-2 review. The form was always blank (pre-6-2 date input too); now that sessions are explicit, loading the latest mark per student for the chosen session is cheap.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
+  summary: The epic's attendance UX (a `<button aria-pressed>` per student, 48px targets, one-handed) isn't built; the roster form still uses ix-checkbox.
+  evidence: epic-6-context.md UX section; unchanged by 6-2.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
+  summary: Enrolling or unenrolling a student doesn't recompute their streak, although their classes decide which weeks are session weeks.
+  evidence: No trigger on class_enrollments calls recompute_student_streak; same before 6-2.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
+  summary: RLS tests pick random years and (4-1 via sessionFor) create class days on real recent dates in the shared local DB, which also spawn sessions for real classes.
+  evidence: 6-2 review; local dev data only. Fix: derived years per test and cleanup of created class days/sessions.

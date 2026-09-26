@@ -41,7 +41,19 @@
 		return data.students.find((s) => s.id === studentId)?.displayName ?? studentId;
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	// Story 6-2: the picker defaults to the latest markable session; after a
+	// save it stays on the session just marked.
+	let selectedSessionId = $state('');
+	$effect.pre(() => {
+		const ids = data.markableSessions.map((s) => s.id);
+		const wanted = form?.success && form.action === 'attendance' ? form.sessionId : undefined;
+		if (wanted && ids.includes(wanted)) selectedSessionId = wanted;
+		else if (!ids.includes(selectedSessionId)) selectedSessionId = ids[0] ?? '';
+	});
+
+	function sessionLabel(session: { day: string; startTime: string | null }): string {
+		return session.startTime ? `${session.day} · ${session.startTime.slice(0, 5)}` : session.day;
+	}
 
 	$effect(() => {
 		if (!form?.success) return;
@@ -130,14 +142,16 @@
 				<h2>{m.roster_attendance_heading()}</h2>
 				<form method="POST" action="?/markAttendance" use:enhance>
 					<div class="field form-narrow">
-						<label for="sessionDate">{m.roster_attendance_date_label()}</label>
-						<input
-							id="sessionDate"
-							name="sessionDate"
-							type="date"
-							required
-							value={form?.sessionDate ?? today}
-						/>
+						<label for="sessionId">{m.roster_attendance_session_label()}</label>
+						{#if data.markableSessions.length === 0}
+							<p class="muted" style="margin: 0;">{m.roster_attendance_no_sessions()}</p>
+						{:else}
+							<select id="sessionId" name="sessionId" required bind:value={selectedSessionId}>
+								{#each data.markableSessions as session (session.id)}
+									<option value={session.id}>{sessionLabel(session)}</option>
+								{/each}
+							</select>
+						{/if}
 					</div>
 					<div class="check-list" style="margin-bottom: var(--space-4);">
 						{#each data.students as student (student.id)}
@@ -145,7 +159,9 @@
 							<ix-checkbox name="present_{student.id}" label={student.displayName}></ix-checkbox>
 						{/each}
 					</div>
-					<ix-button type="submit">{m.roster_attendance_submit()}</ix-button>
+					<ix-button type="submit" disabled={data.markableSessions.length === 0}
+						>{m.roster_attendance_submit()}</ix-button
+					>
 				</form>
 			</section>
 

@@ -9,6 +9,7 @@ import {
 	unenrollStudent
 } from '$lib/server/enrollments';
 import { currentSchoolYear } from '$lib/school-year';
+import { todayInBerlin } from '$lib/berlin-date';
 import { loadAssignmentIndex } from '$lib/server/homework-view';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
 import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
@@ -24,22 +25,18 @@ type AttendanceRow = {
 	studentId: string;
 	present: boolean;
 	notes: string | null;
+	/** The day of the mark's session (Story 6-2). */
 	sessionDate: string;
 	recordedAt: string;
 };
 
-/**
- * `YYYY-MM-DD`, and a real calendar date -- not just a truthy string. Guards
- * against e.g. "2026-02-31", which `new Date(...)` would otherwise silently
- * roll over to March rather than reject.
- */
-function isValidSessionDate(value: string): boolean {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-		return false;
-	}
-	const date = new Date(`${value}T00:00:00Z`);
-	return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
+/** A session attendance can be marked for: not cancelled, today (Berlin) or earlier. */
+type MarkableSession = { id: string; day: string; startTime: string | null };
+
+/** How many recent sessions the picker offers. */
+const MARKABLE_SESSION_LIMIT = 60;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
 	const { session } = await safeGetSession();
@@ -70,6 +67,21 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	const studentsError = roster.error;
 
 	const studentIds = students.map((s) => s.id);
+
+	// Story 6-2: attendance is marked against one of the class's sessions --
+	// not cancelled, today (Berlin) or earlier, newest first. The insert
+	// policy enforces the same rule; this only fills the picker.
+	const sessionsResult = await supabase
+		.from('class_sessions_effective')
+		.select('id, day, start_time')
+		.eq('class_id', classId)
+		.eq('cancelled', false)
+		.lte('day', todayInBerlin())
+		.order('day', { ascending: false })
+		.limit(MARKABLE_SESSION_LIMIT);
+	const markableSessions: MarkableSession[] = (sessionsResult.data ?? []).flatMap((r) =>
+		r.id && r.day ? [{ id: r.id, day: r.day, startTime: r.start_time }] : []
+	);
 
 	let skillHistory: SkillHistoryRow[] = [];
 	let attendance: AttendanceRow[] = [];
@@ -146,6 +158,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		enrollable: enrollable.students,
 		skillHistory,
 		attendance,
+		markableSessions,
 		currentSkills,
 		homeworkCounts: {
 			open: homeworkIndex.entries.filter((e) => e.open).length,
@@ -161,6 +174,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			enrollable.error ||
 			skillError ||
 			attendanceError ||
+			sessionsResult.error ||
 			homeworkIndex.error ||
 			syllabusList.error
 		)
@@ -225,24 +239,45 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const sessionDate = String(formData.get('sessionDate') ?? '');
+		const sessionId = String(formData.get('sessionId') ?? '');
 		const studentIds = formData.getAll('studentIds').map(String);
 
-		if (!sessionDate) {
-			return fail(400, { error: m.roster_error_session_date_required() });
+		if (!sessionId) {
+			return fail(400, { error: m.roster_error_session_required() });
 		}
-		if (!isValidSessionDate(sessionDate)) {
-			return fail(400, { error: m.roster_error_invalid_session_date() });
+		if (!UUID_PATTERN.test(sessionId)) {
+			return fail(400, { error: m.roster_error_session_not_markable() });
 		}
 		if (studentIds.length === 0) {
 			return fail(400, { error: m.roster_error_no_students() });
 		}
 
-		// RLS (attendance_records_insert_admin_or_assigned_teacher) is the real
-		// barrier, as above. One append-only insert per roster student for the
-		// chosen session date (AD-5) -- re-marking the same date later adds new
-		// rows rather than overwriting, which is also what keeps two teachers
-		// marking concurrently safe.
+		// UX-only pre-check (and the day for the toast): the session must be one
+		// of this class's, not cancelled, today (Berlin) or earlier. RLS
+		// (attendance_records_insert_admin_or_assigned_teacher, 0021) enforces
+		// the same rule on every insert below.
+		const { data: session, error: sessionError } = await supabase
+			.from('class_sessions_effective')
+			.select('id, class_id, day, cancelled')
+			.eq('id', sessionId)
+			.maybeSingle();
+		if (sessionError) {
+			return fail(400, { error: m.roster_error_attendance_save_failed() });
+		}
+		if (
+			!session?.day ||
+			session.class_id !== params.id ||
+			session.cancelled !== false ||
+			session.day > todayInBerlin()
+		) {
+			return fail(400, { error: m.roster_error_session_not_markable() });
+		}
+		const sessionDate = session.day;
+
+		// One append-only insert per roster student for the chosen session
+		// (AD-5) -- re-marking the same session later adds new rows rather than
+		// overwriting, which is also what keeps two teachers marking
+		// concurrently safe. The latest row per (student, session) is current.
 		//
 		// Inserted one row at a time, not as a single multi-row insert: a
 		// multi-row insert is all-or-nothing, so one student's WITH CHECK
@@ -252,26 +287,37 @@ export const actions: Actions = {
 		// the failing student(s) be reported instead of masked by one generic
 		// error.
 		const failedStudentIds: string[] = [];
+		// Stays true only while every failure is an insert-policy refusal.
+		let allRlsDenied = true;
 		for (const studentId of studentIds) {
 			const { error: insertError } = await supabase.from('attendance_records').insert({
 				student_id: studentId,
 				class_id: params.id,
+				class_session_id: sessionId,
 				present: formData.get(`present_${studentId}`) === 'on',
-				session_date: sessionDate,
 				recorded_by: user.id
 			});
 			if (insertError) {
 				failedStudentIds.push(studentId);
+				// 42501: the insert policy refused the row -- for a whole class
+				// that means the session (cancelled or moved since the page
+				// loaded), not the students.
+				if (insertError.code !== '42501') allRlsDenied = false;
 			}
 		}
 
 		if (failedStudentIds.length === studentIds.length) {
-			return fail(400, { error: m.roster_error_attendance_save_failed() });
+			return fail(400, {
+				error: allRlsDenied
+					? m.roster_error_session_not_markable()
+					: m.roster_error_attendance_save_failed()
+			});
 		}
 
 		return {
 			success: true,
 			action: 'attendance' as const,
+			sessionId,
 			sessionDate,
 			failedStudentIds
 		};
