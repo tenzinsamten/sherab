@@ -1,4 +1,4 @@
-/** Supabase Auth's default minimum; the same rule signup already enforces. */
+/** Supabase Auth's default minimum password length, which Auth itself enforces. */
 export const MIN_PASSWORD_LENGTH = 6;
 
 /**

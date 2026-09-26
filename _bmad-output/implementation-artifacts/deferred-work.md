@@ -117,3 +117,13 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-47-calendar-month-grid.md`
   summary: The Tibetan (`bo`) message file carries English copies for new calendar dialog strings (and earlier keys); they need real translations.
   evidence: `messages/bo.json` calendar_dialog_close, calendar_time_label, calendar_date_label, calendar_class_day_chip, calendar_day_button_label, calendar_admin_click_hint are identical to `en.json`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-50-signup-role.md`
+  summary: Public supabase.auth.signUp still sends a "Confirm your email address" mail to any address, even when handle_new_user() refuses the sign-up at commit (forged or no role), so anyone can trigger mails and use up the Auth email rate limit.
+  evidence: Reproduced locally 2026-09-26 (forged role admin → 500, Mailpit received the confirmation). Existed before #50 (those sign-ups used to succeed and mail). Closed by moving /join to a server action using the Admin API and disabling public sign-up (spine AD-11), planned with the Parent stories.
+- source_spec: `_bmad-output/implementation-artifacts/spec-50-signup-role.md`
+  summary: No test runs the admin "create teacher" action (src/routes/admin/teachers/+page.server.ts), so a regression in its createUser payload (e.g. the role moving back to user_metadata, which 0020 refuses) would go unnoticed.
+  evidence: The verification-gap review found only comment references to the action in src and e2e; the rls.spec test hand-copies the payload. The action was never tested before #50 either. Fix: pull the createUser options into a $lib/server helper used by both the action and the test, or add an e2e that submits the Teachers form.
+- source_spec: `_bmad-output/implementation-artifacts/spec-50-signup-role.md`
+  summary: The whole RLS suite, including the #50 sign-up role tests, is skipped silently when local Supabase isn't reachable, so `npm run test` can be green without testing any database rule.
+  evidence: rls.spec.ts uses describe.skipIf(!reachable) with a 1.5 s health check; the repo has no CI that guarantees Supabase is up. Project-wide convention, not introduced by #50. Fix: a required test run with Supabase up (CI or a pre-push check), or fail instead of skip when an env flag demands it.

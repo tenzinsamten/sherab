@@ -65,15 +65,6 @@
 	"account_password_error_same": "The new password must be different from your current one.",
 	"account_password_error_failed": "Could not change your password. Please try again.",
 
-	"signup_section_label": "One-time step",
-	"signup_heading": "Create an account",
-	"signup_notice": "This form exists only for the one-time admin-bootstrap step: the first person to sign up here has their account promoted to admin via a documented one-time SQL statement. Every teacher account after that is created by the admin from the Teachers screen, not through this form.",
-	"signup_email_label": "Email",
-	"signup_password_label": "Password",
-	"signup_submit": "Create account",
-	"signup_error_required": "Email and password are required.",
-	"signup_error_password_length": "Password must be at least 6 characters.",
-	"signup_error_duplicate": "An account with this email already exists.",
 
 	"home_poster_eyebrow": "Munich Tibetan Sunday School",
 	"home_poster_hero": "Class Tracker",
@@ -94,7 +85,6 @@
 	"home_see_my_homework": "See my homework",
 	"home_manage_teams": "Manage teams",
 	"home_review_requests": "Review requests",
-	"home_just_signed_up": "Account created. If this is meant to be the first admin account, ask whoever has database access to run the documented admin-bootstrap SQL statement, then sign in again.",
 
 	"classes_section_label": "02 / Classes",
 	"classes_heading": "Classes",

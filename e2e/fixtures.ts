@@ -79,7 +79,9 @@ async function createUser(
 		email,
 		password,
 		email_confirm: true,
-		user_metadata: { role }
+		// Staff roles come only from app_metadata (migration 0020, #50);
+		// 'student' is the one role client metadata may carry.
+		...(role === 'student' ? { user_metadata: { role } } : { app_metadata: { role } })
 	});
 	if (error || !data.user) throw new Error(`create ${role}: ${error?.message}`);
 	created.push(data.user.id);

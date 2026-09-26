@@ -46,12 +46,6 @@
 		}
 	});
 
-	// Signup redirects with ?justSignedUp=1; `/` forwards the query to the
-	// role's start page, so the confirmation is shown wherever the user lands.
-	$effect(() => {
-		if (page.url.searchParams.has('justSignedUp')) showToast('success', m.home_just_signed_up());
-	});
-
 	// resolve() for an arbitrary pathname. Passing a Pathname union straight to
 	// resolve()'s per-route overloads stops type-checking once the app has more
 	// than 25 routes (TypeScript's union comparison limit).

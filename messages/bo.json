@@ -65,15 +65,6 @@
 	"account_password_error_same": "The new password must be different from your current one.",
 	"account_password_error_failed": "Could not change your password. Please try again.",
 
-	"signup_section_label": "གོམ་པ་དང་པོ།",
-	"signup_heading": "རྩིས་ཁྲ་གསར་འཛུགས།",
-	"signup_notice": "ཐེངས་གཅིག་མ་གཏོགས་མི་དགོས།",
-	"signup_email_label": "གློག་འཕྲིན།",
-	"signup_password_label": "གསང་གྲངས",
-	"signup_submit": "རྩིས་ཁྲ་བཟོས།",
-	"signup_error_required": "གློག་འཕྲིན་དང་གསང་གྲངས་སོགས་དགོས་ཀྱི་ཡོད།",
-	"signup_error_password_length": "གསང་གྲངས་ཡིག་འབྲུ་ ༦ ལས་མི་ཉུང་བ་དགོས།",
-	"signup_error_duplicate": "An account with this email already exists.",
 
 	"home_poster_eyebrow": "Munich Tibetan Sunday School",
 	"home_poster_hero": "Class Tracker",
@@ -94,7 +85,6 @@
 	"home_see_my_homework": "See my homework",
 	"home_manage_teams": "Manage teams",
 	"home_review_requests": "Review requests",
-	"home_just_signed_up": "Account created. If this is meant to be the first admin account, ask whoever has database access to run the documented admin-bootstrap SQL statement, then sign in again.",
 
 	"classes_section_label": "02 / Classes",
 	"classes_heading": "Classes",

@@ -8,7 +8,7 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ parent, url }) => {
 	const { profile } = await parent();
 	const home = roleHome(profile?.role);
-	// Keep the query (e.g. signup's ?justSignedUp=1, whose toast the layout shows).
+	// Keep the query string when forwarding to the role's start page.
 	if (home) throw redirect(303, `${home}${url.search}`);
 	return {};
 };

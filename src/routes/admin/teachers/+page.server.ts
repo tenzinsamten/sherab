@@ -69,8 +69,10 @@ export const actions: Actions = {
 			email,
 			password: tempPassword,
 			email_confirm: true,
+			// The role goes in app_metadata (service-role only): handle_new_user()
+			// never takes a privileged role from user_metadata (migration 0020, #50).
+			app_metadata: { role: 'teacher' },
 			user_metadata: {
-				role: 'teacher',
 				display_name: displayName || email
 			}
 		});

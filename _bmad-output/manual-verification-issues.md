@@ -927,8 +927,20 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Accept at most `parent` from client metadata, or no role at all. Architecture rule: spine AD-4
   (2026-09-26).
 - **To check:** does the hosted project also have sign-up enabled? Do any existing profiles have
-  an unexpected `admin`/`teacher` role?
-- **Status:** logged, not fixed.
+  an unexpected `admin`/`teacher` role? Hosted detection query:
+  `select id, email, role from profiles where role in ('admin','teacher') order by created_at;`
+  plus `select email, raw_app_meta_data from auth.users` for unexpected accounts.
+- **If an unexpected admin/teacher turns up:** delete that auth user (Studio → Authentication, or
+  the Admin API `deleteUser`). That removes its profile and ends its sessions (refresh tokens are
+  revoked). Access tokens it already holds stay valid until they expire (default 1 hour).
+- **Known limit (deferred):** a public `signUp` still sends a confirmation email even when the
+  sign-up is refused. This closes when `/join` moves to the Admin API (spine AD-11).
+- **Status:** built (2026-09-26, uncommitted, not yet pushed to hosted): migration
+  `0020_signup_role_from_app_metadata.sql` takes `admin`/`teacher` only from `raw_app_meta_data`,
+  accepts only `student` from client metadata and refuses every other sign-up. The public
+  `/signup` page is removed, `/admin/teachers` sets the role through `app_metadata`, and the README
+  bootstrap now uses the Admin API plus the promote SQL. After pushing 0020, run the hosted checks in
+  `implementation-artifacts/spec-50-signup-role.md` (Verification).
 
 ---
 

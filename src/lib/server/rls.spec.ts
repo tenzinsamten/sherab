@@ -52,7 +52,7 @@ async function createSignedInUser(role: 'admin' | 'teacher') {
 		email,
 		password,
 		email_confirm: true,
-		user_metadata: { role }
+		app_metadata: { role }
 	});
 	if (error || !data.user) {
 		throw new Error(`Failed to create ${role} test user: ${error?.message}`);
@@ -106,22 +106,26 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 			throw new Error(`Failed to assign teacherA to Class A: ${assignError.message}`);
 	}, 30000);
 
-	it('admin bootstrap: promoting a signed-up account to admin is idempotent', async () => {
-		const { email, password } = await (async () => {
-			const email = `story-1-1-bootstrap-${crypto.randomUUID()}@example.test`;
-			const password = crypto.randomUUID();
-			const client = anonClient();
-			const { error } = await client.auth.signUp({ email, password });
-			expect(error).toBeNull();
-			return { email, password };
-		})();
+	it('admin bootstrap: an Admin-API-created account promoted to admin is idempotent', async () => {
+		// The public /signup page is gone (#50). The documented bootstrap
+		// creates the first account through the Admin API (service role, role
+		// in app_metadata -- handle_new_user() refuses any account without a
+		// role, 0020), then runs the one-time promote SQL.
+		const email = `story-1-1-bootstrap-${crypto.randomUUID()}@example.test`;
+		const created = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'teacher' }
+		});
+		expect(created.error).toBeNull();
 
 		const { data: userRow } = await adminClient
 			.from('profiles')
 			.select('id, role')
 			.eq('email', email)
 			.single();
-		expect(userRow?.role).toBe('teacher'); // default role from handle_new_user()
+		expect(userRow?.role).toBe('teacher');
 
 		// This is the documented one-time admin-bootstrap SQL step's effect,
 		// applied via the service-role client (which -- like `psql` run by
@@ -143,8 +147,6 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		const second = await promote();
 		expect(second.error).toBeNull();
 		expect(second.data?.role).toBe('admin');
-
-		void password; // only needed to prove the signUp call above succeeded
 	});
 
 	it('creating an auth user with an already-registered email fails with a duplicate-identifiable error', async () => {
@@ -153,7 +155,7 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'teacher' }
+			app_metadata: { role: 'teacher' }
 		});
 		expect(first.error).toBeNull();
 
@@ -161,7 +163,7 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'teacher' }
+			app_metadata: { role: 'teacher' }
 		});
 
 		// Mirrors the exact detection admin/teachers/+page.server.ts relies on
@@ -188,8 +190,10 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		// "no such account".
 	});
 
-	it('signup/+page.server.ts duplicate-email detection matches the real signUp response shape', async () => {
-		// Local Supabase config now matches production's `enable_confirmations
+	it('join/+page.server.ts duplicate-email detection matches the real signUp response shape', async () => {
+		// The student /join register action signs up with the guardian's email,
+		// so a second registration for the same guardian is a duplicate signUp.
+		// Local Supabase config matches production's `enable_confirmations
 		// = true` (migration 0006's guardian-email-verification change): a
 		// duplicate email does NOT error from signUp() -- it returns success
 		// with the pre-existing user's REAL, non-empty identity (same id, same
@@ -197,9 +201,23 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		// bumping updated_at. isDuplicateSignup() must detect this shape, not
 		// just a thrown error or an empty-identities array that this GoTrue
 		// version doesn't actually produce here.
-		const email = `story-1-1-signup-dup-${crypto.randomUUID()}@example.test`;
+		const email = `story-1-1-join-dup-${crypto.randomUUID()}@example.test`;
 		const client1 = anonClient();
-		const first = await client1.auth.signUp({ email, password: crypto.randomUUID() });
+		// A student sign-up, as /join sends it: since #50 (0020) a sign-up with
+		// no role is refused outright, so only this shape can hit a duplicate.
+		const studentSignUp = (password: string) => ({
+			email,
+			password,
+			options: {
+				data: {
+					role: 'student',
+					class_id: classAId,
+					registration_name: `Dup Shape ${email}`,
+					guardian_consent_given_at: new Date().toISOString()
+				}
+			}
+		});
+		const first = await client1.auth.signUp(studentSignUp(crypto.randomUUID()));
 		expect(first.error).toBeNull();
 		expect(isDuplicateSignup(first.error, first.data.user)).toBe(false);
 
@@ -210,7 +228,7 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		await new Promise((resolve) => setTimeout(resolve, 1100));
 
 		const client2 = anonClient();
-		const second = await client2.auth.signUp({ email, password: crypto.randomUUID() });
+		const second = await client2.auth.signUp(studentSignUp(crypto.randomUUID()));
 
 		expect(second.error).toBeNull();
 		expect(second.data.user?.id).toBe(first.data.user?.id);
@@ -286,6 +304,162 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 			.eq('class_id', classAId)
 			.eq('teacher_id', teacherB.id);
 		expect(check).toEqual([]);
+	});
+});
+
+/**
+ * Issue #50 (AD-4, migration 0020): handle_new_user() takes admin/teacher
+ * only from app_metadata (service role only). The one role client metadata
+ * may carry is 'student'; anything else refuses the whole sign-up.
+ */
+describe.skipIf(!reachable)('Issue #50 sign-up role (requires local Supabase)', () => {
+	let classId: string;
+
+	beforeAll(async () => {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: `Issue 50 Class ${crypto.randomUUID().slice(0, 6)}`,
+				code: `R${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		classId = data.id;
+	});
+
+	/** No auth user exists for the email: creating one now is not a duplicate. */
+	async function expectNoAccount(email: string) {
+		const { data: profiles } = await adminClient.from('profiles').select('id').eq('email', email);
+		expect(profiles).toEqual([]);
+
+		const probe = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'teacher' }
+		});
+		expect(probe.error).toBeNull();
+		await adminClient.auth.admin.deleteUser(probe.data.user!.id);
+	}
+
+	it.each([
+		['forged admin', { role: 'admin' }],
+		['forged teacher', { role: 'teacher' }],
+		['no role', undefined]
+	])('public signUp with %s is refused: no auth user, no profile', async (_label, data) => {
+		const email = `issue-50-forged-${crypto.randomUUID()}@example.test`;
+		const { data: result, error } = await anonClient().auth.signUp({
+			email,
+			password: crypto.randomUUID(),
+			...(data ? { options: { data } } : {})
+		});
+		expect(error).not.toBeNull();
+		expect(result.user).toBeNull();
+		await expectNoAccount(email);
+	});
+
+	it('student join signUp still lands a Pending student profile', async () => {
+		const registrationName = `Issue 50 Student ${crypto.randomUUID().slice(0, 8)}`;
+		const { error, id } = await signUpStudent({ classId, registrationName });
+		expect(error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role, status, class_id, registration_name')
+			.eq('id', id!)
+			.single();
+		expect(profile).toEqual({
+			role: 'student',
+			status: 'pending',
+			class_id: classId,
+			registration_name: registrationName
+		});
+	});
+
+	it('admin createUser with app_metadata teacher gives a teacher profile, and a duplicate is still detected', async () => {
+		const email = `issue-50-teacher-${crypto.randomUUID()}@example.test`;
+		const create = () =>
+			adminClient.auth.admin.createUser({
+				email,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				app_metadata: { role: 'teacher' },
+				user_metadata: { display_name: 'Issue 50 Teacher' }
+			});
+		const first = await create();
+		expect(first.error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role, display_name, status')
+			.eq('id', first.data.user!.id)
+			.single();
+		expect(profile).toEqual({ role: 'teacher', display_name: 'Issue 50 Teacher', status: null });
+
+		const second = await create();
+		expect(second.error).not.toBeNull();
+		const isDuplicate =
+			second.error?.code === 'email_exists' ||
+			/already.*registered|exists/i.test(second.error?.message ?? '');
+		expect(isDuplicate).toBe(true);
+	});
+
+	it('service-role createUser with app_metadata admin gives an admin profile', async () => {
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email: `issue-50-admin-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'admin' }
+		});
+		expect(error).toBeNull();
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role')
+			.eq('id', data.user!.id)
+			.single();
+		expect(profile?.role).toBe('admin');
+	});
+
+	it('mixed: app_metadata teacher wins over user_metadata admin', async () => {
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email: `issue-50-mixed-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'teacher' },
+			user_metadata: { role: 'admin' }
+		});
+		expect(error).toBeNull();
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role')
+			.eq('id', data.user!.id)
+			.single();
+		expect(profile?.role).toBe('teacher');
+	});
+
+	it('admin createUser with an unknown app_metadata role (parent) is refused, no profile', async () => {
+		const email = `issue-50-parent-${crypto.randomUUID()}@example.test`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'parent' }
+		});
+		expect(error).not.toBeNull();
+		expect(data.user).toBeNull();
+		await expectNoAccount(email);
+	});
+
+	it('admin createUser with no role at all (e.g. Studio "Add user") is refused', async () => {
+		const email = `issue-50-norole-${crypto.randomUUID()}@example.test`;
+		const { error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true
+		});
+		expect(error).not.toBeNull();
+		await expectNoAccount(email);
 	});
 });
 
