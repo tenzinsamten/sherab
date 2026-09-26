@@ -834,6 +834,83 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   in the class) because students can't read other profiles. Shared UI: `StudentHomeworkRows`,
   `Pager`. Migration 0017 checked with a Postgres parser only (Docker off).
 
+## 47. Calendar should be a Google Calendar–style month grid
+- **Asked (user, 2026-09-25):** "i wanted the calender which is similar to google calender view,
+  you can use library . no need to build everything. and you can see the classes on it." With a
+  screenshot of Google Calendar's Month view: Today button, prev/next arrows, month title,
+  Sun–Sat grid of 5–6 weeks (days from neighbouring months shown), today as a filled circle, and
+  events as coloured chips inside each day cell.
+- **Today:** story 6-1 (commit `e6135bb`) shows `/calendar` as a date-grouped list, one card per
+  class day, with edit forms inline. The month grid was deferred at spec time
+  (`deferred-work.md`, "Month-grid calendar UI").
+- **Likely shape (for planning):** keep 6-1's `?month=` load, actions, RLS and data; replace the
+  list with a month-grid library. Each session becomes a chip in its day cell (class name + start
+  time, cancelled shown struck through or greyed). Clicking a chip opens that session's edit
+  controls (admin/teacher) or details (student). Clicking a day opens "add class day" or
+  cancel/restore for the admin.
+- **To decide when planning:**
+  - Library: `@event-calendar/core` (Svelte-native, FullCalendar-like, MIT), FullCalendar
+    (`@fullcalendar/core` + `daygrid`, framework-agnostic, MIT), or Schedule-X (has a Svelte
+    adapter).
+  - Views: month only, or also week/day like Google Calendar?
+  - Chip colour: per class, or by status (scheduled / cancelled / time not set)?
+  - Where editing happens: dialog/drawer on click, or keep the current forms below the grid?
+  - Phone width: a month grid is cramped; switch to a list/agenda view below a breakpoint?
+  - Week start: Sunday (as in the screenshot) or Monday (usual in Germany)?
+- **Decided (user, 2026-09-25):** library `@event-calendar/core` · month grid on wide screens,
+  agenda list at phone width · editing in a dialog (click a class chip for time / duration /
+  cancel-restore; admin clicks a day to add or cancel a class day) · week starts Monday.
+- **Built:** spec-47, commit `acefca9` (2026-09-26), not pushed.
+
+## 48. Class schedule should be configurable per class (weekdays, time, duration, end date)
+- **Asked (user, 2026-09-26):** "currently we are assuming that class can be scheduled only on
+  sunday. But when you create or schedule a class. the start time,duration and till what date
+  and which days in the week should be configurable."
+- **Today (story 6-1, `0018_calendar.sql`):** class days are school-wide dates. The admin adds
+  them as a start date "repeated weekly until" an end date, so they fall on one weekday (in
+  practice Sunday). Every class gets a session on every class day, at its class default start
+  time and duration (set by the class's teachers). Per-session overrides and cancellations exist.
+- **Likely shape (for planning):** a per-class schedule, set when a class is created or edited:
+  weekdays (one or more), start time, duration, start date and end date ("till what date").
+  Sessions are generated from that schedule, on the school-wide class days only (see Clarified).
+  Touches the data model (new migration), the class create/edit forms, session generation, the
+  calendar (#47), and the attendance/streak intent in `specs/spec-class-tracker/calendar.md`.
+- **Clarified (user, 2026-09-26):** "Add class days is the days on which classes will happen and
+  then each class can take a slot from it." So school-wide class days **stay** as the pool of days
+  the school is open (set by the admin). Each class then takes its slots from that pool: which of
+  those days it runs on (weekdays, until an end date) and at what start time and duration.
+  Today every class automatically gets a session on every class day; that becomes opt-in per class.
+- **Admin side (user, 2026-09-26):** classes usually happen on Sunday, so Sunday should be the
+  default, but the admin must be able to add an extra class day on another weekday (e.g. Friday
+  or Saturday) when needed. Today this already works but isn't obvious: "Add class days" takes any
+  date, and leaving "Repeat weekly until" empty adds just that one day; clicking a day in the
+  month grid prefills it. Missing: no explicit weekday choice or "Sunday" default, the weekly
+  repeat simply follows the start date's weekday, and one add can't cover two weekdays.
+- **To decide when planning:**
+  - Can one class have different times on different weekdays (Sun 10:00, Wed 18:00)?
+  - Who sets the schedule: admin only, or also the class's teachers?
+  - Start date: from class creation, or chosen? What happens to already-generated sessions when
+    the schedule is edited (future ones regenerated, past ones kept)?
+  - Existing data: convert today's class days + class defaults into schedules?
+  - Streaks: still weekly ("any session in the week qualifies") with several sessions per week?
+
+## 49. Saved class default time doesn't show on the calendar
+- **Reported (user, 2026-09-26):** "I saved class default time but i do not see the default class
+  timing on the calender". Seen on the dev server on :5173, which runs `vite dev --mode
+  production`, i.e. against the **hosted** Supabase.
+- **How it works today:** a class default (start time + duration) does not create anything on the
+  calendar by itself. It only sets the time of that class's sessions, and sessions exist only on
+  class days the admin has added ("Add class days", start date weekly until an end date). The
+  view `class_sessions_effective` (`0018_calendar.sql:231`) reads the default live, so existing
+  sessions pick a new default up immediately, unless the session has its own time override.
+- **Likely cause (not yet confirmed on hosted):** no class days exist in the month being viewed,
+  so there are no sessions to show the time on. Less likely: that class's sessions carry a
+  start-time override, which wins over the default. Local DB check: 0 class days in 2026–2027.
+- **To check:** as admin on `/calendar`, is any day in that month a class day (chip or "Class
+  day" marker)? If yes, open that class's chip: does the dialog show an override or the default?
+- **Relation to #48:** the expectation behind this report ("saving the time schedules the class")
+  is exactly what #48's per-class schedule would provide.
+
 ---
 
 ## Log
