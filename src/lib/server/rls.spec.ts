@@ -5268,8 +5268,11 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 		expect(adminHistoryError).toBeNull();
 		expect(adminVisibleHistory).toHaveLength(1);
 
-		// A student has no select policy on `classes` at all (admin-or-
-		// assigned-teacher only) -- zero rows, not a scoped-down subset.
+		// classes_select_own_student (0014, via is_enrolled_in_class since
+		// 0016): a student sees only the classes they're enrolled in -- their
+		// own class, never the foreign one the admin dashboard aggregates. The
+		// enrollment row comes from profiles_enroll_on_approval (0016), which
+		// fires when createSignedInStudent sets status to 'approved'.
 		const signedInStudent = await createSignedInStudent({
 			classId: ownClassId,
 			name: 'Regression Viewer'
@@ -5278,7 +5281,7 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 			.from('classes')
 			.select('id');
 		expect(studentClassesError).toBeNull();
-		expect(studentVisibleClasses).toEqual([]);
+		expect(studentVisibleClasses).toEqual([{ id: ownClassId }]);
 
 		// profiles_select_own: a student sees only their own profile row,
 		// never the cross-class student roster the admin dashboard aggregates.

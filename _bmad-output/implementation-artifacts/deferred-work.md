@@ -127,3 +127,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-50-signup-role.md`
   summary: The whole RLS suite, including the #50 sign-up role tests, is skipped silently when local Supabase isn't reachable, so `npm run test` can be green without testing any database rule.
   evidence: rls.spec.ts uses describe.skipIf(!reachable) with a 1.5 s health check; the repo has no CI that guarantees Supabase is up. Project-wide convention, not introduced by #50. Fix: a required test run with Supabase up (CI or a pre-push check), or fail instead of skip when an env flag demands it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1-student-class-visibility-test.md`
+  summary: classes_select_own_student (0014, via is_enrolled_in_class since 0016) has no dedicated RLS tests; nothing checks that a pending student with profiles.class_id set sees no classes, or that a student enrolled in two classes sees both but never an unenrolled class.
+  evidence: The only student `classes` read in rls.spec.ts is the Story 5-1 regression assertion (single approved enrollment). The gap dates from 0014/0016, which added the policy without tests.
