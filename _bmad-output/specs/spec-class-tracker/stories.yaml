@@ -219,20 +219,147 @@
     student's streak must be identical before and after the migration —
     prove it with a test. Keep attendance_records append-only.
 
-- id: "6-3"
-  title: Student Coming / On leave
+# Feature 7: Parent Role (CAP-12, CAP-13; amends CAP-1, CAP-2, CAP-4, CAP-7, CAP-8, CAP-11)
+# Story 6-3 (student-set Coming / On leave) retired 2026-09-26: CAP-11 is now
+# parent-only; its scope moved to 7-4.
+- id: "7-1"
+  title: Parent accounts, admin approval & My Profile
   description: >-
-    A student marks each upcoming session of their enrolled classes as
-    Coming or On leave, visible to that class's teachers, classmates and
-    team; leave set before the session starts protects the streak. See
-    SPEC.md CAP-11, calendar.md and gamification.md.
+    A parent self-registers with email and password, confirms the email,
+    and only the admin approves or rejects them; a teacher or admin can
+    also hold the parent role on the same login and switch roles in-app.
+    Parents get a My Profile page like the teacher's. See SPEC.md CAP-12,
+    CAP-7 and roles-and-permissions.md.
   spec_checkpoint: true
   done_checkpoint: true
   invoke_dev_with: >-
-    Students can be enrolled in several classes (class_enrollments,
-    0016) — show intent per session across all of them. Collect no
-    leave reason (data minimization on minors). Leave only counts for
-    the streak when set before session start; a later change must not
-    retroactively excuse an absence. Open questions in SPEC.md
-    (date-range leave, notifications, overlap warning) are out of this
-    story unless resolved first.
+    Implement ARCHITECTURE-SPINE AD-4: parent capability lives only in an
+    approved `parents` row (PK = auth user id; pending/approved/rejected;
+    approvable only after email confirmation), never inferred from
+    profiles.role. Add is_parent() and one getCapabilities() helper for
+    route guards; the role switcher is presentation only and RLS unions
+    everything a login holds. A parent-only login is created by a server
+    action; a signed-in teacher/admin requests parent capability by an
+    RLS-guarded insert of their own pending row; the admin creating a
+    teacher whose email already has a parent-only login promotes it.
+    Rejection deletes the parents row (and the auth user for a
+    parent-only login) so the email can re-register. Teachers never see
+    parent registrations. Keep the #50 fix (0020): client metadata may
+    carry at most `parent`. My Profile reuses the teacher's page (display
+    name, password, forgot-password; email read-only). Paraglide en/de/bo.
+
+- id: "7-2"
+  title: Parent-first student registration & linking
+  description: >-
+    A student can register only with the email of an approved parent,
+    which links them to that parent; siblings share the email and the
+    parent sees pending children as waiting for approval. The separate
+    guardian-email confirmation is dropped. See SPEC.md CAP-1, CAP-12 and
+    roles-and-permissions.md. Build after 7-1.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    AD-10: the link is a stored FK profiles.parent_id -> parents.id ON
+    DELETE RESTRICT, set once at sign-up; RLS never matches email text;
+    parent_id, guardian_email and role are writable only by trusted paths
+    (guard trigger, including through the teacher's registration-review
+    update). AD-11: the student's auth user gets a synthetic email (the
+    existing student email domain) via the Admin API, pre-confirmed with
+    a random unshared password; the parent match happens inside the
+    auth-user insert trigger and raises to roll back the sign-up. The
+    server pre-check only returns found/not-found for the exact FR-3
+    message "No parent account found. Check the email is correct, or ask
+    your parent to register first." Retire the 0006 guardian-email
+    confirmation; student approval no longer needs email_confirmed_at.
+    Consent step stays. Add linked_children() (pending + approved, name
+    and status only). No real families yet: test data is reset at
+    release, so no data migration.
+
+- id: "7-3"
+  title: Parent child overview & details (read-only)
+  description: >-
+    An approved parent lands on per-child summary cards (classes, open
+    and overdue homework counts) and opens a child to see homework,
+    attendance, skill status with history, teacher notes, streak, badges,
+    team and leaderboard, sessions and leave answers, and teachers —
+    changing nothing. See SPEC.md CAP-13, CAP-2. Build after 7-2.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    AD-12: add `or is_parent_of(student_id)` to the SELECT policies of
+    the student-keyed tables and is_parent_in_class(class_id) on the
+    class-keyed ones; no parent INSERT/UPDATE/DELETE anywhere. The parent
+    variant of class_people returns teachers only; the leaderboard shows
+    team totals only. Functions that treat auth.uid() as the student take
+    an explicit student id and check self-or-parent. Open/Overdue counts
+    come from one homework_counts(student_id) shared by the student page,
+    parent card and admin view. attendance_records.notes stay
+    teacher-only (AD-12 assumption). Teacher-side notes field label:
+    "Visible to the student's parent". Prove with RLS tests that a parent
+    cannot read another child or write anything. Paraglide en/de/bo.
+
+- id: "7-4"
+  title: "Parent session leave: Coming / On leave, planned vs short-notice"
+  description: >-
+    The parent marks a linked child Coming or On leave per session until
+    it starts; On leave set at least the admin-configurable Leave Notice
+    Period (default 2 weeks) ahead is planned and protects the streak,
+    later is short-notice and costs a grace week. The student sees the
+    answer read-only. See SPEC.md CAP-11, CAP-4, calendar.md and
+    gamification.md. Replaces 6-3; build after 7-3.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    AD-13/AD-15: append-only session_leave_history keyed by
+    class_session_id + student_id (coming/on_leave/sick); only
+    is_parent_of(student_id) may insert; the database enforces the
+    cutoffs from AD-15's single session-start source. A BEFORE INSERT
+    trigger stamps planned/short_notice via classify_leave(); the client
+    never supplies it, and the parent's "Planned or Short-Notice" preview
+    must call the same logic. Classification is frozen at insert. Leave
+    Notice Period is a stored admin setting, not a constant. AD-14:
+    classmates and teammates read leave only through one security-definer
+    function that returns sick as on_leave. Remove any student-side leave
+    control. Wire streak grace into recompute_student_streak() (0021);
+    Sick is stored here but its approval is 7-5.
+
+- id: "7-5"
+  title: Sick leave with teacher approval
+  description: >-
+    The parent can mark a child Sick for a session until the end of the
+    day after it; any teacher of the class (admin as backup) approves or
+    rejects, undecided Sick is auto-approved after 2 weeks, and the
+    child's streak is recalculated for that week on decision. See SPEC.md
+    CAP-11, CAP-4 and gamification.md. Build after 7-4.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    AD-13: decisions live in sick_leave_decisions keyed by
+    (class_session_id, student_id), not by a leave row; a rejection is
+    final for that session. AD-4: no one who is_parent_of the student can
+    decide (policy WITH CHECK). A daily pg_cron catch-up job approves
+    undecided Sick whose session started >= 14 days ago, recorded with a
+    system actor. Pending Sick does not protect the streak; approved does
+    regardless of notice; rejected costs one grace week. Collect no
+    reason or medical detail. Teachers need a pending-Sick queue on their
+    side. Paraglide en/de/bo.
+
+- id: "7-6"
+  title: Guardian email correction & parent deletion request
+  description: >-
+    A student can request a guardian email change that the admin
+    approves, moving them to the new (approved) parent; a parent can
+    submit a deletion request for a linked child into the existing admin
+    queue, and their account remains after the child is deleted. See
+    SPEC.md CAP-1, CAP-8. Build after 7-3.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    AD-10: guardian_email_change_requests; its approval trigger applies
+    the new guardian_email and parent_id together, and the new email must
+    belong to an approved parent; parent_id never changes any other way.
+    AD-9: reuse the one deletion_requests queue with requested_by = the
+    parent (checked by is_parent_of); the cascade stays on admin approval
+    and the row is de-identified, not deleted. AD-4: the admin cannot be
+    blocked, but no approval comes from the child's own parent. Parent
+    rows survive child deletion (ON DELETE RESTRICT is on the child side).
