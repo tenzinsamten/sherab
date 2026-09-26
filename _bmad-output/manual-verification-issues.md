@@ -913,6 +913,23 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Relation to #48:** the expectation behind this report ("saving the time schedules the class")
   is exactly what #48's per-class schedule would provide.
 
+## 50. Anyone can sign up as admin (security)
+- **Found (architecture review, 2026-09-26):** not reported from the app. Found by two independent
+  spine reviewers (`planning-artifacts/architecture/architecture-tib-class-2026-09-13/reviews/review-rubric-2026-09-26.md` C1,
+  `review-adversarial-2026-09-26.md` C-1) and confirmed in the code.
+- **Cause:** `handle_new_user()` (latest in `0006_guardian_email_verification.sql:74`) sets
+  `profiles.role` from `new.raw_user_meta_data ->> 'role'`, and the client controls that metadata
+  on a public `supabase.auth.signUp` call. `supabase/config.toml` has `enable_signup = true`. A
+  crafted sign-up with `role: 'admin'` gets an admin profile. A sign-up with no role defaults to
+  `teacher`, although teachers are meant to be created by the admin only.
+- **Likely fix (for planning):** take privileged roles only from `raw_app_meta_data` (only the
+  service role can write it). Create teacher/admin/student accounts only through the Admin API.
+  Accept at most `parent` from client metadata, or no role at all. Architecture rule: spine AD-4
+  (2026-09-26).
+- **To check:** does the hosted project also have sign-up enabled? Do any existing profiles have
+  an unexpected `admin`/`teacher` role?
+- **Status:** logged, not fixed.
+
 ---
 
 ## Log
