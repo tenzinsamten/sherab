@@ -10,7 +10,7 @@ Detail behind CAP-9, CAP-10, CAP-11, and the calendar's effect on CAP-2 (attenda
 | Class schedule | Admin or any teacher of the class | Weekdays, one start time + duration, start date, optional end date | Picks the class's sessions from the admin's class days. Usually Sunday. |
 | Extra session | Admin or any teacher of the class | One additional session of the class on a class day outside its schedule, with its own time | Only on an existing class day. |
 | Session | Any teacher of the class | One class on one class day: start time, duration, cancelled flag | Exists only on a class day, from the schedule or as an extra. Editing one session never changes the schedule or other sessions. |
-| Attendance intent | Student (own, per session) | Coming / On leave / not answered | Only for upcoming sessions of classes the student is enrolled in. |
+| Attendance intent | Parent (per linked child, per session) | Coming / On leave / Sick / not answered | Sessions of classes the child is enrolled in. The student sees it read-only. |
 | Attendance | Any teacher of the class | Present / absent for a session | Marked against a scheduled, non-cancelled session. |
 
 ## Rules
@@ -26,14 +26,17 @@ Detail behind CAP-9, CAP-10, CAP-11, and the calendar's effect on CAP-2 (attenda
 
 ## Attendance intent
 
-- States: **Coming**, **On leave**, **not answered** (default, treated as expected).
-- Visible to: that class's teachers, classmates, and the student's team. Shows nickname + state only; no reason is collected for leave *(assumption)*.
+- Set by the parent only; the student sees it read-only.
+- States: **Coming**, **On leave**, **Sick**, **not answered** (default, treated as expected). Sick carries a decision: pending, approved, or rejected.
+- Coming and On leave can be changed until the session starts. Sick can be set until the end of the day after the session.
+- Visible to: the class's teachers, the admin, and the parent in full; classmates and the student's team see nickname + state, with Sick shown as On leave. No reason or medical detail is collected.
+- Sick is decided by any teacher of that session's class, or the admin as backup. Undecided after 2 weeks: approved automatically.
 - Set per session; date-range leave is an open question.
-- Counts for streak protection only when set before the session's start time *(assumption)*.
+- Planned Leave: On leave set at least the leave notice period before the session starts (admin-configurable, default 2 weeks). Later On leave is short-notice leave. Before saving, the parent sees which it will be.
 
 ## Attendance and streaks
 
 - Attendance is marked per scheduled session, replacing marks against a free-chosen weekly date.
 - A week with no non-cancelled session for the class is a holiday: it does not consume streak grace.
-- A session the student missed with an announced leave does not consume grace.
+- A missed session with Planned Leave or approved Sick leave does not consume grace. Short-notice leave, rejected Sick leave, and unannounced absence each consume one grace week. Pending Sick leave does not protect; the week is recalculated when it is decided.
 - Streaks stay weekly: attending any session of a week qualifies that week *(assumption)*.
