@@ -53,4 +53,26 @@ describe('GET /auth/confirm', () => {
 		const { promise } = run('?code=xyz&next=//evil.com');
 		expect(await location(promise)).toBe('/reset-password');
 	});
+
+	it('verifies a signup token_hash and lands on /parent without the recovery cookie', async () => {
+		const { promise, verifyOtp, cookies } = run('?token_hash=abc&type=signup');
+		expect(await location(promise)).toBe('/parent');
+		expect(verifyOtp).toHaveBeenCalledWith({ type: 'signup', token_hash: 'abc' });
+		expect(cookies.set).not.toHaveBeenCalled();
+	});
+
+	it('exchanges a signup PKCE code and lands on /parent without the recovery cookie', async () => {
+		const { promise, exchangeCodeForSession, cookies } = run('?code=xyz&flow=signup');
+		expect(await location(promise)).toBe('/parent');
+		expect(exchangeCodeForSession).toHaveBeenCalledWith('xyz');
+		expect(cookies.set).not.toHaveBeenCalled();
+	});
+
+	it('sends a failed signup confirmation to login with an error', async () => {
+		const bad = { error: new Error('expired') };
+		expect(await location(run('?token_hash=abc&type=email', bad).promise)).toBe(
+			'/login?error=confirm'
+		);
+		expect(await location(run('?code=xyz&flow=signup', bad).promise)).toBe('/login?error=confirm');
+	});
 });

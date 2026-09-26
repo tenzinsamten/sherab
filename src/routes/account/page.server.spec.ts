@@ -56,6 +56,16 @@ describe('account load', () => {
 		expect(result).toEqual({ role: 'student', displayName: 'Tashi', username: 'tashi-d' });
 	});
 
+	it('gives a parent their name and read-only email (Story 7-1)', async () => {
+		const result = await runLoad({
+			id: 'u1',
+			role: 'parent',
+			display_name: 'Dolma',
+			email: 'dolma@example.com'
+		});
+		expect(result).toEqual({ role: 'parent', displayName: 'Dolma', email: 'dolma@example.com' });
+	});
+
 	it('refuses a session without a profile', async () => {
 		await expect(runLoad(null)).rejects.toMatchObject({ status: 403 });
 	});
@@ -83,6 +93,19 @@ describe('account actions', () => {
 
 	it('rejects an empty name before saving', async () => {
 		const result = await actions.updateName(event('student', { displayName: '  ' }));
+		expect(result).toMatchObject({ status: 400 });
+	});
+
+	it('lets a parent past the role gate for a password change (Story 7-1)', async () => {
+		// Mismatched confirmation: fails on the rules, not on the role gate.
+		const result = await actions.changePassword(
+			event('parent', { currentPassword: 'a', password: 'bbbbbb', confirm: 'cccccc' })
+		);
+		expect(result).toMatchObject({ status: 400 });
+	});
+
+	it('lets a parent past the role gate for a name change (Story 7-1)', async () => {
+		const result = await actions.updateName(event('parent', { displayName: '  ' }));
 		expect(result).toMatchObject({ status: 400 });
 	});
 });

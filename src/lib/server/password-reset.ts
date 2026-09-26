@@ -19,14 +19,14 @@ const NEXT = '/reset-password';
 export const RECOVERY_COOKIE = 'sb-recovery';
 
 /**
- * Starts a password reset for a real email address (admin/teacher) using
+ * Starts a password reset for a real email address (admin/teacher/parent) using
  * Supabase's own recovery email. Never reveals whether an account exists:
  * every branch resolves without throwing, so the caller can always show the
  * same generic message.
  *
  * A bare username (student) or a synthetic student address is ignored --
  * those accounts have no deliverable email; students are reset by a
- * teacher/admin until the parent-account story lands.
+ * teacher/admin. Parents (Story 7-1) have a real email, so this covers them.
  */
 export async function requestPasswordReset(identifier: string, deps: ResetDeps): Promise<void> {
 	const id = identifier.trim();

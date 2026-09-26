@@ -7,6 +7,7 @@ import {
 	studentEmailToUsername,
 	studentUsernameToEmail
 } from '$lib/server/temp-password';
+import { getCapabilities } from '$lib/server/capabilities';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,6 +22,52 @@ type StudentRow = {
 	email_confirmed_at: string | null;
 	classes: { id: string; name: string; code: string } | null;
 };
+
+type ParentRow = {
+	id: string;
+	status: 'pending' | 'approved' | 'rejected';
+	created_at: string;
+	reviewed_at: string | null;
+	profiles: {
+		display_name: string | null;
+		email: string;
+		email_confirmed_at: string | null;
+	} | null;
+};
+
+/**
+ * parents -> profiles has two FK paths (id, reviewed_by), so the embed needs
+ * the explicit hint (same PGRST201 reason as the student select below).
+ */
+const PARENT_COLUMNS =
+	'id, status, created_at, reviewed_at, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )';
+
+function toParent(row: unknown) {
+	const r = row as ParentRow;
+	return {
+		id: r.id,
+		status: r.status,
+		name: r.profiles?.display_name || r.profiles?.email || '',
+		email: r.profiles?.email ?? '',
+		emailConfirmedAt: r.profiles?.email_confirmed_at ?? null,
+		createdAt: r.created_at,
+		reviewedAt: r.reviewed_at
+	};
+}
+
+/**
+ * Story 7-1: parent accounts are decided by the admin only. UX gate over
+ * RLS (parents_update_admin), re-checked per action since a POST skips load.
+ */
+async function requireAdmin(
+	supabase: App.Locals['supabase'],
+	safeGetSession: App.Locals['safeGetSession']
+) {
+	const { user } = await safeGetSession();
+	if (!user) return null;
+	const capabilities = await getCapabilities(supabase, user.id);
+	return capabilities?.role === 'admin' ? user : null;
+}
 
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { session } = await safeGetSession();
@@ -71,6 +118,28 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		supabase.from('teams').select('id, name').order('name')
 	]);
 
+	// Admin only: teachers never see parent registrations, not even a count.
+	let parentsPending: ReturnType<typeof toParent>[] = [];
+	let parentsDecided: ReturnType<typeof toParent>[] = [];
+	let parentsError = false;
+	if (profile.role === 'admin') {
+		const [pendingParents, decidedParents] = await Promise.all([
+			supabase
+				.from('parents')
+				.select(PARENT_COLUMNS)
+				.eq('status', 'pending')
+				.order('created_at', { ascending: true }),
+			supabase
+				.from('parents')
+				.select(PARENT_COLUMNS)
+				.in('status', ['approved', 'rejected'])
+				.order('reviewed_at', { ascending: false })
+		]);
+		parentsPending = (pendingParents.data ?? []).map(toParent);
+		parentsDecided = (decidedParents.data ?? []).map(toParent);
+		parentsError = Boolean(pendingParents.error || decidedParents.error);
+	}
+
 	const toRow = (row: unknown) => {
 		const r = row as StudentRow;
 		return {
@@ -89,7 +158,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		pending: (pendingRows ?? []).map(toRow),
 		decided: (decidedRows ?? []).map(toRow),
 		teams: teams ?? [],
-		loadError: Boolean(pendingError || decidedError || teamsError)
+		parentsPending,
+		parentsDecided,
+		loadError: Boolean(pendingError || decidedError || teamsError || parentsError)
 	};
 };
 
@@ -312,5 +383,103 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'cleared' as const, studentId, studentName };
+	},
+
+	approveParent: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const formData = await request.formData();
+		const parentId = String(formData.get('parentId') ?? '');
+		const parentName = String(formData.get('parentName') ?? '');
+
+		const user = await requireAdmin(supabase, safeGetSession);
+		if (!user) {
+			return fail(403, { error: m.requests_parent_error_admin_only(), parentId, parentName });
+		}
+
+		const { data: row, error: fetchError } = await supabase
+			.from('parents')
+			.select(PARENT_COLUMNS)
+			.eq('id', parentId)
+			.eq('status', 'pending')
+			.maybeSingle();
+		if (fetchError || !row) {
+			return fail(400, { error: m.requests_error_not_found(), parentId, parentName });
+		}
+		// Friendly message; parents_update_admin's WITH CHECK refuses it anyway.
+		if (!toParent(row).emailConfirmedAt) {
+			return fail(400, { error: m.requests_parent_error_unconfirmed(), parentId, parentName });
+		}
+
+		// reviewed_by / reviewed_at are stamped by the parents_stamp_review trigger.
+		const { error: updateError } = await supabase
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', parentId)
+			.eq('status', 'pending')
+			.select('id')
+			.single();
+		if (updateError) {
+			return fail(400, { error: m.requests_parent_error_approve_failed(), parentId, parentName });
+		}
+
+		return { success: true, action: 'parentApproved' as const, parentId, parentName };
+	},
+
+	rejectParent: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const formData = await request.formData();
+		const parentId = String(formData.get('parentId') ?? '');
+		const parentName = String(formData.get('parentName') ?? '');
+
+		const user = await requireAdmin(supabase, safeGetSession);
+		if (!user) {
+			return fail(403, { error: m.requests_parent_error_admin_only(), parentId, parentName });
+		}
+
+		// RLS-scoped read first: proves the caller is the admin and the row
+		// exists before the service-role delete below (which bypasses RLS).
+		// A 'rejected' row is one whose delete failed earlier: retry it.
+		const { data: row, error: fetchError } = await supabase
+			.from('parents')
+			.select('id, status')
+			.eq('id', parentId)
+			.in('status', ['pending', 'rejected'])
+			.maybeSingle();
+		if (fetchError || !row) {
+			return fail(400, { error: m.requests_error_not_found(), parentId, parentName });
+		}
+
+		// Only a parent-only login is deleted. A dual-role login (deferred)
+		// must never lose its staff account here.
+		const { data: target } = await supabase
+			.from('profiles')
+			.select('role')
+			.eq('id', parentId)
+			.maybeSingle();
+		if (target?.role !== 'parent') {
+			return fail(400, { error: m.requests_parent_error_reject_failed(), parentId, parentName });
+		}
+
+		if (row.status === 'pending') {
+			const { error: updateError } = await supabase
+				.from('parents')
+				.update({ status: 'rejected' })
+				.eq('id', parentId)
+				.eq('status', 'pending')
+				.select('id')
+				.single();
+			if (updateError) {
+				return fail(400, { error: m.requests_parent_error_reject_failed(), parentId, parentName });
+			}
+		}
+
+		// Deleting the auth user cascades to profiles and parents, so the same
+		// email can register again.
+		const { error: deleteError } =
+			await createSupabaseAdminClient().auth.admin.deleteUser(parentId);
+		if (deleteError) {
+			console.error('requests rejectParent: deleteUser failed', deleteError.message);
+			return fail(500, { error: m.requests_parent_error_reject_failed(), parentId, parentName });
+		}
+
+		return { success: true, action: 'parentRejected' as const, parentId, parentName };
 	}
 };

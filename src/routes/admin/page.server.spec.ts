@@ -3,7 +3,7 @@ import { load } from './+page.server';
 
 /**
  * Closes the Story 5-1 I/O matrix's "Any one query fails" row: `load()`
- * issues six parallel queries and OR-chains their errors into `loadError`,
+ * issues seven parallel queries and OR-chains their errors into `loadError`,
  * but nothing exercised that chain directly. Mirrors Story 4-3's
  * `leaderboard/page.server.spec.ts` precedent -- `load()` is a plain async
  * function taking `locals`, so no SvelteKit test harness is needed, just a
@@ -75,7 +75,7 @@ describe('admin dashboard +page.server.ts load', () => {
 		});
 	});
 
-	it('sets loadError true when any one of the six parallel queries fails (I/O matrix: "Any one query fails")', async () => {
+	it('sets loadError true when any one of the seven parallel queries fails (I/O matrix: "Any one query fails")', async () => {
 		const result = await load({
 			locals: fakeLocals({
 				homework_status_history: [{ data: null, error: { message: 'boom' } }]
@@ -97,6 +97,21 @@ describe('admin dashboard +page.server.ts load', () => {
 		} as Parameters<typeof load>[0]);
 
 		expect(result).toMatchObject({ teachersCount: 3, studentsCount: 5, pendingRequestsCount: 2 });
+	});
+
+	it('adds pending parent accounts to the pending requests count (Story 7-1)', async () => {
+		const result = await load({
+			locals: fakeLocals({
+				profiles: [
+					{ data: [], count: 0, error: null },
+					{ data: [], count: 0, error: null },
+					{ data: [], count: 2, error: null } // pending students
+				],
+				parents: [{ data: [], count: 3, error: null }] // pending parents
+			})
+		} as Parameters<typeof load>[0]);
+
+		expect(result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
 	});
 
 	it('continues past the first 1000-row page when fetching homework_status_history (Review Triage Log #16: pagination continuation)', async () => {

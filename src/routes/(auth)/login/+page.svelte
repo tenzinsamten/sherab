@@ -3,9 +3,14 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
-	import type { ActionData } from './$types';
+	import { showToast } from '$lib/ix';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { form, data }: { form: ActionData; data: PageData } = $props();
+
+	$effect(() => {
+		if (data.confirmLinkFailed && !form) showToast('error', m.login_error_confirm_link());
+	});
 </script>
 
 <svelte:head>
@@ -42,5 +47,6 @@
 
 	{#snippet footer()}
 		<a href={resolve('/forgot-password')}>{m.login_forgot_link()}</a>
+		<a href={resolve('/register')}>{m.login_register_parent_link()}</a>
 	{/snippet}
 </AuthCard>

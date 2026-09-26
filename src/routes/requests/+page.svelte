@@ -31,6 +31,14 @@
 
 	$effect(() => {
 		if (!form?.success) return;
+		if ('parentName' in form) {
+			const name = form.parentName || '';
+			if (form.action === 'parentApproved')
+				showToast('success', m.requests_parent_outcome_approved({ name }));
+			if (form.action === 'parentRejected')
+				showToast('success', m.requests_parent_outcome_rejected({ name }));
+			return;
+		}
 		const name = form.studentName || '';
 		if (form.action === 'rejected') showToast('success', m.requests_outcome_rejected({ name }));
 		if (form.action === 'cleared') showToast('success', m.requests_outcome_cleared({ name }));
@@ -52,7 +60,7 @@
 				{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
 			</p>
 		</div>
-		<span class="page-counter">{data.pending.length}</span>
+		<span class="page-counter">{data.pending.length + data.parentsPending.length}</span>
 	</header>
 
 	{#if credential}
@@ -220,4 +228,128 @@
 			</div>
 		{/if}
 	</section>
+
+	{#if data.role === 'admin'}
+		<section class="card" aria-labelledby="parents-heading">
+			<h2 id="parents-heading">{m.requests_parents_heading()}</h2>
+			<p class="muted">{m.requests_parents_subtitle()}</p>
+			{#if data.parentsPending.length === 0}
+				<p class="muted">{m.requests_parents_empty()}</p>
+			{:else}
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>{m.requests_col_parent()}</th>
+								<th><span class="sr-only">{m.requests_approve()}</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each data.parentsPending as parent (parent.id)}
+								<tr>
+									<td>
+										<div class="actions">
+											<strong>{parent.name}</strong>
+											{#if parent.emailConfirmedAt}
+												<ix-pill variant="success">{m.requests_email_confirmed()}</ix-pill>
+											{:else}
+												<ix-pill variant="warning">{m.requests_email_unconfirmed()}</ix-pill>
+											{/if}
+										</div>
+										<div class="muted">
+											{parent.email} · {new Date(parent.createdAt).toLocaleDateString()}
+										</div>
+									</td>
+									<td>
+										<div class="actions" style="justify-content:flex-end;">
+											<form
+												method="POST"
+												action="?/approveParent"
+												use:enhance={pending.submit(`approveParent:${parent.id}`)}
+											>
+												<input type="hidden" name="parentId" value={parent.id} />
+												<input type="hidden" name="parentName" value={parent.name} />
+												<ix-button
+													type="submit"
+													loading={pending.is(`approveParent:${parent.id}`) || undefined}
+													disabled={!parent.emailConfirmedAt || pending.busy || undefined}
+												>
+													{m.requests_approve()}
+												</ix-button>
+											</form>
+											<form
+												method="POST"
+												action="?/rejectParent"
+												use:enhance={pending.submit(`rejectParent:${parent.id}`)}
+											>
+												<input type="hidden" name="parentId" value={parent.id} />
+												<input type="hidden" name="parentName" value={parent.name} />
+												<ix-button
+													type="submit"
+													variant="danger-secondary"
+													loading={pending.is(`rejectParent:${parent.id}`) || undefined}
+													disabled={pending.busy || undefined}>{m.requests_reject()}</ix-button
+												>
+											</form>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<h2>{m.requests_parents_decided_heading()}</h2>
+			{#if data.parentsDecided.length === 0}
+				<p class="muted">{m.requests_parents_decided_empty()}</p>
+			{:else}
+				<div class="table-wrap">
+					<table>
+						<tbody>
+							{#each data.parentsDecided as parent (parent.id)}
+								<tr>
+									<td style="width:1%; white-space:nowrap;">
+										{#if parent.status === 'approved'}
+											<ix-pill variant="success">{m.requests_status_approved()}</ix-pill>
+										{:else}
+											<ix-pill variant="neutral">{m.requests_status_rejected()}</ix-pill>
+										{/if}
+									</td>
+									<td class:muted={parent.status === 'rejected'}>
+										{parent.name}
+										<div class="muted">{parent.email}</div>
+									</td>
+									<td style="text-align:right;">
+										{#if parent.status === 'rejected'}
+											<!-- Its account delete failed earlier: retry it. -->
+											<form
+												method="POST"
+												action="?/rejectParent"
+												use:enhance={pending.submit(`rejectParent:${parent.id}`)}
+											>
+												<input type="hidden" name="parentId" value={parent.id} />
+												<input type="hidden" name="parentName" value={parent.name} />
+												<ix-button
+													type="submit"
+													variant="tertiary"
+													icon="trashcan"
+													loading={pending.is(`rejectParent:${parent.id}`) || undefined}
+													disabled={pending.busy || undefined}
+												>
+													{m.requests_clear_rejected()}
+												</ix-button>
+											</form>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
+	{/if}
 </div>

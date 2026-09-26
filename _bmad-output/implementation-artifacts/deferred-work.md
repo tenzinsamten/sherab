@@ -143,3 +143,24 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
   summary: RLS tests pick random years and (4-1 via sessionFor) create class days on real recent dates in the shared local DB, which also spawn sessions for real classes.
   evidence: 6-2 review; local dev data only. Fix: derived years per test and cleanup of created class days/sessions.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: Dual role — a signed-in teacher/admin requests parent capability (own pending `parents` row from My Profile), the admin creating a teacher whose email already has a parent-only login promotes it instead of duplicating, and a "Teacher · Parent" / "Admin · Parent" toggle at the top of the menu (remembered in a cookie, one role's items at a time; user choice 2026-09-26).
+  evidence: Split from 7-1 at the scope gate (spec ~3,000 tokens vs 1,600 target). Nothing in 7-2..7-6 depends on it; AD-4 already fixes the data model (parents row, RLS unions everything a login holds).
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: Production Auth email (custom SMTP under the org account, provider not chosen) must be configured before parents go live, or confirmation mails won't reach them.
+  evidence: 7-1 uses local Mailpit only (user choice 2026-09-26); epic-7-context Conventions and ARCHITECTURE-SPINE hosting decision require custom SMTP for production.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: rls.spec.ts is not re-runnable on the same local DB — Story 4-1's createClass() uses fixed names (`Story 4-1 ${prefix}`) against classes_name_unique_idx, so a second `npm test` without `supabase:reset` fails 33 tests (1-1..4-x blocks).
+  evidence: 7-1 verification: second run failed with "duplicate key value violates unique constraint classes_name_unique_idx"; after reset 400/400 pass. Pre-existing, not caused by 7-1.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: A signed-in user (now also a parent) can change their auth email with supabase.auth.updateUser; profiles.email is never re-synced, so the parent duplicate-email lookup and any profile email display go stale.
+  evidence: 7-1 review B4. Only email_confirmed_at is mirrored (0006 sync_email_confirmed_at); same gap for teachers since 0001. Fix: block self-service email change or sync auth.users.email to profiles.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: The 7-1 parent strings in messages/bo.json are English copies; they need real Tibetan translations before release.
+  evidence: 7-1 review B12; matches the existing practice for newer bo keys.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: Parent registration collects an adult's name and email without a privacy notice or consent link.
+  evidence: 7-1 review B13; belongs to the go-live-blocking GDPR open question in SPEC.md.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
+  summary: A pending or rejected parent can read school-wide team leaderboard totals (team_leaderboard()) and class_days, which are open to any authenticated user.
+  evidence: 7-1 review E10/E14; pre-existing policies (0018, leaderboard). Aggregates only, no student personal data; revisit with 7-3's parent read scoping.

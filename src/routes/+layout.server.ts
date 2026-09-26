@@ -39,6 +39,16 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 		pendingRequestsCount = count ?? 0;
 		countError = Boolean(countErr);
 	}
+	if (profile?.role === 'admin') {
+		// Story 7-1: pending parent accounts are admin-only requests.
+		// parents_select_own_or_admin gives a teacher no rows anyway.
+		const { count, error: parentCountErr } = await supabase
+			.from('parents')
+			.select('id', { count: 'exact', head: true })
+			.eq('status', 'pending');
+		pendingRequestsCount += count ?? 0;
+		countError = countError || Boolean(parentCountErr);
+	}
 
 	return {
 		session,

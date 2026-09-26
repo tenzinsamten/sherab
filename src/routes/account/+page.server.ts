@@ -11,7 +11,8 @@ import type { Actions, PageServerLoad } from './$types';
 const MAX_NAME_LENGTH = 80;
 
 /**
- * Own-account page: name and password for admins and teachers (#23); for
+ * Own-account page: name and password for admins and teachers (#23) and
+ * parents (Story 7-1, the email is read-only: it is what links children); for
  * students (#44) their name and username (classes, streak and badges are on
  * the student dashboard and class pages since #46). Students
  * sign in with a username + PIN a teacher or admin issues, so they can
@@ -64,7 +65,12 @@ async function requireRole(
 
 export const actions: Actions = {
 	updateName: async ({ request, locals: { supabase, safeGetSession } }) => {
-		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher', 'student']);
+		const user = await requireRole(supabase, safeGetSession, [
+			'admin',
+			'teacher',
+			'student',
+			'parent'
+		]);
 		if (!user) return fail(403, { error: m.account_name_error_failed() });
 
 		const formData = await request.formData();
@@ -89,8 +95,9 @@ export const actions: Actions = {
 	},
 
 	changePassword: async ({ request, locals: { supabase, safeGetSession } }) => {
-		// Staff only: a student's PIN is reset by their teacher or an admin (#44).
-		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher']);
+		// Staff and parents: a student's PIN is reset by their teacher or an
+		// admin (#44).
+		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher', 'parent']);
 		if (!user || !user.email) return fail(403, { error: m.account_password_error_failed() });
 
 		const formData = await request.formData();

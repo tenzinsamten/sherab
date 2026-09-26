@@ -104,6 +104,11 @@
 				{ ...leaderboard, label: m.nav_team_leaderboard() }
 			];
 		}
+		if (role === 'parent') {
+			return [
+				{ href: resolve('/parent'), label: m.nav_dashboard(), icon: 'dashboard', exact: true }
+			];
+		}
 		return [];
 	});
 

@@ -6,6 +6,7 @@ describe('roleHome', () => {
 		expect(roleHome('admin')).toBe('/admin');
 		expect(roleHome('teacher')).toBe('/teacher');
 		expect(roleHome('student')).toBe('/student');
+		expect(roleHome('parent')).toBe('/parent');
 	});
 
 	it('returns null when signed out, so `/` shows the landing page', () => {

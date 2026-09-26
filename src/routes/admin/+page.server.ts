@@ -14,6 +14,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		{ count: teachersCount, error: teachersError },
 		{ count: studentsCount, error: studentsError },
 		{ count: pendingRequestsCount, error: pendingError },
+		{ count: pendingParentsCount, error: pendingParentsError },
 		{ count: homeworkAssignmentsCount, error: assignmentsError },
 		{ rows: history, error: historyError }
 	] = await Promise.all([
@@ -36,6 +37,9 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			.select('id', { count: 'exact', head: true })
 			.eq('role', 'student')
 			.eq('status', 'pending'),
+		// Story 7-1: pending parent accounts are admin requests too, counted
+		// like +layout.server.ts's nav badge.
+		supabase.from('parents').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
 		supabase.from('homework_assignments').select('id', { count: 'exact', head: true }),
 		// homework_status_history_select_admin_teacher_or_own
 		// (0004_homework.sql) -- admin has no class filter, so this is every
@@ -68,7 +72,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		classesCount: classesCount ?? 0,
 		teachersCount: teachersCount ?? 0,
 		studentsCount: studentsCount ?? 0,
-		pendingRequestsCount: pendingRequestsCount ?? 0,
+		pendingRequestsCount: (pendingRequestsCount ?? 0) + (pendingParentsCount ?? 0),
 		homeworkAssignmentsCount: homeworkAssignmentsCount ?? 0,
 		homeworkCompletionPercent,
 		loadError: Boolean(
@@ -76,6 +80,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			teachersError ||
 			studentsError ||
 			pendingError ||
+			pendingParentsError ||
 			assignmentsError ||
 			historyError
 		)

@@ -582,6 +582,45 @@ export type Database = {
 					}
 				];
 			};
+			parents: {
+				Row: {
+					created_at: string;
+					id: string;
+					reviewed_at: string | null;
+					reviewed_by: string | null;
+					status: Database['public']['Enums']['parent_status'];
+				};
+				Insert: {
+					created_at?: string;
+					id: string;
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: Database['public']['Enums']['parent_status'];
+				};
+				Update: {
+					created_at?: string;
+					id?: string;
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: Database['public']['Enums']['parent_status'];
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'parents_id_fkey';
+						columns: ['id'];
+						isOneToOne: true;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'parents_reviewed_by_fkey';
+						columns: ['reviewed_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			profiles: {
 				Row: {
 					class_id: string | null;
@@ -881,6 +920,7 @@ export type Database = {
 				Returns: undefined;
 			};
 			is_admin: { Args: never; Returns: boolean };
+			is_parent: { Args: never; Returns: boolean };
 			is_targeted_for_homework_assignment: {
 				Args: { target_assignment_id: string };
 				Returns: boolean;
@@ -918,10 +958,11 @@ export type Database = {
 			};
 		};
 		Enums: {
+			parent_status: 'pending' | 'approved' | 'rejected';
 			registration_status: 'pending' | 'approved' | 'rejected';
 			skill_area: 'language' | 'song' | 'dance';
 			skill_level: 'not_started' | 'learning' | 'confident';
-			user_role: 'admin' | 'teacher' | 'student';
+			user_role: 'admin' | 'teacher' | 'student' | 'parent';
 		};
 		CompositeTypes: {
 			[_ in never]: never;
@@ -1046,10 +1087,11 @@ export const Constants = {
 	},
 	public: {
 		Enums: {
+			parent_status: ['pending', 'approved', 'rejected'],
 			registration_status: ['pending', 'approved', 'rejected'],
 			skill_area: ['language', 'song', 'dance'],
 			skill_level: ['not_started', 'learning', 'confident'],
-			user_role: ['admin', 'teacher', 'student']
+			user_role: ['admin', 'teacher', 'student', 'parent']
 		}
 	}
 } as const;

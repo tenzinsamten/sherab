@@ -14,6 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { isDuplicateSignup } from './signup-duplicate';
+import { emailHasLogin } from './parent-registration';
 import { buildHomeworkProgress, type HomeworkHistoryRow } from './homework-status';
 import {
 	STUDENT_EMAIL_DOMAIN,
@@ -460,13 +461,36 @@ describe.skipIf(!reachable)('Issue #50 sign-up role (requires local Supabase)', 
 		expect(profile?.role).toBe('teacher');
 	});
 
-	it('admin createUser with an unknown app_metadata role (parent) is refused, no profile', async () => {
+	it('admin createUser with app_metadata parent gives a parent profile and a pending parents row (Story 7-1)', async () => {
 		const email = `issue-50-parent-${crypto.randomUUID()}@example.test`;
 		const { data, error } = await adminClient.auth.admin.createUser({
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
 			app_metadata: { role: 'parent' }
+		});
+		expect(error).toBeNull();
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role')
+			.eq('id', data.user!.id)
+			.single();
+		expect(profile?.role).toBe('parent');
+		const { data: parentRow } = await adminClient
+			.from('parents')
+			.select('status')
+			.eq('id', data.user!.id)
+			.single();
+		expect(parentRow?.status).toBe('pending');
+	});
+
+	it('admin createUser with an unknown app_metadata role is refused, no profile', async () => {
+		const email = `issue-50-unknown-${crypto.randomUUID()}@example.test`;
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'superuser' }
 		});
 		expect(error).not.toBeNull();
 		expect(data.user).toBeNull();
@@ -6929,3 +6953,363 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+/**
+ * Story 7-1: parent accounts (migrations 0022/0023). Registration goes
+ * through the public signUp() with user_metadata role 'parent', exactly as
+ * the /register action does; the admin decides through RLS.
+ */
+describe.skipIf(!reachable)('7-1 parents (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classId: string;
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: `7-1 Class ${crypto.randomUUID().slice(0, 6)}`,
+				code: `P${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		classId = data.id;
+		await adminClient.from('class_teachers').insert({ class_id: classId, teacher_id: teacher.id });
+
+		const { error: studentError } = await signUpStudent({
+			classId,
+			registrationName: `7-1 Student ${crypto.randomUUID().slice(0, 8)}`
+		});
+		if (studentError) throw new Error(`Failed to sign up student: ${studentError.message}`);
+
+		const { error: hwError } = await adminClient.from('homework_assignments').insert({
+			class_id: classId,
+			title: '7-1 homework',
+			skill_area: 'language',
+			created_by: teacher.id
+		});
+		if (hwError) throw new Error(`Failed to create homework: ${hwError.message}`);
+	});
+
+	/** Registers a parent like /register does. */
+	async function registerParent(email = `story-7-1-parent-${crypto.randomUUID()}@example.test`) {
+		const password = crypto.randomUUID();
+		const client = anonClient();
+		const { data, error } = await client.auth.signUp({
+			email,
+			password,
+			options: { data: { role: 'parent', display_name: 'Dolma Parent' } }
+		});
+		await client.auth.signOut();
+		return { email, password, id: data.user?.id ?? null, data, error };
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function parentRow(id: string) {
+		const { data } = await adminClient
+			.from('parents')
+			.select('status, reviewed_by, reviewed_at')
+			.eq('id', id)
+			.maybeSingle();
+		return data;
+	}
+
+	it('Register: a parent sign-up creates a parent profile and a pending parents row', async () => {
+		const { id, error, email } = await registerParent();
+		expect(error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('role, display_name, email, status, email_confirmed_at')
+			.eq('id', id!)
+			.single();
+		expect(profile).toEqual({
+			role: 'parent',
+			display_name: 'Dolma Parent',
+			email,
+			status: null,
+			email_confirmed_at: null
+		});
+		expect(await parentRow(id!)).toEqual({
+			status: 'pending',
+			reviewed_by: null,
+			reviewed_at: null
+		});
+	});
+
+	it('Existing email: the lookup finds any login, case-insensitively, and a second sign-up creates nothing', async () => {
+		expect(await emailHasLogin(adminClient, teacher.email)).toBe(true);
+		expect(await emailHasLogin(adminClient, teacher.email.toUpperCase())).toBe(true);
+		expect(await emailHasLogin(adminClient, `nobody-${crypto.randomUUID()}@example.test`)).toBe(
+			false
+		);
+		// Wildcards in the input must not match other emails.
+		expect(await emailHasLogin(adminClient, '%@example.test')).toBe(false);
+
+		const first = await registerParent();
+		expect(await emailHasLogin(adminClient, first.email)).toBe(true);
+
+		// The /register action stops at the lookup above. Even a sign-up that
+		// got past it (a race) creates no second account.
+		const second = await registerParent(first.email);
+		expect(second.id === null || second.id === first.id).toBe(true);
+		const { data: rows } = await adminClient
+			.from('profiles')
+			.select('id')
+			.ilike('email', first.email);
+		expect(rows).toHaveLength(1);
+	});
+
+	it('Approve unconfirmed: refused by RLS', async () => {
+		const { id } = await registerParent();
+		const { data, error } = await admin.client
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', id!)
+			.select('id');
+		expect(error ?? (data ?? []).length === 0).toBeTruthy();
+		expect((await parentRow(id!))?.status).toBe('pending');
+	});
+
+	it('Approve: a confirmed parent becomes approved, reviewed_by/at are set, is_parent() is true', async () => {
+		const { id, email, password } = await registerParent();
+		await confirmGuardianEmail(id!);
+		const parent = await signIn(email, password);
+
+		const { data: before } = await parent.rpc('is_parent');
+		expect(before).toBe(false);
+
+		const { error } = await admin.client
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+
+		const row = await parentRow(id!);
+		expect(row?.status).toBe('approved');
+		expect(row?.reviewed_by).toBe(admin.id);
+		expect(row?.reviewed_at).not.toBeNull();
+
+		const { data: after } = await parent.rpc('is_parent');
+		expect(after).toBe(true);
+
+		// A decided row never goes back to pending.
+		const { error: backError } = await admin.client
+			.from('parents')
+			.update({ status: 'pending' })
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(backError).not.toBeNull();
+		expect((await parentRow(id!))?.status).toBe('approved');
+	});
+
+	it('Reject: allowed even unconfirmed; deleting the auth user removes profile and row, and the email registers again', async () => {
+		const { id, email } = await registerParent();
+
+		const { error } = await admin.client
+			.from('parents')
+			.update({ status: 'rejected' })
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+
+		const { error: deleteError } = await adminClient.auth.admin.deleteUser(id!);
+		expect(deleteError).toBeNull();
+		expect(await parentRow(id!)).toBeNull();
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('id')
+			.eq('id', id!)
+			.maybeSingle();
+		expect(profile).toBeNull();
+		expect(await emailHasLogin(adminClient, email)).toBe(false);
+
+		const again = await registerParent(email);
+		expect(again.error).toBeNull();
+		expect(again.id).not.toBe(id);
+		expect((await parentRow(again.id!))?.status).toBe('pending');
+	});
+
+	it('Parent edits own row: refused by RLS, and no client insert or delete', async () => {
+		const { id, email, password } = await registerParent();
+		await confirmGuardianEmail(id!);
+		const parent = await signIn(email, password);
+
+		const { data: own } = await parent.from('parents').select('id, status');
+		expect(own).toEqual([{ id, status: 'pending' }]);
+
+		const { data: updated } = await parent
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', id!)
+			.select('id');
+		expect(updated ?? []).toEqual([]);
+		expect((await parentRow(id!))?.status).toBe('pending');
+
+		const { error: insertError } = await parent
+			.from('parents')
+			.insert({ id: crypto.randomUUID(), status: 'approved' });
+		expect(insertError).not.toBeNull();
+
+		await parent.from('parents').delete().eq('id', id!);
+		expect((await parentRow(id!))?.status).toBe('pending');
+
+		// Nor can the admin write reviewed_by directly (column grant is status only).
+		const { error: stampError } = await admin.client
+			.from('parents')
+			.update({ reviewed_by: teacher.id })
+			.eq('id', id!);
+		expect(stampError).not.toBeNull();
+	});
+
+	it('Teacher and anon read no parents rows', async () => {
+		await registerParent();
+		const { data: teacherRows } = await teacher.client.from('parents').select('id');
+		expect(teacherRows ?? []).toEqual([]);
+
+		const { data: anonRows } = await anonClient().from('parents').select('id');
+		expect(anonRows ?? []).toEqual([]);
+
+		const { data: adminRows } = await admin.client.from('parents').select('id');
+		expect((adminRows ?? []).length).toBeGreaterThan(0);
+	});
+
+	it('A pending parent reads no student, class or homework rows', async () => {
+		const { id, email, password } = await registerParent();
+		await confirmGuardianEmail(id!);
+		const parent = await signIn(email, password);
+
+		const { data: profiles } = await parent.from('profiles').select('id');
+		expect(profiles).toEqual([{ id }]);
+		const { data: classes } = await parent.from('classes').select('id');
+		expect(classes ?? []).toEqual([]);
+		const { data: assignments } = await parent.from('homework_assignments').select('id');
+		expect(assignments ?? []).toEqual([]);
+		const { data: instances } = await parent.from('homework_instances').select('id');
+		expect(instances ?? []).toEqual([]);
+		const { data: enrollments } = await parent.from('class_enrollments').select('student_id');
+		expect(enrollments ?? []).toEqual([]);
+	});
+
+	it('A teacher cannot change parents.status', async () => {
+		const { id } = await registerParent();
+		await confirmGuardianEmail(id!);
+		const { data } = await teacher.client
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', id!)
+			.select('id');
+		expect(data ?? []).toEqual([]);
+		expect((await parentRow(id!))?.status).toBe('pending');
+	});
+
+	it('A rejected parent cannot be approved afterwards', async () => {
+		const { id } = await registerParent();
+		await confirmGuardianEmail(id!);
+		const { error } = await admin.client
+			.from('parents')
+			.update({ status: 'rejected' })
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+
+		const { error: approveError } = await admin.client
+			.from('parents')
+			.update({ status: 'approved' })
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(approveError).not.toBeNull();
+		expect((await parentRow(id!))?.status).toBe('rejected');
+	});
+
+	it('A parent sign-up carrying student metadata leaves the student columns null', async () => {
+		const client = anonClient();
+		const { data, error } = await client.auth.signUp({
+			email: `story-7-1-meta-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			options: {
+				data: {
+					role: 'parent',
+					display_name: 'Meta Parent',
+					class_id: classId,
+					registration_name: 'Sneaky Student',
+					guardian_consent_given_at: new Date().toISOString()
+				}
+			}
+		});
+		await client.auth.signOut();
+		expect(error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select(
+				'role, status, class_id, team_id, registration_name, guardian_consent_given_at, guardian_email'
+			)
+			.eq('id', data.user!.id)
+			.single();
+		expect(profile).toEqual({
+			role: 'parent',
+			status: null,
+			class_id: null,
+			team_id: null,
+			registration_name: null,
+			guardian_consent_given_at: null,
+			guardian_email: null
+		});
+	});
+
+	it('A crafted parent sign-up with a student login address is refused', async () => {
+		const email = `story-7-1-${crypto.randomUUID().slice(0, 8)}@${STUDENT_EMAIL_DOMAIN.toUpperCase()}`;
+		const { data, error } = await anonClient().auth.signUp({
+			email,
+			password: crypto.randomUUID(),
+			options: { data: { role: 'parent', display_name: 'Crafted' } }
+		});
+		expect(error).not.toBeNull();
+		expect(data.user).toBeNull();
+		expect(await emailHasLogin(adminClient, email)).toBe(false);
+	});
+
+	it('A crafted parent sign-up with a name over 80 characters is refused', async () => {
+		const email = `story-7-1-longname-${crypto.randomUUID()}@example.test`;
+		const { data, error } = await anonClient().auth.signUp({
+			email,
+			password: crypto.randomUUID(),
+			options: { data: { role: 'parent', display_name: 'x'.repeat(81) } }
+		});
+		expect(error).not.toBeNull();
+		expect(data.user).toBeNull();
+		expect(await emailHasLogin(adminClient, email)).toBe(false);
+	});
+
+	it.each([
+		['admin', { role: 'admin' }],
+		['teacher', { role: 'teacher' }]
+	])('Crafted sign-up with user_metadata role %s is refused', async (_label, data) => {
+		const email = `story-7-1-crafted-${crypto.randomUUID()}@example.test`;
+		const { data: result, error } = await anonClient().auth.signUp({
+			email,
+			password: crypto.randomUUID(),
+			options: { data }
+		});
+		expect(error).not.toBeNull();
+		expect(result.user).toBeNull();
+		expect(await emailHasLogin(adminClient, email)).toBe(false);
+	});
+});
