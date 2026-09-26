@@ -36,3 +36,6 @@ supabase/.branches
 /test-results
 /playwright-report
 /blob-report
+
+# JetBrains IDE settings
+.idea/

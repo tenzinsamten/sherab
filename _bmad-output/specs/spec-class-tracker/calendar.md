@@ -7,15 +7,19 @@ Detail behind CAP-9, CAP-10, CAP-11, and the calendar's effect on CAP-2 (attenda
 | Layer | Owner | Holds | Rule |
 |---|---|---|---|
 | Class day | Admin | A date on which classes happen, school-wide | Several classes can run on one class day. |
-| Class default | Any teacher of the class | Default start time + duration | Applied to every class day unless overridden. |
-| Session | Any teacher of the class | One class on one class day: start time, duration, cancelled flag | Exists only on a class day. Editing one session never changes the default or other sessions. |
+| Class schedule | Admin or any teacher of the class | Weekdays, one start time + duration, start date, optional end date | Picks the class's sessions from the admin's class days. Usually Sunday. |
+| Extra session | Admin or any teacher of the class | One additional session of the class on a class day outside its schedule, with its own time | Only on an existing class day. |
+| Session | Any teacher of the class | One class on one class day: start time, duration, cancelled flag | Exists only on a class day, from the schedule or as an extra. Editing one session never changes the schedule or other sessions. |
 | Attendance intent | Student (own, per session) | Coming / On leave / not answered | Only for upcoming sessions of classes the student is enrolled in. |
 | Attendance | Any teacher of the class | Present / absent for a session | Marked against a scheduled, non-cancelled session. |
 
 ## Rules
 
-- A session is created for every class day, for every class, using that class's default start time and duration.
-- Per-day start time and duration are overrides; they never change the class default or other days.
+- A class gets a session on a class day when the day's weekday is one of the class's weekdays and the day lies between the schedule's start date and (if set) end date. Extra sessions come on top.
+- A new class starts with a Sunday, weekly, from-today schedule and no time set, until someone edits it *(assumption)*.
+- Changing a schedule regenerates the class's sessions dated today or later: still-matching sessions keep their own time and cancellation, no-longer-matching ones are removed, missing ones are added. Sessions before today are never changed.
+- Adding a class day creates sessions only for classes whose schedule matches that day.
+- Per-session start time and duration are overrides; they never change the schedule or other sessions.
 - Admin removing a class day cancels every session on that day *(assumption)*.
 - Times are Munich local time (Europe/Berlin) *(assumption)*.
 - A student enrolled in several classes sees each class's sessions; overlapping times are not blocked (warning is an open question).

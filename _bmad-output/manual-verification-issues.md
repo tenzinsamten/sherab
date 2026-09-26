@@ -863,6 +863,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Built:** spec-47, commit `acefca9` (2026-09-26), not pushed.
 
 ## 48. Class schedule should be configurable per class (weekdays, time, duration, end date)
+- **Status:** planned — story 6-4 (`planning-artifacts/sprint-change-proposal-2026-09-26.md`, approved 2026-09-26).
 - **Asked (user, 2026-09-26):** "currently we are assuming that class can be scheduled only on
   sunday. But when you create or schedule a class. the start time,duration and till what date
   and which days in the week should be configurable."
@@ -895,6 +896,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   - Streaks: still weekly ("any session in the week qualifies") with several sessions per week?
 
 ## 49. Saved class default time doesn't show on the calendar
+- **Status:** explained — no class days in that month; resolved by 6-4's per-class schedules.
 - **Reported (user, 2026-09-26):** "I saved class default time but i do not see the default class
   timing on the calender". Seen on the dev server on :5173, which runs `vite dev --mode
   production`, i.e. against the **hosted** Supabase.

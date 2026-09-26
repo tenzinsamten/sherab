@@ -51,8 +51,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **success:** No class session can be scheduled on a day the admin has not marked, and every role sees the same class days. See `calendar.md`.
 
 - **CAP-10**
-  - **intent:** Each class has a default start time and duration; every class day gets a session for the class with those defaults, and any teacher assigned to the class can change a single day's start time and duration or cancel that day.
-  - **success:** Changing or cancelling one day leaves the default and all other days untouched, and the class's students see that day's actual start time and duration. See `calendar.md`.
+  - **intent:** Each class has a schedule — the weekdays it runs on, one start time and duration, a start date and an optional end date — set by the admin or any teacher assigned to the class. The class gets a session on every class day that matches its schedule, and may get extra one-off sessions on other class days. Any teacher assigned to the class can change a single session's start time and duration or cancel it.
+  - **success:** A class only has sessions on class days matching its schedule or added as extras; changing the schedule regenerates sessions from today on and never touches past sessions; changing or cancelling one session leaves the schedule and all other sessions untouched, and the class's students see that session's actual start time and duration. See `calendar.md`.
 
 - **CAP-11**
   - **intent:** A student marks each upcoming session of a class they are enrolled in as Coming or On leave, visible to that class's teachers, classmates, and the student's team.

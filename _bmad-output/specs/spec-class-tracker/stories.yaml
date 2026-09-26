@@ -171,13 +171,44 @@
     leaderboard). Do not touch attendance or streaks here — that is 6-2.
     Paraglide keys in en/de/bo.
 
+- id: "6-4"
+  title: Class schedules & extra sessions
+  description: >-
+    Each class has a schedule — weekdays (usually Sunday), one start time
+    and duration, a start date and an optional end date — set by the admin
+    or any teacher of the class, also when the admin creates a class. A
+    class gets a session only on the admin's class days that match its
+    schedule; the admin or a class teacher can add an extra session for
+    the class on any other class day. Changing a schedule regenerates
+    sessions from today on and keeps past ones. See SPEC.md CAP-9, CAP-10
+    and calendar.md. Build before 6-2.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Replaces 0018's create_sessions_for_class_day() /
+    create_sessions_for_class() "every class on every class day" with
+    schedule matching; reuse classes.default_start_time /
+    default_duration_minutes as the schedule time rather than a parallel
+    table unless justified. 0018 is live on hosted: the migration must
+    keep every existing session — existing classes get weekdays = the
+    weekdays of the class days they have sessions on, start date = their
+    earliest session, no end date — prove it with a test. Regeneration
+    touches only sessions dated today (Berlin) or later; a still-matching
+    future session keeps its override and cancellation. Extras only on an
+    existing class day (CAP-9). Keep is_admin()/is_teacher_of_class()
+    RLS and security-definer writes. UI: /calendar "Class defaults" →
+    "Class schedules"; schedule fields on the admin class create form;
+    "Add extra session" for admin and the class's teachers. Paraglide
+    en/de/bo. Resolves the deferred-work entry "A class created mid-year
+    gets sessions on every past class day".
+
 - id: "6-2"
   title: Attendance per session & calendar holidays
   description: >-
     Teachers mark attendance against a scheduled session instead of a
     free-chosen date, and streak holidays come from the calendar (a week
     with no non-cancelled session). See SPEC.md CAP-2, CAP-4 constraints
-    and calendar.md.
+    and calendar.md. Build after 6-4.
   spec_checkpoint: true
   done_checkpoint: true
   invoke_dev_with: >-
