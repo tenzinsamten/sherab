@@ -8925,8 +8925,28 @@ describe.skipIf(!reachable)('7-4 session leave (requires local Supabase)', () =>
 	});
 
 	it('Masked: a classmate sees Sick as on_leave, a teammate only teammates, a parent-only caller nothing (42501)', async () => {
-		const sessionId = await sessionFor(classId, futureDay());
+		// Sick is accepted only for yesterday or today (7-5), and Coming only
+		// before the start: answer Sick on yesterday's session, then move that
+		// session to a far-future day (service role, set-up only).
+		const sessionId = await sessionFor(classId, plusDays(today, -1));
 		expect((await setLeave(parent.client, sessionId, kid, 'sick')).error).toBeNull();
+		// Not a Sunday: the class's default schedule would already have a
+		// session there (one per class per day).
+		let futureDate = futureDay();
+		while (isoDow(futureDate) === 7) futureDate = futureDay();
+		await adminClient
+			.from('class_days')
+			.upsert([{ day: futureDate }], { onConflict: 'day', ignoreDuplicates: true });
+		const { data: futureClassDay } = await adminClient
+			.from('class_days')
+			.select('id')
+			.eq('day', futureDate)
+			.single();
+		const { error: moveError } = await adminClient
+			.from('class_sessions')
+			.update({ class_day_id: futureClassDay!.id })
+			.eq('id', sessionId);
+		if (moveError) throw new Error(`Failed to move session: ${moveError.message}`);
 
 		async function newTeam() {
 			const { data } = await adminClient
@@ -9333,5 +9353,532 @@ describe.skipIf(!reachable)('7-4 session leave (requires local Supabase)', () =>
 		expect((await setLeave(dual.client, taughtSession, taughtKid, 'on_leave')).error?.code).toBe(
 			'42501'
 		);
+	});
+});
+
+/**
+ * Story 7-5: Sick leave decisions (migration 0028). One test per I/O matrix
+ * row. Sick can only be answered for yesterday's or today's sessions, so each
+ * test answers on a fresh class's session dated yesterday (Berlin); the
+ * auto-approval rows then move that session back in time with the service
+ * role.
+ */
+describe.skipIf(!reachable)('7-5 sick leave decisions (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const today = todayInBerlin();
+	const plusDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	const yesterday = plusDays(today, -1);
+	const isoDow = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay() || 7;
+	const mondayOf = (day: string) => plusDays(day, 1 - isoDow(day));
+	const name = (label: string) => `7-5 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	/** A random far-future day (class days are unique school-wide). */
+	const futureDay = () =>
+		`${3000 + Math.floor(Math.random() * 6000)}-07-0${1 + Math.floor(Math.random() * 9)}`;
+
+	async function createClass(label: string, teacherId = teacher.id) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `K${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacherId });
+		return data.id;
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function newParent() {
+		const p = await createApprovedParent();
+		return { id: p.id, email: p.email, client: await signIn(p.email, p.password) };
+	}
+
+	async function child(parentEmail: string, cls: string) {
+		const { id, error } = await signUpStudent({
+			classId: cls,
+			registrationName: name('Kid'),
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return signIn(data.user!.email!, password);
+	}
+
+	function setLeave(
+		client: Client,
+		sessionId: string,
+		studentId: string,
+		answer: 'coming' | 'on_leave' | 'sick'
+	) {
+		return client
+			.from('session_leave_history')
+			.insert({ class_session_id: sessionId, student_id: studentId, answer })
+			.select('answer')
+			.single();
+	}
+
+	function decide(
+		client: Client,
+		sessionId: string,
+		studentId: string,
+		decision: 'approved' | 'rejected'
+	) {
+		return client
+			.from('sick_leave_decisions')
+			.insert({ class_session_id: sessionId, student_id: studentId, decision })
+			.select('decision, decided_by')
+			.single();
+	}
+
+	async function decisionsFor(sessionId: string, studentId: string) {
+		const { data } = await adminClient
+			.from('sick_leave_decisions')
+			.select('decision, decided_by')
+			.eq('class_session_id', sessionId)
+			.eq('student_id', studentId);
+		return data ?? [];
+	}
+
+	/** A fresh class taught by `teacher`, a child of a new parent, and a Sick answer for yesterday. */
+	async function sickYesterday(teacherId = teacher.id) {
+		const cls = await createClass('Sick', teacherId);
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const sessionId = await sessionFor(cls, yesterday);
+		const { error } = await setLeave(p.client, sessionId, kid, 'sick');
+		if (error) throw new Error(`Failed to set Sick: ${error.message}`);
+		return { cls, parent: p, kid, sessionId };
+	}
+
+	/** Moves a session to another class day (service role; test set-up only). */
+	async function moveSession(sessionId: string, day: string) {
+		await adminClient.from('class_days').upsert([{ day }], {
+			onConflict: 'day',
+			ignoreDuplicates: true
+		});
+		const { data: classDay } = await adminClient
+			.from('class_days')
+			.select('id')
+			.eq('day', day)
+			.single();
+		const { error } = await adminClient
+			.from('class_sessions')
+			.update({ class_day_id: classDay!.id })
+			.eq('id', sessionId);
+		if (error) throw new Error(`Failed to move session: ${error.message}`);
+	}
+
+	async function dualRole(role: 'teacher' | 'admin') {
+		const dual = await createSignedInUser(role);
+		const { error } = await adminClient.from('parents').insert({ id: dual.id, status: 'approved' });
+		if (error) throw new Error(`Failed to make parent: ${error.message}`);
+		return dual;
+	}
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		admin = await createSignedInUser('admin');
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('Approve: a class teacher approves pending Sick; decided_by is the teacher, the streak is recomputed, the parent sees it', async () => {
+		const s = await sickYesterday();
+		const { data: before } = await adminClient
+			.from('student_streaks')
+			.select('updated_at')
+			.eq('student_id', s.kid)
+			.single();
+
+		// The client never stamps the actor.
+		const forged = await teacher.client
+			.from('sick_leave_decisions')
+			.insert({
+				class_session_id: s.sessionId,
+				student_id: s.kid,
+				decision: 'approved',
+				decided_by: admin.id
+			})
+			.select('id');
+		expect(forged.error).not.toBeNull();
+
+		const { data, error } = await decide(teacher.client, s.sessionId, s.kid, 'approved');
+		expect(error).toBeNull();
+		expect(data).toEqual({ decision: 'approved', decided_by: teacher.id });
+
+		const { data: after } = await adminClient
+			.from('student_streaks')
+			.select('updated_at')
+			.eq('student_id', s.kid)
+			.single();
+		expect(Date.parse(after!.updated_at)).toBeGreaterThan(Date.parse(before!.updated_at));
+
+		// AC: the parent reads the decision next to the (still current) Sick answer.
+		const { data: seen } = await s.parent.client
+			.from('sick_leave_decisions')
+			.select('decision')
+			.eq('class_session_id', s.sessionId)
+			.eq('student_id', s.kid);
+		expect(seen).toEqual([{ decision: 'approved' }]);
+
+		// No UPDATE / DELETE: the decision is final.
+		await teacher.client
+			.from('sick_leave_decisions')
+			.update({ decision: 'rejected' })
+			.eq('class_session_id', s.sessionId);
+		await admin.client.from('sick_leave_decisions').delete().eq('class_session_id', s.sessionId);
+		expect(await decisionsFor(s.sessionId, s.kid)).toEqual([
+			{ decision: 'approved', decided_by: teacher.id }
+		]);
+	});
+
+	it('Reject: the admin (backup) rejects', async () => {
+		const s = await sickYesterday();
+		const { data, error } = await decide(admin.client, s.sessionId, s.kid, 'rejected');
+		expect(error).toBeNull();
+		expect(data).toEqual({ decision: 'rejected', decided_by: admin.id });
+	});
+
+	it("Self-decision: a teacher or admin who is the student's parent is refused (42501) and sees no controls flag", async () => {
+		for (const role of ['teacher', 'admin'] as const) {
+			const dual = await dualRole(role);
+			const cls = await createClass('Own child', role === 'teacher' ? dual.id : teacher.id);
+			const kid = await child(dual.email, cls);
+			const sessionId = await sessionFor(cls, yesterday);
+			expect((await setLeave(dual.client, sessionId, kid, 'sick')).error).toBeNull();
+
+			const refused = await decide(dual.client, sessionId, kid, 'approved');
+			expect(refused.error?.code).toBe('42501');
+			expect(await decisionsFor(sessionId, kid)).toEqual([]);
+
+			// The queue lists the row, flagged as their own child.
+			const { data: queue, error } = await dual.client.rpc('sick_leave_queue');
+			expect(error).toBeNull();
+			expect(
+				queue?.filter((r) => r.student_id === kid).map((r) => [r.decision, r.own_child])
+			).toEqual([[null, true]]);
+		}
+	});
+
+	it('Other teacher: a teacher of another class is refused (42501) and sees nothing in the queue', async () => {
+		const s = await sickYesterday();
+		const outsider = await createSignedInUser('teacher');
+		await createClass('Other', outsider.id);
+		const refused = await decide(outsider.client, s.sessionId, s.kid, 'approved');
+		expect(refused.error?.code).toBe('42501');
+		expect(await decisionsFor(s.sessionId, s.kid)).toEqual([]);
+
+		const { data: queue } = await outsider.client.rpc('sick_leave_queue');
+		expect(queue?.some((r) => r.student_id === s.kid)).toBe(false);
+		const { data: teacherQueue } = await teacher.client.rpc('sick_leave_queue');
+		expect(
+			teacherQueue
+				?.filter((r) => r.student_id === s.kid)
+				.map((r) => [r.class_session_id, r.decision])
+		).toEqual([[s.sessionId, null]]);
+		const { data: adminQueue } = await admin.client.rpc('sick_leave_queue');
+		expect(adminQueue?.some((r) => r.student_id === s.kid)).toBe(true);
+	});
+
+	it('Not sick: deciding a coming / on_leave / unanswered session is refused', async () => {
+		const cls = await createClass('Not sick');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		for (const answer of ['coming', 'on_leave', null] as const) {
+			const sessionId = await sessionFor(cls, futureDay());
+			if (answer) expect((await setLeave(p.client, sessionId, kid, answer)).error).toBeNull();
+			const { error } = await decide(teacher.client, sessionId, kid, 'approved');
+			expect(error?.hint).toBe('leave_not_sick');
+			expect(await decisionsFor(sessionId, kid)).toEqual([]);
+		}
+		// Sick then Coming: the current answer is no longer Sick. Today's
+		// session gets a late start so Coming is still allowed.
+		const sessionId = await sessionFor(cls, today);
+		await adminClient
+			.from('class_sessions')
+			.update({ start_time_override: '23:59' })
+			.eq('id', sessionId);
+		expect((await setLeave(p.client, sessionId, kid, 'sick')).error).toBeNull();
+		expect((await setLeave(p.client, sessionId, kid, 'coming')).error).toBeNull();
+		expect((await decide(teacher.client, sessionId, kid, 'approved')).error?.hint).toBe(
+			'leave_not_sick'
+		);
+		const { data: queue } = await teacher.client.rpc('sick_leave_queue');
+		expect(queue?.some((r) => r.class_session_id === sessionId && r.student_id === kid)).toBe(
+			false
+		);
+		// Even once the session is long past, the job leaves it alone.
+		await moveSession(sessionId, plusDays(today, -15));
+		expect((await adminClient.rpc('approve_stale_sick_leave')).error).toBeNull();
+		expect(await decisionsFor(sessionId, kid)).toEqual([]);
+	});
+
+	it('Future: Sick for a session dated after today is refused (leave_sick_closed)', async () => {
+		const cls = await createClass('Future sick');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		for (const day of [plusDays(today, 1), futureDay()]) {
+			const sessionId = await sessionFor(cls, day);
+			const { error } = await setLeave(p.client, sessionId, kid, 'sick');
+			expect(error?.hint).toBe('leave_sick_closed');
+		}
+	});
+
+	it('Cancelled: pending Sick on a session later cancelled (session or class day) leaves the queue and is never auto-approved', async () => {
+		const bySession = await sickYesterday();
+		await adminClient
+			.from('class_sessions')
+			.update({ cancelled: true })
+			.eq('id', bySession.sessionId);
+
+		// Class day cancelled: move the session to a unique far-past day of
+		// its own (long past, so the job would otherwise approve it), so no
+		// real class day is cancelled.
+		const byDay = await sickYesterday();
+		const dayOff = `${1700 + Math.floor(Math.random() * 90)}-03-0${1 + Math.floor(Math.random() * 9)}`;
+		await moveSession(byDay.sessionId, dayOff);
+		await adminClient.from('class_days').update({ cancelled: true }).eq('day', dayOff);
+		// The cancelled session is long past too.
+		await moveSession(bySession.sessionId, plusDays(today, -15));
+
+		const { data: queue } = await teacher.client.rpc('sick_leave_queue');
+		for (const s of [bySession, byDay]) {
+			expect(queue?.some((r) => r.class_session_id === s.sessionId)).toBe(false);
+		}
+
+		expect((await adminClient.rpc('approve_stale_sick_leave')).error).toBeNull();
+		expect(await decisionsFor(bySession.sessionId, bySession.kid)).toEqual([]);
+		expect(await decisionsFor(byDay.sessionId, byDay.kid)).toEqual([]);
+	});
+
+	it('Final: a second decision is refused, and so is any new answer from the parent (leave_decided)', async () => {
+		const s = await sickYesterday();
+		expect((await decide(teacher.client, s.sessionId, s.kid, 'rejected')).error).toBeNull();
+
+		const second = await decide(admin.client, s.sessionId, s.kid, 'approved');
+		expect(second.error?.code).toBe('23505');
+
+		for (const answer of ['sick', 'coming'] as const) {
+			const { error } = await setLeave(s.parent.client, s.sessionId, s.kid, answer);
+			expect(error?.hint).toBe('leave_decided');
+		}
+		expect(await decisionsFor(s.sessionId, s.kid)).toEqual([
+			{ decision: 'rejected', decided_by: teacher.id }
+		]);
+		const { data: answers } = await adminClient
+			.from('session_leave_history')
+			.select('answer')
+			.eq('class_session_id', s.sessionId)
+			.eq('student_id', s.kid);
+		expect(answers).toEqual([{ answer: 'sick' }]);
+	});
+
+	it('Auto: undecided Sick 15 days after the session is approved by the system; 13 days is untouched; running twice adds nothing', async () => {
+		const cls = await createClass('Auto');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+
+		const stale = await sessionFor(cls, yesterday);
+		expect((await setLeave(p.client, stale, kid, 'sick')).error).toBeNull();
+		await moveSession(stale, plusDays(today, -15));
+
+		const recent = await sessionFor(cls, yesterday);
+		expect((await setLeave(p.client, recent, kid, 'sick')).error).toBeNull();
+		await moveSession(recent, plusDays(today, -13));
+
+		const first = await adminClient.rpc('approve_stale_sick_leave');
+		expect(first.error).toBeNull();
+		expect(first.data).toBeGreaterThanOrEqual(1);
+		const second = await adminClient.rpc('approve_stale_sick_leave');
+		expect(second).toMatchObject({ data: 0, error: null });
+
+		expect(await decisionsFor(stale, kid)).toEqual([{ decision: 'approved', decided_by: null }]);
+		expect(await decisionsFor(recent, kid)).toEqual([]);
+
+		const { data: queue } = await teacher.client.rpc('sick_leave_queue');
+		expect(
+			queue
+				?.filter((r) => r.student_id === kid)
+				.map((r) => [r.class_session_id, r.decision, r.decided_by_system])
+				.sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+		).toEqual(
+			[
+				[stale, 'approved', true],
+				[recent, null, false]
+			].sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+		);
+	});
+
+	it('Streak: an absent week with Sick pending -> reset, approved -> unbroken, rejected -> reset (grace 0)', async () => {
+		// Weeks 0 and 2: X present with homework done; week 1 (yesterday): X absent, Sick.
+		const days = [plusDays(yesterday, -7), yesterday, plusDays(yesterday, 7)];
+
+		async function scenario() {
+			const cls = await createClass('Streak');
+			const p = await newParent();
+			const x = await child(p.email, cls);
+			const y = await child(p.email, cls);
+			const sessions: string[] = [];
+			for (const day of days) sessions.push(await sessionFor(cls, day));
+			const { data: assignment } = await adminClient
+				.from('homework_assignments')
+				.insert({
+					class_id: cls,
+					title: name('HW'),
+					skill_area: 'language',
+					created_by: teacher.id
+				})
+				.select('id')
+				.single();
+			for (const [i, day] of days.entries()) {
+				for (const mark of [
+					{ student_id: y, present: true },
+					{ student_id: x, present: i !== 1 }
+				]) {
+					const { error } = await adminClient.from('attendance_records').insert({
+						...mark,
+						class_id: cls,
+						class_session_id: sessions[i],
+						recorded_by: teacher.id
+					});
+					if (error) throw new Error(`Failed to mark: ${error.message}`);
+				}
+				if (i === 1) continue;
+				const { data: instance } = await adminClient
+					.from('homework_instances')
+					.insert({
+						assignment_id: assignment!.id,
+						class_id: cls,
+						period_start: mondayOf(day),
+						due_date: plusDays(mondayOf(day), 6)
+					})
+					.select('id')
+					.single();
+				for (const status of ['assigned', 'done'] as const) {
+					await adminClient.from('homework_status_history').insert({
+						instance_id: instance!.id,
+						student_id: x,
+						class_id: cls,
+						status,
+						recorded_by: teacher.id
+					});
+				}
+			}
+			expect((await setLeave(p.client, sessions[1], x, 'sick')).error).toBeNull();
+			const streak = async () => {
+				const { data, error } = await adminClient.rpc('compute_student_streak', {
+					p_student_id: x,
+					p_class_id: cls,
+					p_as_of_week: mondayOf(days[2])
+				});
+				expect(error).toBeNull();
+				return data?.current_streak;
+			};
+			return { x, sessionId: sessions[1], streak };
+		}
+
+		const approved = await scenario();
+		const rejected = await scenario();
+
+		await withGrace0(async () => {
+			// Pending Sick protects nothing.
+			expect(await approved.streak()).toBe(1);
+			expect(await rejected.streak()).toBe(1);
+
+			expect(
+				(await decide(teacher.client, approved.sessionId, approved.x, 'approved')).error
+			).toBeNull();
+			expect(await approved.streak()).toBe(2);
+
+			expect(
+				(await decide(teacher.client, rejected.sessionId, rejected.x, 'rejected')).error
+			).toBeNull();
+			expect(await rejected.streak()).toBe(1);
+		});
+
+		async function withGrace0(fn: () => Promise<void>) {
+			const { data: before } = await adminClient
+				.from('app_settings')
+				.select('value')
+				.eq('key', 'streak_grace_weeks')
+				.single();
+			await adminClient
+				.from('app_settings')
+				.update({ value: { weeks: 0 } })
+				.eq('key', 'streak_grace_weeks');
+			try {
+				await fn();
+			} finally {
+				await adminClient
+					.from('app_settings')
+					.update({ value: before!.value })
+					.eq('key', 'streak_grace_weeks');
+			}
+		}
+	});
+
+	it('Read: the student, their parent, the class teacher and the admin read the decision; another student, parent or teacher reads nothing', async () => {
+		const s = await sickYesterday();
+		expect((await decide(teacher.client, s.sessionId, s.kid, 'approved')).error).toBeNull();
+
+		const kidClient = await signInStudent(s.kid);
+		const other = await newParent();
+		const otherKid = await child(other.email, s.cls);
+		const otherKidClient = await signInStudent(otherKid);
+		const outsideTeacher = await createSignedInUser('teacher');
+
+		const read = (client: Client) =>
+			client
+				.from('sick_leave_decisions')
+				.select('decision')
+				.eq('class_session_id', s.sessionId)
+				.eq('student_id', s.kid);
+
+		for (const client of [kidClient, s.parent.client, teacher.client, admin.client]) {
+			expect((await read(client)).data).toEqual([{ decision: 'approved' }]);
+		}
+		for (const client of [otherKidClient, other.client, outsideTeacher.client]) {
+			expect((await read(client)).data).toEqual([]);
+		}
+		// The queue is staff-only: a parent or student gets no rows.
+		for (const client of [kidClient, s.parent.client]) {
+			const { data } = await client.rpc('sick_leave_queue');
+			expect(data).toEqual([]);
+		}
+	});
+
+	it('Job access: an authenticated teacher or admin cannot run approve_stale_sick_leave (42501)', async () => {
+		for (const client of [teacher.client, admin.client]) {
+			const { error } = await client.rpc('approve_stale_sick_leave');
+			expect(error?.code).toBe('42501');
+		}
 	});
 });

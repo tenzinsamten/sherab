@@ -1,4 +1,5 @@
 import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
+import { loadSickLeave } from '$lib/server/leave';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safeGetSession } }) => {
@@ -38,6 +39,12 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 			.eq('status', 'pending');
 		pendingRequestsCount = count ?? 0;
 		countError = Boolean(countErr);
+
+		// Story 7-5: pending Sick answers of the caller's classes (every class
+		// for the admin) the caller may decide -- never their own child's.
+		const { sickPending, sickError } = await loadSickLeave(supabase);
+		pendingRequestsCount += sickPending.filter((r) => !r.ownChild).length;
+		countError = countError || sickError;
 	}
 	if (profile?.role === 'admin') {
 		// Story 7-1: pending parent accounts are admin-only requests.

@@ -16,6 +16,8 @@ vi.mock('$lib/server/capabilities', () => ({
 }));
 
 const { actions } = await import('./+page.server');
+const { loadSickLeave } = await import('$lib/server/leave');
+const m = await import('$lib/paraglide/messages.js');
 
 /**
  * Story 7-1 parent actions. `locals.supabase` answers each table's calls
@@ -212,5 +214,136 @@ describe('approve (student)', () => {
 		expect(await actions.approve(e)).toMatchObject({ status: 400 });
 		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
 		expect(updates).toEqual([]);
+	});
+});
+
+/**
+ * Story 7-5: the Sick leave decision action and the queue split. The
+ * database stamps the actor and refuses everything else; the action only
+ * validates the form and maps the refusal.
+ */
+describe('decideSick', () => {
+	const SESSION = '66666666-7777-4888-8999-000000000000';
+	const STUDENT = '11111111-2222-4333-8444-555555555555';
+
+	function sickEvent(fields: Record<string, string>, result: Result, user = true) {
+		const inserted: unknown[] = [];
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const chain = {
+			insert: (row: unknown) => {
+				inserted.push(row);
+				return chain;
+			},
+			select: () => chain,
+			single: () => Promise.resolve(result)
+		};
+		const e = {
+			request: new Request('https://app.test/requests', { method: 'POST', body }),
+			locals: {
+				supabase: { from: () => chain },
+				safeGetSession: async () => ({ user: user ? { id: 't1' } : null })
+			}
+		} as unknown as Parameters<typeof actions.decideSick>[0];
+		return { e, inserted };
+	}
+
+	const fields = (decision: string) => ({
+		sessionId: SESSION,
+		studentId: STUDENT,
+		studentName: 'Dawa',
+		decision
+	});
+
+	it.each(['approved', 'rejected'] as const)(
+		'inserts only session, student and decision (%s)',
+		async (decision) => {
+			const { e, inserted } = sickEvent(fields(decision), ok({ id: 1 }));
+			expect(await actions.decideSick(e)).toEqual({
+				success: true,
+				action: decision === 'approved' ? 'sickApproved' : 'sickRejected',
+				sessionId: SESSION,
+				studentId: STUDENT,
+				sickStudentName: 'Dawa'
+			});
+			expect(inserted).toEqual([{ class_session_id: SESSION, student_id: STUDENT, decision }]);
+		}
+	);
+
+	it('refuses a bad decision or ids without writing', async () => {
+		for (const f of [
+			fields('maybe'),
+			{ ...fields('approved'), sessionId: 'x' },
+			{ ...fields('approved'), studentId: '' }
+		]) {
+			const { e, inserted } = sickEvent(f, ok({ id: 1 }));
+			expect(await actions.decideSick(e)).toMatchObject({ status: 400 });
+			expect(inserted).toEqual([]);
+		}
+	});
+
+	it('refuses a signed-out caller', async () => {
+		const { e, inserted } = sickEvent(fields('approved'), ok({ id: 1 }), false);
+		expect(await actions.decideSick(e)).toMatchObject({ status: 401 });
+		expect(inserted).toEqual([]);
+	});
+
+	it.each([
+		[{ code: '42501' }, 403, m.requests_sick_error_not_allowed()],
+		[{ code: '23505' }, 400, m.requests_sick_error_decided()],
+		[{ code: '22023', hint: 'leave_not_sick' }, 400, m.requests_sick_error_not_sick()],
+		[{ code: '08006' }, 400, m.requests_sick_error_failed()]
+	])('maps %o to its message', async (err, status, message) => {
+		const { e } = sickEvent(fields('approved'), { data: null, error: err });
+		expect(await actions.decideSick(e)).toMatchObject({
+			status,
+			data: { error: message, sessionId: SESSION, studentId: STUDENT }
+		});
+	});
+});
+
+describe('loadSickLeave', () => {
+	const row = (id: string, decision: 'approved' | 'rejected' | null, decidedAt: string | null) => ({
+		class_session_id: `s-${id}`,
+		student_id: `k-${id}`,
+		student_name: `Kid ${id}`,
+		class_id: 'c1',
+		class_name: 'Alphabet',
+		day: '2026-09-27',
+		start_time: id === 'a' ? '10:00:00' : null,
+		answered_at: '2026-09-27T08:00:00Z',
+		decision,
+		decided_at: decidedAt,
+		decided_by_system: id === 'c',
+		own_child: id === 'b'
+	});
+
+	it('splits pending from decided (newest decision first)', async () => {
+		const rpc = vi.fn(async () => ({
+			data: [
+				row('a', null, null),
+				row('b', null, null),
+				row('c', 'approved', '2026-09-01T00:00:00Z'),
+				row('d', 'rejected', '2026-09-20T00:00:00Z')
+			],
+			error: null
+		}));
+		const result = await loadSickLeave({ rpc } as unknown as Parameters<typeof loadSickLeave>[0]);
+		expect(rpc).toHaveBeenCalledWith('sick_leave_queue');
+		expect(result.sickError).toBe(false);
+		expect(result.sickPending.map((r) => [r.studentId, r.startTime, r.ownChild])).toEqual([
+			['k-a', '10:00', false],
+			['k-b', null, true]
+		]);
+		expect(result.sickDecided.map((r) => [r.studentId, r.decision, r.decidedBySystem])).toEqual([
+			['k-d', 'rejected', false],
+			['k-c', 'approved', true]
+		]);
+	});
+
+	it('flags an error', async () => {
+		const rpc = vi.fn(async () => ({ data: null, error: { message: 'boom' } }));
+		const result = await loadSickLeave({ rpc } as unknown as Parameters<typeof loadSickLeave>[0]);
+		expect(result).toEqual({ sickPending: [], sickDecided: [], sickError: true });
 	});
 });

@@ -192,3 +192,6 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-4-parent-session-leave-planned-vs-short-notice.md`
   summary: Browser-level (Playwright) test of the parent leave flow on `/parent/children/[id]`: On leave shows the Planned/Short-notice preview before anything is saved, and confirming saves.
   evidence: The repo has no component-test setup (vite.config.ts runs the server project only) and one calendar e2e; wiring On leave straight to ?/setLeave would pass every current test (7-4 review triage #5).
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-5-sick-leave-with-teacher-approval.md`
+  summary: Add `load` tests for `/requests` (including a failing `sick_leave_queue` setting `loadError`, so a queue failure never looks like an empty queue).
+  evidence: `src/routes/requests/page.server.spec.ts` imports only `actions` and `loadSickLeave`; no test calls the route's `load` for any query (7-5 review triage #7).

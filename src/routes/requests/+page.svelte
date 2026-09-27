@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { showToast } from '$lib/ix';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
@@ -29,8 +30,34 @@
 			: null
 	);
 
+	// Story 7-5: only the rows the viewer may decide count (never their own child).
+	let sickActionable = $derived(data.sickPending.filter((r) => !r.ownChild).length);
+
+	// Wall-clock dates: format as UTC so no time zone shifts the day.
+	function formatDay(date: string): string {
+		try {
+			return new Intl.DateTimeFormat(getLocale(), {
+				weekday: 'short',
+				day: 'numeric',
+				month: 'long',
+				year: 'numeric',
+				timeZone: 'UTC'
+			}).format(new Date(`${date}T00:00:00Z`));
+		} catch {
+			return date;
+		}
+	}
+
 	$effect(() => {
 		if (!form?.success) return;
+		if ('sickStudentName' in form) {
+			const name = form.sickStudentName || '';
+			if (form.action === 'sickApproved')
+				showToast('success', m.requests_sick_outcome_approved({ name }));
+			if (form.action === 'sickRejected')
+				showToast('success', m.requests_sick_outcome_rejected({ name }));
+			return;
+		}
 		if ('parentName' in form) {
 			const name = form.parentName || '';
 			if (form.action === 'parentApproved')
@@ -60,7 +87,9 @@
 				{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
 			</p>
 		</div>
-		<span class="page-counter">{data.pending.length + data.parentsPending.length}</span>
+		<span class="page-counter"
+			>{data.pending.length + data.parentsPending.length + sickActionable}</span
+		>
 	</header>
 
 	{#if credential}
@@ -214,6 +243,111 @@
 											</ix-button>
 										</form>
 									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
+	<section class="card" aria-labelledby="sick-heading">
+		<h2 id="sick-heading">{m.requests_sick_heading()}</h2>
+		<p class="muted">{m.requests_sick_subtitle()}</p>
+		{#if data.sickPending.length === 0}
+			<p class="muted">{m.requests_sick_empty()}</p>
+		{:else}
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>{m.requests_col_sick()}</th>
+							<th><span class="sr-only">{m.requests_approve()}</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.sickPending as row (`${row.sessionId}:${row.studentId}`)}
+							{@const key = `${row.sessionId}:${row.studentId}`}
+							<tr>
+								<td>
+									<div class="actions">
+										<strong>{row.studentName}</strong>
+										<ix-pill variant="neutral">
+											{m.leave_answer_sick()} · {m.leave_decision_pending()}
+										</ix-pill>
+									</div>
+									<div class="muted">
+										{row.className} ·
+										<time datetime={row.day}>{formatDay(row.day)}</time>
+										· {row.startTime ?? m.calendar_status_unset()}
+									</div>
+								</td>
+								<td>
+									{#if row.ownChild}
+										<p class="muted" style="margin:0; text-align:right;">
+											{m.requests_sick_own_child()}
+										</p>
+									{:else}
+										<div class="actions" style="justify-content:flex-end;">
+											{#each ['approved', 'rejected'] as decision (decision)}
+												<form
+													method="POST"
+													action="?/decideSick"
+													use:enhance={pending.submit(`sick:${decision}:${key}`)}
+												>
+													<input type="hidden" name="sessionId" value={row.sessionId} />
+													<input type="hidden" name="studentId" value={row.studentId} />
+													<input type="hidden" name="studentName" value={row.studentName} />
+													<input type="hidden" name="decision" value={decision} />
+													<ix-button
+														type="submit"
+														variant={decision === 'approved' ? 'primary' : 'danger-secondary'}
+														loading={pending.is(`sick:${decision}:${key}`) || undefined}
+														disabled={pending.busy || undefined}
+													>
+														{decision === 'approved' ? m.requests_approve() : m.requests_reject()}
+													</ix-button>
+												</form>
+											{/each}
+										</div>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
+	<section class="card">
+		<h2>{m.requests_sick_decided_heading()}</h2>
+		{#if data.sickDecided.length === 0}
+			<p class="muted">{m.requests_sick_decided_empty()}</p>
+		{:else}
+			<div class="table-wrap">
+				<table>
+					<tbody>
+						{#each data.sickDecided as row (`${row.sessionId}:${row.studentId}`)}
+							<tr>
+								<td style="width:1%; white-space:nowrap;">
+									{#if row.decision === 'approved'}
+										<ix-pill variant="success">{m.requests_status_approved()}</ix-pill>
+									{:else}
+										<ix-pill variant="neutral">{m.requests_status_rejected()}</ix-pill>
+									{/if}
+								</td>
+								<td class:muted={row.decision === 'rejected'}>
+									{row.studentName}
+									<div class="muted">
+										{row.className} ·
+										<time datetime={row.day}>{formatDay(row.day)}</time>
+										· {row.startTime ?? m.calendar_status_unset()}
+										{#if row.decidedBySystem}
+											· {m.requests_sick_auto()}
+										{/if}
+									</div>
 								</td>
 							</tr>
 						{/each}

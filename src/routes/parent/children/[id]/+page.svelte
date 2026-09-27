@@ -8,10 +8,12 @@
 	import type { ActionData, PageProps } from './$types';
 
 	/**
-	 * Story 7-4: a parent's leave page for one approved child. Each upcoming
-	 * session shows its current answer and, until it starts, Coming / On
-	 * leave. On leave first asks the database how it will count
-	 * (preview_leave) and saves only after the parent confirms.
+	 * Stories 7-4, 7-5: a parent's leave page for one approved child. Each
+	 * session from yesterday on shows its current answer and, until it
+	 * starts, Coming / On leave. On leave first asks the database how it will
+	 * count (preview_leave) and saves only after the parent confirms. Sick is
+	 * offered for yesterday's and today's sessions; a Sick answer shows its
+	 * decision, and a decided session has no controls.
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -36,6 +38,12 @@
 		if (answer === 'on_leave') return m.leave_answer_on_leave();
 		if (answer === 'sick') return m.leave_answer_sick();
 		return m.leave_answer_none();
+	}
+
+	function decisionLabel(decision: string | null): string {
+		if (decision === 'approved') return m.leave_decision_approved();
+		if (decision === 'rejected') return m.leave_decision_rejected();
+		return m.leave_decision_pending();
 	}
 
 	function classificationLabel(classification: string | null): string {
@@ -115,14 +123,24 @@
 							{:else if session.answer === 'coming'}
 								<ix-pill variant="success" outline>{answerLabel(session.answer)}</ix-pill>
 							{:else if session.answer === 'sick'}
-								<ix-pill variant="neutral">{answerLabel(session.answer)}</ix-pill>
+								<ix-pill
+									variant={session.decision === 'approved'
+										? 'success'
+										: session.decision === 'rejected'
+											? 'alarm'
+											: 'neutral'}
+								>
+									{answerLabel(session.answer)} · {decisionLabel(session.decision)}
+								</ix-pill>
 							{:else}
 								<ix-pill variant="neutral" outline>{answerLabel(null)}</ix-pill>
 							{/if}
 						</div>
-						{#if session.open}
+						{#if session.decision}
+							<!-- Story 7-5: a decided Sick locks the session's answers. -->
+						{:else if session.open || session.sickOpen}
 							<div class="session-controls">
-								{#if preview?.sessionId === session.id}
+								{#if session.open && preview?.sessionId === session.id}
 									<p class="preview" role="status">
 										{preview.classification === 'planned'
 											? m.leave_preview_planned()
@@ -152,7 +170,7 @@
 											{m.leave_keep()}
 										</ix-button>
 									</form>
-								{:else}
+								{:else if session.open}
 									<form
 										method="POST"
 										action="?/setLeave"
@@ -184,6 +202,25 @@
 											disabled={pending.busy || undefined}
 										>
 											{m.leave_answer_on_leave()}
+										</ix-button>
+									</form>
+								{/if}
+								{#if session.sickOpen && preview?.sessionId !== session.id}
+									<form
+										method="POST"
+										action="?/setLeave"
+										use:enhance={pending.submit(`sick:${session.id}`)}
+										class="inline-form"
+									>
+										<input type="hidden" name="sessionId" value={session.id} />
+										<input type="hidden" name="answer" value="sick" />
+										<ix-button
+											type="submit"
+											variant={session.answer === 'sick' ? 'primary' : 'secondary'}
+											loading={pending.is(`sick:${session.id}`) || undefined}
+											disabled={pending.busy || undefined}
+										>
+											{m.leave_answer_sick()}
 										</ix-button>
 									</form>
 								{/if}

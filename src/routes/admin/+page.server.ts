@@ -1,5 +1,6 @@
 import { fetchAllHistoryRows } from '$lib/server/history-rows';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
+import { loadSickLeave } from '$lib/server/leave';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -16,7 +17,8 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		{ count: pendingRequestsCount, error: pendingError },
 		{ count: pendingParentsCount, error: pendingParentsError },
 		{ count: homeworkAssignmentsCount, error: assignmentsError },
-		{ rows: history, error: historyError }
+		{ rows: history, error: historyError },
+		{ sickPending, sickError }
 	] = await Promise.all([
 		// profiles_select_admin (0001_init.sql) -- admin reads every class's
 		// row here, unlike admin/teachers/+page.server.ts's narrower selects.
@@ -49,7 +51,10 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		// it's given, so it's directly reusable here at school-wide grain
 		// with no modification. Paged via fetchAllHistoryRows so the school-
 		// wide read isn't silently capped at max_rows.
-		fetchAllHistoryRows(supabase)
+		fetchAllHistoryRows(supabase),
+		// Story 7-5: pending Sick leave the admin may decide (never their own
+		// child's), counted like +layout.server.ts's nav badge.
+		loadSickLeave(supabase)
 	]);
 
 	const progress = Object.values(buildHomeworkProgress(history));
@@ -72,7 +77,10 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		classesCount: classesCount ?? 0,
 		teachersCount: teachersCount ?? 0,
 		studentsCount: studentsCount ?? 0,
-		pendingRequestsCount: (pendingRequestsCount ?? 0) + (pendingParentsCount ?? 0),
+		pendingRequestsCount:
+			(pendingRequestsCount ?? 0) +
+			(pendingParentsCount ?? 0) +
+			sickPending.filter((r) => !r.ownChild).length,
 		homeworkAssignmentsCount: homeworkAssignmentsCount ?? 0,
 		homeworkCompletionPercent,
 		loadError: Boolean(
@@ -82,7 +90,8 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			pendingError ||
 			pendingParentsError ||
 			assignmentsError ||
-			historyError
+			historyError ||
+			sickError
 		)
 	};
 };

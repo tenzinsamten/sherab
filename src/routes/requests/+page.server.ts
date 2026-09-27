@@ -8,10 +8,13 @@ import {
 	studentUsernameToEmail
 } from '$lib/server/temp-password';
 import { getCapabilities } from '$lib/server/capabilities';
+import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const MAX_CREDENTIAL_ATTEMPTS = 5;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type StudentRow = {
 	id: string;
@@ -100,7 +103,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	const [
 		{ data: pendingRows, error: pendingError },
 		{ data: decidedRows, error: decidedError },
-		{ data: teams, error: teamsError }
+		{ data: teams, error: teamsError },
+		{ sickPending, sickDecided, sickError }
 	] = await Promise.all([
 		supabase
 			.from('profiles')
@@ -114,7 +118,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.eq('role', 'student')
 			.in('status', ['approved', 'rejected'])
 			.order('reviewed_at', { ascending: false }),
-		supabase.from('teams').select('id, name').order('name')
+		supabase.from('teams').select('id, name').order('name'),
+		loadSickLeave(supabase)
 	]);
 
 	// Admin only: teachers never see parent registrations, not even a count.
@@ -158,7 +163,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		teams: teams ?? [],
 		parentsPending,
 		parentsDecided,
-		loadError: Boolean(pendingError || decidedError || teamsError || parentsError)
+		sickPending,
+		sickDecided,
+		loadError: Boolean(pendingError || decidedError || teamsError || parentsError || sickError)
 	};
 };
 
@@ -369,6 +376,53 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'cleared' as const, studentId, studentName };
+	},
+
+	/**
+	 * Story 7-5: approve or reject a pending Sick answer. The database stamps
+	 * decided_by / decided_at, refuses anything but a current Sick, and RLS
+	 * refuses anyone but a teacher of the class or the admin -- and never the
+	 * student's own parent. A decision is final (unique per session, student).
+	 */
+	decideSick: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const formData = await request.formData();
+		const sessionId = String(formData.get('sessionId') ?? '');
+		const studentId = String(formData.get('studentId') ?? '');
+		const studentName = String(formData.get('studentName') ?? '');
+		const decision = String(formData.get('decision') ?? '');
+
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.requests_error_not_signed_in(), sessionId, studentId });
+		}
+		if (
+			!UUID_PATTERN.test(sessionId) ||
+			!UUID_PATTERN.test(studentId) ||
+			(decision !== 'approved' && decision !== 'rejected')
+		) {
+			return fail(400, { error: m.requests_error_not_found(), sessionId, studentId });
+		}
+
+		const { error: insertError } = await supabase
+			.from('sick_leave_decisions')
+			.insert({ class_session_id: sessionId, student_id: studentId, decision })
+			.select('id')
+			.single();
+		if (insertError) {
+			return fail(insertError.code === '42501' ? 403 : 400, {
+				error: sickDecisionErrorMessage(insertError),
+				sessionId,
+				studentId
+			});
+		}
+
+		return {
+			success: true,
+			action: decision === 'approved' ? ('sickApproved' as const) : ('sickRejected' as const),
+			sessionId,
+			studentId,
+			sickStudentName: studentName
+		};
 	},
 
 	approveParent: async ({ request, locals: { supabase, safeGetSession } }) => {

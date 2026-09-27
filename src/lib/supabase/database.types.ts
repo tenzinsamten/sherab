@@ -814,6 +814,55 @@ export type Database = {
 					}
 				];
 			};
+			sick_leave_decisions: {
+				Row: {
+					class_session_id: string;
+					decided_at: string;
+					decided_by: string | null;
+					decision: 'approved' | 'rejected';
+					id: number;
+					student_id: string;
+				};
+				Insert: {
+					class_session_id: string;
+					decided_at?: string;
+					decided_by?: string | null;
+					decision: 'approved' | 'rejected';
+					id?: never;
+					student_id: string;
+				};
+				Update: {
+					class_session_id?: string;
+					decided_at?: string;
+					decided_by?: string | null;
+					decision?: 'approved' | 'rejected';
+					id?: never;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'sick_leave_decisions_class_session_id_fkey';
+						columns: ['class_session_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_sessions';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'sick_leave_decisions_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'sick_leave_decisions_decided_by_fkey';
+						columns: ['decided_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			student_streaks: {
 				Row: {
 					class_id: string;
@@ -1028,6 +1077,27 @@ export type Database = {
 					student_id: string;
 					display_name: string;
 					answer: 'coming' | 'on_leave';
+				}[];
+			};
+			approve_stale_sick_leave: {
+				Args: never;
+				Returns: number;
+			};
+			sick_leave_queue: {
+				Args: never;
+				Returns: {
+					class_session_id: string;
+					student_id: string;
+					student_name: string;
+					class_id: string;
+					class_name: string;
+					day: string;
+					start_time: string | null;
+					answered_at: string;
+					decision: 'approved' | 'rejected' | null;
+					decided_at: string | null;
+					decided_by_system: boolean;
+					own_child: boolean;
 				}[];
 			};
 			child_attendance: {

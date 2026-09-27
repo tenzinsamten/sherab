@@ -28,7 +28,10 @@ function makeChain(result: ChainResult) {
 	return chain;
 }
 
-function fakeLocals(overrides: Partial<Record<string, ChainResult[]>> = {}) {
+function fakeLocals(
+	overrides: Partial<Record<string, ChainResult[]>> = {},
+	sickQueue: { data: unknown; error: unknown } = { data: [], error: null }
+) {
 	const ok: ChainResult = { data: [], count: 0, error: null };
 	const queues: Record<string, ChainResult[]> = {
 		classes: [ok],
@@ -40,6 +43,7 @@ function fakeLocals(overrides: Partial<Record<string, ChainResult[]>> = {}) {
 	const cursors: Record<string, number> = {};
 	return {
 		supabase: {
+			rpc: async () => sickQueue,
 			from: (table: string) => {
 				const queue = queues[table] ?? [ok];
 				const i = Math.min(cursors[table] ?? 0, queue.length - 1);
@@ -112,6 +116,49 @@ describe('admin dashboard +page.server.ts load', () => {
 		} as Parameters<typeof load>[0]);
 
 		expect(result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
+	});
+
+	it('adds pending Sick leave the admin may decide, never their own child (Story 7-5)', async () => {
+		const sick = (id: string, decision: string | null, ownChild: boolean) => ({
+			class_session_id: `s-${id}`,
+			student_id: `k-${id}`,
+			student_name: id,
+			class_id: 'c1',
+			class_name: 'Alphabet',
+			day: '2026-09-27',
+			start_time: null,
+			answered_at: '2026-09-27T08:00:00Z',
+			decision,
+			decided_at: decision ? '2026-09-27T09:00:00Z' : null,
+			decided_by_system: false,
+			own_child: ownChild
+		});
+		const result = await load({
+			locals: fakeLocals(
+				{
+					profiles: [
+						{ data: [], count: 0, error: null },
+						{ data: [], count: 0, error: null },
+						{ data: [], count: 1, error: null } // pending students
+					]
+				},
+				{
+					data: [
+						sick('a', null, false),
+						sick('b', null, true),
+						sick('c', 'approved', false),
+						sick('d', null, false)
+					],
+					error: null
+				}
+			)
+		} as Parameters<typeof load>[0]);
+		expect(result).toMatchObject({ pendingRequestsCount: 3, loadError: false });
+
+		const failed = await load({
+			locals: fakeLocals({}, { data: null, error: { message: 'boom' } })
+		} as Parameters<typeof load>[0]);
+		expect(failed).toMatchObject({ loadError: true });
 	});
 
 	it('continues past the first 1000-row page when fetching homework_status_history (Review Triage Log #16: pagination continuation)', async () => {
