@@ -164,3 +164,12 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-1-parent-accounts-admin-approval-my-profile.md`
   summary: A pending or rejected parent can read school-wide team leaderboard totals (team_leaderboard()) and class_days, which are open to any authenticated user.
   evidence: 7-1 review E10/E14; pre-existing policies (0018, leaderboard). Aggregates only, no student personal data; revisit with 7-3's parent read scoping.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-2-parent-first-student-registration-linking.md`
+  summary: The teacher approving a student on /requests cannot see which parent (guardian email or parent name) the student is linked to, so a mistyped but valid parent email is approved blind.
+  evidence: 7-2 review triage #6; harm begins when 7-3 grants reads through is_parent_of(); 7-6 is the correction path. Consider showing the linked parent on the /requests card in 7-3.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-2-parent-first-student-registration-linking.md`
+  summary: The anonymous /join parent pre-check (and /register's emailHasLogin) answers found / not found with no rate limiting, allowing enumeration of approved parent emails.
+  evidence: 7-2 review triage #7; the found/not-found response is intent, throttling exists nowhere in the app.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-2-parent-first-student-registration-linking.md`
+  summary: handle_new_user() does not require guardian_consent_given_at for a user_metadata student, so a crafted anon signUp() creates a pending student without recorded consent.
+  evidence: 7-2 review triage #8; consent has only ever been enforced in the /join server action.

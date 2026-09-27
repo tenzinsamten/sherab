@@ -2,7 +2,7 @@
 title: '7-2 Parent-first student registration & linking'
 type: 'feature'
 created: '2026-09-27'
-status: 'ready-for-dev'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'eac60360242b78fe8ba7b946bc05230c4688d659'
@@ -97,14 +97,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `supabase/migrations/0024_parent_first_registration.sql` -- `profiles.parent_id` FK RESTRICT + index; `handle_new_user` student branch; guard trigger; recreated review policy; `is_parent_of()`, `linked_children()`.
-- [ ] `src/lib/server/parent-registration.ts` (+ spec) -- `approvedParentExists`.
-- [ ] `src/routes/(auth)/join/*` -- new register path, copy, pending receipt; add a `page.server.spec.ts` (not found → FR-3 message and no createUser; found → createUser with synthetic `pending-` email, `email_confirm: true`, `guardian_email` metadata).
-- [ ] `src/routes/requests/*` -- drop the student confirmation gate; update specs.
-- [ ] `src/routes/parent/*` -- children list; extend `page.server.spec.ts`.
-- [ ] `src/lib/server/rls.spec.ts`, `e2e/fixtures.ts` -- helper switch; rewrite Story 1-2 retired-flow tests; new `describe('7-2 parent-first registration')` covering every matrix row.
-- [ ] `messages/{en,de,bo}.json` -- key changes.
-- [ ] `src/lib/supabase/database.types.ts` -- hand-add `parent_id`, `is_parent_of`, `linked_children` (don't regenerate, per 7-1).
+- [x] `supabase/migrations/0024_parent_first_registration.sql` -- `profiles.parent_id` FK RESTRICT + index; `handle_new_user` student branch; guard trigger; recreated review policy; `is_parent_of()`, `linked_children()`.
+- [x] `src/lib/server/parent-registration.ts` (+ spec) -- `approvedParentExists`.
+- [x] `src/routes/(auth)/join/*` -- new register path, copy, pending receipt; add a `page.server.spec.ts` (not found → FR-3 message and no createUser; found → createUser with synthetic `pending-` email, `email_confirm: true`, `guardian_email` metadata).
+- [x] `src/routes/requests/*` -- drop the student confirmation gate; update specs.
+- [x] `src/routes/parent/*` -- children list; extend `page.server.spec.ts`.
+- [x] `src/lib/server/rls.spec.ts`, `e2e/fixtures.ts` -- helper switch; rewrite Story 1-2 retired-flow tests; new `describe('7-2 parent-first registration')` covering every matrix row.
+- [x] `messages/{en,de,bo}.json` -- key changes.
+- [x] `src/lib/supabase/database.types.ts` -- hand-add `parent_id`, `is_parent_of`, `linked_children` (don't regenerate, per 7-1).
 
 **Acceptance Criteria:**
 - Given no approved parent with that email, when a student submits `/join`, then no auth user or profile exists afterwards and the FR-3 message shows with the form values kept.
@@ -113,9 +113,38 @@ context:
 
 ## Implementation Notes
 
+- `deferred-work.md` entries on the sibling guardian-email collision and the guardian confirmation landing are resolved by this story (no synthetic-vs-real email reuse, no confirmation mail); entries left unedited as instructed.
+- `handle_new_user` also links an **app_metadata** student when its `guardian_email` names an approved parent (still optional there). More than one approved parent matching one email raises.
+- The user_metadata email rule is a regex (`^pending-[0-9a-f-]+@students\.internal\.invalid$`, lower-cased), slightly stricter than `pending-%@…`.
+- `profiles_student_fields_check` now also requires `parent_id is null` for non-students.
+- The guard trigger function is SECURITY INVOKER on purpose, so `current_user` is the caller's database role.
+- A crafted public `signUp()` with a `pending-<uuid>` address and a known approved parent email still creates a pending student linked to that parent. This is the same capability `/join` offers publicly; the teacher approval step remains the gate.
+- `isDuplicateSignup` stays: parent `/register` still uses it. Its rls.spec shape test now uses a parent sign-up.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Finding | Verdict | Route | Evidence |
+|---|--------|---------|---------|-------|----------|
+| 1 | blind, edge ×2, vgap-other | Guard test never isolates the trigger: student/parent updates are filtered to 0 rows by RLS; teacher updates bundle status/team_id and assert only `error != null`, and `{role:'teacher'}` already fails WITH CHECK | medium | patch | Only UPDATE policy on profiles is `profiles_update_registration_review` (teacher/admin, pending). A guard regression would go unnoticed. |
+| 2 | vgap | No test of `is_parent_of`/`linked_children` for a parent no longer approved | medium | patch | All tests use approved parents; dropping `is_parent() and` passes the suite. Admin can move approved→rejected via `parents_update_admin`. |
+| 3 | vgap | `/join` lookup-failure (500) and createUser-failure-with-parent-found branches untested | low | patch | The four join specs never make `approvedParentExists` reject or createUser fail while the parent is still found. |
+| 4 | blind | `.catch(() => true)` on the post-createUser re-check swallows the lookup error unlogged | low | patch | createError is logged, the lookup error is not; direct fix is one log line. |
+| 5 | blind | `join_pending_teacher_approves` repeats the page subtitle `join_pending_explanation` | low | patch | Both say the teacher reviews/approves; the new part is only "Your parent can see it in their account." |
+| 6 | blind | Teacher approving on `/requests` can't see which parent the student is linked to | medium | defer | Real, but the harm (parent reads a wrongly linked child) starts with 7-3's `is_parent_of` read policies; 7-6 is the correction path. Teachers never saw guardian info before either. |
+| 7 | blind | Anonymous found/not-found parent lookup has no rate limiting (email enumeration) | medium | defer | Pre-existing class: `/register` already exposes `emailHasLogin`; no throttling exists anywhere. The found/not-found response itself is intent. |
+| 8 | blind | A crafted anon `signUp()` student skips consent (no `guardian_consent_given_at` enforced in DB) | medium | defer | Pre-existing: consent has only ever been enforced in the server action, never in `handle_new_user`. |
+| 9 | blind | Pre-check `ilike` vs trigger `lower(btrim())` normalisation differ | false | reject | `profiles.email` comes from `auth.users.email`, which GoTrue stores trimmed and lower-cased; `ilike` + `escapeLikePattern` is an exact case-insensitive match. `guardian_email` as typed is the specified display copy. |
+| 10 | blind | `linked_children()` returns `display_name` (possible nickname), not `registration_name` | maybe-false | reject | Which name a parent sees is a product choice the intent leaves as "name"; `display_name` is the name used app-wide. At most low. |
+| 11 | blind, edge | `ON DELETE RESTRICT` makes deleting a parent with children fail; `rejectParent` retry loops | false | reject | `rejectParent` acts only on pending/rejected parents, and children link only to approved ones; no other path deletes a parent login (admin deletes teachers only). RESTRICT is intent. |
+| 12 | edge | Approved→rejected concurrently with a student sign-up leaves a link to a rejected parent | false | reject | No UI path moves an approved parent to rejected; only a raw admin API call could, and `is_parent()` still denies the rejected parent. |
+| 13 | blind | `guardianEmail` in `fail()` payloads is dead; "form values kept" AC untested | false | reject | Values live in `$state`; `enhance`'s `update()` resets the form only on success, so the AC holds. Extra payload field is harmless. |
+| 14 | blind | bo strings are English copies | false | reject | Project convention: 572 of 597 bo values equal en. |
+| 15 | blind, vgap | No rendered/e2e test of `/parent` list, "Waiting for approval" pill, or `/join` browser flow | low | reject | Template reviewed and correct; a new Playwright suite is more than a direct fix; covered by the spec's manual check. |
+| 16 | blind | Rejected children filtered twice; unit test only covers the TS filter | false | reject | SQL exclusion is covered by the rls.spec "Parent sees children" test against the real DB. |
+| 17 | edge | `sharedParent ??=` caches a rejected promise in rls.spec | low | reject | Only after a first failure, which already fails the run; fix adds a catch branch. |
+| 18 | edge | Trigger raises on >1 case-variant approved parents; student sees only a generic error | false | reject | Two approved parents cannot share an email: auth emails are unique and lower-cased. |
 
 ## Design Notes
 

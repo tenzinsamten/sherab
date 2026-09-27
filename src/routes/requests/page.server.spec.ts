@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deleteUser = vi.fn();
 const getCapabilities = vi.fn();
-vi.mock('$lib/supabase/admin', () => ({
-	createSupabaseAdminClient: () => ({ auth: { admin: { deleteUser } } }),
-	updateAuthUserEmailAndPassword: vi.fn()
-}));
+const updateAuthUserEmailAndPassword = vi.fn();
+vi.mock('$lib/supabase/admin', () => {
+	// The approve action's username scan: no student logins exist yet.
+	const scan = { select: () => scan, ilike: () => Promise.resolve({ data: [], error: null }) };
+	return {
+		createSupabaseAdminClient: () => ({ auth: { admin: { deleteUser } }, from: () => scan }),
+		updateAuthUserEmailAndPassword: (...args: unknown[]) => updateAuthUserEmailAndPassword(...args)
+	};
+});
 vi.mock('$lib/server/capabilities', () => ({
 	getCapabilities: (...args: unknown[]) => getCapabilities(...args)
 }));
@@ -158,5 +163,54 @@ describe('approveParent', () => {
 			action: 'parentApproved'
 		});
 		expect(updates).toEqual([{ table: 'parents', values: { status: 'approved' } }]);
+	});
+});
+
+describe('approve (student)', () => {
+	beforeEach(() => {
+		updateAuthUserEmailAndPassword.mockReset();
+		updateAuthUserEmailAndPassword.mockResolvedValue({ error: null });
+	});
+
+	function approveEvent(queues: Record<string, Result[]>) {
+		const body = new FormData();
+		body.set('studentId', 's1');
+		body.set('studentName', 'Tenzin');
+		body.set('teamId', 't1');
+		const { supabase, updates } = fakeSupabase(queues);
+		const e = {
+			request: new Request('https://app.test/requests', { method: 'POST', body }),
+			locals: {
+				supabase,
+				safeGetSession: async () => ({ session: {}, user: { id: 'teacher1' } })
+			}
+		} as unknown as Parameters<typeof actions.approve>[0];
+		return { e, updates };
+	}
+
+	it('approves a pending student without any guardian email confirmation (Story 7-2)', async () => {
+		const { e, updates } = approveEvent({
+			profiles: [ok({ id: 's1', registration_name: 'Tenzin Dolma' }), ok({ id: 's1' })]
+		});
+		const result = await actions.approve(e);
+		expect(result).toMatchObject({
+			success: true,
+			action: 'approved',
+			studentId: 's1',
+			username: 'tenzindolma'
+		});
+		expect(updateAuthUserEmailAndPassword).toHaveBeenCalledTimes(1);
+		expect(updates).toHaveLength(1);
+		expect(updates[0]).toMatchObject({
+			table: 'profiles',
+			values: { status: 'approved', team_id: 't1' }
+		});
+	});
+
+	it('refuses when the RLS read finds no pending student, minting nothing', async () => {
+		const { e, updates } = approveEvent({ profiles: [ok(null)] });
+		expect(await actions.approve(e)).toMatchObject({ status: 400 });
+		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
+		expect(updates).toEqual([]);
 	});
 });

@@ -631,6 +631,7 @@ export type Database = {
 					guardian_consent_given_at: string | null;
 					guardian_email: string | null;
 					id: string;
+					parent_id: string | null;
 					registration_name: string | null;
 					reviewed_at: string | null;
 					reviewed_by: string | null;
@@ -647,6 +648,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id: string;
+					parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
 					reviewed_by?: string | null;
@@ -663,6 +665,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id?: string;
+					parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
 					reviewed_by?: string | null;
@@ -676,6 +679,13 @@ export type Database = {
 						columns: ['class_id'];
 						isOneToOne: false;
 						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'profiles_parent_id_fkey';
+						columns: ['parent_id'];
+						isOneToOne: false;
+						referencedRelation: 'parents';
 						referencedColumns: ['id'];
 					},
 					{
@@ -861,6 +871,14 @@ export type Database = {
 				Args: { p_class_id: string; p_student_id: string };
 				Returns: undefined;
 			};
+			linked_children: {
+				Args: never;
+				Returns: {
+					id: string;
+					name: string;
+					status: Database['public']['Enums']['registration_status'];
+				}[];
+			};
 			list_enrollable_students: {
 				Args: { p_class_id: string };
 				Returns: {
@@ -921,6 +939,7 @@ export type Database = {
 			};
 			is_admin: { Args: never; Returns: boolean };
 			is_parent: { Args: never; Returns: boolean };
+			is_parent_of: { Args: { p_student_id: string }; Returns: boolean };
 			is_targeted_for_homework_assignment: {
 				Args: { target_assignment_id: string };
 				Returns: boolean;

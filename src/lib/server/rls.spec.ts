@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { isDuplicateSignup } from './signup-duplicate';
-import { emailHasLogin } from './parent-registration';
+import { approvedParentExists, emailHasLogin } from './parent-registration';
 import { buildHomeworkProgress, type HomeworkHistoryRow } from './homework-status';
 import {
 	STUDENT_EMAIL_DOMAIN,
@@ -213,34 +213,27 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		// "no such account".
 	});
 
-	it('join/+page.server.ts duplicate-email detection matches the real signUp response shape', async () => {
-		// The student /join register action signs up with the guardian's email,
-		// so a second registration for the same guardian is a duplicate signUp.
+	it('register/+page.server.ts duplicate-email detection matches the real signUp response shape', async () => {
+		// The parent /register action signs up with the parent's real email, so
+		// a second registration for the same email is a duplicate signUp.
+		// (Student /join no longer uses signUp at all since Story 7-2.)
 		// Local Supabase config matches production's `enable_confirmations
-		// = true` (migration 0006's guardian-email-verification change): a
-		// duplicate email does NOT error from signUp() -- it returns success
-		// with the pre-existing user's REAL, non-empty identity (same id, same
-		// created_at) while silently resending a confirmation email and
-		// bumping updated_at. isDuplicateSignup() must detect this shape, not
-		// just a thrown error or an empty-identities array that this GoTrue
-		// version doesn't actually produce here.
-		const email = `story-1-1-join-dup-${crypto.randomUUID()}@example.test`;
+		// = true`: a duplicate email does NOT error from signUp() -- it returns
+		// success with the pre-existing user's REAL, non-empty identity (same
+		// id, same created_at) while silently resending a confirmation email
+		// and bumping updated_at. isDuplicateSignup() must detect this shape,
+		// not just a thrown error or an empty-identities array that this
+		// GoTrue version doesn't actually produce here.
+		const email = `story-1-1-register-dup-${crypto.randomUUID()}@example.test`;
 		const client1 = anonClient();
-		// A student sign-up, as /join sends it: since #50 (0020) a sign-up with
-		// no role is refused outright, so only this shape can hit a duplicate.
-		const studentSignUp = (password: string) => ({
+		// A parent sign-up, as /register sends it: since #50 (0020) a sign-up
+		// with no role is refused outright.
+		const parentSignUp = (password: string) => ({
 			email,
 			password,
-			options: {
-				data: {
-					role: 'student',
-					class_id: classAId,
-					registration_name: `Dup Shape ${email}`,
-					guardian_consent_given_at: new Date().toISOString()
-				}
-			}
+			options: { data: { role: 'parent', display_name: 'Dup Shape Parent' } }
 		});
-		const first = await client1.auth.signUp(studentSignUp(crypto.randomUUID()));
+		const first = await client1.auth.signUp(parentSignUp(crypto.randomUUID()));
 		expect(first.error).toBeNull();
 		expect(isDuplicateSignup(first.error, first.data.user)).toBe(false);
 
@@ -251,7 +244,7 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		await new Promise((resolve) => setTimeout(resolve, 1100));
 
 		const client2 = anonClient();
-		const second = await client2.auth.signUp(studentSignUp(crypto.randomUUID()));
+		const second = await client2.auth.signUp(parentSignUp(crypto.randomUUID()));
 
 		expect(second.error).toBeNull();
 		expect(second.data.user?.id).toBe(first.data.user?.id);
@@ -510,47 +503,71 @@ describe.skipIf(!reachable)('Issue #50 sign-up role (requires local Supabase)', 
 });
 
 /**
+ * Story 7-2: an approved parent, created the trusted way (Admin API with
+ * app_metadata 'parent', pre-confirmed) and approved with the service role.
+ * The admin-decision path itself is covered by the 7-1 block.
+ */
+async function createApprovedParent(
+	email = `story-7-2-parent-${crypto.randomUUID()}@example.test`
+) {
+	const password = crypto.randomUUID();
+	const { data, error } = await adminClient.auth.admin.createUser({
+		email,
+		password,
+		email_confirm: true,
+		app_metadata: { role: 'parent' },
+		user_metadata: { display_name: 'Approved Parent' }
+	});
+	if (error || !data.user) throw new Error(`Failed to create parent: ${error?.message}`);
+	const { error: approveError } = await adminClient
+		.from('parents')
+		.update({ status: 'approved' })
+		.eq('id', data.user.id);
+	if (approveError) throw new Error(`Failed to approve parent: ${approveError.message}`);
+	return { id: data.user.id, email, password };
+}
+
+/** One approved parent shared by every signUpStudent() call without its own guardian email. */
+let sharedParent: ReturnType<typeof createApprovedParent> | null = null;
+function defaultParent() {
+	sharedParent ??= createApprovedParent();
+	return sharedParent;
+}
+
+/**
  * Signs up a student exactly the way (auth)/join's `register` action does
- * (one signUp() call with metadata, matching handle_new_user()'s student
- * branch in migration 0002), then signs the anon client back out -- a
- * Pending student never keeps a session, per the join route's own comment.
- * Uses the guardian's (real-shaped) email as the Auth account's email --
- * migration 0006 replaced the old synthetic `pending-<uuid>@...` placeholder
- * with this, so Supabase's own confirmation flow verifies it directly.
+ * (Story 7-2): Admin API createUser with a synthetic, pre-confirmed
+ * `pending-<uuid>` address and user_metadata role 'student' plus the
+ * guardian email. handle_new_user() links the approved parent with that
+ * email, or refuses the whole sign-up. Defaults to a shared approved parent.
  */
 async function signUpStudent(params: {
 	classId: string;
 	registrationName: string;
 	guardianEmail?: string;
 }) {
-	const client = anonClient();
-	const email = params.guardianEmail ?? `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
-	const guardianConsentGivenAt = new Date().toISOString();
-
-	const { data, error } = await client.auth.signUp({
-		email,
+	const guardianEmail = params.guardianEmail ?? (await defaultParent()).email;
+	const { data, error } = await adminClient.auth.admin.createUser({
+		email: `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`,
 		password: crypto.randomUUID(),
-		options: {
-			data: {
-				role: 'student',
-				class_id: params.classId,
-				registration_name: params.registrationName,
-				guardian_consent_given_at: guardianConsentGivenAt
-			}
+		email_confirm: true,
+		user_metadata: {
+			role: 'student',
+			class_id: params.classId,
+			registration_name: params.registrationName,
+			guardian_consent_given_at: new Date().toISOString(),
+			guardian_email: guardianEmail
 		}
 	});
-
-	await client.auth.signOut();
-
 	return { data, error, id: data.user?.id ?? null };
 }
 
 /**
- * Simulates a guardian clicking their confirmation link, without a real
+ * Simulates a parent clicking their confirmation link, without a real
  * mailbox: flips auth.users.email_confirmed_at via the Admin API, which the
  * on_auth_user_email_confirmed trigger (migration 0006) mirrors onto
- * profiles.email_confirmed_at -- the same signal
- * requests/+page.server.ts's approve action gates on.
+ * profiles.email_confirmed_at -- the signal parent approval (7-1) gates on.
+ * Student approval no longer needs it (Story 7-2).
  */
 async function confirmGuardianEmail(userId: string) {
 	const { error } = await adminClient.auth.admin.updateUserById(userId, { email_confirm: true });
@@ -615,13 +632,13 @@ describe.skipIf(!reachable)(
 			expect(notFound.data).toEqual([]);
 		});
 
-		it('student registers: signUp() lands a Pending profiles row, invisible to profiles_select_own for anyone else', async () => {
+		it('student registers: the Admin API sign-up lands a Pending, parent-linked profiles row with a synthetic pre-confirmed email', async () => {
 			const registrationName = `Pending Student ${crypto.randomUUID().slice(0, 8)}`;
-			const guardianEmail = `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
+			const parent = await createApprovedParent();
 			const { error, id } = await signUpStudent({
 				classId: classAId,
 				registrationName,
-				guardianEmail
+				guardianEmail: parent.email
 			});
 			expect(error).toBeNull();
 			expect(id).not.toBeNull();
@@ -629,7 +646,7 @@ describe.skipIf(!reachable)(
 			const { data: profile } = await adminClient
 				.from('profiles')
 				.select(
-					'status, class_id, registration_name, display_name, team_id, guardian_email, email_confirmed_at'
+					'email, status, class_id, registration_name, display_name, team_id, guardian_email, parent_id, email_confirmed_at'
 				)
 				.eq('id', id!)
 				.single();
@@ -640,9 +657,11 @@ describe.skipIf(!reachable)(
 			// display_name defaults to registration_name (Implementation Notes).
 			expect(profile?.display_name).toBe(registrationName);
 			expect(profile?.team_id).toBeNull();
-			expect(profile?.guardian_email).toBe(guardianEmail);
-			// Nobody has clicked the confirmation link yet.
-			expect(profile?.email_confirmed_at).toBeNull();
+			expect(profile?.guardian_email).toBe(parent.email);
+			expect(profile?.parent_id).toBe(parent.id);
+			// Story 7-2: synthetic, pre-confirmed auth email; no mail is sent.
+			expect(profile?.email).toMatch(/^pending-[0-9a-f-]+@students\.internal\.invalid$/);
+			expect(profile?.email_confirmed_at).not.toBeNull();
 		});
 
 		it('a Pending student is invisible to an unrelated teacher (not assigned to their class)', async () => {
@@ -677,7 +696,6 @@ describe.skipIf(!reachable)(
 		it('teacher approves: teacherA (assigned to the class) can move Pending -> approved with a team, generating real sign-in credentials', async () => {
 			const registrationName = `Approved Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
-			await confirmGuardianEmail(id!);
 
 			// Mirrors requests/+page.server.ts's approve action's real order:
 			// generate + assign the auth credentials FIRST, then flip
@@ -747,7 +765,6 @@ describe.skipIf(!reachable)(
 		it('team_id is settable only once: a second attempt to change it is rejected for every caller, including an admin', async () => {
 			const registrationName = `Team Once Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
-			await confirmGuardianEmail(id!);
 
 			const { error: approveError } = await teacherA.client
 				.from('profiles')
@@ -839,18 +856,16 @@ describe.skipIf(!reachable)(
 			expect(stillPending?.status).toBe('pending');
 		});
 
-		it('assigned teacher attempts approval before the guardian confirms: the WITH CHECK gate rejects it with a real RLS error', async () => {
+		it('approval no longer needs email_confirmed_at: the WITH CHECK accepts an assigned teacher even when it is null (Story 7-2)', async () => {
 			const registrationName = `Unconfirmed Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
-			// Deliberately no confirmGuardianEmail() call -- email_confirmed_at
-			// stays null. Unlike the unassigned-teacher case above (where the
-			// USING clause itself filters the row out, producing zero rows with
-			// no error), teacherA IS assigned and the row IS pending, so USING
-			// passes -- only the WITH CHECK added by migration 0006 fails, which
-			// Postgres surfaces as an explicit 42501 permission-denied error,
-			// not a silent empty result. This is exactly why
-			// requests/+page.server.ts's approve action pre-checks
-			// email_confirmed_at itself before ever reaching this update.
+			// Force the retired gate's input to null: the 0006 clause would refuse this.
+			const { error: nullError } = await adminClient
+				.from('profiles')
+				.update({ email_confirmed_at: null })
+				.eq('id', id!);
+			expect(nullError).toBeNull();
+
 			const { data, error } = await teacherA.client
 				.from('profiles')
 				.update({
@@ -860,21 +875,14 @@ describe.skipIf(!reachable)(
 					reviewed_at: new Date().toISOString()
 				})
 				.eq('id', id!)
-				.select('id');
-
-			expect(error).not.toBeNull();
-			expect(error?.code).toBe('42501');
-			expect(data).toBeNull();
-
-			const { data: stillPending } = await adminClient
-				.from('profiles')
 				.select('status')
-				.eq('id', id!)
 				.single();
-			expect(stillPending?.status).toBe('pending');
+
+			expect(error).toBeNull();
+			expect(data?.status).toBe('approved');
 		});
 
-		it('rejecting an unconfirmed registration still succeeds -- confirmation only gates approval, not rejection', async () => {
+		it('rejecting a registration succeeds for the assigned teacher', async () => {
 			const registrationName = `Reject Unconfirmed Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
 
@@ -893,40 +901,36 @@ describe.skipIf(!reachable)(
 			expect(data?.status).toBe('rejected');
 		});
 
-		it('a second child registered by the same guardian while the first is still pending hits the real Auth email-uniqueness collision (isDuplicateSignup empty-identities shape)', async () => {
-			const guardianEmail = `story-1-2-guardian-${crypto.randomUUID()}@example.test`;
+		it('siblings: two children registered with the same parent email while both are pending are both created and linked (Story 7-2)', async () => {
+			const parent = await createApprovedParent();
 
 			const child1 = await signUpStudent({
 				classId: classAId,
 				registrationName: `Sibling One ${crypto.randomUUID().slice(0, 6)}`,
-				guardianEmail
+				guardianEmail: parent.email
 			});
-			expect(child1.error).toBeNull();
-
-			// GoTrue enforces a real per-email resend cooldown (auth.email.max_frequency)
-			// independent of the email-uniqueness collision this test is actually
-			// exercising -- wait past it first, same as the Story 1-1 dup-shape test.
-			await new Promise((resolve) => setTimeout(resolve, 1100));
-
-			// Same guardian email, different child, while child1 is still
-			// pending/unconfirmed -- Supabase Auth's email-uniqueness constraint
-			// collides. This is the deliberate, narrow, deferred limitation
-			// documented in deferred-work.md: it self-resolves once child1 is
-			// approved (their auth email flips to the synthetic username
-			// address, freeing the guardian's email for reuse).
 			const child2 = await signUpStudent({
 				classId: classAId,
 				registrationName: `Sibling Two ${crypto.randomUUID().slice(0, 6)}`,
-				guardianEmail
+				guardianEmail: parent.email
 			});
+			expect(child1.error).toBeNull();
+			expect(child2.error).toBeNull();
 
-			expect(isDuplicateSignup(child2.error, child2.data.user)).toBe(true);
+			const { data: rows } = await adminClient
+				.from('profiles')
+				.select('id, status, parent_id')
+				.in('id', [child1.id!, child2.id!]);
+			expect(rows).toHaveLength(2);
+			for (const row of rows ?? []) {
+				expect(row.status).toBe('pending');
+				expect(row.parent_id).toBe(parent.id);
+			}
 		});
 
 		it("admin approves as a backup path for a class the admin didn't create/isn't assigned to", async () => {
 			const registrationName = `Admin Backup Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
-			await confirmGuardianEmail(id!);
 
 			const { data, error } = await admin.client
 				.from('profiles')
@@ -1096,7 +1100,6 @@ describe.skipIf(!reachable)(
 
 			const student1 = await signUpStudent({ classId: classAId, registrationName: dupName });
 			expect(student1.error).toBeNull();
-			await confirmGuardianEmail(student1.id!);
 
 			// Approved before student2 registers -- otherwise
 			// profiles_open_student_registration_unique would block a second
@@ -1105,7 +1108,6 @@ describe.skipIf(!reachable)(
 
 			const student2 = await signUpStudent({ classId: classAId, registrationName: dupName });
 			expect(student2.error).toBeNull();
-			await confirmGuardianEmail(student2.id!);
 
 			// Deliberately an EMPTY set, not a fresh query of already-assigned
 			// usernames -- generateUniqueStudentUsername therefore proposes the
@@ -1162,7 +1164,7 @@ describe.skipIf(!reachable)(
 				email,
 				password: crypto.randomUUID(),
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) {
 				throw new Error(`Failed to create student: ${error?.message}`);
@@ -1704,7 +1706,7 @@ describe.skipIf(!reachable)(
 				email,
 				password: crypto.randomUUID(),
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) {
 				throw new Error(`Failed to create student: ${error?.message}`);
@@ -1750,7 +1752,7 @@ describe.skipIf(!reachable)(
 				email,
 				password,
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) {
 				throw new Error(`Failed to create signed-in student: ${error?.message}`);
@@ -2683,7 +2685,7 @@ describe.skipIf(!reachable)(
 				email,
 				password: crypto.randomUUID(),
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) {
 				throw new Error(`Failed to create student: ${error?.message}`);
@@ -3340,7 +3342,7 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create student: ${error?.message}`);
@@ -3377,7 +3379,7 @@ describe.skipIf(!reachable)('Story 4-1 streaks (requires local Supabase)', () =>
 			email,
 			password,
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create signed-in student: ${error?.message}`);
@@ -4127,7 +4129,7 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create student: ${error?.message}`);
@@ -4164,7 +4166,7 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 			email,
 			password,
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create signed-in student: ${error?.message}`);
@@ -4713,7 +4715,7 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create student: ${error?.message}`);
@@ -4875,7 +4877,7 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 				email: signedInStudentEmail,
 				password: signedInStudentPassword,
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 		if (signedInStudentError || !signedInStudentData.user) {
 			throw new Error(`Failed to create signed-in student: ${signedInStudentError?.message}`);
@@ -4968,7 +4970,7 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 			email,
 			password: crypto.randomUUID(),
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create student: ${error?.message}`);
@@ -4999,7 +5001,7 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 			email,
 			password,
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) {
 			throw new Error(`Failed to create signed-in student: ${error?.message}`);
@@ -5445,7 +5447,7 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 			email,
 			password,
 			email_confirm: true,
-			user_metadata: { role: 'student' }
+			app_metadata: { role: 'student' }
 		});
 		if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
 
@@ -5943,7 +5945,7 @@ describe.skipIf(!reachable)(
 				email,
 				password,
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
 			const { error: updateError } = await adminClient
@@ -6357,7 +6359,7 @@ describe.skipIf(!reachable)(
 				email: `story-6-2-student-${crypto.randomUUID()}@students.internal.invalid`,
 				password: crypto.randomUUID(),
 				email_confirm: true,
-				user_metadata: { role: 'student' }
+				app_metadata: { role: 'student' }
 			});
 			if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
 			const { error: updateError } = await adminClient
@@ -7311,5 +7313,474 @@ describe.skipIf(!reachable)('7-1 parents (requires local Supabase)', () => {
 		expect(error).not.toBeNull();
 		expect(result.user).toBeNull();
 		expect(await emailHasLogin(adminClient, email)).toBe(false);
+	});
+});
+
+/**
+ * Story 7-2: parent-first student registration & linking (migration 0024).
+ * One test per I/O matrix row. Students register the way /join does
+ * (signUpStudent: Admin API, synthetic pending- email, user_metadata).
+ */
+describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supabase)', () => {
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let otherTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classId: string;
+	let teamId: string;
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		otherTeacher = await createSignedInUser('teacher');
+
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: `7-2 Class ${crypto.randomUUID().slice(0, 6)}`,
+				code: `Q${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		classId = data.id;
+		await adminClient.from('class_teachers').insert({ class_id: classId, teacher_id: teacher.id });
+
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: `7-2 Team ${crypto.randomUUID().slice(0, 6)}` })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	const studentName = (label: string) => `7-2 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function profileOf(id: string) {
+		const { data } = await adminClient
+			.from('profiles')
+			.select('status, parent_id, guardian_email, role')
+			.eq('id', id)
+			.maybeSingle();
+		return data;
+	}
+
+	/** No profile carries this registration name: the sign-up rolled back. */
+	async function expectNoStudent(registrationName: string) {
+		const { data } = await adminClient
+			.from('profiles')
+			.select('id')
+			.eq('registration_name', registrationName);
+		expect(data).toEqual([]);
+	}
+
+	/**
+	 * The requests/+page.server.ts approve action's order: mint credentials,
+	 * then flip the profile as the assigned teacher. Returns the credentials.
+	 */
+	async function approveAsTeacher(studentId: string, registrationName: string) {
+		const username = generateUniqueStudentUsername(
+			`${registrationName} ${crypto.randomUUID().slice(0, 6)}`,
+			new Set()
+		);
+		const pin = generateStudentPin();
+		const { error: authError } = await updateAuthUserEmailAndPassword(studentId, {
+			email: studentUsernameToEmail(username),
+			password: pin
+		});
+		if (authError) throw new Error(`Failed to mint credentials: ${authError.message}`);
+		const { error } = await teacher.client
+			.from('profiles')
+			.update({
+				status: 'approved',
+				team_id: teamId,
+				email: studentUsernameToEmail(username),
+				reviewed_by: teacher.id,
+				reviewed_at: new Date().toISOString()
+			})
+			.eq('id', studentId)
+			.select('id')
+			.single();
+		if (error) throw new Error(`Failed to approve: ${error.message}`);
+		return { username, pin };
+	}
+
+	it('Register: an approved parent email in any case links a pending student with a synthetic email', async () => {
+		const parent = await createApprovedParent();
+		const typed = `  ${parent.email.toUpperCase()} `;
+		expect(await approvedParentExists(adminClient, typed)).toBe(true);
+
+		const registrationName = studentName('Register');
+		const { error, id } = await signUpStudent({
+			classId,
+			registrationName,
+			guardianEmail: typed
+		});
+		expect(error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('status, parent_id, guardian_email, email')
+			.eq('id', id!)
+			.single();
+		expect(profile?.status).toBe('pending');
+		expect(profile?.parent_id).toBe(parent.id);
+		expect(profile?.guardian_email).toBe(typed.trim());
+		expect(profile?.email).toMatch(/^pending-[0-9a-f-]+@students\.internal\.invalid$/);
+	});
+
+	it('No parent: an unknown email is not found and the sign-up creates nothing', async () => {
+		const email = `story-7-2-nobody-${crypto.randomUUID()}@example.test`;
+		expect(await approvedParentExists(adminClient, email)).toBe(false);
+
+		const registrationName = studentName('No Parent');
+		const { error, data } = await signUpStudent({
+			classId,
+			registrationName,
+			guardianEmail: email
+		});
+		expect(error).not.toBeNull();
+		expect(data.user).toBeNull();
+		await expectNoStudent(registrationName);
+	});
+
+	it('Parent not approved: a pending, unconfirmed or rejected parent counts as not found', async () => {
+		// Pending (confirmed, not yet decided).
+		const pending = await adminClient.auth.admin.createUser({
+			email: `story-7-2-pending-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'parent' }
+		});
+		// Unconfirmed: the public /register sign-up, never confirmed.
+		const unconfirmedEmail = `story-7-2-unconfirmed-${crypto.randomUUID()}@example.test`;
+		const client = anonClient();
+		const unconfirmed = await client.auth.signUp({
+			email: unconfirmedEmail,
+			password: crypto.randomUUID(),
+			options: { data: { role: 'parent', display_name: 'Unconfirmed Parent' } }
+		});
+		await client.auth.signOut();
+		// Rejected (the row still exists before the action deletes the login).
+		const rejected = await adminClient.auth.admin.createUser({
+			email: `story-7-2-rejected-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'parent' }
+		});
+		expect(pending.error ?? unconfirmed.error ?? rejected.error).toBeNull();
+		await adminClient
+			.from('parents')
+			.update({ status: 'rejected' })
+			.eq('id', rejected.data.user!.id);
+
+		for (const email of [pending.data.user!.email!, unconfirmedEmail, rejected.data.user!.email!]) {
+			expect(await approvedParentExists(adminClient, email)).toBe(false);
+			const registrationName = studentName('Unapproved');
+			const { error } = await signUpStudent({ classId, registrationName, guardianEmail: email });
+			expect(error).not.toBeNull();
+			await expectNoStudent(registrationName);
+		}
+	});
+
+	it('Siblings: two pending registrations with one parent email are both created and linked', async () => {
+		const parent = await createApprovedParent();
+		const ids: string[] = [];
+		for (const label of ['Sibling A', 'Sibling B']) {
+			const { error, id } = await signUpStudent({
+				classId,
+				registrationName: studentName(label),
+				guardianEmail: parent.email
+			});
+			expect(error).toBeNull();
+			ids.push(id!);
+		}
+		for (const id of ids) {
+			expect(await profileOf(id)).toMatchObject({ status: 'pending', parent_id: parent.id });
+		}
+	});
+
+	it('Crafted sign-up: a public signUp with an unknown guardian or a real auth email is refused', async () => {
+		const parent = await createApprovedParent();
+
+		// Unknown guardian, synthetic address.
+		const unknownName = studentName('Crafted Unknown');
+		const unknown = await anonClient().auth.signUp({
+			email: `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`,
+			password: crypto.randomUUID(),
+			options: {
+				data: {
+					role: 'student',
+					class_id: classId,
+					registration_name: unknownName,
+					guardian_email: `story-7-2-nobody-${crypto.randomUUID()}@example.test`
+				}
+			}
+		});
+		expect(unknown.error).not.toBeNull();
+		expect(unknown.data.user).toBeNull();
+		await expectNoStudent(unknownName);
+
+		// Approved guardian, but a real auth email (the retired 0006 shape).
+		const realEmail = `story-7-2-real-${crypto.randomUUID()}@example.test`;
+		const realName = studentName('Crafted Real');
+		const real = await anonClient().auth.signUp({
+			email: realEmail,
+			password: crypto.randomUUID(),
+			options: {
+				data: {
+					role: 'student',
+					class_id: classId,
+					registration_name: realName,
+					guardian_email: parent.email
+				}
+			}
+		});
+		expect(real.error).not.toBeNull();
+		expect(real.data.user).toBeNull();
+		await expectNoStudent(realName);
+		expect(await emailHasLogin(adminClient, realEmail)).toBe(false);
+
+		// The trigger enforces it, not the client: the Admin API with
+		// user_metadata and a real email is refused too.
+		const viaAdminName = studentName('Crafted Admin');
+		const viaAdmin = await adminClient.auth.admin.createUser({
+			email: `story-7-2-real-${crypto.randomUUID()}@example.test`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			user_metadata: {
+				role: 'student',
+				class_id: classId,
+				registration_name: viaAdminName,
+				guardian_email: parent.email
+			}
+		});
+		expect(viaAdmin.error).not.toBeNull();
+		await expectNoStudent(viaAdminName);
+	});
+
+	it('Service-role student: app_metadata student may have no parent', async () => {
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email: `story-7-2-fixture-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'student' }
+		});
+		expect(error).toBeNull();
+		expect(await profileOf(data.user!.id)).toMatchObject({
+			role: 'student',
+			status: 'pending',
+			parent_id: null
+		});
+	});
+
+	it('Approve: the teacher approves without any confirmation; the child signs in and the parent sees them approved', async () => {
+		const parent = await createApprovedParent();
+		const registrationName = studentName('Approve');
+		const { id } = await signUpStudent({ classId, registrationName, guardianEmail: parent.email });
+
+		const parentClient = await signIn(parent.email, parent.password);
+		const { data: before } = await parentClient.rpc('linked_children');
+		expect(before).toEqual([{ id, name: registrationName, status: 'pending' }]);
+
+		const { username, pin } = await approveAsTeacher(id!, registrationName);
+
+		const login = await anonClient().auth.signInWithPassword({
+			email: resolveLoginIdentifierToEmail(username),
+			password: pin
+		});
+		expect(login.error).toBeNull();
+		expect(login.data.session).not.toBeNull();
+
+		const { data: after } = await parentClient.rpc('linked_children');
+		expect(after).toEqual([{ id, name: registrationName, status: 'approved' }]);
+		expect(await profileOf(id!)).toMatchObject({ status: 'approved', parent_id: parent.id });
+	});
+
+	it('Guard: the assigned teacher hits the guard trigger for parent_id, guardian_email and role; student and parent updates have no effect; the service role can change them', async () => {
+		const parent = await createApprovedParent();
+		const otherParent = await createApprovedParent();
+		const pendingName = studentName('Guard Pending');
+		const { id: pendingId } = await signUpStudent({
+			classId,
+			registrationName: pendingName,
+			guardianEmail: parent.email
+		});
+
+		// The assigned teacher's registration-review update (USING passes):
+		// each link column alone, so only the guard can refuse it.
+		for (const change of [
+			{ parent_id: otherParent.id },
+			{ guardian_email: otherParent.email },
+			{ role: 'teacher' as const }
+		]) {
+			const { error } = await teacher.client
+				.from('profiles')
+				.update(change)
+				.eq('id', pendingId!)
+				.select('id');
+			expect(error?.message).toContain('cannot be changed here');
+		}
+		expect(await profileOf(pendingId!)).toMatchObject({
+			status: 'pending',
+			parent_id: parent.id,
+			guardian_email: parent.email,
+			role: 'student'
+		});
+
+		// The student themself and the parent: no UPDATE policy covers the
+		// row for them, so RLS filters it out (no effect, never reaches the guard).
+		const approvedName = studentName('Guard Approved');
+		const { id: approvedId } = await signUpStudent({
+			classId,
+			registrationName: approvedName,
+			guardianEmail: parent.email
+		});
+		const { username, pin } = await approveAsTeacher(approvedId!, approvedName);
+		const student = await signIn(resolveLoginIdentifierToEmail(username), pin);
+		const parentClient = await signIn(parent.email, parent.password);
+		for (const client of [student, parentClient]) {
+			await client
+				.from('profiles')
+				.update({ parent_id: otherParent.id, guardian_email: otherParent.email })
+				.eq('id', approvedId!);
+		}
+		expect(await profileOf(approvedId!)).toMatchObject({
+			parent_id: parent.id,
+			guardian_email: parent.email
+		});
+
+		// Trusted path (service role; 7-6's approval trigger is security definer).
+		const { error: serviceError } = await adminClient
+			.from('profiles')
+			.update({ parent_id: otherParent.id, guardian_email: otherParent.email })
+			.eq('id', pendingId!);
+		expect(serviceError).toBeNull();
+		expect(await profileOf(pendingId!)).toMatchObject({ parent_id: otherParent.id });
+
+		// An unassigned teacher is filtered out by RLS before the guard.
+		const { data: unassigned } = await otherTeacher.client
+			.from('profiles')
+			.update({ parent_id: parent.id })
+			.eq('id', pendingId!)
+			.select('id');
+		expect(unassigned ?? []).toEqual([]);
+	});
+
+	it('Parent sees children: pending and approved are listed, rejected is hidden; other parents see none', async () => {
+		const parent = await createApprovedParent();
+		const names = {
+			pending: studentName('Kid Pending'),
+			approved: studentName('Kid Approved'),
+			rejected: studentName('Kid Rejected')
+		};
+		const ids: Record<string, string> = {};
+		for (const [key, registrationName] of Object.entries(names)) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName,
+				guardianEmail: parent.email
+			});
+			expect(error).toBeNull();
+			ids[key] = id!;
+		}
+		await approveAsTeacher(ids.approved, names.approved);
+		const { error: rejectError } = await teacher.client
+			.from('profiles')
+			.update({
+				status: 'rejected',
+				reviewed_by: teacher.id,
+				reviewed_at: new Date().toISOString()
+			})
+			.eq('id', ids.rejected)
+			.select('id')
+			.single();
+		expect(rejectError).toBeNull();
+
+		const parentClient = await signIn(parent.email, parent.password);
+		const { data, error } = await parentClient.rpc('linked_children');
+		expect(error).toBeNull();
+		expect([...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name))).toEqual(
+			[
+				{ id: ids.approved, name: names.approved, status: 'approved' },
+				{ id: ids.pending, name: names.pending, status: 'pending' }
+			].sort((a, b) => a.name.localeCompare(b.name))
+		);
+
+		const stranger = await createApprovedParent();
+		const strangerClient = await signIn(stranger.email, stranger.password);
+		const { data: none } = await strangerClient.rpc('linked_children');
+		expect(none).toEqual([]);
+
+		// Anonymous callers cannot execute it.
+		const anon = await anonClient().rpc('linked_children');
+		expect(anon.error).not.toBeNull();
+	});
+
+	it('A parent who is no longer approved: is_parent_of is false and linked_children() is empty', async () => {
+		const parent = await createApprovedParent();
+		const childName = studentName('No Longer');
+		const { id: childId } = await signUpStudent({
+			classId,
+			registrationName: childName,
+			guardianEmail: parent.email
+		});
+		await approveAsTeacher(childId!, childName);
+		const parentClient = await signIn(parent.email, parent.password);
+		expect((await parentClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(true);
+
+		const { error: rejectError } = await adminClient
+			.from('parents')
+			.update({ status: 'rejected' })
+			.eq('id', parent.id);
+		expect(rejectError).toBeNull();
+
+		expect((await parentClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(false);
+		const { data: children, error } = await parentClient.rpc('linked_children');
+		expect(error).toBeNull();
+		expect(children).toEqual([]);
+	});
+
+	it('is_parent_of: own approved child true, own pending child false, other child false', async () => {
+		const parent = await createApprovedParent();
+		const other = await createApprovedParent();
+
+		const approvedName = studentName('Of Approved');
+		const { id: approvedId } = await signUpStudent({
+			classId,
+			registrationName: approvedName,
+			guardianEmail: parent.email
+		});
+		await approveAsTeacher(approvedId!, approvedName);
+		const { id: pendingId } = await signUpStudent({
+			classId,
+			registrationName: studentName('Of Pending'),
+			guardianEmail: parent.email
+		});
+		const otherName = studentName('Of Other');
+		const { id: otherId } = await signUpStudent({
+			classId,
+			registrationName: otherName,
+			guardianEmail: other.email
+		});
+		await approveAsTeacher(otherId!, otherName);
+
+		const parentClient = await signIn(parent.email, parent.password);
+		const check = async (studentId: string) =>
+			(await parentClient.rpc('is_parent_of', { p_student_id: studentId })).data;
+		expect(await check(approvedId!)).toBe(true);
+		expect(await check(pendingId!)).toBe(false);
+		expect(await check(otherId!)).toBe(false);
+
+		// A teacher is never a parent of the student.
+		const { data: asTeacher } = await teacher.client.rpc('is_parent_of', {
+			p_student_id: approvedId!
+		});
+		expect(asTeacher).toBe(false);
 	});
 });

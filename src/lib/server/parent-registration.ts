@@ -35,3 +35,36 @@ export async function emailHasLogin(
 	if (error) throw new Error(`emailHasLogin: ${error.message}`);
 	return (data ?? []).length > 0;
 }
+
+/**
+ * Story 7-2: true when an APPROVED parent's profile email equals `email`
+ * (trimmed, case-insensitive). A pending, unconfirmed (never approvable)
+ * or rejected parent counts as not found. Service-role read; the result is
+ * only ever reported as found / not found. handle_new_user() repeats the
+ * match inside the sign-up transaction, so this is the friendly pre-check,
+ * not the enforcement. Throws on a read error.
+ */
+export async function approvedParentExists(
+	adminClient: SupabaseClient<Database>,
+	email: string
+): Promise<boolean> {
+	const trimmed = email.trim();
+	if (!trimmed) return false;
+
+	const { data: profiles, error: profilesError } = await adminClient
+		.from('profiles')
+		.select('id')
+		.ilike('email', escapeLikePattern(trimmed));
+	if (profilesError) throw new Error(`approvedParentExists: ${profilesError.message}`);
+	const ids = (profiles ?? []).map((p) => p.id);
+	if (ids.length === 0) return false;
+
+	const { data: parents, error: parentsError } = await adminClient
+		.from('parents')
+		.select('id')
+		.in('id', ids)
+		.eq('status', 'approved')
+		.limit(1);
+	if (parentsError) throw new Error(`approvedParentExists: ${parentsError.message}`);
+	return (parents ?? []).length > 0;
+}

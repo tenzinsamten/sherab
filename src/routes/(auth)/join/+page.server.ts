@@ -1,8 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { isDuplicateSignup } from '$lib/server/signup-duplicate';
-import { JOIN_RECEIPT_COOKIE } from '$lib/server/join-receipt';
+import { JOIN_RECEIPT_COOKIE, type JoinReceipt } from '$lib/server/join-receipt';
+import { approvedParentExists } from '$lib/server/parent-registration';
+import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
+import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
+
+/** The registration-time auth address (Story 7-2); approval replaces it. */
+function pendingStudentEmail(): string {
+	return `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`;
+}
 
 export const load: PageServerLoad = async ({ locals: { safeGetSession } }) => {
 	const { session } = await safeGetSession();
@@ -47,76 +54,69 @@ export const actions: Actions = {
 			return fail(400, { error: m.join_error_duplicate() });
 		}
 
-		const guardianConsentGivenAt = new Date().toISOString();
+		// Story 7-2: a student registers only with an approved parent's email.
+		// Found / not found is all this reveals; a pending, unconfirmed or
+		// rejected parent counts as not found. handle_new_user() repeats the
+		// match inside the sign-up transaction -- this is the friendly
+		// pre-check, not the enforcement.
+		const adminClient = createSupabaseAdminClient();
+		let parentFound: boolean;
+		try {
+			parentFound = await approvedParentExists(adminClient, guardianEmail);
+		} catch (lookupError) {
+			console.error('(auth)/join register: parent lookup failed', lookupError);
+			return fail(500, { error: m.join_error_generic(), guardianEmail });
+		}
+		if (!parentFound) {
+			return fail(400, { error: m.join_error_no_parent(), guardianEmail });
+		}
 
-		const { data, error: signUpError } = await supabase.auth.signUp({
-			email: guardianEmail,
+		// The auth user gets a synthetic, pre-confirmed address and a random
+		// password nobody ever sees: no mail is sent, and siblings never
+		// collide on Auth's unique email. Real credentials are minted at
+		// teacher approval (requests/+page.server.ts), which rewrites this
+		// address -- the `pending-` prefix is skipped by its username scan.
+		const { error: createError } = await adminClient.auth.admin.createUser({
+			email: pendingStudentEmail(),
 			password: crypto.randomUUID(),
-			options: {
-				data: {
-					role: 'student',
-					class_id: classId,
-					registration_name: registrationName,
-					guardian_consent_given_at: guardianConsentGivenAt
-				}
+			email_confirm: true,
+			user_metadata: {
+				role: 'student',
+				class_id: classId,
+				registration_name: registrationName,
+				guardian_consent_given_at: new Date().toISOString(),
+				guardian_email: guardianEmail
 			}
 		});
 
-		// Whether signUp succeeded or not, never leave a session behind for a
-		// Pending account -- there is nothing a Pending student can
-		// legitimately do yet (I/O matrix: "invisible everywhere, no
-		// activity"), and /join/pending needs no session, only the receipt
-		// cookie set below. A failed sign-out here would otherwise leave that
-		// browser holding a live (if useless -- RLS still gates real access)
-		// session, so it's worth a server-side log even though the user-facing
-		// flow doesn't need to change over it.
-		const { error: signOutError } = await supabase.auth.signOut();
-		if (signOutError) {
-			console.error(
-				'(auth)/join register: failed to sign out after registration',
-				signOutError.message
-			);
-		}
-
-		// With email confirmation required, a duplicate guardian email does
-		// NOT error from signUp() -- it returns success with a real-looking
-		// user whose identities array is empty (Supabase's own anti-
-		// enumeration behavior), so this must be checked before the
-		// signUpError branch below, or a second child registered by the same
-		// guardian while their first is still pending/unconfirmed would
-		// silently "succeed" with no confirmation email actually sent. This
-		// is a real limitation, not a bug to route around: it resolves
-		// itself once the first child is approved, since approval overwrites
-		// that profile's auth email to the synthetic username address,
-		// freeing the guardian's email for reuse (see deferred-work.md).
-		if (isDuplicateSignup(signUpError, data?.user ?? null)) {
-			return fail(400, { error: m.join_error_guardian_email_taken() });
-		}
-
-		if (signUpError) {
-			// The raw signUp() error is generic ("Database error saving new
-			// user", status 500, no distinguishing code) regardless of cause --
-			// Postgres/GoTrue give no signal here for "the
-			// profiles_open_student_registration_unique backstop rejected this
-			// insert" versus any other failure inside handle_new_user().
-			// Re-checking availability is what actually tells them apart: if a
-			// concurrent registration for the same (class, name) pair won the
-			// race between this action's own pre-check above and this signUp()
-			// call, check_registration_available now says so.
+		if (createError) {
+			// The error is generic whatever the cause inside handle_new_user().
+			// Re-checking tells the two expected races apart: a concurrent
+			// registration for the same (class, name) pair, or the parent
+			// becoming unavailable since the pre-check above.
 			const { data: stillAvailable } = await supabase.rpc('check_registration_available', {
 				p_class_id: classId,
 				p_registration_name: registrationName
 			});
-
 			if (stillAvailable === false) {
-				return fail(400, { error: m.join_error_duplicate() });
+				return fail(400, { error: m.join_error_duplicate(), guardianEmail });
 			}
-			return fail(400, { error: m.join_error_generic() });
+			const stillFound = await approvedParentExists(adminClient, guardianEmail).catch(
+				(recheckError) => {
+					console.error('(auth)/join register: parent re-check failed', recheckError);
+					return true;
+				}
+			);
+			if (!stillFound) {
+				return fail(400, { error: m.join_error_no_parent(), guardianEmail });
+			}
+			console.error('(auth)/join register: createUser failed', createError.message);
+			return fail(400, { error: m.join_error_generic(), guardianEmail });
 		}
 
 		cookies.set(
 			JOIN_RECEIPT_COOKIE,
-			JSON.stringify({ name: registrationName, className, classCode, guardianEmail }),
+			JSON.stringify({ name: registrationName, className, classCode } satisfies JoinReceipt),
 			{
 				path: '/join/pending',
 				maxAge: 60 * 10,

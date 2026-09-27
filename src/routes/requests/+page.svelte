@@ -96,9 +96,6 @@
 								<td>
 									<div class="actions">
 										<strong>{student.registrationName}</strong>
-										{#if !student.emailConfirmedAt}
-											<ix-pill variant="warning">{m.requests_unverified_badge()}</ix-pill>
-										{/if}
 									</div>
 									<div class="muted">
 										{#if student.class}
@@ -136,10 +133,7 @@
 											<ix-button
 												type="submit"
 												loading={pending.is(`approve:${student.id}`) || undefined}
-												disabled={data.teams.length === 0 ||
-													!student.emailConfirmedAt ||
-													pending.busy ||
-													undefined}
+												disabled={data.teams.length === 0 || pending.busy || undefined}
 											>
 												{m.requests_approve()}
 											</ix-button>

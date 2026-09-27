@@ -39,12 +39,43 @@
 				sub-header={m.parent_rejected_body()}
 				icon="info"
 			></ix-empty-state>
-		{:else}
+		{:else if data.loadError}
+			<ix-empty-state header={m.load_error_generic()} icon="info"></ix-empty-state>
+		{:else if data.children.length === 0}
 			<ix-empty-state
 				header={m.parent_empty_heading()}
 				sub-header={m.parent_empty_body()}
 				icon="user-group"
 			></ix-empty-state>
+		{:else}
+			<ul class="children" aria-label={m.parent_children_label()}>
+				{#each data.children as child (child.id)}
+					<li>
+						<strong>{child.name}</strong>
+						{#if child.status === 'pending'}
+							<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
+						{/if}
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	</section>
 </div>
+
+<style>
+	.children {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.children li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+	}
+</style>

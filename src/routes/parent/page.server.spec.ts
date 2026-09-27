@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { load as layoutLoad } from './+layout.server';
 import { load as pageLoad } from './+page.server';
 
@@ -28,14 +28,25 @@ function runLayout(role: string, parentStatus: string | null, withSession = true
 	} as unknown as Parameters<typeof layoutLoad>[0]);
 }
 
-function runPage(parentStatus: string, emailConfirmedAt: string | null) {
-	return pageLoad({
-		parent: async () => ({
-			session,
-			parentStatus,
-			profile: { email: 'p@example.com', email_confirmed_at: emailConfirmedAt }
-		})
-	} as unknown as Parameters<typeof pageLoad>[0]);
+type RpcResult = { data: unknown; error: { message: string } | null };
+
+function runPage(
+	parentStatus: string,
+	emailConfirmedAt: string | null,
+	rpcResult: RpcResult = { data: [], error: null }
+) {
+	const rpc = vi.fn().mockResolvedValue(rpcResult);
+	const result = Promise.resolve(
+		pageLoad({
+			parent: async () => ({
+				session,
+				parentStatus,
+				profile: { email: 'p@example.com', email_confirmed_at: emailConfirmedAt }
+			}),
+			locals: { supabase: { rpc } }
+		} as unknown as Parameters<typeof pageLoad>[0])
+	);
+	return Object.assign(result, { rpc });
 }
 
 describe('parent layout guard', () => {
@@ -64,6 +75,59 @@ describe('parent page state', () => {
 		['approved', '2026-01-01T00:00:00Z', 'approved'],
 		['rejected', '2026-01-01T00:00:00Z', 'rejected']
 	])('status %s, confirmed %s -> %s', async (status, confirmedAt, state) => {
-		expect(await runPage(status, confirmedAt)).toEqual({ state, email: 'p@example.com' });
+		expect(await runPage(status, confirmedAt)).toEqual({
+			state,
+			email: 'p@example.com',
+			children: [],
+			loadError: false
+		});
+	});
+});
+
+describe('parent page children (Story 7-2)', () => {
+	const confirmed = '2026-01-01T00:00:00Z';
+
+	it('reads linked_children() only for an approved parent', async () => {
+		const pending = runPage('pending', confirmed);
+		await pending;
+		expect(pending.rpc).not.toHaveBeenCalled();
+
+		const approved = runPage('approved', confirmed);
+		await approved;
+		expect(approved.rpc).toHaveBeenCalledWith('linked_children');
+	});
+
+	it('lists pending and approved children, with their status', async () => {
+		const result = await runPage('approved', confirmed, {
+			data: [
+				{ id: 'c1', name: 'Dawa', status: 'approved' },
+				{ id: 'c2', name: 'Pema', status: 'pending' }
+			],
+			error: null
+		});
+		expect(result).toMatchObject({
+			state: 'approved',
+			loadError: false,
+			children: [
+				{ id: 'c1', name: 'Dawa', status: 'approved' },
+				{ id: 'c2', name: 'Pema', status: 'pending' }
+			]
+		});
+	});
+
+	it('never shows a rejected child, even if one is returned', async () => {
+		const result = await runPage('approved', confirmed, {
+			data: [{ id: 'c3', name: 'Tashi', status: 'rejected' }],
+			error: null
+		});
+		expect(result).toMatchObject({ children: [] });
+	});
+
+	it('flags a load error instead of pretending there are no children', async () => {
+		const result = await runPage('approved', confirmed, {
+			data: null,
+			error: { message: 'boom' }
+		});
+		expect(result).toMatchObject({ children: [], loadError: true });
 	});
 });

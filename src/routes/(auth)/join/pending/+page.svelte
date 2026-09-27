@@ -29,7 +29,7 @@
 				</tr>
 			</tbody>
 		</table>
-		<p>{m.join_pending_check_email({ email: data.receipt.guardianEmail })}</p>
+		<p>{m.join_pending_teacher_approves()}</p>
 	{/if}
 
 	<p class="muted">{m.join_pending_cannot_yet()}</p>

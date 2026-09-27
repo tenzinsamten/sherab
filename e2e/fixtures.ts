@@ -79,9 +79,10 @@ async function createUser(
 		email,
 		password,
 		email_confirm: true,
-		// Staff roles come only from app_metadata (migration 0020, #50);
-		// 'student' is the one role client metadata may carry.
-		...(role === 'student' ? { user_metadata: { role } } : { app_metadata: { role } })
+		// Roles come from app_metadata (service role only, #50). A
+		// user_metadata student must register through an approved parent
+		// (Story 7-2); an app_metadata student is the trusted fixture path.
+		app_metadata: { role }
 	});
 	if (error || !data.user) throw new Error(`create ${role}: ${error?.message}`);
 	created.push(data.user.id);
