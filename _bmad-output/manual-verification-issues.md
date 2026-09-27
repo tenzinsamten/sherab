@@ -53,7 +53,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 44 | Student side | Students have no "My profile" page | fixed, to verify |
 | 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
 | 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | fixed (0017 pushed), working per user |
-| 51 | Class schedule | A class that meets every other week can't be scheduled; it has to be created as separate classes | fixed (needs 0026 pushed), to verify |
+| 51 | Class schedule | A class that meets every other week can't be scheduled; it has to be created as separate classes | fixed (0026 pushed 2026-09-27), to verify |
 
 ---
 
@@ -944,7 +944,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   `implementation-artifacts/spec-50-signup-role.md` (Verification).
 
 ## 51. Class schedule can't repeat every other week
-- **Status:** built 2026-09-27 (spec `implementation-artifacts/spec-51-schedule-interval.md`, branch `fix/51-schedule-interval`). Migration `0026_schedule_interval.sql` applied locally; must be pushed to hosted before the Repeats field works there.
+- **Status:** built 2026-09-27 (spec `implementation-artifacts/spec-51-schedule-interval.md`, branch `fix/51-schedule-interval`). Migration `0026_schedule_interval.sql` pushed to hosted 2026-09-27 (confirmed with `supabase migration list --linked`).
 - **Reported (user, 2026-09-27):** "for class creation, we have a issue that we have class which
   happens every alternative week. In that case, currently we have to create it separately."
 - **Today (story 6-4, `0019_class_schedules.sql`):** a class's schedule is weekdays + start date +
