@@ -213,7 +213,12 @@
 													type="text"
 													name="notes"
 													placeholder={m.roster_notes_placeholder()}
+													aria-label={m.roster_notes_placeholder()}
+													aria-describedby="notes-hint-{student.id}-{area}"
 												/>
+												<small id="notes-hint-{student.id}-{area}" class="muted notes-hint">
+													{m.roster_notes_parent_hint()}
+												</small>
 												<ix-button variant="secondary" type="submit"
 													>{m.roster_set_status()}</ix-button
 												>
@@ -286,6 +291,11 @@
 </div>
 
 <style>
+	.notes-hint {
+		font-size: 0.75rem;
+		line-height: 1.3;
+	}
+
 	.class-cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));

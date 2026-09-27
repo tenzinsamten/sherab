@@ -173,6 +173,12 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-2-parent-first-student-registration-linking.md`
   summary: handle_new_user() does not require guardian_consent_given_at for a user_metadata student, so a crafted anon signUp() creates a pending student without recorded consent.
   evidence: 7-2 review triage #8; consent has only ever been enforced in the /join server action.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-3-parent-child-overview-details-read-only.md`
+  summary: Parent child detail page /parent/children/[id] (read-only homework by status with due dates and links, attendance via child_attendance, skills with history and notes, streak, badges, team and leaderboard, upcoming sessions, teachers via class_people), built on 7-3's parent read access.
+  evidence: Split from 7-3 at planning (spec ~2,900 tokens vs 1,600 target); the user chose to split. 7-3 keeps all parent RLS reads and the overview cards; 7-4 adds leave answers to this page.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-3-parent-child-overview-details-read-only.md`
+  summary: Student and teacher loaders other than the student dashboard still compute "today" as the UTC date (toISOString), so for 1-2 hours after Berlin midnight their overdue flags disagree with the Berlin-based dashboard tiles and homework_counts.
+  evidence: 7-3 review triage #7; switch the remaining loaders to todayInBerlin().
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-51-schedule-interval.md`
   summary: Older RLS test blocks (Stories 1-1 to 5-1) create classes with fixed names ("Class A", "Story 4-1 <prefix>", ...) and fail with classes_name_unique_idx once a previous run's rows remain in the local DB.

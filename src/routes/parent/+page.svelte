@@ -51,10 +51,39 @@
 			<ul class="children" aria-label={m.parent_children_label()}>
 				{#each data.children as child (child.id)}
 					<li>
-						<strong>{child.name}</strong>
-						{#if child.status === 'pending'}
-							<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
-						{/if}
+						<ix-card variant="outline">
+							<ix-card-content>
+								<p class="child-name"><strong>{child.name}</strong></p>
+								{#if child.status === 'pending'}
+									<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
+								{:else}
+									<p class="muted child-classes">
+										<span class="section-label">{m.parent_card_classes()}</span>
+										{child.classes.length > 0
+											? child.classes.join(', ')
+											: m.parent_card_no_classes()}
+									</p>
+									<dl class="counts">
+										<div>
+											<dt class="section-label">{m.parent_card_open()}</dt>
+											<dd class={child.open === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
+												{child.open}
+											</dd>
+										</div>
+										<div>
+											<dt class="section-label">{m.parent_card_overdue()}</dt>
+											<dd>
+												{#if child.overdue > 0}
+													<ix-pill variant="alarm">{child.overdue}</ix-pill>
+												{:else}
+													<span class="stat-tile-value muted">0</span>
+												{/if}
+											</dd>
+										</div>
+									</dl>
+								{/if}
+							</ix-card-content>
+						</ix-card>
 					</li>
 				{/each}
 			</ul>
@@ -64,18 +93,32 @@
 
 <style>
 	.children {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-3);
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+		gap: var(--space-4);
 		list-style: none;
 		margin: 0;
 		padding: 0;
 	}
 
-	.children li {
+	.child-name {
+		margin: 0 0 var(--space-2);
+	}
+
+	.child-classes {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
+		flex-direction: column;
+		gap: var(--space-1);
+		margin: 0 0 var(--space-3);
+	}
+
+	.counts {
+		display: flex;
+		gap: var(--space-6);
+		margin: 0;
+	}
+
+	.counts dd {
+		margin: 0;
 	}
 </style>

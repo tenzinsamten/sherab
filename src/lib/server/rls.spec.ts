@@ -7996,3 +7996,629 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		expect(asTeacher).toBe(false);
 	});
 });
+
+/**
+ * Story 7-3: parent read access (migration 0025). One test per I/O matrix
+ * row, plus the dual-role acceptance criterion. Fixtures are written with
+ * the service role; every assertion reads as the real caller.
+ */
+describe.skipIf(!reachable)('7-3 parent reads (requires local Supabase)', () => {
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classId: string;
+	let classBId: string;
+	let teamId: string;
+	let lookahead: number;
+
+	const today = todayInBerlin();
+	const addDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	const name = (label: string) => `7-3 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createClass(label: string, teacherId: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: name(label),
+				code: `P${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacherId });
+		return data.id;
+	}
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		teacherB = await createSignedInUser('teacher');
+		admin = await createSignedInUser('admin');
+		classId = await createClass('Class A', teacher.id);
+		classBId = await createClass('Class B', teacherB.id);
+
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+
+		const { data: setting } = await adminClient
+			.from('app_settings')
+			.select('value')
+			.eq('key', 'homework_lookahead_days')
+			.single();
+		lookahead = Number((setting?.value as { days?: unknown } | null)?.days ?? 14);
+	}, 30000);
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** A child of `parentEmail` in `cls`; approved (and so enrolled) unless `pending`. */
+	async function child(parentEmail: string, cls = classId, pending = false) {
+		const { id, error } = await signUpStudent({
+			classId: cls,
+			registrationName: name(pending ? 'Pending Kid' : 'Kid'),
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		if (!pending) {
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		}
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return signIn(data.user!.email!, password);
+	}
+
+	/** One homework instance of `cls` due on `dueDate`, assigned to `targets`. */
+	async function homework(params: {
+		cls?: string;
+		dueDate: string;
+		targets: string[];
+		archived?: boolean;
+	}) {
+		const cls = params.cls ?? classId;
+		const { data: assignment, error: assignmentError } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: cls,
+				title: name('Homework'),
+				skill_area: 'language',
+				created_by: teacher.id
+			})
+			.select('id')
+			.single();
+		if (assignmentError || !assignment)
+			throw new Error(`Failed to create assignment: ${assignmentError?.message}`);
+		const { data: instance, error: instanceError } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment.id,
+				class_id: cls,
+				period_start: params.dueDate,
+				due_date: params.dueDate,
+				...(params.archived ? { archived_at: new Date().toISOString() } : {})
+			})
+			.select('id')
+			.single();
+		if (instanceError || !instance)
+			throw new Error(`Failed to create instance: ${instanceError?.message}`);
+		await setStatus(instance.id, cls, params.targets, 'assigned');
+		return { assignmentId: assignment.id, instanceId: instance.id };
+	}
+
+	async function setStatus(
+		instanceId: string,
+		cls: string,
+		studentIds: string[],
+		status: 'assigned' | 'done' | 'reviewed'
+	) {
+		if (studentIds.length === 0) return;
+		const { error } = await adminClient.from('homework_status_history').insert(
+			studentIds.map((student_id) => ({
+				instance_id: instanceId,
+				class_id: cls,
+				student_id,
+				status,
+				recorded_by: teacher.id
+			}))
+		);
+		if (error) throw new Error(`Failed to set homework status: ${error.message}`);
+	}
+
+	/** Rows of every student-keyed table for `studentId` (service role). */
+	async function seedChildData(studentId: string) {
+		const hw = await homework({ dueDate: addDays(today, 1), targets: [studentId] });
+		const { error: skillError } = await adminClient.from('skill_status_history').insert({
+			student_id: studentId,
+			class_id: classId,
+			skill_area: 'language',
+			level: 'learning',
+			notes: 'Reads well at home too',
+			recorded_by: teacher.id
+		});
+		if (skillError) throw new Error(`Failed to add skill status: ${skillError.message}`);
+		const sessionId = await sessionFor(classId, ATTENDANCE_DAY);
+		const { error: attendanceError } = await adminClient.from('attendance_records').insert({
+			student_id: studentId,
+			class_id: classId,
+			class_session_id: sessionId,
+			present: true,
+			notes: 'Teacher-only note',
+			recorded_by: teacher.id
+		});
+		if (attendanceError) throw new Error(`Failed to add attendance: ${attendanceError.message}`);
+		await adminClient
+			.from('student_streaks')
+			.upsert(
+				{ student_id: studentId, class_id: classId, current_streak: 3 },
+				{ onConflict: 'student_id' }
+			);
+		await adminClient
+			.from('badges_earned')
+			.upsert(
+				{ student_id: studentId, badge_type: 'attendance', milestone: 1 },
+				{ onConflict: 'student_id,badge_type,milestone' }
+			);
+		return hw;
+	}
+
+	/** What `client` can read of `studentId` in each student-keyed table and its homework. */
+	async function readsOf(
+		client: ReturnType<typeof anonClient>,
+		studentId: string,
+		hw: { assignmentId: string; instanceId: string }
+	) {
+		const [history, skills, streaks, badges, enrollments, profile, instance, assignment] =
+			await Promise.all([
+				client.from('homework_status_history').select('id').eq('student_id', studentId),
+				client.from('skill_status_history').select('notes').eq('student_id', studentId),
+				client.from('student_streaks').select('student_id').eq('student_id', studentId),
+				client.from('badges_earned').select('id').eq('student_id', studentId),
+				client.from('class_enrollments').select('class_id').eq('student_id', studentId),
+				client.from('profiles').select('id').eq('id', studentId),
+				client.from('homework_instances').select('id').eq('id', hw.instanceId),
+				client.from('homework_assignments').select('id').eq('id', hw.assignmentId)
+			]);
+		return {
+			history: history.data ?? [],
+			skills: skills.data ?? [],
+			streaks: streaks.data ?? [],
+			badges: badges.data ?? [],
+			enrollments: enrollments.data ?? [],
+			profile: profile.data ?? [],
+			instance: instance.data ?? [],
+			assignment: assignment.data ?? []
+		};
+	}
+
+	async function counts(client: ReturnType<typeof anonClient>, studentId: string) {
+		const { data, error } = await client.rpc('homework_counts', { p_student_id: studentId });
+		return { counts: data?.[0] ?? null, error };
+	}
+
+	it('Cards: an approved child has classes and Open/Overdue counts; a pending child is only listed', async () => {
+		const parent = await createApprovedParent();
+		const approvedId = await child(parent.email);
+		const pendingId = await child(parent.email, classId, true);
+		await homework({ dueDate: addDays(today, 2), targets: [approvedId] });
+		await homework({ dueDate: addDays(today, -1), targets: [approvedId] });
+
+		const client = await signIn(parent.email, parent.password);
+		const { data: linked } = await client.rpc('linked_children');
+		expect((linked ?? []).map((c) => [c.id, c.status]).sort()).toEqual(
+			[
+				[approvedId, 'approved'],
+				[pendingId, 'pending']
+			].sort()
+		);
+
+		expect(await counts(client, approvedId)).toEqual({
+			counts: { open_count: 2, overdue_count: 1 },
+			error: null
+		});
+		const { data: enrollments } = await client
+			.from('class_enrollments')
+			.select('class_id')
+			.eq('student_id', approvedId);
+		expect(enrollments).toEqual([{ class_id: classId }]);
+		const { data: classes } = await client.from('classes').select('id').eq('id', classId);
+		expect(classes).toEqual([{ id: classId }]);
+
+		const pendingCounts = await counts(client, pendingId);
+		expect(pendingCounts.error?.code).toBe('42501');
+	});
+
+	it('Counts: archived, left class, Done, Reviewed and beyond the look-ahead are neither Open nor Overdue; marking Done drops Open', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		await adminClient
+			.from('class_enrollments')
+			.insert({ student_id: kid, class_id: classBId, enrolled_by: null });
+
+		const dueSoon = await homework({ dueDate: addDays(today, 1), targets: [kid] });
+		await homework({ dueDate: addDays(today, -2), targets: [kid] }); // overdue
+		await homework({ dueDate: addDays(today, lookahead), targets: [kid] }); // edge of window
+		await homework({ dueDate: addDays(today, -1), targets: [kid], archived: true });
+		await homework({ cls: classBId, dueDate: addDays(today, -1), targets: [kid] });
+		const done = await homework({ dueDate: addDays(today, -1), targets: [kid] });
+		await setStatus(done.instanceId, classId, [kid], 'done');
+		const reviewed = await homework({ dueDate: addDays(today, -1), targets: [kid] });
+		await setStatus(reviewed.instanceId, classId, [kid], 'done');
+		await setStatus(reviewed.instanceId, classId, [kid], 'reviewed');
+		await homework({ dueDate: addDays(today, lookahead + 1), targets: [kid] });
+		// Left class B: its homework no longer counts.
+		await adminClient
+			.from('class_enrollments')
+			.delete()
+			.eq('student_id', kid)
+			.eq('class_id', classBId);
+
+		const client = await signIn(parent.email, parent.password);
+		expect(await counts(client, kid)).toEqual({
+			counts: { open_count: 3, overdue_count: 1 },
+			error: null
+		});
+
+		// Acceptance: the teacher marks one Done; the next load shows one fewer.
+		const { error: markError } = await teacher.client.from('homework_status_history').insert({
+			instance_id: dueSoon.instanceId,
+			class_id: classId,
+			student_id: kid,
+			status: 'done',
+			recorded_by: teacher.id
+		});
+		expect(markError).toBeNull();
+		expect(await counts(client, kid)).toEqual({
+			counts: { open_count: 2, overdue_count: 1 },
+			error: null
+		});
+
+		// The teacher and the admin get the same numbers.
+		const asTeacher = await counts(teacher.client, kid);
+		expect(asTeacher.counts).toEqual({ open_count: 2, overdue_count: 1 });
+		expect(await counts(admin.client, kid)).toEqual(asTeacher);
+
+		// A teacher who does not teach the student is refused.
+		const unrelated = await createSignedInUser('teacher');
+		expect((await counts(unrelated.client, kid)).error?.code).toBe('42501');
+	});
+
+	it("Student tiles: the student reads their own counts, never another student's", async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const other = await child(parent.email);
+		await homework({ dueDate: addDays(today, 3), targets: [kid] });
+		await homework({ dueDate: addDays(today, -3), targets: [kid] });
+
+		const student = await signInStudent(kid);
+		expect(await counts(student, kid)).toEqual({
+			counts: { open_count: 2, overdue_count: 1 },
+			error: null
+		});
+		expect((await counts(student, other)).error?.code).toBe('42501');
+	});
+
+	it('Own child reads: every student-keyed table, targeted homework, the class and its sessions', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const hw = await seedChildData(kid);
+		await sessionFor(classId, addDays(today, 7));
+
+		const client = await signIn(parent.email, parent.password);
+		const reads = await readsOf(client, kid, hw);
+		expect(reads.history.length).toBeGreaterThan(0);
+		expect(reads.skills).toEqual([{ notes: 'Reads well at home too' }]);
+		expect(reads.streaks).toHaveLength(1);
+		expect(reads.badges.length).toBeGreaterThan(0);
+		expect(reads.enrollments).toEqual([{ class_id: classId }]);
+		expect(reads.profile).toEqual([{ id: kid }]);
+		expect(reads.instance).toEqual([{ id: hw.instanceId }]);
+		expect(reads.assignment).toEqual([{ id: hw.assignmentId }]);
+
+		const { data: classes } = await client.from('classes').select('id');
+		expect(classes).toEqual([{ id: classId }]);
+		const { data: sessions } = await client.from('class_sessions').select('class_id');
+		expect((sessions ?? []).length).toBeGreaterThan(0);
+		expect(new Set((sessions ?? []).map((s) => s.class_id))).toEqual(new Set([classId]));
+	});
+
+	it("Isolation: another student's rows, untargeted homework, other classes and their RPCs are refused", async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const otherParent = await createApprovedParent();
+		const otherKid = await child(otherParent.email);
+		const otherHw = await seedChildData(otherKid);
+		// Homework in the child's own class that targets only the other child.
+		const untargeted = await homework({ dueDate: addDays(today, 1), targets: [otherKid] });
+		expect(kid).not.toBe(otherKid);
+
+		const client = await signIn(parent.email, parent.password);
+		expect(await readsOf(client, otherKid, otherHw)).toEqual({
+			history: [],
+			skills: [],
+			streaks: [],
+			badges: [],
+			enrollments: [],
+			profile: [],
+			instance: [],
+			assignment: []
+		});
+		const { data: instance } = await client
+			.from('homework_instances')
+			.select('id')
+			.eq('id', untargeted.instanceId);
+		expect(instance).toEqual([]);
+		const { data: otherClass } = await client.from('classes').select('id').eq('id', classBId);
+		expect(otherClass).toEqual([]);
+
+		expect((await counts(client, otherKid)).error?.code).toBe('42501');
+		const attendance = await client.rpc('child_attendance', { p_student_id: otherKid });
+		expect(attendance.error?.code).toBe('42501');
+	});
+
+	it('Pending child: the parent reads nothing of them', async () => {
+		const parent = await createApprovedParent();
+		const pendingId = await child(parent.email, classId, true);
+
+		const client = await signIn(parent.email, parent.password);
+		const { data: profile } = await client.from('profiles').select('id').eq('id', pendingId);
+		expect(profile).toEqual([]);
+		expect((await counts(client, pendingId)).error?.code).toBe('42501');
+		const attendance = await client.rpc('child_attendance', { p_student_id: pendingId });
+		expect(attendance.error?.code).toBe('42501');
+	});
+
+	it('Attendance: child_attendance() returns date, class and present without notes; a direct select is empty', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		await seedChildData(kid);
+
+		const client = await signIn(parent.email, parent.password);
+		const { data, error } = await client.rpc('child_attendance', { p_student_id: kid });
+		expect(error).toBeNull();
+		expect(data).toHaveLength(1);
+		expect(Object.keys(data![0]).sort()).toEqual(
+			['class_id', 'class_name', 'present', 'session_date'].sort()
+		);
+		expect(data![0]).toMatchObject({
+			session_date: ATTENDANCE_DAY,
+			class_id: classId,
+			present: true
+		});
+		expect(JSON.stringify(data)).not.toContain('Teacher-only note');
+
+		const { data: direct } = await client
+			.from('attendance_records')
+			.select('id')
+			.eq('student_id', kid);
+		expect(direct).toEqual([]);
+
+		// The student may read their own through the same RPC.
+		const student = await signInStudent(kid);
+		const own = await student.rpc('child_attendance', { p_student_id: kid });
+		expect(own.error).toBeNull();
+		expect(own.data).toHaveLength(1);
+	});
+
+	it("class_people: a parent of the class's child gets the teachers only", async () => {
+		const parent = await createApprovedParent();
+		await child(parent.email);
+
+		const client = await signIn(parent.email, parent.password);
+		const { data, error } = await client.rpc('class_people', { p_class_id: classId });
+		expect(error).toBeNull();
+		expect((data ?? []).length).toBeGreaterThan(0);
+		expect((data ?? []).every((p) => p.is_teacher)).toBe(true);
+		expect((data ?? []).map((p) => p.person_id)).toContain(teacher.id);
+
+		const other = await client.rpc('class_people', { p_class_id: classBId });
+		expect(other.error?.code).toBe('42501');
+	});
+
+	it('class_people: an enrolled student and the admin still get teachers and classmates', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const classmate = await child(parent.email);
+
+		const student = await signInStudent(kid);
+		const { data: asStudent, error } = await student.rpc('class_people', { p_class_id: classId });
+		expect(error).toBeNull();
+		expect(asStudent).toContainEqual(
+			expect.objectContaining({ person_id: teacher.id, is_teacher: true })
+		);
+		expect(asStudent).toContainEqual(
+			expect.objectContaining({ person_id: classmate, is_teacher: false })
+		);
+
+		const { data: asAdmin, error: adminError } = await admin.client.rpc('class_people', {
+			p_class_id: classId
+		});
+		expect(adminError).toBeNull();
+		expect(asAdmin).toEqual(asStudent);
+	});
+
+	it('No writes: the parent cannot insert, update or delete homework status, skills, attendance, streaks, badges or profiles', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const hw = await seedChildData(kid);
+		const sessionId = await sessionFor(classId, ATTENDANCE_DAY);
+
+		/** Every row of the child the parent might touch, read with the service role. */
+		const snapshot = async () => {
+			const [history, skills, attendance, streaks, badges, profile, instance] = await Promise.all([
+				adminClient.from('homework_status_history').select('*').eq('student_id', kid).order('id'),
+				adminClient.from('skill_status_history').select('*').eq('student_id', kid).order('id'),
+				adminClient.from('attendance_records').select('*').eq('student_id', kid).order('id'),
+				adminClient.from('student_streaks').select('*').eq('student_id', kid),
+				adminClient.from('badges_earned').select('*').eq('student_id', kid).order('id'),
+				adminClient.from('profiles').select('*').eq('id', kid),
+				adminClient.from('homework_instances').select('*').eq('id', hw.instanceId)
+			]);
+			return {
+				history: history.data,
+				skills: skills.data,
+				attendance: attendance.data,
+				streaks: streaks.data,
+				badges: badges.data,
+				profile: profile.data,
+				instance: instance.data
+			};
+		};
+		const before = await snapshot();
+		expect(before.history?.length).toBeGreaterThan(0);
+		expect(before.skills?.length).toBeGreaterThan(0);
+		expect(before.attendance?.length).toBeGreaterThan(0);
+		expect(before.streaks).toHaveLength(1);
+		expect(before.badges?.length).toBeGreaterThan(0);
+
+		const client = await signIn(parent.email, parent.password);
+		const inserts = await Promise.all([
+			client.from('homework_status_history').insert({
+				instance_id: hw.instanceId,
+				class_id: classId,
+				student_id: kid,
+				status: 'done',
+				recorded_by: parent.id
+			}),
+			client.from('skill_status_history').insert({
+				student_id: kid,
+				class_id: classId,
+				skill_area: 'language',
+				level: 'confident',
+				recorded_by: parent.id
+			}),
+			client.from('attendance_records').insert({
+				student_id: kid,
+				class_id: classId,
+				class_session_id: sessionId,
+				present: false,
+				recorded_by: parent.id
+			}),
+			// The parent's own child: only RLS can refuse it.
+			client
+				.from('student_streaks')
+				.insert({ student_id: kid, class_id: classId, current_streak: 99 })
+		]);
+		for (const insert of inserts) expect(insert.error?.code).toBe('42501');
+
+		// UPDATE and DELETE: RLS either errors or filters to 0 affected rows.
+		const changes = await Promise.all([
+			client.from('student_streaks').update({ current_streak: 99 }).eq('student_id', kid).select(),
+			client
+				.from('homework_instances')
+				.update({ due_date: '2000-01-01' })
+				.eq('id', hw.instanceId)
+				.select(),
+			client
+				.from('skill_status_history')
+				.update({ notes: 'changed' })
+				.eq('student_id', kid)
+				.select(),
+			client
+				.from('attendance_records')
+				.update({ present: false, notes: 'changed' })
+				.eq('student_id', kid)
+				.select(),
+			client
+				.from('homework_status_history')
+				.update({ status: 'done' })
+				.eq('student_id', kid)
+				.select(),
+			client.from('profiles').update({ display_name: 'Changed by parent' }).eq('id', kid).select(),
+			client.from('homework_status_history').delete().eq('student_id', kid).select(),
+			client.from('skill_status_history').delete().eq('student_id', kid).select(),
+			client.from('attendance_records').delete().eq('student_id', kid).select(),
+			client.from('badges_earned').delete().eq('student_id', kid).select()
+		]);
+		for (const change of changes) {
+			if (!change.error) expect(change.data ?? []).toEqual([]);
+		}
+
+		expect(await snapshot()).toEqual(before);
+	});
+
+	it('Revoked: a parent set to rejected reads nothing any more', async () => {
+		const parent = await createApprovedParent();
+		const kid = await child(parent.email);
+		const hw = await seedChildData(kid);
+		const client = await signIn(parent.email, parent.password);
+		expect((await readsOf(client, kid, hw)).profile).toEqual([{ id: kid }]);
+
+		const { error } = await adminClient
+			.from('parents')
+			.update({ status: 'rejected' })
+			.eq('id', parent.id);
+		expect(error).toBeNull();
+
+		expect(await readsOf(client, kid, hw)).toEqual({
+			history: [],
+			skills: [],
+			streaks: [],
+			badges: [],
+			enrollments: [],
+			profile: [],
+			instance: [],
+			assignment: []
+		});
+		const { data: classes } = await client.from('classes').select('id');
+		expect(classes).toEqual([]);
+		const { data: sessions } = await client.from('class_sessions').select('id');
+		expect(sessions).toEqual([]);
+		expect((await counts(client, kid)).error?.code).toBe('42501');
+		expect((await client.rpc('child_attendance', { p_student_id: kid })).error?.code).toBe('42501');
+		expect((await client.rpc('class_people', { p_class_id: classId })).error?.code).toBe('42501');
+	});
+
+	it('Dual role: a teacher-parent sees only their own children, and their teacher reads are unchanged', async () => {
+		const { error: parentError } = await adminClient
+			.from('parents')
+			.insert({ id: teacherB.id, status: 'approved' });
+		expect(parentError).toBeNull();
+
+		const ownKid = await child(teacherB.email, classId);
+		const otherParent = await createApprovedParent();
+		const classAKid = await child(otherParent.email, classId);
+		const classBKid = await child(otherParent.email, classBId);
+
+		const { data: linked } = await teacherB.client.rpc('linked_children');
+		expect((linked ?? []).map((c) => c.id)).toEqual([ownKid]);
+
+		// Parent side: class A shows teachers only; its other students stay hidden.
+		const { data: peopleA } = await teacherB.client.rpc('class_people', { p_class_id: classId });
+		expect((peopleA ?? []).every((p) => p.is_teacher)).toBe(true);
+		const { data: hiddenKid } = await teacherB.client
+			.from('profiles')
+			.select('id')
+			.eq('id', classAKid);
+		expect(hiddenKid).toEqual([]);
+		expect((await counts(teacherB.client, classAKid)).error?.code).toBe('42501');
+
+		// Teacher side (class B) as before: the full roster and the counts.
+		const { data: peopleB } = await teacherB.client.rpc('class_people', { p_class_id: classBId });
+		expect((peopleB ?? []).map((p) => p.person_id)).toContain(classBKid);
+		const { data: rosterKid } = await teacherB.client
+			.from('profiles')
+			.select('id')
+			.eq('id', classBKid);
+		expect(rosterKid).toEqual([{ id: classBKid }]);
+		expect((await counts(teacherB.client, classBKid)).error).toBeNull();
+	});
+});

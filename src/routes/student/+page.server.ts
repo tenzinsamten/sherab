@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { todayInBerlin } from '$lib/berlin-date';
 import { shapeStudentBadges } from '$lib/server/badges';
 import { shapeTeamLeaderboard } from '$lib/server/leaderboard';
 import { shapeStudentStreak } from '$lib/server/streak';
@@ -34,7 +35,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		throw redirect(303, '/');
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = todayInBerlin();
 	const { classes, error: classesError } = await loadStudentClasses(supabase, user.id);
 
 	// student_streaks / badges_earned are trigger-written (AD-3), read here
@@ -44,7 +45,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		homework,
 		{ data: streakRow, error: streakError },
 		{ data: badgeRows, error: badgesError },
-		{ data: teamRows, error: teamError }
+		{ data: teamRows, error: teamError },
+		{ data: countRows, error: countsError }
 	] = await Promise.all([
 		loadStudentHomework(supabase, user.id, {
 			filter: 'todo',
@@ -63,8 +65,11 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.eq('student_id', user.id)
 			.order('badge_type')
 			.order('milestone', { ascending: true }),
-		supabase.rpc('team_leaderboard')
+		supabase.rpc('team_leaderboard'),
+		// The one Open/Overdue count (Story 7-3), shared with the parent cards.
+		supabase.rpc('homework_counts', { p_student_id: user.id })
 	]);
+	const counts = countRows?.[0];
 
 	const todoByClass = new Map<string, number>();
 	for (const item of homework.items) {
@@ -73,8 +78,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	return {
 		tiles: {
-			todo: homework.counts.todo,
-			overdue: homework.items.filter((i) => i.overdue).length,
+			todo: counts?.open_count ?? 0,
+			overdue: counts?.overdue_count ?? 0,
 			doneThisWeek: homework.doneThisWeek
 		},
 		team: teamRank(shapeTeamLeaderboard(teamRows), profile.team_id),
@@ -82,7 +87,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		badges: shapeStudentBadges(badgeRows),
 		nextDue: homework.items.slice(0, NEXT_DUE_COUNT),
 		classes: classes.map((c) => ({ ...c, todo: todoByClass.get(c.id) ?? 0 })),
-		loadError: Boolean(classesError || homework.error || streakError || badgesError || teamError)
+		loadError: Boolean(
+			classesError || homework.error || streakError || badgesError || teamError || countsError
+		)
 	};
 };
 

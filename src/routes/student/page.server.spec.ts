@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { todayInBerlin } from '$lib/berlin-date';
 import { load } from './+page.server';
 
 /**
@@ -32,7 +33,7 @@ function makeChain(result: Result) {
 	return chain;
 }
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = todayInBerlin();
 
 const base: Record<string, Result> = {
 	profiles: { data: { role: 'student', team_id: 't2' }, error: null },
@@ -83,11 +84,22 @@ const leaderboard: Result = {
 	error: null
 };
 
-function run(tables: Record<string, Result>, rpc: Result = leaderboard) {
+const counts: Result = { data: [{ open_count: 1, overdue_count: 0 }], error: null };
+
+function run(
+	tables: Record<string, Result>,
+	rpc: Result = leaderboard,
+	countsResult: Result = counts
+) {
+	const calls: { name: string; args: unknown }[] = [];
 	const supabase = {
 		from: (table: string) => makeChain(tables[table] ?? { data: [], error: null }),
-		rpc: async () => rpc
+		rpc: async (name: string, args?: unknown) => {
+			calls.push({ name, args });
+			return name === 'homework_counts' ? countsResult : rpc;
+		}
 	};
+	lastRpcCalls = calls;
 	return load({
 		locals: {
 			supabase,
@@ -95,6 +107,8 @@ function run(tables: Record<string, Result>, rpc: Result = leaderboard) {
 		}
 	} as unknown as Parameters<typeof load>[0]);
 }
+
+let lastRpcCalls: { name: string; args: unknown }[] = [];
 
 describe('student dashboard load', () => {
 	it('summarises homework, team rank and classes', async () => {
@@ -106,6 +120,53 @@ describe('student dashboard load', () => {
 			classes: [{ id: 'c1', name: 'Yaks', todo: 1 }],
 			loadError: false
 		});
+	});
+
+	it('takes the To do and Overdue tiles from homework_counts() for the caller (Story 7-3)', async () => {
+		const result = await run(base, leaderboard, {
+			data: [{ open_count: 5, overdue_count: 2 }],
+			error: null
+		});
+		expect(result).toMatchObject({ tiles: { todo: 5, overdue: 2 }, loadError: false });
+		expect(lastRpcCalls).toContainEqual({
+			name: 'homework_counts',
+			args: { p_student_id: 's1' }
+		});
+	});
+
+	describe('today is the Berlin date, not UTC', () => {
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it('flags an item due yesterday in Berlin as overdue while UTC is still that day', async () => {
+			vi.useFakeTimers({ toFake: ['Date'] });
+			// 23:30 UTC on the 27th is already 01:30 on the 28th in Berlin.
+			vi.setSystemTime(new Date('2026-09-27T23:30:00Z'));
+			const result = await run({
+				...base,
+				homework_instances: {
+					data: [
+						{
+							id: 'i1',
+							assignment_id: 'a1',
+							class_id: 'c1',
+							due_date: '2026-09-27',
+							archived_at: null
+						}
+					],
+					error: null
+				}
+			});
+			expect(result).toMatchObject({
+				nextDue: [{ instanceId: 'i1', dueDate: '2026-09-27', overdue: true }]
+			});
+		});
+	});
+
+	it('sets loadError when homework_counts() fails', async () => {
+		const result = await run(base, leaderboard, { data: null, error: { message: 'boom' } });
+		expect(result).toMatchObject({ tiles: { todo: 0, overdue: 0 }, loadError: true });
 	});
 
 	it('sets loadError when the leaderboard fails', async () => {

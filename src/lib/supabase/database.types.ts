@@ -944,6 +944,28 @@ export type Database = {
 			is_admin: { Args: never; Returns: boolean };
 			is_parent: { Args: never; Returns: boolean };
 			is_parent_of: { Args: { p_student_id: string }; Returns: boolean };
+			is_parent_in_class: { Args: { p_class_id: string }; Returns: boolean };
+			is_parent_targeted_for_homework_assignment: {
+				Args: { p_assignment_id: string };
+				Returns: boolean;
+			};
+			is_parent_targeted_for_homework_instance: {
+				Args: { p_instance_id: string };
+				Returns: boolean;
+			};
+			homework_counts: {
+				Args: { p_student_id: string };
+				Returns: { open_count: number; overdue_count: number }[];
+			};
+			child_attendance: {
+				Args: { p_student_id: string };
+				Returns: {
+					session_date: string;
+					class_id: string;
+					class_name: string;
+					present: boolean;
+				}[];
+			};
 			is_targeted_for_homework_assignment: {
 				Args: { target_assignment_id: string };
 				Returns: boolean;
