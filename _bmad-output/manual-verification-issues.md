@@ -53,6 +53,7 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 | 44 | Student side | Students have no "My profile" page | fixed, to verify |
 | 45 | `/student` | The student's class isn't shown on their page | fixed (0016 pushed), to verify |
 | 46 | Side menu (student) | Student menu should be: Dashboard (summary), My classes, My homework, Team leaderboard | fixed (0017 pushed), working per user |
+| 51 | Class schedule | A class that meets every other week can't be scheduled; it has to be created as separate classes | fixed (needs 0026 pushed), to verify |
 
 ---
 
@@ -941,6 +942,31 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   `/signup` page is removed, `/admin/teachers` sets the role through `app_metadata`, and the README
   bootstrap now uses the Admin API plus the promote SQL. After pushing 0020, run the hosted checks in
   `implementation-artifacts/spec-50-signup-role.md` (Verification).
+
+## 51. Class schedule can't repeat every other week
+- **Status:** built 2026-09-27 (spec `implementation-artifacts/spec-51-schedule-interval.md`, branch `fix/51-schedule-interval`). Migration `0026_schedule_interval.sql` applied locally; must be pushed to hosted before the Repeats field works there.
+- **Reported (user, 2026-09-27):** "for class creation, we have a issue that we have class which
+  happens every alternative week. In that case, currently we have to create it separately."
+- **Today (story 6-4, `0019_class_schedules.sql`):** a class's schedule is weekdays + start date +
+  optional end date. `class_schedule_matches()` matches a class day on its ISO weekday alone, so a
+  schedule is always weekly. It has no interval, so a fortnightly class can't be expressed.
+  Workarounds today are separate classes, or deleting and cancelling every other session by hand.
+- **Likely shape (for planning):** add `classes.schedule_interval_weeks` (default 1). A day
+  matches when its weekday matches and it falls in a week that is a multiple of N weeks from the
+  week of `schedule_starts_on` (the start date anchors the alternation). Pass it through
+  `class_schedule_matches()`, the three session triggers, `set_class_schedule()`, form parsing in
+  `src/lib/server/calendar.ts` and `ScheduleFields.svelte` ("Every week / Every 2 weeks"). The
+  default of 1 leaves existing classes unchanged.
+- **Decided (user, 2026-09-27):**
+  - Interval choices: every 1, 2, 3 or 4 weeks.
+  - The pattern stays fixed on the calendar. A cancelled class day or holiday in an on-week
+    loses that session; it does not shift the following weeks.
+  - Streaks count only the weeks in which the class is planned. Off weeks neither count nor
+    break a streak.
+  - Classes already created separately as a workaround stay as they are (no merge).
+  - One interval for the whole class: with several weekdays (e.g. Sun + Wed, every 2 weeks),
+    all of them happen in the on-weeks and none in the off-weeks. No per-weekday interval.
+- **Built:** "Repeats" select (every 1-4 weeks) on `/admin/classes` create and `/calendar` class schedules; streak rule unchanged (off weeks already skipped), covered by a new test.
 
 ---
 

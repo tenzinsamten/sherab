@@ -173,3 +173,10 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-2-parent-first-student-registration-linking.md`
   summary: handle_new_user() does not require guardian_consent_given_at for a user_metadata student, so a crafted anon signUp() creates a pending student without recorded consent.
   evidence: 7-2 review triage #8; consent has only ever been enforced in the /join server action.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-51-schedule-interval.md`
+  summary: Older RLS test blocks (Stories 1-1 to 5-1) create classes with fixed names ("Class A", "Story 4-1 <prefix>", ...) and fail with classes_name_unique_idx once a previous run's rows remain in the local DB.
+  evidence: Full `npm test` on 2026-09-27: 33 failures, all "duplicate key value violates unique constraint classes_name_unique_idx"; local DB holds 667 classes; blocks unchanged by #51. Fix: random suffix in those fixture names (as 6-x blocks do).
+- source_spec: `_bmad-output/implementation-artifacts/spec-51-schedule-interval.md`
+  summary: Story 6-4 RLS test "schedule edit: past sessions unchanged..." is flaky (2 of 5 runs) because it re-adds past class days (random 1901-1999) that earlier runs left behind, so no session is created for them.
+  evidence: Implementation subagent reruns on 2026-09-27; the #51 interval-edit test avoided it by adding class days before inserting the class. Same reorder fixes the old test.

@@ -4,7 +4,8 @@
 
 	/**
 	 * A class schedule's form fields (Story 6-4): weekday checkboxes Mon-Sun
-	 * (`weekday`, ISO 1-7), start time, duration, from and until. Used on
+	 * (`weekday`, ISO 1-7), repeat every 1-4 weeks (`intervalWeeks`, issue
+	 * #51), start time, duration, from and until. Used on
 	 * /calendar for each editable class and on /admin/classes when creating
 	 * one. Field names match `scheduleFormValues()`; `errors` holds the inline
 	 * message per invalid field.
@@ -16,6 +17,7 @@
 		durationMinutes = null,
 		startsOn,
 		endsOn = null,
+		intervalWeeks = 1,
 		errors = {}
 	}: {
 		idPrefix: string;
@@ -24,6 +26,7 @@
 		durationMinutes?: number | string | null;
 		startsOn: string;
 		endsOn?: string | null;
+		intervalWeeks?: number | string | null;
 		errors?: Partial<Record<ScheduleField, string>>;
 	} = $props();
 
@@ -35,6 +38,13 @@
 		{ value: 5, label: m.calendar_weekday_5 },
 		{ value: 6, label: m.calendar_weekday_6 },
 		{ value: 7, label: m.calendar_weekday_7 }
+	];
+
+	const INTERVALS: { value: number; label: () => string }[] = [
+		{ value: 1, label: m.calendar_schedule_interval_1 },
+		{ value: 2, label: m.calendar_schedule_interval_2 },
+		{ value: 3, label: m.calendar_schedule_interval_3 },
+		{ value: 4, label: m.calendar_schedule_interval_4 }
 	];
 
 	const errorId = (field: ScheduleField) => `${idPrefix}-${field}-error`;
@@ -81,6 +91,26 @@
 </fieldset>
 
 <div class="schedule-grid">
+	<div class="field">
+		<label for="{idPrefix}-interval">{m.calendar_schedule_interval_label()}</label>
+		<select
+			id="{idPrefix}-interval"
+			name="intervalWeeks"
+			aria-invalid={invalid('intervalWeeks')}
+			aria-describedby={describedBy('intervalWeeks')}
+		>
+			{#each INTERVALS as option (option.value)}
+				<option value={option.value} selected={Number(intervalWeeks ?? 1) === option.value}>
+					{option.label()}
+				</option>
+			{/each}
+		</select>
+		{#if errors.intervalWeeks}
+			<p id={errorId('intervalWeeks')} class="field-error" role="alert">
+				{errors.intervalWeeks}
+			</p>
+		{/if}
+	</div>
 	<div class="field">
 		<label for="{idPrefix}-start">{m.calendar_start_time_label()}</label>
 		<input

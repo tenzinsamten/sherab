@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
-import { actions } from './+page.server';
+import { actions, load } from './+page.server';
 
 /**
  * /calendar actions (Stories 6-1, 6-4): FormData event + a fake
@@ -21,6 +21,9 @@ function fakeSupabase(
 		const c = {
 			select: () => c,
 			eq: () => c,
+			gte: () => c,
+			lte: () => c,
+			order: () => c,
 			maybeSingle: () => c,
 			update: () => c,
 			upsert: (rows: unknown[]) => {
@@ -65,6 +68,41 @@ function event(
 		}
 	} as unknown as Parameters<typeof actions.addClassDays>[0];
 }
+
+describe('calendar load', () => {
+	it('maps each class row to its schedule, the repeat interval included (issue #51)', async () => {
+		const fake = fakeSupabase({
+			classes: {
+				data: [
+					{
+						id: 'c1',
+						name: 'Grammar',
+						default_start_time: '10:00:00',
+						default_duration_minutes: 90,
+						schedule_weekdays: [7, 3],
+						schedule_starts_on: '2026-10-01',
+						schedule_ends_on: null,
+						schedule_interval_weeks: 2
+					}
+				],
+				error: null
+			}
+		});
+		const result = (await load({
+			url: new URL('http://localhost/calendar'),
+			parent: async () => ({ profile: { role: 'admin' } }),
+			locals: {
+				supabase: fake.client,
+				safeGetSession: async () => ({ user: { id: 'u1' } })
+			}
+		} as unknown as Parameters<typeof load>[0])) as {
+			classSchedules: { intervalWeeks: number; weekdays: number[] }[];
+		};
+		expect(result.classSchedules).toHaveLength(1);
+		expect(result.classSchedules[0].intervalWeeks).toBe(2);
+		expect(result.classSchedules[0].weekdays).toEqual([3, 7]);
+	});
+});
 
 describe('calendar actions', () => {
 	it.each([
@@ -134,7 +172,8 @@ describe('class schedule actions (Story 6-4)', () => {
 		startTime: '10:00',
 		durationMinutes: '90',
 		startsOn: '2026-10-01',
-		endsOn: '2026-12-20'
+		endsOn: '2026-12-20',
+		intervalWeeks: '2'
 	};
 
 	it('setClassSchedule sends the parsed schedule to set_class_schedule', async () => {
@@ -150,7 +189,8 @@ describe('class schedule actions (Story 6-4)', () => {
 					p_start_time: '10:00',
 					p_duration_minutes: 90,
 					p_starts_on: '2026-10-01',
-					p_ends_on: '2026-12-20'
+					p_ends_on: '2026-12-20',
+					p_interval_weeks: 2
 				}
 			}
 		]);
@@ -185,6 +225,26 @@ describe('class schedule actions (Story 6-4)', () => {
 			}
 		});
 		expect(fake.rpcCalls).toEqual([]);
+	});
+
+	it('setClassSchedule: no interval field means weekly; an invalid one saves nothing', async () => {
+		const weekly = fakeSupabase({});
+		const noInterval: Record<string, string | string[]> = { ...schedule };
+		delete noInterval.intervalWeeks;
+		await actions.setClassSchedule(event(noInterval, weekly.client));
+		expect(weekly.rpcCalls[0].args).toMatchObject({ p_interval_weeks: 1 });
+
+		for (const intervalWeeks of ['5', '0', 'x']) {
+			const fake = fakeSupabase({});
+			const result = await actions.setClassSchedule(
+				event({ ...schedule, intervalWeeks }, fake.client)
+			);
+			expect(result).toMatchObject({
+				status: 400,
+				data: { scheduleErrors: { intervalWeeks: m.calendar_error_interval_invalid() } }
+			});
+			expect(fake.rpcCalls).toEqual([]);
+		}
 	});
 
 	it('setClassSchedule: a denied call (42501) gives the generic error', async () => {

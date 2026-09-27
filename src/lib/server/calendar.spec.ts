@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
 import {
 	endTime,
 	isIsoDate,
@@ -7,6 +8,7 @@ import {
 	parseMonth,
 	parseScheduleInput,
 	parseTimeInput,
+	scheduleErrorMessages,
 	scheduleFormValues,
 	shapeMonth,
 	shiftMonth,
@@ -227,7 +229,8 @@ describe('class schedules (Story 6-4)', () => {
 		startTime: '10:00',
 		durationMinutes: '90',
 		startsOn: '2026-10-01',
-		endsOn: '2026-12-20'
+		endsOn: '2026-12-20',
+		intervalWeeks: '1'
 	};
 
 	it('parses a valid schedule: weekdays sorted and distinct, open end allowed', () => {
@@ -238,7 +241,8 @@ describe('class schedules (Story 6-4)', () => {
 				startTime: '10:00',
 				durationMinutes: 90,
 				startsOn: '2026-10-01',
-				endsOn: '2026-12-20'
+				endsOn: '2026-12-20',
+				intervalWeeks: 1
 			}
 		});
 		const open = parseScheduleInput({ ...valid, endsOn: '', startTime: '', durationMinutes: '' });
@@ -286,13 +290,40 @@ describe('class schedules (Story 6-4)', () => {
 		});
 	});
 
+	it('repeat interval (issue #51): 1-4 weeks, empty = weekly, anything else invalid', () => {
+		for (const n of [1, 2, 3, 4]) {
+			expect(parseScheduleInput({ ...valid, intervalWeeks: String(n) })).toMatchObject({
+				ok: true,
+				value: { intervalWeeks: n }
+			});
+		}
+		expect(parseScheduleInput({ ...valid, intervalWeeks: '' })).toMatchObject({
+			ok: true,
+			value: { intervalWeeks: 1 }
+		});
+		expect(parseScheduleInput({ ...valid, intervalWeeks: ' 2 ' })).toMatchObject({
+			ok: true,
+			value: { intervalWeeks: 2 }
+		});
+		for (const intervalWeeks of ['5', '0', 'x', '-1', '1.5', '02']) {
+			expect(parseScheduleInput({ ...valid, intervalWeeks })).toEqual({
+				ok: false,
+				errors: { intervalWeeks: 'invalid' }
+			});
+		}
+		expect(scheduleErrorMessages({ intervalWeeks: 'invalid' })).toEqual({
+			intervalWeeks: m.calendar_error_interval_invalid()
+		});
+	});
+
 	it('reports every invalid field at once', () => {
 		const result = parseScheduleInput({
 			weekdays: [],
 			startTime: 'x',
 			durationMinutes: '5',
 			startsOn: '2026-10-10',
-			endsOn: '2026-10-01'
+			endsOn: '2026-10-01',
+			intervalWeeks: '5'
 		});
 		expect(result).toEqual({
 			ok: false,
@@ -300,7 +331,8 @@ describe('class schedules (Story 6-4)', () => {
 				weekdays: 'required',
 				startTime: 'invalid',
 				durationMinutes: 'invalid',
-				endsOn: 'order'
+				endsOn: 'order',
+				intervalWeeks: 'invalid'
 			}
 		});
 	});
@@ -312,12 +344,14 @@ describe('class schedules (Story 6-4)', () => {
 		form.set('startTime', '10:00');
 		form.set('durationMinutes', '90');
 		form.set('startsOn', ' 2026-10-01 ');
+		form.set('intervalWeeks', '2');
 		expect(scheduleFormValues(form)).toEqual({
 			weekdays: ['7', '3'],
 			startTime: '10:00',
 			durationMinutes: '90',
 			startsOn: '2026-10-01',
-			endsOn: ''
+			endsOn: '',
+			intervalWeeks: '2'
 		});
 	});
 

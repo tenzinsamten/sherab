@@ -5921,12 +5921,21 @@ describe.skipIf(!reachable)(
 			endsOn?: string | null;
 			startTime?: string | null;
 			duration?: number | null;
+			/** Repeat every N weeks (issue #51); omitted = the function's default (1). */
+			intervalWeeks?: number;
 		};
 
 		function setSchedule(
 			client: typeof adminClient,
 			classId: string,
-			{ weekdays, startsOn, endsOn = null, startTime = null, duration = null }: Schedule
+			{
+				weekdays,
+				startsOn,
+				endsOn = null,
+				startTime = null,
+				duration = null,
+				intervalWeeks
+			}: Schedule
 		) {
 			return client.rpc('set_class_schedule', {
 				p_class_id: classId,
@@ -5934,7 +5943,8 @@ describe.skipIf(!reachable)(
 				p_start_time: startTime,
 				p_duration_minutes: duration,
 				p_starts_on: startsOn,
-				p_ends_on: endsOn
+				p_ends_on: endsOn,
+				...(intervalWeeks === undefined ? {} : { p_interval_weeks: intervalWeeks })
 			});
 		}
 
@@ -5968,13 +5978,16 @@ describe.skipIf(!reachable)(
 			const classId = await createClass('Default');
 			const { data } = await adminClient
 				.from('classes')
-				.select('schedule_weekdays, schedule_starts_on, schedule_ends_on, default_start_time')
+				.select(
+					'schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks, default_start_time'
+				)
 				.eq('id', classId)
 				.single();
 			expect(data).toEqual({
 				schedule_weekdays: [SUN],
 				schedule_starts_on: berlinToday(),
 				schedule_ends_on: null,
+				schedule_interval_weeks: 1,
 				default_start_time: null
 			});
 		});
@@ -6275,6 +6288,170 @@ describe.skipIf(!reachable)(
 			});
 			expect(clientError).not.toBeNull();
 		});
+
+		it('fortnightly (issue #51): Sun every 2 weeks from Sun W0 has sessions in W0, W2, W4 only', async () => {
+			const year = futureYear();
+			const classId = await createClass('Fortnightly');
+			const w = Array.from({ length: 5 }, (_, i) =>
+				plusDays(onOrAfter(`${year}-03-01`, SUN), 7 * i)
+			);
+			const { error } = await setSchedule(teacherA.client, classId, {
+				weekdays: [SUN],
+				startsOn: w[0],
+				intervalWeeks: 2
+			});
+			expect(error).toBeNull();
+			await addDays(w);
+			expect(await sessionDays(classId, w)).toEqual([w[0], w[2], w[4]]);
+		});
+
+		it('mid-week start (issue #51): Sun+Wed every 2 weeks from Wed W0 keeps both days in step', async () => {
+			const year = futureYear();
+			const classId = await createClass('Mid-week');
+			const wed0 = onOrAfter(`${year}-03-01`, WED);
+			const sun0 = plusDays(wed0, 4);
+			const wed1 = plusDays(wed0, 7);
+			const sun1 = plusDays(sun0, 7);
+			const wed2 = plusDays(wed0, 14);
+			const sun2 = plusDays(sun0, 14);
+			const days = [wed0, sun0, wed1, sun1, wed2, sun2];
+			await addDays(days);
+			const { error } = await setSchedule(admin.client, classId, {
+				weekdays: [SUN, WED],
+				startsOn: wed0,
+				intervalWeeks: 2
+			});
+			expect(error).toBeNull();
+			expect(await sessionDays(classId, days)).toEqual([wed0, sun0, wed2, sun2]);
+		});
+
+		it('fortnightly (issue #51): a cancelled on-week class day loses that session, later weeks stay on', async () => {
+			const year = futureYear();
+			const classId = await createClass('Fortnightly Cancel');
+			const w = Array.from({ length: 5 }, (_, i) =>
+				plusDays(onOrAfter(`${year}-03-01`, SUN), 7 * i)
+			);
+			await setSchedule(admin.client, classId, {
+				weekdays: [SUN],
+				startsOn: w[0],
+				intervalWeeks: 2
+			});
+			await addDays(w);
+			const { error: cancelError } = await admin.client
+				.from('class_days')
+				.update({ cancelled: true })
+				.eq('day', w[2]);
+			expect(cancelError).toBeNull();
+
+			const { data } = await adminClient
+				.from('class_sessions_effective')
+				.select('day, cancelled')
+				.eq('class_id', classId)
+				.in('day', w)
+				.order('day');
+			expect(data).toEqual([
+				{ day: w[0], cancelled: false },
+				{ day: w[2], cancelled: true },
+				{ day: w[4], cancelled: false }
+			]);
+		});
+
+		it('interval edit (issue #51): weekly -> every 2 weeks drops future off-week sessions, keeps past ones', async () => {
+			const past = pastYear();
+			const year = futureYear();
+			const pastSun = onOrAfter(`${past}-03-01`, SUN);
+			const pastSun2 = plusDays(pastSun, 7);
+			const futureSuns = Array.from({ length: 4 }, (_, i) =>
+				plusDays(onOrAfter(`${year}-03-01`, SUN), 7 * i)
+			);
+			const days = [pastSun, pastSun2, ...futureSuns];
+			// Days first, then a weekly class inserted with its schedule: its insert
+			// trigger covers every day, even past ones an earlier run already added.
+			await addDays(days);
+			const { data: created, error: createError } = await admin.client
+				.from('classes')
+				.insert({
+					name: `Story 6-4 Interval Edit ${crypto.randomUUID().slice(0, 6)}`,
+					code: `S4${crypto.randomUUID().slice(0, 4).toUpperCase()}`,
+					schedule_weekdays: [SUN],
+					schedule_starts_on: pastSun
+				})
+				.select('id')
+				.single();
+			expect(createError).toBeNull();
+			const classId = created!.id as string;
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: classId, teacher_id: teacherA.id });
+			expect(assignError).toBeNull();
+			expect(await sessionDays(classId, days)).toEqual(days);
+
+			const { error } = await setSchedule(teacherA.client, classId, {
+				weekdays: [SUN],
+				startsOn: pastSun,
+				intervalWeeks: 2
+			});
+			expect(error).toBeNull();
+			const { data: cls } = await adminClient
+				.from('classes')
+				.select('schedule_interval_weeks')
+				.eq('id', classId)
+				.single();
+			expect(cls?.schedule_interval_weeks).toBe(2);
+
+			// On-weeks: a whole even number of weeks after the week of pastSun.
+			const weeksAfter = (day: string) =>
+				Math.round(
+					(Date.parse(`${day}T00:00:00Z`) - Date.parse(`${pastSun}T00:00:00Z`)) / (7 * 86400000)
+				);
+			const onWeeks = futureSuns.filter((day) => weeksAfter(day) % 2 === 0);
+			expect(onWeeks).toHaveLength(2);
+			expect(await sessionDays(classId, days)).toEqual([pastSun, pastSun2, ...onWeeks]);
+
+			// Back to weekly brings the off-weeks back.
+			await setSchedule(teacherA.client, classId, {
+				weekdays: [SUN],
+				startsOn: pastSun,
+				intervalWeeks: 1
+			});
+			expect(await sessionDays(classId, days)).toEqual(days);
+		});
+
+		it('an interval outside 1-4 is refused (22023) and saves nothing', async () => {
+			const year = futureYear();
+			const classId = await createClass('Interval Invalid');
+			for (const intervalWeeks of [0, 5]) {
+				const { error } = await setSchedule(admin.client, classId, {
+					weekdays: [SUN],
+					startsOn: `${year}-01-01`,
+					intervalWeeks
+				});
+				expect(error?.code, String(intervalWeeks)).toBe('22023');
+			}
+			const { error: nullError } = await admin.client.rpc('set_class_schedule', {
+				p_class_id: classId,
+				p_weekdays: [SUN],
+				p_start_time: null,
+				p_duration_minutes: null,
+				p_starts_on: `${year}-01-01`,
+				p_ends_on: null,
+				p_interval_weeks: null as unknown as number
+			});
+			expect(nullError?.code).toBe('22023');
+
+			// The column check holds for direct writes too, even the service role's.
+			const { error: checkError } = await adminClient
+				.from('classes')
+				.update({ schedule_interval_weeks: 5 })
+				.eq('id', classId);
+			expect(checkError?.code).toBe('23514');
+			const { data } = await adminClient
+				.from('classes')
+				.select('schedule_interval_weeks, schedule_starts_on')
+				.eq('id', classId)
+				.single();
+			expect(data).toEqual({ schedule_interval_weeks: 1, schedule_starts_on: berlinToday() });
+		});
 	}
 );
 
@@ -6334,14 +6511,19 @@ describe.skipIf(!reachable)(
 		 * weekday) since 1900, so it has a session on every matching class day,
 		 * existing or added later.
 		 */
-		async function createClass(prefix: string, weekdays = [1, 2, 3, 4, 5, 6, 7]) {
+		async function createClass(
+			prefix: string,
+			weekdays = [1, 2, 3, 4, 5, 6, 7],
+			{ startsOn = '1900-01-01', intervalWeeks = 1 } = {}
+		) {
 			const { data, error } = await admin.client
 				.from('classes')
 				.insert({
 					name: `Story 6-2 ${prefix} ${crypto.randomUUID().slice(0, 6)}`,
 					code: `S62${crypto.randomUUID().slice(0, 4).toUpperCase()}`,
 					schedule_weekdays: weekdays,
-					schedule_starts_on: '1900-01-01'
+					schedule_starts_on: startsOn,
+					schedule_interval_weeks: intervalWeeks
 				})
 				.select('id')
 				.single();
@@ -6701,6 +6883,36 @@ describe.skipIf(!reachable)(
 				).toBeNull();
 			}
 			expect((await readStreak(x))?.current_streak).toBe(1);
+		});
+
+		it('fortnightly class (issue #51): qualifying in W0, W2, W4 gives a streak of 3; off weeks neither break nor count', async () => {
+			const w = sundays(pastYear(), 5);
+			const classId = await createClass('Fortnightly', [SUN], { startsOn: w[0], intervalWeeks: 2 });
+			const x = await createStudent(classId);
+			await addDays(w);
+
+			// Off weeks have no session at all.
+			const { data: sessions } = await adminClient
+				.from('class_sessions_effective')
+				.select('day')
+				.eq('class_id', classId)
+				.in('day', w)
+				.order('day');
+			expect((sessions ?? []).map((s) => s.day)).toEqual([w[0], w[2], w[4]]);
+
+			for (const day of [w[0], w[2], w[4]]) {
+				await homeworkDone(classId, x, day);
+				await teacherMark({
+					studentId: x,
+					classId,
+					sessionId: await sessionOf(classId, day),
+					present: true
+				});
+			}
+			expect(await readStreak(x)).toEqual({
+				current_streak: 3,
+				last_qualifying_week: mondayOf(w[4])
+			});
 		});
 
 		it('an admin can delete a class that has attendance marks once nobody is enrolled: the marks go with it', async () => {

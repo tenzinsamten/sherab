@@ -87,7 +87,7 @@ export const actions: Actions = {
 		// The schedule goes into the insert itself: the insert trigger then
 		// creates the class's sessions on every class day it matches, earlier
 		// ones included when "From" is in the past.
-		const { weekdays, startTime, durationMinutes, startsOn, endsOn } = parsed.value;
+		const { weekdays, startTime, durationMinutes, startsOn, endsOn, intervalWeeks } = parsed.value;
 
 		// The unique constraint on classes.code is the real guarantee (AD-2:
 		// enforced in Postgres, not just here) -- insertClassWithUniqueCode only
@@ -102,6 +102,7 @@ export const actions: Actions = {
 					schedule_weekdays: weekdays,
 					schedule_starts_on: startsOn,
 					schedule_ends_on: endsOn,
+					schedule_interval_weeks: intervalWeeks,
 					default_start_time: startTime,
 					default_duration_minutes: durationMinutes
 				})

@@ -110,9 +110,12 @@ export type ScheduleInput = {
 	durationMinutes: number | null;
 	startsOn: string;
 	endsOn: string | null;
+	/** Repeat every N weeks (1-4), anchored on the ISO week of `startsOn`. */
+	intervalWeeks: number;
 };
 
-export type ScheduleField = 'weekdays' | 'startTime' | 'durationMinutes' | 'startsOn' | 'endsOn';
+export type ScheduleField =
+	'weekdays' | 'startTime' | 'durationMinutes' | 'startsOn' | 'endsOn' | 'intervalWeeks';
 
 export type ScheduleProblem = 'required' | 'invalid' | 'order';
 
@@ -126,23 +129,26 @@ export type ScheduleFormValues = {
 	durationMinutes: string;
 	startsOn: string;
 	endsOn: string;
+	intervalWeeks: string;
 };
 
-/** The raw schedule fields of a form (`weekday` checkboxes, `startTime`, `durationMinutes`, `startsOn`, `endsOn`). */
+/** The raw schedule fields of a form (`weekday` checkboxes, `startTime`, `durationMinutes`, `startsOn`, `endsOn`, `intervalWeeks`). */
 export function scheduleFormValues(formData: FormData): ScheduleFormValues {
 	return {
 		weekdays: formData.getAll('weekday').map((v) => String(v)),
 		startTime: String(formData.get('startTime') ?? ''),
 		durationMinutes: String(formData.get('durationMinutes') ?? ''),
 		startsOn: String(formData.get('startsOn') ?? '').trim(),
-		endsOn: String(formData.get('endsOn') ?? '').trim()
+		endsOn: String(formData.get('endsOn') ?? '').trim(),
+		intervalWeeks: String(formData.get('intervalWeeks') ?? '').trim()
 	};
 }
 
 /**
  * Validates a class schedule (Story 6-4): at least one weekday 1-7, an
  * optional `HH:MM` time and 15-480 minute duration (empty = not set), a
- * required start date and an optional end date on or after it. Every field's
+ * required start date, an optional end date on or after it, and a repeat
+ * interval of 1-4 weeks (empty = 1, issue #51). Every field's
  * problem is reported at once so the form can show them inline.
  */
 export function parseScheduleInput(values: ScheduleFormValues): ScheduleParse {
@@ -168,6 +174,9 @@ export function parseScheduleInput(values: ScheduleFormValues): ScheduleParse {
 		else if (!errors.startsOn && endsOn < startsOn) errors.endsOn = 'order';
 	}
 
+	const intervalRaw = (values.intervalWeeks ?? '').trim();
+	if (intervalRaw !== '' && !/^[1-4]$/.test(intervalRaw)) errors.intervalWeeks = 'invalid';
+
 	if (Object.keys(errors).length > 0 || !startTime.ok || !duration.ok) {
 		return { ok: false, errors };
 	}
@@ -178,7 +187,8 @@ export function parseScheduleInput(values: ScheduleFormValues): ScheduleParse {
 			startTime: startTime.value,
 			durationMinutes: duration.value,
 			startsOn,
-			endsOn
+			endsOn,
+			intervalWeeks: intervalRaw === '' ? 1 : Number(intervalRaw)
 		}
 	};
 }
@@ -198,6 +208,7 @@ export function scheduleErrorMessages(
 				? m.calendar_error_until_before_from()
 				: m.calendar_error_date_invalid();
 	}
+	if (errors.intervalWeeks) messages.intervalWeeks = m.calendar_error_interval_invalid();
 	return messages;
 }
 

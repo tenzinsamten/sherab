@@ -445,6 +445,7 @@
 								durationMinutes={cls.durationMinutes}
 								startsOn={cls.startsOn}
 								endsOn={cls.endsOn}
+								intervalWeeks={cls.intervalWeeks}
 								errors={errors ?? {}}
 							/>
 							<ix-button

@@ -144,10 +144,32 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			schedule_weekdays: [7],
 			schedule_starts_on: today,
 			schedule_ends_on: null,
+			schedule_interval_weeks: 1,
 			default_start_time: '10:00',
 			default_duration_minutes: 90
 		});
 		expect(fake.rpcCalls).toEqual([]);
 		expect(result).toEqual({ success: true, class: fake.created, name: 'Grammar' });
+	});
+
+	it('repeat every 2 weeks (issue #51): the class insert carries the interval', async () => {
+		const fake = fakeSupabase();
+		await actions.create(
+			event({ name: 'Grammar', weekday: '7', startsOn: today, intervalWeeks: '2' }, fake.client)
+		);
+		expect(fake.inserted).toHaveLength(1);
+		expect(fake.inserted[0]).toMatchObject({ schedule_interval_weeks: 2 });
+	});
+
+	it('an invalid interval (5): inline error on Repeats, nothing inserted', async () => {
+		const fake = fakeSupabase();
+		const result = await actions.create(
+			event({ name: 'Grammar', weekday: '7', startsOn: today, intervalWeeks: '5' }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { scheduleErrors: { intervalWeeks: m.calendar_error_interval_invalid() } }
+		});
+		expect(fake.inserted).toEqual([]);
 	});
 });

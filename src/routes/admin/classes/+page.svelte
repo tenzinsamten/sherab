@@ -25,7 +25,7 @@
 	});
 
 	// A failed create keeps what was entered; otherwise the new-class default
-	// schedule: Sunday, from today (Berlin), no end, time unset (Story 6-4).
+	// schedule: Sunday, weekly, from today (Berlin), no end, time unset (Story 6-4).
 	let schedule = $derived(
 		form && 'schedule' in form && form.schedule
 			? {
@@ -33,14 +33,16 @@
 					startTime: form.schedule.startTime,
 					durationMinutes: form.schedule.durationMinutes,
 					startsOn: form.schedule.startsOn,
-					endsOn: form.schedule.endsOn
+					endsOn: form.schedule.endsOn,
+					intervalWeeks: form.schedule.intervalWeeks
 				}
 			: {
 					weekdays: [7],
 					startTime: null,
 					durationMinutes: null,
 					startsOn: data.today,
-					endsOn: null
+					endsOn: null,
+					intervalWeeks: 1
 				}
 	);
 	let scheduleErrors = $derived(
@@ -99,6 +101,7 @@
 					durationMinutes={schedule.durationMinutes}
 					startsOn={schedule.startsOn}
 					endsOn={schedule.endsOn}
+					intervalWeeks={schedule.intervalWeeks}
 					errors={scheduleErrors}
 				/>
 			{/key}

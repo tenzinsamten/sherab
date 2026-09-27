@@ -356,6 +356,7 @@ export type Database = {
 					id: string;
 					name: string;
 					schedule_ends_on: string | null;
+					schedule_interval_weeks: number;
 					schedule_starts_on: string;
 					schedule_weekdays: number[];
 					syllabus: string | null;
@@ -370,6 +371,7 @@ export type Database = {
 					id?: string;
 					name: string;
 					schedule_ends_on?: string | null;
+					schedule_interval_weeks?: number;
 					schedule_starts_on?: string;
 					schedule_weekdays?: number[];
 					syllabus?: string | null;
@@ -384,6 +386,7 @@ export type Database = {
 					id?: string;
 					name?: string;
 					schedule_ends_on?: string | null;
+					schedule_interval_weeks?: number;
 					schedule_starts_on?: string;
 					schedule_weekdays?: number[];
 					syllabus?: string | null;
@@ -909,6 +912,7 @@ export type Database = {
 					p_duration_minutes: number | null;
 					p_starts_on: string;
 					p_ends_on: string | null;
+					p_interval_weeks?: number;
 				};
 				Returns: undefined;
 			};

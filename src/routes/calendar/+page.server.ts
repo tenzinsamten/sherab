@@ -26,6 +26,8 @@ export type ClassSchedule = {
 	durationMinutes: number | null;
 	startsOn: string;
 	endsOn: string | null;
+	/** Repeat every N weeks (1-4, issue #51). */
+	intervalWeeks: number;
 };
 
 /** Postgres error codes the schedule / extra-session functions raise. */
@@ -76,7 +78,7 @@ export const load: PageServerLoad = async ({
 			? supabase
 					.from('classes')
 					.select(
-						'id, name, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on'
+						'id, name, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks'
 					)
 					.order('name')
 			: Promise.resolve({ data: [], error: null })
@@ -91,7 +93,8 @@ export const load: PageServerLoad = async ({
 		startTime: c.default_start_time ? toHhMm(c.default_start_time) : null,
 		durationMinutes: c.default_duration_minutes,
 		startsOn: c.schedule_starts_on,
-		endsOn: c.schedule_ends_on
+		endsOn: c.schedule_ends_on,
+		intervalWeeks: c.schedule_interval_weeks
 	}));
 
 	return {
@@ -190,8 +193,8 @@ export const actions: Actions = {
 	},
 
 	/**
-	 * Admin or a teacher of the class: the class's schedule (weekdays, time,
-	 * duration, from, until). The function regenerates sessions from today
+	 * Admin or a teacher of the class: the class's schedule (weekdays, repeat
+	 * interval, time, duration, from, until). The function regenerates sessions from today
 	 * (Berlin) on; earlier sessions are never changed.
 	 */
 	setClassSchedule: async ({ request, locals: { supabase, safeGetSession } }) => {
@@ -205,14 +208,15 @@ export const actions: Actions = {
 			return fail(400, { scheduleErrors: scheduleErrorMessages(parsed.errors), classId });
 		}
 
-		const { weekdays, startTime, durationMinutes, startsOn, endsOn } = parsed.value;
+		const { weekdays, startTime, durationMinutes, startsOn, endsOn, intervalWeeks } = parsed.value;
 		const { error } = await supabase.rpc('set_class_schedule', {
 			p_class_id: classId,
 			p_weekdays: weekdays,
 			p_start_time: startTime,
 			p_duration_minutes: durationMinutes,
 			p_starts_on: startsOn,
-			p_ends_on: endsOn
+			p_ends_on: endsOn,
+			p_interval_weeks: intervalWeeks
 		});
 		// 42501 (not a teacher of the class), P0002 (no such class) or a
 		// check violation: the generic message, never the raw Postgres text.
