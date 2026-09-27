@@ -17,10 +17,12 @@ function fakeSupabase(
 ) {
 	const upserted: unknown[] = [];
 	const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+	const tablesRead: string[] = [];
 	function chain(result: Result) {
 		const c = {
 			select: () => c,
 			eq: () => c,
+			in: () => c,
 			gte: () => c,
 			lte: () => c,
 			order: () => c,
@@ -37,13 +39,16 @@ function fakeSupabase(
 	return {
 		upserted,
 		rpcCalls,
+		tablesRead,
 		client: {
-			from: (table: string) =>
-				chain(
+			from: (table: string) => {
+				tablesRead.push(table);
+				return chain(
 					table === 'profiles'
 						? { data: { role }, error: null }
 						: (results[table] ?? { data: [], error: null })
-				),
+				);
+			},
 			rpc: async (fn: string, args: Record<string, unknown>) => {
 				rpcCalls.push({ fn, args });
 				return rpcResult;
@@ -101,6 +106,79 @@ describe('calendar load', () => {
 		expect(result.classSchedules).toHaveLength(1);
 		expect(result.classSchedules[0].intervalWeeks).toBe(2);
 		expect(result.classSchedules[0].weekdays).toEqual([3, 7]);
+	});
+});
+
+describe('calendar load: leave answers (Story 7-4)', () => {
+	const sessionRow = {
+		id: 's1',
+		class_id: 'c1',
+		class_name: 'Grammar',
+		class_day_id: 'd1',
+		start_time: '10:00:00',
+		duration_minutes: 90,
+		start_time_override: null,
+		duration_minutes_override: null,
+		session_cancelled: false,
+		day_cancelled: false,
+		extra: false
+	};
+
+	function runLoad(role: string, fake: ReturnType<typeof fakeSupabase>) {
+		return load({
+			url: new URL('http://localhost/calendar'),
+			parent: async () => ({ profile: { role } }),
+			locals: {
+				supabase: fake.client,
+				safeGetSession: async () => ({ user: { id: 'u1' } })
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<{
+			leaveAnswers: Record<string, string>;
+			loadError: boolean;
+		}>;
+	}
+
+	it('a student gets their own current answer per session (newest row wins), sick included', async () => {
+		const fake = fakeSupabase(
+			{
+				class_sessions_effective: {
+					data: [sessionRow, { ...sessionRow, id: 's2' }],
+					error: null
+				},
+				session_leave_history: {
+					data: [
+						{ class_session_id: 's1', answer: 'coming' },
+						{ class_session_id: 's1', answer: 'on_leave' },
+						{ class_session_id: 's2', answer: 'sick' }
+					],
+					error: null
+				}
+			},
+			'student'
+		);
+		const result = await runLoad('student', fake);
+		expect(result.leaveAnswers).toEqual({ s1: 'coming', s2: 'sick' });
+		expect(result.loadError).toBe(false);
+	});
+
+	it('other roles do not read leave answers', async () => {
+		const fake = fakeSupabase({
+			class_sessions_effective: { data: [sessionRow], error: null }
+		});
+		const result = await runLoad('teacher', fake);
+		expect(result.leaveAnswers).toEqual({});
+		expect(fake.tablesRead).not.toContain('session_leave_history');
+	});
+
+	it('a failed leave read is a load error', async () => {
+		const fake = fakeSupabase(
+			{
+				class_sessions_effective: { data: [sessionRow], error: null },
+				session_leave_history: { data: null, error: { message: 'boom' } }
+			},
+			'student'
+		);
+		expect((await runLoad('student', fake)).loadError).toBe(true);
 	});
 });
 

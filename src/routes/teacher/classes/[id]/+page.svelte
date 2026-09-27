@@ -51,6 +51,18 @@
 		else if (!ids.includes(selectedSessionId)) selectedSessionId = ids[0] ?? '';
 	});
 
+	// Story 7-4: the selected session's current leave answer per student.
+	function leaveFor(studentId: string) {
+		return selectedSessionId ? data.leaveAnswers[`${selectedSessionId}:${studentId}`] : undefined;
+	}
+
+	function leaveLabel(answer: string | undefined): string {
+		if (answer === 'coming') return m.leave_answer_coming();
+		if (answer === 'on_leave') return m.leave_answer_on_leave();
+		if (answer === 'sick') return m.leave_answer_sick();
+		return m.leave_answer_none();
+	}
+
 	function sessionLabel(session: { day: string; startTime: string | null }): string {
 		return session.startTime ? `${session.day} · ${session.startTime.slice(0, 5)}` : session.day;
 	}
@@ -156,7 +168,19 @@
 					<div class="check-list" style="margin-bottom: var(--space-4);">
 						{#each data.students as student (student.id)}
 							<input type="hidden" name="studentIds" value={student.id} />
-							<ix-checkbox name="present_{student.id}" label={student.displayName}></ix-checkbox>
+							<div class="attendance-row">
+								<ix-checkbox name="present_{student.id}" label={student.displayName}></ix-checkbox>
+								{#if leaveFor(student.id)}
+									{@const answer = leaveFor(student.id)}
+									<ix-pill
+										variant={answer === 'coming' ? 'success' : 'warning'}
+										outline={answer === 'coming' || undefined}
+										aria-label="{m.roster_leave_label()}: {leaveLabel(answer)}"
+									>
+										{leaveLabel(answer)}
+									</ix-pill>
+								{/if}
+							</div>
 						{/each}
 					</div>
 					<ix-button type="submit" disabled={data.markableSessions.length === 0}
@@ -291,6 +315,13 @@
 </div>
 
 <style>
+	.attendance-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
 	.notes-hint {
 		font-size: 0.75rem;
 		line-height: 1.3;

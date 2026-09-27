@@ -58,6 +58,14 @@
 		return `${date.getFullYear()}-${mm}-${dd}`;
 	}
 
+	// Story 7-4: the student's own answer, read-only. Sick shows as Sick here.
+	function leaveLabel(answer: string | undefined): string {
+		if (answer === 'coming') return m.leave_answer_coming();
+		if (answer === 'on_leave') return m.leave_answer_on_leave();
+		if (answer === 'sick') return m.leave_answer_sick();
+		return m.leave_answer_none();
+	}
+
 	let monthLabel = $derived(formatMonth(data.month));
 
 	let schedulesByClass = $derived(new Map(data.classSchedules.map((c) => [c.id, c])));
@@ -481,6 +489,10 @@
 					<dd class="session-time" class:struck={session.status === 'cancelled'}>
 						{timeText(session)}
 					</dd>
+					{#if data.role === 'student' && session.status !== 'cancelled'}
+						<dt>{m.calendar_leave_label()}</dt>
+						<dd class="leave-answer">{leaveLabel(data.leaveAnswers[session.id])}</dd>
+					{/if}
 				</dl>
 				<p class="status">
 					{#if session.status === 'cancelled'}
@@ -606,6 +618,9 @@
 									<span>{session.className}</span>
 									{#if session.extra}
 										<span class="extra-tag">({m.calendar_extra_label()})</span>
+									{/if}
+									{#if data.role === 'student' && session.status !== 'cancelled'}
+										<span class="extra-tag">· {leaveLabel(data.leaveAnswers[session.id])}</span>
 									{/if}
 									{#if session.status === 'cancelled'}
 										<span class="sr-only">, {m.calendar_status_cancelled()}</span>

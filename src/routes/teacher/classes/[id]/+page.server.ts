@@ -36,6 +36,9 @@ type MarkableSession = { id: string; day: string; startTime: string | null };
 /** How many recent sessions the picker offers. */
 const MARKABLE_SESSION_LIMIT = 60;
 
+/** Leave rows per request: PostgREST max_rows (supabase/config.toml). */
+const LEAVE_PAGE_SIZE = 1000;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -82,6 +85,36 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	const markableSessions: MarkableSession[] = (sessionsResult.data ?? []).flatMap((r) =>
 		r.id && r.day ? [{ id: r.id, day: r.day, startTime: r.start_time }] : []
 	);
+
+	// Story 7-4: each student's current leave answer per markable session,
+	// keyed `${sessionId}:${studentId}`. RLS lets a teacher of the class read
+	// its sessions' rows (sick stays visible to teachers).
+	const leaveAnswers: Record<string, 'coming' | 'on_leave' | 'sick'> = {};
+	let leaveError = false;
+	const markableIds = markableSessions.map((s) => s.id);
+	if (markableIds.length > 0 && studentIds.length > 0) {
+		// Paged: sessions x roster can exceed PostgREST's max_rows (1000), which
+		// would silently truncate. A short page ends the read.
+		for (let from = 0; ; from += LEAVE_PAGE_SIZE) {
+			const { data: answers, error: answersError } = await supabase
+				.from('session_leave_history')
+				.select('class_session_id, student_id, answer')
+				.in('class_session_id', markableIds)
+				.in('student_id', studentIds)
+				.order('answered_at', { ascending: false })
+				.order('id', { ascending: false })
+				.range(from, from + LEAVE_PAGE_SIZE - 1);
+			if (answersError) {
+				leaveError = true;
+				break;
+			}
+			// Newest first: the first row per (session, student) is current.
+			for (const a of answers ?? []) {
+				leaveAnswers[`${a.class_session_id}:${a.student_id}`] ??= a.answer;
+			}
+			if ((answers ?? []).length < LEAVE_PAGE_SIZE) break;
+		}
+	}
 
 	let skillHistory: SkillHistoryRow[] = [];
 	let attendance: AttendanceRow[] = [];
@@ -159,6 +192,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		skillHistory,
 		attendance,
 		markableSessions,
+		leaveAnswers,
 		currentSkills,
 		homeworkCounts: {
 			open: homeworkIndex.entries.filter((e) => e.open).length,
@@ -175,6 +209,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			skillError ||
 			attendanceError ||
 			sessionsResult.error ||
+			leaveError ||
 			homeworkIndex.error ||
 			syllabusList.error
 		)

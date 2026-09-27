@@ -30,6 +30,9 @@ export type ClassSchedule = {
 	intervalWeeks: number;
 };
 
+/** A session's leave answer as the student sees it (Story 7-4). */
+export type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
+
 /** Postgres error codes the schedule / extra-session functions raise. */
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
@@ -84,6 +87,26 @@ export const load: PageServerLoad = async ({
 			: Promise.resolve({ data: [], error: null })
 	]);
 
+	// Story 7-4: a student's own current answer per session, read-only. RLS
+	// (session_leave_history_select) lets a student read only their own rows.
+	const leaveAnswers: Record<string, LeaveAnswer> = {};
+	let leaveError = false;
+	const monthSessionIds = (sessionsResult.data ?? []).flatMap((r) => (r.id ? [r.id] : []));
+	if (role === 'student' && monthSessionIds.length > 0) {
+		const { data: answers, error: answersError } = await supabase
+			.from('session_leave_history')
+			.select('class_session_id, answer')
+			.eq('student_id', user.id)
+			.in('class_session_id', monthSessionIds)
+			.order('answered_at', { ascending: false })
+			.order('id', { ascending: false });
+		leaveError = Boolean(answersError);
+		// Newest first: the first row per session is the current answer.
+		for (const a of answers ?? []) {
+			leaveAnswers[a.class_session_id] ??= a.answer;
+		}
+	}
+
 	// RLS scopes this to every class for the admin and the assigned classes
 	// for a teacher: exactly the classes the caller may edit.
 	const classSchedules: ClassSchedule[] = (classesResult.data ?? []).map((c) => ({
@@ -108,7 +131,10 @@ export const load: PageServerLoad = async ({
 		today,
 		days: shapeMonth(daysResult.data ?? [], sessionsResult.data ?? [], today),
 		classSchedules,
-		loadError: Boolean(daysResult.error || sessionsResult.error || classesResult.error)
+		leaveAnswers,
+		loadError: Boolean(
+			daysResult.error || sessionsResult.error || classesResult.error || leaveError
+		)
 	};
 };
 

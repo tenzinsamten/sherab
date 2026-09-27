@@ -1,0 +1,255 @@
+import { describe, expect, it, vi } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
+import { todayInBerlin } from '$lib/berlin-date';
+import { actions, load } from './+page.server';
+
+/**
+ * /parent/children/[id] (Story 7-4): a fake `locals.supabase` with one
+ * result per table / RPC; `calls` records every chained query method.
+ */
+const CHILD = '11111111-2222-4333-8444-555555555555';
+const SESSION = '66666666-7777-4888-8999-000000000000';
+
+type Result = { data: unknown; error: unknown };
+
+function fakeSupabase(opts: {
+	linked?: unknown[];
+	tables?: Record<string, Result>;
+	rpc?: Record<string, Result>;
+	insert?: Result;
+}) {
+	const calls: { table: string; method: string; args: unknown[] }[] = [];
+	const inserted: unknown[] = [];
+	function chain(table: string, result: Result) {
+		const c: Record<string, unknown> = {};
+		for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order']) {
+			c[method] = (...args: unknown[]) => {
+				calls.push({ table, method, args });
+				return c;
+			};
+		}
+		c.insert = (row: unknown) => {
+			inserted.push(row);
+			const r = opts.insert ?? { data: null, error: null };
+			const ic = { select: () => ic, single: async () => r };
+			return ic;
+		};
+		c.then = (resolve: (value: Result) => unknown) => resolve(result);
+		return c;
+	}
+	const rpc = vi.fn(async (fn: string) =>
+		fn === 'linked_children'
+			? { data: opts.linked ?? [], error: null }
+			: (opts.rpc?.[fn] ?? { data: null, error: null })
+	);
+	return {
+		calls,
+		inserted,
+		rpc,
+		client: {
+			rpc,
+			from: (table: string) => chain(table, opts.tables?.[table] ?? { data: [], error: null })
+		}
+	};
+}
+
+function runLoad(fake: ReturnType<typeof fakeSupabase>, id = CHILD, parentStatus = 'approved') {
+	return load({
+		params: { id },
+		parent: async () => ({ parentStatus }),
+		locals: { supabase: fake.client }
+	} as unknown as Parameters<typeof load>[0]) as Promise<{
+		child: { id: string; name: string };
+		sessions: Record<string, unknown>[];
+		loadError: boolean;
+	}>;
+}
+
+function event(fields: Record<string, string>, fake: ReturnType<typeof fakeSupabase>) {
+	const body = new FormData();
+	for (const [k, v] of Object.entries(fields)) body.append(k, v);
+	return {
+		request: new Request(`http://localhost/parent/children/${CHILD}`, { method: 'POST', body }),
+		params: { id: CHILD },
+		locals: { supabase: fake.client, safeGetSession: async () => ({ user: { id: 'p1' } }) }
+	} as unknown as Parameters<typeof actions.setLeave>[0];
+}
+
+const approvedChild = { id: CHILD, name: 'Dawa', status: 'approved' };
+
+describe('parent child leave page: guard', () => {
+	it.each([
+		['a parent who is not approved', 'pending', CHILD, [approvedChild]],
+		['a malformed id', 'approved', 'not-a-uuid', [approvedChild]],
+		['a child who is not linked', 'approved', CHILD, []],
+		['a pending child', 'approved', CHILD, [{ ...approvedChild, status: 'pending' }]]
+	])('404 for %s', async (_label, status, id, linked) => {
+		const fake = fakeSupabase({ linked });
+		await expect(runLoad(fake, id, status)).rejects.toMatchObject({ status: 404 });
+	});
+});
+
+describe('parent child leave page: sessions', () => {
+	const future = new Date(Date.now() + 86_400_000).toISOString();
+	const past = new Date(Date.now() - 60_000).toISOString();
+	const tables: Record<string, Result> = {
+		class_enrollments: { data: [{ class_id: 'k1' }], error: null },
+		class_sessions_effective: {
+			data: [
+				{
+					id: 's1',
+					day: '2026-10-04',
+					class_name: 'Alphabet',
+					start_time: '10:00:00',
+					duration_minutes: 90,
+					starts_at: future
+				},
+				{
+					id: 's2',
+					day: '2026-09-27',
+					class_name: 'Songs',
+					start_time: null,
+					duration_minutes: null,
+					starts_at: past
+				}
+			],
+			error: null
+		},
+		session_leave_history: {
+			data: [
+				{ class_session_id: 's1', answer: 'on_leave', classification: 'short_notice' },
+				{ class_session_id: 's1', answer: 'coming', classification: null }
+			],
+			error: null
+		}
+	};
+
+	it("lists the child's non-cancelled sessions for 12 weeks with the current answer", async () => {
+		const fake = fakeSupabase({ linked: [approvedChild], tables });
+		const result = await runLoad(fake);
+		expect(result).toEqual({
+			child: { id: CHILD, name: 'Dawa' },
+			loadError: false,
+			sessions: [
+				{
+					id: 's1',
+					day: '2026-10-04',
+					className: 'Alphabet',
+					startTime: '10:00',
+					durationMinutes: 90,
+					open: true,
+					answer: 'on_leave',
+					classification: 'short_notice'
+				},
+				{
+					id: 's2',
+					day: '2026-09-27',
+					className: 'Songs',
+					startTime: null,
+					durationMinutes: null,
+					open: false,
+					answer: null,
+					classification: null
+				}
+			]
+		});
+
+		const today = todayInBerlin();
+		const end = new Date(`${today}T00:00:00Z`);
+		end.setUTCDate(end.getUTCDate() + 84);
+		const sessionCalls = fake.calls
+			.filter((c) => c.table === 'class_sessions_effective')
+			.map(({ method, args }) => [method, ...args]);
+		expect(sessionCalls).toEqual(
+			expect.arrayContaining([
+				['in', 'class_id', ['k1']],
+				['eq', 'cancelled', false],
+				['gte', 'day', today],
+				['lte', 'day', end.toISOString().slice(0, 10)]
+			])
+		);
+		const leaveCalls = fake.calls
+			.filter((c) => c.table === 'session_leave_history')
+			.map(({ method, args }) => [method, ...args]);
+		expect(leaveCalls).toEqual(
+			expect.arrayContaining([
+				['eq', 'student_id', CHILD],
+				['in', 'class_session_id', ['s1', 's2']]
+			])
+		);
+	});
+
+	it('flags a load error when the answers cannot be read', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: { ...tables, session_leave_history: { data: null, error: { message: 'boom' } } }
+		});
+		expect((await runLoad(fake)).loadError).toBe(true);
+	});
+
+	it('a child without classes has no sessions', async () => {
+		const fake = fakeSupabase({ linked: [approvedChild] });
+		expect(await runLoad(fake)).toMatchObject({ sessions: [], loadError: false });
+	});
+});
+
+describe('parent child leave page: actions', () => {
+	it('preview asks preview_leave for this child and session', async () => {
+		const fake = fakeSupabase({ rpc: { preview_leave: { data: 'planned', error: null } } });
+		const result = await actions.preview(event({ sessionId: SESSION }, fake));
+		expect(fake.rpc).toHaveBeenCalledWith('preview_leave', {
+			p_class_session_id: SESSION,
+			p_student_id: CHILD
+		});
+		expect(result).toEqual({ action: 'preview', sessionId: SESSION, preview: 'planned' });
+	});
+
+	it('preview refused (42501) -> 403 with the not-allowed message', async () => {
+		const fake = fakeSupabase({
+			rpc: { preview_leave: { data: null, error: { code: '42501' } } }
+		});
+		const result = await actions.preview(event({ sessionId: SESSION }, fake));
+		expect(result).toMatchObject({
+			status: 403,
+			data: { error: m.leave_error_not_allowed(), sessionId: SESSION }
+		});
+	});
+
+	it('setLeave accepts only Coming or On leave (no Sick yet)', async () => {
+		const fake = fakeSupabase({});
+		for (const answer of ['sick', 'maybe', '']) {
+			const result = await actions.setLeave(event({ sessionId: SESSION, answer }, fake));
+			expect(result).toMatchObject({ status: 400, data: { error: m.leave_error_invalid() } });
+		}
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it('setLeave inserts the answer only (no classification) and reports what the database stored', async () => {
+		const fake = fakeSupabase({
+			insert: { data: { answer: 'on_leave', classification: 'short_notice' }, error: null }
+		});
+		const result = await actions.setLeave(event({ sessionId: SESSION, answer: 'on_leave' }, fake));
+		expect(fake.inserted).toEqual([
+			{ class_session_id: SESSION, student_id: CHILD, answer: 'on_leave' }
+		]);
+		expect(result).toEqual({
+			action: 'setLeave',
+			success: true,
+			sessionId: SESSION,
+			answer: 'on_leave',
+			classification: 'short_notice'
+		});
+	});
+
+	it.each([
+		[{ code: '22023', hint: 'leave_started' }, 400, m.leave_error_started()],
+		[{ code: '22023', hint: 'leave_cancelled' }, 400, m.leave_error_cancelled()],
+		[{ code: '22023', hint: 'leave_not_enrolled' }, 400, m.leave_error_not_allowed()],
+		[{ code: '42501' }, 403, m.leave_error_not_allowed()],
+		[{ code: '08006' }, 400, m.leave_error_failed()]
+	])('setLeave maps %o to its message', async (err, status, message) => {
+		const fake = fakeSupabase({ insert: { data: null, error: err } });
+		const result = await actions.setLeave(event({ sessionId: SESSION, answer: 'coming' }, fake));
+		expect(result).toMatchObject({ status, data: { error: message, sessionId: SESSION } });
+	});
+});

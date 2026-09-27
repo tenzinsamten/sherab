@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
@@ -81,6 +82,11 @@
 											</dd>
 										</div>
 									</dl>
+									<p class="child-link">
+										<a href={resolve('/parent/children/[id]', { id: child.id })}>
+											{m.parent_card_sessions_link()}
+										</a>
+									</p>
 								{/if}
 							</ix-card-content>
 						</ix-card>
@@ -120,5 +126,9 @@
 
 	.counts dd {
 		margin: 0;
+	}
+
+	.child-link {
+		margin: var(--space-3) 0 0;
 	}
 </style>

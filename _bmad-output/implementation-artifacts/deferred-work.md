@@ -186,3 +186,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-51-schedule-interval.md`
   summary: Story 6-4 RLS test "schedule edit: past sessions unchanged..." is flaky (2 of 5 runs) because it re-adds past class days (random 1901-1999) that earlier runs left behind, so no session is created for them.
   evidence: Implementation subagent reruns on 2026-09-27; the #51 interval-edit test avoided it by adding class days before inserting the class. Same reorder fixes the old test.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-4-parent-session-leave-planned-vs-short-notice.md`
+  summary: Classmate and team UI for session leave answers, via `session_leave_masked` (Sick shown as On leave).
+  evidence: 7-4 decision 3A builds and tests the masked function only; no screen uses it yet (SPEC CAP-11 visibility to classmates and team).
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-4-parent-session-leave-planned-vs-short-notice.md`
+  summary: Browser-level (Playwright) test of the parent leave flow on `/parent/children/[id]`: On leave shows the Planned/Short-notice preview before anything is saved, and confirming saves.
+  evidence: The repo has no component-test setup (vite.config.ts runs the server project only) and one calendar e2e; wiring On leave straight to ?/setLeave would pass every current test (7-4 review triage #5).

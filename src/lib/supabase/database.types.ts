@@ -762,6 +762,58 @@ export type Database = {
 					}
 				];
 			};
+			session_leave_history: {
+				Row: {
+					answer: 'coming' | 'on_leave' | 'sick';
+					answered_at: string;
+					answered_by: string | null;
+					class_session_id: string;
+					classification: 'planned' | 'short_notice' | null;
+					id: number;
+					student_id: string;
+				};
+				Insert: {
+					answer: 'coming' | 'on_leave' | 'sick';
+					answered_at?: string;
+					answered_by?: string | null;
+					class_session_id: string;
+					classification?: 'planned' | 'short_notice' | null;
+					id?: never;
+					student_id: string;
+				};
+				Update: {
+					answer?: 'coming' | 'on_leave' | 'sick';
+					answered_at?: string;
+					answered_by?: string | null;
+					class_session_id?: string;
+					classification?: 'planned' | 'short_notice' | null;
+					id?: never;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'session_leave_history_class_session_id_fkey';
+						columns: ['class_session_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_sessions';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'session_leave_history_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'session_leave_history_answered_by_fkey';
+						columns: ['answered_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			student_streaks: {
 				Row: {
 					class_id: string;
@@ -836,6 +888,7 @@ export type Database = {
 					session_cancelled: boolean | null;
 					start_time: string | null;
 					start_time_override: string | null;
+					starts_at: string | null;
 					updated_at: string | null;
 				};
 				Relationships: [
@@ -956,6 +1009,26 @@ export type Database = {
 			homework_counts: {
 				Args: { p_student_id: string };
 				Returns: { open_count: number; overdue_count: number }[];
+			};
+			session_starts_at: {
+				Args: { p_class_session_id: string };
+				Returns: string;
+			};
+			preview_leave: {
+				Args: { p_class_session_id: string; p_student_id: string };
+				Returns: 'planned' | 'short_notice' | null;
+			};
+			classify_leave: {
+				Args: { p_class_session_id: string; p_at: string };
+				Returns: 'planned' | 'short_notice' | null;
+			};
+			session_leave_masked: {
+				Args: { p_class_session_id: string };
+				Returns: {
+					student_id: string;
+					display_name: string;
+					answer: 'coming' | 'on_leave';
+				}[];
 			};
 			child_attendance: {
 				Args: { p_student_id: string };

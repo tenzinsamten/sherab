@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
+import { loadClassRoster } from '$lib/server/enrollments';
 import { actions, load } from './+page.server';
 
 // load's other data comes from these helpers; empty results keep the test on
 // the markable-sessions query.
 vi.mock('$lib/server/enrollments', () => ({
-	loadClassRoster: async () => ({ students: [], error: null }),
+	loadClassRoster: vi.fn(async () => ({ students: [], error: null })),
 	loadEnrollableStudents: async () => ({ students: [], error: null }),
 	enrollStudent: vi.fn(),
 	unenrollStudent: vi.fn()
@@ -265,5 +266,100 @@ describe('load: markable sessions', () => {
 			{ id: 'sB', day: '2026-09-20', startTime: '10:00:00' },
 			{ id: 'sA', day: '2026-09-13', startTime: null }
 		]);
+	});
+});
+
+describe('load: leave answers (Story 7-4)', () => {
+	/** Runs load with a two-student roster; session_leave_history pages through `leaveRows` via .range(). */
+	async function runLoad(leaveRows: Record<string, string>[]) {
+		vi.mocked(loadClassRoster).mockResolvedValueOnce({
+			students: [
+				{ id: 's1', displayName: 'Dawa' },
+				{ id: 's2', displayName: 'Pema' }
+			],
+			error: null
+		} as unknown as Awaited<ReturnType<typeof loadClassRoster>>);
+		const calls: { table: string; method: string; args: unknown[] }[] = [];
+		const results: Record<string, unknown> = {
+			classes: { id: CLASS_ID, name: 'C', code: 'X' },
+			class_sessions_effective: [
+				{ id: 'sB', day: '2026-09-20', start_time: '10:00:00' },
+				{ id: 'sA', day: '2026-09-13', start_time: null }
+			],
+			session_leave_history: leaveRows
+		};
+		function chain(table: string) {
+			let data = (results[table] ?? []) as unknown;
+			const c: Record<string, unknown> = {};
+			for (const method of ['select', 'eq', 'lte', 'order', 'limit', 'in']) {
+				c[method] = (...args: unknown[]) => {
+					calls.push({ table, method, args });
+					return c;
+				};
+			}
+			c.range = (from: number, to: number) => {
+				calls.push({ table, method: 'range', args: [from, to] });
+				data = (data as unknown[]).slice(from, to + 1);
+				return c;
+			};
+			c.maybeSingle = async () => ({ data, error: null });
+			c.then = (resolve: (value: unknown) => unknown) => resolve({ data, error: null });
+			return c;
+		}
+
+		const data = (await load({
+			params: { id: CLASS_ID },
+			locals: { supabase: { from: chain }, safeGetSession: async () => ({ session: {} }) }
+		} as unknown as Parameters<typeof load>[0])) as {
+			leaveAnswers: Record<string, string>;
+			loadError: boolean;
+		};
+		const leaveCalls = calls
+			.filter((c) => c.table === 'session_leave_history')
+			.map(({ method, args }) => [method, ...args]);
+		return { data, leaveCalls };
+	}
+
+	it("keys each student's current answer by session and student, newest row first", async () => {
+		const { data, leaveCalls } = await runLoad([
+			{ class_session_id: 'sB', student_id: 's1', answer: 'on_leave' },
+			{ class_session_id: 'sB', student_id: 's1', answer: 'coming' },
+			{ class_session_id: 'sA', student_id: 's2', answer: 'sick' }
+		]);
+
+		expect(data.leaveAnswers).toEqual({ 'sB:s1': 'on_leave', 'sA:s2': 'sick' });
+		expect(data.loadError).toBe(false);
+		expect(leaveCalls).toEqual(
+			expect.arrayContaining([
+				['in', 'class_session_id', ['sB', 'sA']],
+				['in', 'student_id', ['s1', 's2']],
+				['order', 'answered_at', { ascending: false }],
+				['range', 0, 999]
+			])
+		);
+		// A short first page: no second request.
+		expect(leaveCalls.filter(([method]) => method === 'range')).toEqual([['range', 0, 999]]);
+	});
+
+	it('pages past PostgREST max_rows (1000): a full page fetches the next one', async () => {
+		// 1000 older rows for sB:s1 fill page one; the only sA:s2 row is on page two.
+		const rows = [
+			{ class_session_id: 'sB', student_id: 's1', answer: 'coming' },
+			...Array.from({ length: 999 }, () => ({
+				class_session_id: 'sB',
+				student_id: 's1',
+				answer: 'on_leave'
+			})),
+			{ class_session_id: 'sA', student_id: 's2', answer: 'sick' },
+			{ class_session_id: 'sB', student_id: 's1', answer: 'on_leave' }
+		];
+		const { data, leaveCalls } = await runLoad(rows);
+
+		expect(leaveCalls.filter(([method]) => method === 'range')).toEqual([
+			['range', 0, 999],
+			['range', 1000, 1999]
+		]);
+		// Same dedupe across pages: the newest row (page one) wins.
+		expect(data.leaveAnswers).toEqual({ 'sB:s1': 'coming', 'sA:s2': 'sick' });
 	});
 });
