@@ -61,6 +61,8 @@ function runLoad(fake: ReturnType<typeof fakeSupabase>, id = CHILD, parentStatus
 	} as unknown as Parameters<typeof load>[0]) as Promise<{
 		child: { id: string; name: string };
 		sessions: Record<string, unknown>[];
+		deletion: { status: string; requestedAt: string } | null;
+		deletionLoadError: boolean;
 		loadError: boolean;
 	}>;
 }
@@ -135,6 +137,8 @@ describe('parent child leave page: sessions', () => {
 		const result = await runLoad(fake);
 		expect(result).toEqual({
 			child: { id: CHILD, name: 'Dawa' },
+			deletion: null,
+			deletionLoadError: false,
 			loadError: false,
 			sessions: [
 				{
@@ -337,5 +341,66 @@ describe('parent child leave page: actions', () => {
 		const fake = fakeSupabase({ insert: { data: null, error: err } });
 		const result = await actions.setLeave(event({ sessionId: SESSION, answer: 'coming' }, fake));
 		expect(result).toMatchObject({ status, data: { error: message, sessionId: SESSION } });
+	});
+});
+
+describe('parent child page: deletion request (Story 7-6)', () => {
+	it('shows the latest request: pending, or rejected (a new one is allowed)', async () => {
+		for (const status of ['pending', 'rejected'] as const) {
+			const fake = fakeSupabase({
+				linked: [approvedChild],
+				tables: {
+					deletion_requests: {
+						data: [
+							{ status, requested_at: '2026-09-27T08:00:00Z' },
+							{ status: 'rejected', requested_at: '2026-09-01T08:00:00Z' }
+						],
+						error: null
+					}
+				}
+			});
+			const result = await runLoad(fake);
+			expect(result.deletion).toEqual({ status, requestedAt: '2026-09-27T08:00:00Z' });
+			expect(
+				fake.calls
+					.filter((c) => c.table === 'deletion_requests')
+					.map(({ method, args }) => [method, ...args])
+			).toEqual(
+				expect.arrayContaining([
+					['eq', 'student_id', CHILD],
+					['order', 'requested_at', { ascending: false }]
+				])
+			);
+		}
+	});
+
+	it('no request -> null; a read error flags only the deletion card', async () => {
+		const none = await runLoad(fakeSupabase({ linked: [approvedChild] }));
+		expect(none).toMatchObject({ deletion: null, deletionLoadError: false, loadError: false });
+
+		const failed = await runLoad(
+			fakeSupabase({
+				linked: [approvedChild],
+				tables: { deletion_requests: { data: null, error: { message: 'boom' } } }
+			})
+		);
+		expect(failed).toMatchObject({ deletion: null, deletionLoadError: true, loadError: false });
+	});
+
+	it('requestDeletion inserts only the child id (the database stamps the rest)', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'r1' }, error: null } });
+		const result = await actions.requestDeletion(event({}, fake));
+		expect(fake.inserted).toEqual([{ student_id: CHILD }]);
+		expect(result).toEqual({ action: 'requestDeletion', success: true });
+	});
+
+	it.each([
+		[{ code: '23505' }, 400, m.deletion_error_duplicate()],
+		[{ code: '42501' }, 403, m.deletion_error_not_allowed()],
+		[{ code: '08006' }, 400, m.deletion_error_failed()]
+	])('requestDeletion maps %o to its message', async (err, status, message) => {
+		const fake = fakeSupabase({ insert: { data: null, error: err } });
+		const result = await actions.requestDeletion(event({}, fake));
+		expect(result).toMatchObject({ status, data: { deletionError: message } });
 	});
 });

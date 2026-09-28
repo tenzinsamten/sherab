@@ -57,6 +57,41 @@ function toParent(row: unknown) {
 	};
 }
 
+type DeletionRow = {
+	id: string;
+	student_id: string | null;
+	requested_by: string | null;
+	status: 'pending' | 'approved' | 'rejected';
+	requested_at: string;
+	reviewed_at: string | null;
+	student: { display_name: string | null; registration_name: string | null } | null;
+	requester: { display_name: string | null; email: string } | null;
+};
+
+/**
+ * Story 7-6: deletion_requests -> profiles has three FK paths (student_id,
+ * requested_by, reviewed_by), so each embed names its FK.
+ */
+const DELETION_COLUMNS =
+	'id, student_id, requested_by, status, requested_at, reviewed_at, student:profiles!deletion_requests_student_id_fkey ( display_name, registration_name ), requester:profiles!deletion_requests_requested_by_fkey ( display_name, email )';
+
+function toDeletion(row: unknown, viewerId: string) {
+	const r = row as DeletionRow;
+	return {
+		id: r.id,
+		status: r.status,
+		/** null = the student has been erased (the de-identified row). */
+		studentName:
+			r.student_id === null ? null : r.student?.display_name || r.student?.registration_name || '',
+		requesterName: r.requester?.display_name || r.requester?.email || '',
+		requestedAt: r.requested_at,
+		reviewedAt: r.reviewed_at,
+		// Only the child's parent submits, so the requester is the parent: the
+		// admin never decides for their own child (the policy refuses it too).
+		ownChild: r.requested_by !== null && r.requested_by === viewerId
+	};
+}
+
 /**
  * Story 7-1: parent accounts are decided by the admin only. UX gate over
  * RLS (parents_update_admin), re-checked per action since a POST skips load.
@@ -126,8 +161,11 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	let parentsPending: ReturnType<typeof toParent>[] = [];
 	let parentsDecided: ReturnType<typeof toParent>[] = [];
 	let parentsError = false;
+	let deletionPending: ReturnType<typeof toDeletion>[] = [];
+	let deletionDecided: ReturnType<typeof toDeletion>[] = [];
+	let deletionError = false;
 	if (profile.role === 'admin') {
-		const [pendingParents, decidedParents] = await Promise.all([
+		const [pendingParents, decidedParents, pendingDeletions, decidedDeletions] = await Promise.all([
 			supabase
 				.from('parents')
 				.select(PARENT_COLUMNS)
@@ -137,8 +175,22 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 				.from('parents')
 				.select(PARENT_COLUMNS)
 				.in('status', ['approved', 'rejected'])
+				.order('reviewed_at', { ascending: false }),
+			// Story 7-6: the deletion queue is admin-only (teachers have no access).
+			supabase
+				.from('deletion_requests')
+				.select(DELETION_COLUMNS)
+				.eq('status', 'pending')
+				.order('requested_at', { ascending: true }),
+			supabase
+				.from('deletion_requests')
+				.select(DELETION_COLUMNS)
+				.in('status', ['approved', 'rejected'])
 				.order('reviewed_at', { ascending: false })
 		]);
+		deletionPending = (pendingDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
+		deletionDecided = (decidedDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
+		deletionError = Boolean(pendingDeletions.error || decidedDeletions.error);
 		parentsPending = (pendingParents.data ?? []).map(toParent);
 		parentsDecided = (decidedParents.data ?? []).map(toParent);
 		parentsError = Boolean(pendingParents.error || decidedParents.error);
@@ -165,7 +217,11 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		parentsDecided,
 		sickPending,
 		sickDecided,
-		loadError: Boolean(pendingError || decidedError || teamsError || parentsError || sickError)
+		deletionPending,
+		deletionDecided,
+		loadError: Boolean(
+			pendingError || decidedError || teamsError || parentsError || sickError || deletionError
+		)
 	};
 };
 
@@ -521,5 +577,65 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'parentRejected' as const, parentId, parentName };
-	}
+	},
+
+	/**
+	 * Story 7-6: approve a pending deletion request. The database stamps
+	 * reviewed_by / reviewed_at and, on approval, erases the child's account
+	 * and every student-keyed row by trigger. RLS refuses anyone but the admin,
+	 * and the admin for their own child.
+	 */
+	approveDeletion: async (event) => decideDeletion(event, 'approved'),
+
+	/** Story 7-6: reject a pending deletion request. Nothing is erased. */
+	rejectDeletion: async (event) => decideDeletion(event, 'rejected')
 };
+
+async function decideDeletion(
+	{ request, locals: { supabase, safeGetSession } }: Parameters<Actions[string]>[0],
+	status: 'approved' | 'rejected'
+) {
+	const formData = await request.formData();
+	const requestId = String(formData.get('requestId') ?? '');
+	const deletionStudentName = String(formData.get('studentName') ?? '');
+
+	const user = await requireAdmin(supabase, safeGetSession);
+	if (!user) {
+		return fail(403, {
+			error: m.requests_deletion_error_not_allowed(),
+			requestId,
+			deletionStudentName
+		});
+	}
+	if (!UUID_PATTERN.test(requestId)) {
+		return fail(400, { error: m.requests_error_not_found(), requestId, deletionStudentName });
+	}
+
+	const { data, error: updateError } = await supabase
+		.from('deletion_requests')
+		.update({ status })
+		.eq('id', requestId)
+		.eq('status', 'pending')
+		.select('id')
+		.maybeSingle();
+	if (updateError) {
+		return fail(updateError.code === '42501' ? 403 : 400, {
+			error:
+				updateError.code === '42501'
+					? m.requests_deletion_error_not_allowed()
+					: m.requests_deletion_error_failed(),
+			requestId,
+			deletionStudentName
+		});
+	}
+	if (!data) {
+		return fail(400, { error: m.requests_error_not_found(), requestId, deletionStudentName });
+	}
+
+	return {
+		success: true,
+		action: status === 'approved' ? ('deletionApproved' as const) : ('deletionRejected' as const),
+		requestId,
+		deletionStudentName
+	};
+}

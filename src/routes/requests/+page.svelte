@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import { showToast } from '$lib/ix';
+	import { confirmAction, showToast } from '$lib/ix';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
@@ -32,6 +33,25 @@
 
 	// Story 7-5: only the rows the viewer may decide count (never their own child).
 	let sickActionable = $derived(data.sickPending.filter((r) => !r.ownChild).length);
+	// Story 7-6: likewise, never a deletion request for the admin's own child.
+	let deletionActionable = $derived(data.deletionPending.filter((r) => !r.ownChild).length);
+
+	// Story 7-6: Approve erases the child for good, so it asks first.
+	let approveDeletionForm: HTMLFormElement | undefined = $state();
+	let deletionTarget = $state({ id: '', name: '' });
+	async function approveDeletion(row: { id: string; studentName: string | null }) {
+		const name = row.studentName ?? '';
+		const ok = await confirmAction(
+			m.common_confirm_title(),
+			m.requests_deletion_approve_confirm({ name }),
+			m.requests_deletion_erase(),
+			m.common_cancel()
+		);
+		if (!ok) return;
+		deletionTarget = { id: row.id, name };
+		await tick();
+		approveDeletionForm?.requestSubmit();
+	}
 
 	// Wall-clock dates: format as UTC so no time zone shifts the day.
 	function formatDay(date: string): string {
@@ -50,6 +70,14 @@
 
 	$effect(() => {
 		if (!form?.success) return;
+		if ('deletionStudentName' in form) {
+			const name = form.deletionStudentName || '';
+			if (form.action === 'deletionApproved')
+				showToast('success', m.requests_deletion_outcome_approved({ name }));
+			if (form.action === 'deletionRejected')
+				showToast('success', m.requests_deletion_outcome_rejected({ name }));
+			return;
+		}
 		if ('sickStudentName' in form) {
 			const name = form.sickStudentName || '';
 			if (form.action === 'sickApproved')
@@ -88,7 +116,10 @@
 			</p>
 		</div>
 		<span class="page-counter"
-			>{data.pending.length + data.parentsPending.length + sickActionable}</span
+			>{data.pending.length +
+				data.parentsPending.length +
+				sickActionable +
+				deletionActionable}</span
 		>
 	</header>
 
@@ -358,6 +389,111 @@
 	</section>
 
 	{#if data.role === 'admin'}
+		<section class="card" aria-labelledby="deletion-heading">
+			<h2 id="deletion-heading">{m.requests_deletion_heading()}</h2>
+			<p class="muted">{m.requests_deletion_subtitle()}</p>
+			{#if data.deletionPending.length === 0}
+				<p class="muted">{m.requests_deletion_empty()}</p>
+			{:else}
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>{m.requests_col_student()}</th>
+								<th><span class="sr-only">{m.requests_approve()}</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each data.deletionPending as row (row.id)}
+								<tr>
+									<td>
+										<strong>{row.studentName}</strong>
+										<div class="muted">
+											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
+											{new Date(row.requestedAt).toLocaleDateString()}
+										</div>
+									</td>
+									<td>
+										{#if row.ownChild}
+											<p class="muted" style="text-align:right; margin:0;">
+												{m.requests_deletion_own_child()}
+											</p>
+										{:else}
+											<div class="actions" style="justify-content:flex-end;">
+												<ix-button
+													variant="danger-primary"
+													loading={pending.is(`approveDeletion:${row.id}`) || undefined}
+													disabled={pending.busy || undefined}
+													onclick={() => approveDeletion(row)}
+												>
+													{m.requests_approve()}
+												</ix-button>
+												<form
+													method="POST"
+													action="?/rejectDeletion"
+													use:enhance={pending.submit(`rejectDeletion:${row.id}`)}
+												>
+													<input type="hidden" name="requestId" value={row.id} />
+													<input type="hidden" name="studentName" value={row.studentName ?? ''} />
+													<ix-button
+														type="submit"
+														variant="secondary"
+														loading={pending.is(`rejectDeletion:${row.id}`) || undefined}
+														disabled={pending.busy || undefined}>{m.requests_reject()}</ix-button
+													>
+												</form>
+											</div>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+			<form
+				bind:this={approveDeletionForm}
+				method="POST"
+				action="?/approveDeletion"
+				use:enhance={pending.submit(() => `approveDeletion:${deletionTarget.id}`)}
+				hidden
+			>
+				<input type="hidden" name="requestId" value={deletionTarget.id} />
+				<input type="hidden" name="studentName" value={deletionTarget.name} />
+			</form>
+		</section>
+
+		<section class="card">
+			<h2>{m.requests_deletion_decided_heading()}</h2>
+			{#if data.deletionDecided.length === 0}
+				<p class="muted">{m.requests_deletion_decided_empty()}</p>
+			{:else}
+				<div class="table-wrap">
+					<table>
+						<tbody>
+							{#each data.deletionDecided as row (row.id)}
+								<tr>
+									<td style="width:1%; white-space:nowrap;">
+										{#if row.status === 'approved'}
+											<ix-pill variant="success">{m.requests_status_approved()}</ix-pill>
+										{:else}
+											<ix-pill variant="neutral">{m.requests_status_rejected()}</ix-pill>
+										{/if}
+									</td>
+									<td class:muted={row.status === 'rejected'}>
+										{row.studentName ?? m.requests_deletion_deleted_student()}
+										<div class="muted">
+											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
+											{new Date(row.requestedAt).toLocaleDateString()}
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
 		<section class="card" aria-labelledby="parents-heading">
 			<h2 id="parents-heading">{m.requests_parents_heading()}</h2>
 			<p class="muted">{m.requests_parents_subtitle()}</p>

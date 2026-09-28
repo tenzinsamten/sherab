@@ -9,13 +9,24 @@ import type { PageServerLoad } from './$types';
  * (Boundaries: "no new RLS, no new migration") -- this route only aggregates
  * what admin can already see one management screen at a time.
  */
-export const load: PageServerLoad = async ({ locals: { supabase } }) => {
+export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
+	const { user } = await safeGetSession();
+	// Story 7-6: pending deletion requests, never the admin's own child's
+	// (only the child's parent submits, so those are the admin's own rows) --
+	// the same count as +layout.server.ts's nav badge.
+	let pendingDeletions = supabase
+		.from('deletion_requests')
+		.select('id', { count: 'exact', head: true })
+		.eq('status', 'pending');
+	if (user) pendingDeletions = pendingDeletions.neq('requested_by', user.id);
+
 	const [
 		{ count: classesCount, error: classesError },
 		{ count: teachersCount, error: teachersError },
 		{ count: studentsCount, error: studentsError },
 		{ count: pendingRequestsCount, error: pendingError },
 		{ count: pendingParentsCount, error: pendingParentsError },
+		{ count: pendingDeletionsCount, error: pendingDeletionsError },
 		{ count: homeworkAssignmentsCount, error: assignmentsError },
 		{ rows: history, error: historyError },
 		{ sickPending, sickError }
@@ -42,6 +53,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		// Story 7-1: pending parent accounts are admin requests too, counted
 		// like +layout.server.ts's nav badge.
 		supabase.from('parents').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+		pendingDeletions,
 		supabase.from('homework_assignments').select('id', { count: 'exact', head: true }),
 		// homework_status_history_select_admin_teacher_or_own
 		// (0004_homework.sql) -- admin has no class filter, so this is every
@@ -80,6 +92,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		pendingRequestsCount:
 			(pendingRequestsCount ?? 0) +
 			(pendingParentsCount ?? 0) +
+			(pendingDeletionsCount ?? 0) +
 			sickPending.filter((r) => !r.ownChild).length,
 		homeworkAssignmentsCount: homeworkAssignmentsCount ?? 0,
 		homeworkCompletionPercent,
@@ -89,6 +102,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			studentsError ||
 			pendingError ||
 			pendingParentsError ||
+			pendingDeletionsError ||
 			assignmentsError ||
 			historyError ||
 			sickError

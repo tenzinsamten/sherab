@@ -55,6 +55,17 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 			.eq('status', 'pending');
 		pendingRequestsCount += count ?? 0;
 		countError = countError || Boolean(parentCountErr);
+
+		// Story 7-6: pending deletion requests (admin-only queue), never the
+		// admin's own child's -- only the child's parent submits, so those are
+		// exactly the rows the admin requested.
+		const { count: deletionCount, error: deletionCountErr } = await supabase
+			.from('deletion_requests')
+			.select('id', { count: 'exact', head: true })
+			.eq('status', 'pending')
+			.neq('requested_by', user.id);
+		pendingRequestsCount += deletionCount ?? 0;
+		countError = countError || Boolean(deletionCountErr);
 	}
 
 	return {

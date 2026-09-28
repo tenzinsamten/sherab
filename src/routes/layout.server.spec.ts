@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { load } from './+layout.server';
 
 /**
- * Root layout load: the nav badge count (Stories 1-2, 7-1, 7-5). A fake
- * `locals.supabase` answers the caller's profile, the pending-student and
- * pending-parent counts, and sick_leave_queue().
+ * Root layout load: the nav badge count (Stories 1-2, 7-1, 7-5, 7-6). A fake
+ * `locals.supabase` answers the caller's profile, the pending-student,
+ * pending-parent and pending-deletion counts, and sick_leave_queue().
  */
 type Result = { data?: unknown; count?: number | null; error: unknown };
 
@@ -29,8 +29,11 @@ function runLoad(opts: {
 	role: 'admin' | 'teacher' | 'parent';
 	pendingStudents?: number;
 	pendingParents?: number;
+	pendingDeletions?: number;
+	deletionError?: unknown;
 	sickQueue?: { data: unknown; error: unknown };
 }) {
+	const calls: { table: string; method: string; args: unknown[] }[] = [];
 	const chain = (table: string) => {
 		let head = false;
 		const c = {
@@ -38,16 +41,25 @@ function runLoad(opts: {
 				head = Boolean(options?.head);
 				return c;
 			},
-			eq: () => c,
+			eq: (...args: unknown[]) => {
+				calls.push({ table, method: 'eq', args });
+				return c;
+			},
+			neq: (...args: unknown[]) => {
+				calls.push({ table, method: 'neq', args });
+				return c;
+			},
 			single: async (): Promise<Result> => ({ data: { id: 'u1', role: opts.role }, error: null }),
 			then: (resolve: (value: Result) => unknown) =>
 				resolve(
 					head
-						? {
-								count:
-									table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
-								error: null
-							}
+						? table === 'deletion_requests'
+							? { count: opts.pendingDeletions ?? 0, error: opts.deletionError ?? null }
+							: {
+									count:
+										table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
+									error: null
+								}
 						: { data: null, error: null }
 				)
 		};
@@ -71,7 +83,7 @@ function runLoad(opts: {
 		pendingRequestsCount: number;
 		loadError: boolean;
 	}>;
-	return { result, rpcCalls };
+	return { result, rpcCalls, calls };
 }
 
 const queue = {
@@ -99,6 +111,34 @@ describe('root layout: nav badge count', () => {
 			sickQueue: queue
 		});
 		expect(await result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
+	});
+
+	it('adds pending deletion requests the admin did not submit (Story 7-6)', async () => {
+		const { result, calls } = runLoad({
+			role: 'admin',
+			pendingStudents: 1,
+			pendingParents: 2,
+			pendingDeletions: 3,
+			sickQueue: queue
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 8, loadError: false });
+		expect(
+			calls.filter((c) => c.table === 'deletion_requests').map((c) => [c.method, ...c.args])
+		).toEqual([
+			['eq', 'status', 'pending'],
+			['neq', 'requested_by', 'u1']
+		]);
+	});
+
+	it('never asks a teacher about deletion requests', async () => {
+		const { result, calls } = runLoad({ role: 'teacher', pendingDeletions: 3, sickQueue: queue });
+		expect(await result).toMatchObject({ pendingRequestsCount: 2 });
+		expect(calls.some((c) => c.table === 'deletion_requests')).toBe(false);
+	});
+
+	it('flags a load error when the deletion count fails', async () => {
+		const { result } = runLoad({ role: 'admin', deletionError: { message: 'boom' } });
+		expect(await result).toMatchObject({ loadError: true });
 	});
 
 	it('flags a load error when sick_leave_queue fails', async () => {

@@ -402,6 +402,61 @@ export type Database = {
 					}
 				];
 			};
+			deletion_requests: {
+				Row: {
+					id: string;
+					requested_at: string;
+					requested_by: string | null;
+					requester_role: 'parent';
+					reviewed_at: string | null;
+					reviewed_by: string | null;
+					status: 'pending' | 'approved' | 'rejected';
+					student_id: string | null;
+				};
+				Insert: {
+					id?: string;
+					requested_at?: string;
+					requested_by?: string | null;
+					requester_role?: 'parent';
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: 'pending' | 'approved' | 'rejected';
+					student_id?: string | null;
+				};
+				Update: {
+					id?: string;
+					requested_at?: string;
+					requested_by?: string | null;
+					requester_role?: 'parent';
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: 'pending' | 'approved' | 'rejected';
+					student_id?: string | null;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'deletion_requests_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'deletion_requests_requested_by_fkey';
+						columns: ['requested_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'deletion_requests_reviewed_by_fkey';
+						columns: ['reviewed_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			homework_assignments: {
 				Row: {
 					class_id: string;

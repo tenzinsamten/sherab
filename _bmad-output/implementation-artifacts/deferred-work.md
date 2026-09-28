@@ -195,3 +195,9 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-5-sick-leave-with-teacher-approval.md`
   summary: Add `load` tests for `/requests` (including a failing `sick_leave_queue` setting `loadError`, so a queue failure never looks like an empty queue).
   evidence: `src/routes/requests/page.server.spec.ts` imports only `actions` and `loadSickLeave`; no test calls the route's `load` for any query (7-5 review triage #7).
+- source_spec: none
+  summary: Guardian email correction — a student requests a guardian email change, the admin approves it, and approval moves the child to the new approved parent (guardian_email + parent_id together, AD-10).
+  evidence: Split from story 7-6 on 2026-09-27; it ships independently of the parent deletion request (separate table, trigger and UI). Build it as its own story.
+- source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-6-parent-deletion-request.md`
+  summary: Run the RLS/trigger suite (rls.spec.ts) in CI against a Supabase service, so the deletion erasure and self-decision guards can't silently go untested.
+  evidence: Every RLS block uses `describe.skipIf(!reachable)`; there is no .github/workflows, so without local Supabase the 7-6 erasure tests skip and only mocked route specs run (7-6 review triage #3).

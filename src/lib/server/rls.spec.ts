@@ -9882,3 +9882,419 @@ describe.skipIf(!reachable)('7-5 sick leave decisions (requires local Supabase)'
 		}
 	});
 });
+
+/**
+ * Story 7-6: parent deletion requests (migration 0029). One test per I/O
+ * matrix row. Each test builds its own parent and children, since an
+ * approval erases the child for good.
+ */
+describe.skipIf(!reachable)('7-6 deletion requests (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const today = todayInBerlin();
+	const plusDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	const name = (label: string) => `7-6 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createClass(label: string, teacherId = teacher.id) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `D${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacherId });
+		return data.id;
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function newParent() {
+		const p = await createApprovedParent();
+		return { ...p, client: await signIn(p.email, p.password) };
+	}
+
+	async function child(parentEmail: string, cls: string, approve = true) {
+		const { id, error } = await signUpStudent({
+			classId: cls,
+			registrationName: name('Kid'),
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		if (approve) {
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		}
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return signIn(data.user!.email!, password);
+	}
+
+	function request(client: Client, studentId: string) {
+		return client
+			.from('deletion_requests')
+			.insert({ student_id: studentId })
+			.select('id, student_id, requested_by, requester_role, status, requested_at')
+			.single();
+	}
+
+	function decide(client: Client, id: string, status: 'approved' | 'rejected') {
+		return client
+			.from('deletion_requests')
+			.update({ status })
+			.eq('id', id)
+			.select('id, status, reviewed_by')
+			.single();
+	}
+
+	async function requestRow(id: string) {
+		const { data } = await adminClient.from('deletion_requests').select('*').eq('id', id).single();
+		return data!;
+	}
+
+	async function dualRoleAdmin() {
+		const dual = await createSignedInUser('admin');
+		const { error } = await adminClient.from('parents').insert({ id: dual.id, status: 'approved' });
+		if (error) throw new Error(`Failed to make parent: ${error.message}`);
+		return dual;
+	}
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		admin = await createSignedInUser('admin');
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('Parent submits: a pending row stamped with requester_role parent and requested_by = the parent', async () => {
+		const cls = await createClass('Submit');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const before = Date.now();
+		const { data, error } = await p.client
+			.from('deletion_requests')
+			.insert({
+				student_id: kid,
+				// Client values are ignored: the trigger stamps them.
+				requested_by: admin.id,
+				status: 'approved'
+			} as never)
+			.select('student_id, requested_by, requester_role, status, requested_at')
+			.single();
+		// requested_by / status carry no insert grant: the client can only send student_id.
+		expect(error?.code).toBe('42501');
+
+		const ok = await request(p.client, kid);
+		expect(ok.error).toBeNull();
+		expect(ok.data).toMatchObject({
+			student_id: kid,
+			requested_by: p.id,
+			requester_role: 'parent',
+			status: 'pending'
+		});
+		expect(Date.parse(ok.data!.requested_at)).toBeGreaterThanOrEqual(before - 5000);
+		expect(data).toBeNull();
+	});
+
+	it('Not own child: another parent, a pending child, a teacher, the student and the service role are refused', async () => {
+		const cls = await createClass('Not own');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const pendingKid = await child(p.email, cls, false);
+		const other = await newParent();
+		const kidClient = await signInStudent(kid);
+
+		for (const [client, target] of [
+			[other.client, kid],
+			[p.client, pendingKid],
+			[teacher.client, kid],
+			[kidClient, kid]
+		] as const) {
+			const { error } = await request(client, target);
+			expect(error?.code).toBe('42501');
+		}
+		// The service role is not exempt: no parent is signed in.
+		const { error: serviceError } = await adminClient
+			.from('deletion_requests')
+			.insert({ student_id: kid });
+		expect(serviceError?.code).toBe('42501');
+
+		const { data: rows } = await adminClient
+			.from('deletion_requests')
+			.select('id')
+			.in('student_id', [kid, pendingKid]);
+		expect(rows).toEqual([]);
+	});
+
+	it('Duplicate: a second request while one is pending is refused (23505)', async () => {
+		const cls = await createClass('Duplicate');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		expect((await request(p.client, kid)).error).toBeNull();
+		const second = await request(p.client, kid);
+		expect(second.error?.code).toBe('23505');
+	});
+
+	it("Approve: the child's account and every student-keyed row are erased; the request is kept de-identified; the parent is intact", async () => {
+		const cls = await createClass('Approve');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const sibling = await child(p.email, cls);
+
+		// Data in every student-keyed table.
+		const pastSession = await sessionFor(cls, plusDays(today, -8));
+		const { error: attendanceError } = await teacher.client.from('attendance_records').insert({
+			student_id: kid,
+			class_id: cls,
+			present: true,
+			class_session_id: pastSession,
+			recorded_by: teacher.id
+		});
+		expect(attendanceError).toBeNull();
+		const { error: skillError } = await teacher.client.from('skill_status_history').insert({
+			student_id: kid,
+			class_id: cls,
+			skill_area: 'language',
+			level: 'learning',
+			recorded_by: teacher.id
+		});
+		expect(skillError).toBeNull();
+		const { data: assignment } = await adminClient
+			.from('homework_assignments')
+			.insert({ class_id: cls, title: name('Homework'), skill_area: 'language' })
+			.select('id')
+			.single();
+		const { data: instance } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment!.id,
+				class_id: cls,
+				period_start: plusDays(today, -8),
+				due_date: plusDays(today, -1)
+			})
+			.select('id')
+			.single();
+		const { error: homeworkError } = await adminClient.from('homework_status_history').insert({
+			instance_id: instance!.id,
+			student_id: kid,
+			class_id: cls,
+			status: 'done'
+		});
+		expect(homeworkError).toBeNull();
+		const yesterdaySession = await sessionFor(cls, plusDays(today, -1));
+		const { error: leaveError } = await p.client
+			.from('session_leave_history')
+			.insert({ class_session_id: yesterdaySession, student_id: kid, answer: 'sick' });
+		expect(leaveError).toBeNull();
+		const { error: decisionError } = await teacher.client
+			.from('sick_leave_decisions')
+			.insert({ class_session_id: yesterdaySession, student_id: kid, decision: 'approved' });
+		expect(decisionError).toBeNull();
+
+		const tables = [
+			'class_enrollments',
+			'attendance_records',
+			'skill_status_history',
+			'homework_status_history',
+			'session_leave_history',
+			'sick_leave_decisions',
+			'student_streaks',
+			'badges_earned'
+		] as const;
+		const countFor = async (table: (typeof tables)[number]) => {
+			const { count, error } = await adminClient
+				.from(table)
+				.select('*', { count: 'exact', head: true })
+				.eq('student_id', kid);
+			expect(error).toBeNull();
+			return count ?? 0;
+		};
+		for (const table of tables.filter((t) => t !== 'badges_earned')) {
+			expect(await countFor(table), table).toBeGreaterThan(0);
+		}
+
+		const { data: req } = await request(p.client, kid);
+		const approved = await decide(admin.client, req!.id, 'approved');
+		expect(approved.error).toBeNull();
+
+		// The child is gone: auth user, profile and every student-keyed row.
+		const { data: authUser } = await adminClient.auth.admin.getUserById(kid);
+		expect(authUser.user).toBeNull();
+		const { data: profile } = await adminClient.from('profiles').select('id').eq('id', kid);
+		expect(profile).toEqual([]);
+		for (const table of tables) {
+			expect(await countFor(table), table).toBe(0);
+		}
+
+		// The request row stays, de-identified, with its audit trail.
+		const row = await requestRow(req!.id);
+		expect(row).toMatchObject({
+			student_id: null,
+			requested_by: p.id,
+			requester_role: 'parent',
+			status: 'approved',
+			reviewed_by: admin.id
+		});
+		expect(row.requested_at).not.toBeNull();
+		expect(row.reviewed_at).not.toBeNull();
+
+		// The parent account is intact and still signs in; only the sibling remains.
+		const { data: parentRow } = await adminClient
+			.from('parents')
+			.select('status')
+			.eq('id', p.id)
+			.single();
+		expect(parentRow?.status).toBe('approved');
+		const again = await signIn(p.email, p.password);
+		const { data: linked } = await again.rpc('linked_children');
+		expect(linked?.map((c) => c.id)).toEqual([sibling]);
+		// The requester still reads the de-identified row.
+		const { data: own } = await again.from('deletion_requests').select('id, student_id');
+		expect(own).toEqual([{ id: req!.id, student_id: null }]);
+	});
+
+	it('Reject: nothing is erased, the status is rejected, and a new request is allowed later', async () => {
+		const cls = await createClass('Reject');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const { data: req } = await request(p.client, kid);
+		const rejected = await decide(admin.client, req!.id, 'rejected');
+		expect(rejected.error).toBeNull();
+		expect(rejected.data).toMatchObject({ status: 'rejected', reviewed_by: admin.id });
+
+		const { data: profile } = await adminClient.from('profiles').select('id').eq('id', kid);
+		expect(profile).toEqual([{ id: kid }]);
+		const { count } = await adminClient
+			.from('class_enrollments')
+			.select('*', { count: 'exact', head: true })
+			.eq('student_id', kid);
+		expect(count).toBe(1);
+		expect(await requestRow(req!.id)).toMatchObject({ student_id: kid, status: 'rejected' });
+
+		expect((await request(p.client, kid)).error).toBeNull();
+	});
+
+	it("Self-decision: an admin who is the child's parent cannot approve", async () => {
+		const dual = await dualRoleAdmin();
+		const cls = await createClass('Own child');
+		const kid = await child(dual.email, cls);
+		const { data: req, error } = await request(dual.client, kid);
+		expect(error).toBeNull();
+		const refused = await decide(dual.client, req!.id, 'approved');
+		expect(refused.error?.code).toBe('42501');
+		expect(await requestRow(req!.id)).toMatchObject({ status: 'pending', student_id: kid });
+		const { data: profile } = await adminClient.from('profiles').select('id').eq('id', kid);
+		expect(profile).toEqual([{ id: kid }]);
+	});
+
+	it('Not admin: a teacher or the parent cannot decide a request', async () => {
+		const cls = await createClass('Not admin');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const { data: req } = await request(p.client, kid);
+		for (const client of [teacher.client, p.client]) {
+			const { data, error } = await client
+				.from('deletion_requests')
+				.update({ status: 'approved' })
+				.eq('id', req!.id)
+				.select('id');
+			// RLS: no row is visible to update (teacher) or the policy refuses it (parent).
+			expect(error !== null || (data ?? []).length === 0).toBe(true);
+		}
+		expect(await requestRow(req!.id)).toMatchObject({ status: 'pending', student_id: kid });
+		// No DELETE either.
+		const { data: deleted } = await p.client
+			.from('deletion_requests')
+			.delete()
+			.eq('id', req!.id)
+			.select('id');
+		expect(deleted ?? []).toEqual([]);
+		expect((await requestRow(req!.id)).id).toBe(req!.id);
+	});
+
+	it('Frozen: a decided row cannot change, and no column but status can be edited', async () => {
+		const cls = await createClass('Frozen');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const otherKid = await child(p.email, cls);
+		const { data: req } = await request(p.client, kid);
+		expect((await decide(admin.client, req!.id, 'rejected')).error).toBeNull();
+
+		// Admin: rejected -> approved / pending refused by the trigger.
+		for (const status of ['approved', 'pending'] as const) {
+			const { error } = await admin.client
+				.from('deletion_requests')
+				.update({ status })
+				.eq('id', req!.id)
+				.select('id')
+				.single();
+			expect(error?.code).toBe('42501');
+		}
+		// Admin editing student_id: no column grant.
+		const { error: grantError } = await admin.client
+			.from('deletion_requests')
+			.update({ student_id: otherKid } as never)
+			.eq('id', req!.id)
+			.select('id')
+			.single();
+		expect(grantError?.code).toBe('42501');
+		// Even the service role hits the trigger.
+		const { error: triggerError } = await adminClient
+			.from('deletion_requests')
+			.update({ student_id: otherKid })
+			.eq('id', req!.id);
+		expect(triggerError?.code).toBe('42501');
+		const { error: pendingEditError } = await adminClient
+			.from('deletion_requests')
+			.update({ status: 'approved', requested_by: admin.id })
+			.eq('id', req!.id);
+		expect(pendingEditError?.code).toBe('42501');
+
+		expect(await requestRow(req!.id)).toMatchObject({
+			student_id: kid,
+			status: 'rejected',
+			requested_by: p.id
+		});
+	});
+
+	it('Read: the requester, the parent, the student and the admin see the row; another parent and a teacher do not', async () => {
+		const cls = await createClass('Read');
+		const p = await newParent();
+		const kid = await child(p.email, cls);
+		const { data: req } = await request(p.client, kid);
+		const kidClient = await signInStudent(kid);
+		const other = await newParent();
+
+		const read = (client: Client) =>
+			client.from('deletion_requests').select('id, status').eq('id', req!.id);
+		for (const client of [p.client, kidClient, admin.client]) {
+			expect((await read(client)).data).toEqual([{ id: req!.id, status: 'pending' }]);
+		}
+		for (const client of [other.client, teacher.client]) {
+			expect((await read(client)).data).toEqual([]);
+		}
+	});
+});

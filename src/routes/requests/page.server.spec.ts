@@ -15,7 +15,7 @@ vi.mock('$lib/server/capabilities', () => ({
 	getCapabilities: (...args: unknown[]) => getCapabilities(...args)
 }));
 
-const { actions } = await import('./+page.server');
+const { actions, load } = await import('./+page.server');
 const { loadSickLeave } = await import('$lib/server/leave');
 const m = await import('$lib/paraglide/messages.js');
 
@@ -345,5 +345,216 @@ describe('loadSickLeave', () => {
 		const rpc = vi.fn(async () => ({ data: null, error: { message: 'boom' } }));
 		const result = await loadSickLeave({ rpc } as unknown as Parameters<typeof loadSickLeave>[0]);
 		expect(result).toEqual({ sickPending: [], sickDecided: [], sickError: true });
+	});
+});
+
+describe('approveDeletion / rejectDeletion (Story 7-6)', () => {
+	const REQUEST = '11111111-2222-4333-8444-555555555555';
+
+	beforeEach(() => {
+		getCapabilities.mockReset();
+		getCapabilities.mockResolvedValue({ role: 'admin', parentStatus: null });
+	});
+
+	function deletionEvent(queues: Record<string, Result[]>, requestId = REQUEST) {
+		const body = new FormData();
+		body.set('requestId', requestId);
+		body.set('studentName', 'Dawa');
+		const { supabase, updates } = fakeSupabase(queues);
+		const e = {
+			request: new Request('https://app.test/requests', { method: 'POST', body }),
+			locals: {
+				supabase,
+				safeGetSession: async () => ({ session: {}, user: { id: 'admin1' } })
+			}
+		} as unknown as Parameters<typeof actions.approveDeletion>[0];
+		return { e, updates };
+	}
+
+	it('refuses a non-admin with 403 and updates nothing', async () => {
+		getCapabilities.mockResolvedValue({ role: 'teacher', parentStatus: null });
+		for (const action of [actions.approveDeletion, actions.rejectDeletion]) {
+			const { e, updates } = deletionEvent({});
+			expect(await action(e)).toMatchObject({
+				status: 403,
+				data: { error: m.requests_deletion_error_not_allowed() }
+			});
+			expect(updates).toEqual([]);
+		}
+	});
+
+	it('refuses a malformed id', async () => {
+		const { e, updates } = deletionEvent({}, 'nope');
+		expect(await actions.approveDeletion(e)).toMatchObject({ status: 400 });
+		expect(updates).toEqual([]);
+	});
+
+	it('approve sets only the status (the database stamps the reviewer and erases)', async () => {
+		const { e, updates } = deletionEvent({ deletion_requests: [ok({ id: REQUEST })] });
+		expect(await actions.approveDeletion(e)).toEqual({
+			success: true,
+			action: 'deletionApproved',
+			requestId: REQUEST,
+			deletionStudentName: 'Dawa'
+		});
+		expect(updates).toEqual([{ table: 'deletion_requests', values: { status: 'approved' } }]);
+	});
+
+	it('reject sets status rejected', async () => {
+		const { e, updates } = deletionEvent({ deletion_requests: [ok({ id: REQUEST })] });
+		expect(await actions.rejectDeletion(e)).toMatchObject({
+			success: true,
+			action: 'deletionRejected'
+		});
+		expect(updates).toEqual([{ table: 'deletion_requests', values: { status: 'rejected' } }]);
+	});
+
+	it('no pending row -> not found; 42501 (own child) -> 403; other errors -> failed', async () => {
+		const notFound = deletionEvent({ deletion_requests: [ok(null)] });
+		expect(await actions.approveDeletion(notFound.e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_error_not_found() }
+		});
+		const own = deletionEvent({ deletion_requests: [{ data: null, error: { code: '42501' } }] });
+		expect(await actions.approveDeletion(own.e)).toMatchObject({
+			status: 403,
+			data: { error: m.requests_deletion_error_not_allowed() }
+		});
+		const other = deletionEvent({ deletion_requests: [{ data: null, error: { code: '08006' } }] });
+		expect(await actions.rejectDeletion(other.e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_deletion_error_failed() }
+		});
+	});
+});
+
+describe('load: deletion requests section (Story 7-6)', () => {
+	/**
+	 * deletions[0] answers the pending query, deletions[1] (or [0]) the decided
+	 * one -- chosen by the status filter the query applied, never by call
+	 * order. A deletion_requests query with neither filter gets an error.
+	 */
+	function loadWith(role: 'admin' | 'teacher', deletions: Result[]) {
+		const queried: string[] = [];
+		const calls: { table: string; query: number; method: string; args: unknown[] }[] = [];
+		let queryCount = 0;
+		const from = (table: string) => {
+			queried.push(table);
+			const query = queryCount++;
+			const own: unknown[][] = [];
+			const chain: Record<string, unknown> = {};
+			for (const method of ['select', 'eq', 'in', 'order']) {
+				chain[method] = (...args: unknown[]) => {
+					calls.push({ table, query, method, args });
+					own.push([method, ...args]);
+					return chain;
+				};
+			}
+			const has = (expected: unknown[]) =>
+				own.some((c) => JSON.stringify(c) === JSON.stringify(expected));
+			const result = (): Result => {
+				if (table !== 'deletion_requests') return { data: [], error: null };
+				if (has(['eq', 'status', 'pending'])) return deletions[0];
+				if (has(['in', 'status', ['approved', 'rejected']])) return deletions[1] ?? deletions[0];
+				return { data: null, error: { message: 'unfiltered deletion query' } };
+			};
+			chain.single = async () => ({ data: { role }, error: null });
+			chain.then = (resolve: (value: Result) => unknown) => resolve(result());
+			return chain;
+		};
+		const supabase = { from, rpc: async () => ({ data: [], error: null }) };
+		const run = load({
+			locals: {
+				supabase,
+				safeGetSession: async () => ({
+					session: { user: { id: 'admin1' } },
+					user: { id: 'admin1' }
+				})
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<Record<string, unknown>>;
+		return { run, queried, calls };
+	}
+
+	const row = (overrides: Record<string, unknown>) => ({
+		id: 'r1',
+		student_id: 'k1',
+		requested_by: 'p1',
+		status: 'pending',
+		requested_at: '2026-09-27T08:00:00Z',
+		reviewed_at: null,
+		student: { display_name: null, registration_name: 'Dawa' },
+		requester: { display_name: 'Dolma', email: 'dolma@example.test' },
+		...overrides
+	});
+
+	it('maps pending rows (own child flagged) and de-identified decided rows', async () => {
+		const { run } = loadWith('admin', [
+			ok([row({}), row({ id: 'r2', requested_by: 'admin1' })]),
+			ok([
+				row({
+					id: 'r3',
+					student_id: null,
+					student: null,
+					status: 'approved',
+					reviewed_at: '2026-09-27T09:00:00Z'
+				})
+			])
+		]);
+		const result = await run;
+		expect(result.deletionPending).toEqual([
+			{
+				id: 'r1',
+				status: 'pending',
+				studentName: 'Dawa',
+				requesterName: 'Dolma',
+				requestedAt: '2026-09-27T08:00:00Z',
+				reviewedAt: null,
+				ownChild: false
+			},
+			expect.objectContaining({ id: 'r2', ownChild: true })
+		]);
+		expect(result.deletionDecided).toEqual([
+			expect.objectContaining({ id: 'r3', status: 'approved', studentName: null })
+		]);
+		expect(result.loadError).toBe(false);
+	});
+
+	it('filters the pending query by pending and the decided query by approved / rejected', async () => {
+		const { run, calls } = loadWith('admin', [ok([]), ok([])]);
+		await run;
+		const deletionQueries = new Map<number, unknown[][]>();
+		for (const c of calls.filter((c) => c.table === 'deletion_requests')) {
+			deletionQueries.set(c.query, [
+				...(deletionQueries.get(c.query) ?? []),
+				[c.method, ...c.args]
+			]);
+		}
+		const [pendingQuery, decidedQuery] = [...deletionQueries.values()];
+		expect(pendingQuery).toEqual(
+			expect.arrayContaining([
+				['eq', 'status', 'pending'],
+				['order', 'requested_at', { ascending: true }]
+			])
+		);
+		expect(pendingQuery).not.toContainEqual(['in', 'status', ['approved', 'rejected']]);
+		expect(decidedQuery).toEqual(
+			expect.arrayContaining([
+				['in', 'status', ['approved', 'rejected']],
+				['order', 'reviewed_at', { ascending: false }]
+			])
+		);
+		expect(decidedQuery).not.toContainEqual(['eq', 'status', 'pending']);
+	});
+
+	it('a teacher never queries the deletion queue', async () => {
+		const { run, queried } = loadWith('teacher', [ok([row({})])]);
+		const result = await run;
+		expect(queried).not.toContain('deletion_requests');
+		expect(result).toMatchObject({ deletionPending: [], deletionDecided: [] });
+	});
+
+	it('flags a load error when the queue cannot be read', async () => {
+		const { run } = loadWith('admin', [{ data: null, error: { message: 'boom' } }]);
+		expect((await run).loadError).toBe(true);
 	});
 });

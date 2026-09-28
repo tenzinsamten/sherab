@@ -21,6 +21,7 @@ function makeChain(result: ChainResult) {
 	const chain = {
 		select: () => chain,
 		eq: () => chain,
+		neq: () => chain,
 		order: () => chain,
 		range: () => chain,
 		then: (resolve: (value: ChainResult) => unknown) => resolve(result)
@@ -42,6 +43,7 @@ function fakeLocals(
 	};
 	const cursors: Record<string, number> = {};
 	return {
+		safeGetSession: async () => ({ session: {}, user: { id: 'admin-1' } }),
 		supabase: {
 			rpc: async () => sickQueue,
 			from: (table: string) => {
@@ -116,6 +118,35 @@ describe('admin dashboard +page.server.ts load', () => {
 		} as Parameters<typeof load>[0]);
 
 		expect(result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
+	});
+
+	it('adds pending deletion requests the admin did not submit (Story 7-6)', async () => {
+		const locals = fakeLocals({
+			deletion_requests: [{ data: [], count: 4, error: null }]
+		}) as unknown as { supabase: { from: (t: string) => Record<string, unknown> } };
+		const neqCalls: unknown[][] = [];
+		const from = locals.supabase.from;
+		locals.supabase.from = (table: string) => {
+			const chain = from(table);
+			if (table === 'deletion_requests') {
+				const neq = chain.neq as (...args: unknown[]) => unknown;
+				chain.neq = (...args: unknown[]) => {
+					neqCalls.push(args);
+					return neq(...args);
+				};
+			}
+			return chain;
+		};
+		const result = await load({ locals } as unknown as Parameters<typeof load>[0]);
+		expect(result).toMatchObject({ pendingRequestsCount: 4, loadError: false });
+		expect(neqCalls).toEqual([['requested_by', 'admin-1']]);
+
+		const failed = await load({
+			locals: fakeLocals({
+				deletion_requests: [{ data: null, count: null, error: { message: 'x' } }]
+			})
+		} as Parameters<typeof load>[0]);
+		expect(failed).toMatchObject({ loadError: true });
 	});
 
 	it('adds pending Sick leave the admin may decide, never their own child (Story 7-5)', async () => {

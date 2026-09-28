@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import { showToast } from '$lib/ix';
+	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -73,7 +74,24 @@
 		if (form && 'action' in form && form.action === 'setLeave' && form.success) {
 			showToast('success', m.leave_saved());
 		}
+		if (form && 'action' in form && form.action === 'requestDeletion' && form.success) {
+			showToast('success', m.deletion_requested());
+		}
 	});
+
+	// Story 7-6: a deletion request is sent only after a confirm step.
+	let deletionForm: HTMLFormElement | undefined = $state();
+	async function requestDeletion() {
+		const ok = await confirmAction(
+			m.common_confirm_title(),
+			m.deletion_confirm({ name: data.child.name }),
+			m.deletion_request(),
+			m.common_cancel()
+		);
+		if (!ok) return;
+		await tick();
+		deletionForm?.requestSubmit();
+	}
 </script>
 
 <svelte:head>
@@ -234,6 +252,45 @@
 					</li>
 				{/each}
 			</ul>
+		{/if}
+	</section>
+
+	<section class="card" aria-labelledby="deletion-heading">
+		<h2 id="deletion-heading">{m.deletion_heading()}</h2>
+		<p class="muted">{m.deletion_intro({ name: data.child.name })}</p>
+		{#if data.deletionLoadError}
+			<ix-empty-state header={m.load_error_generic()} icon="info"></ix-empty-state>
+		{:else}
+			{#if data.deletion}
+				<p role="status">
+					<ix-pill variant={data.deletion.status === 'pending' ? 'neutral' : 'alarm'}>
+						{data.deletion.status === 'pending'
+							? m.deletion_status_pending()
+							: m.deletion_status_rejected()}
+					</ix-pill>
+				</p>
+			{/if}
+			{#if data.deletion?.status !== 'pending'}
+				<ix-button
+					variant="danger-secondary"
+					icon="trashcan"
+					loading={pending.is('requestDeletion') || undefined}
+					disabled={pending.busy || undefined}
+					onclick={requestDeletion}
+				>
+					{m.deletion_request()}
+				</ix-button>
+				<form
+					bind:this={deletionForm}
+					method="POST"
+					action="?/requestDeletion"
+					use:enhance={pending.submit('requestDeletion')}
+					hidden
+				></form>
+			{/if}
+		{/if}
+		{#if form && 'deletionError' in form && form.deletionError}
+			<p class="field-error" role="alert">{form.deletionError}</p>
 		{/if}
 	</section>
 </div>

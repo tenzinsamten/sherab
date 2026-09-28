@@ -8,6 +8,8 @@ import type { Actions, PageServerLoad } from './$types';
 export type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
 export type LeaveClassification = 'planned' | 'short_notice';
 export type SickDecision = 'approved' | 'rejected';
+/** Story 7-6: the latest deletion request for the child (no withdrawal; a rejected one can be followed by a new one). */
+export type DeletionStatus = 'pending' | 'rejected';
 
 export type ChildSession = {
 	id: string;
@@ -140,7 +142,26 @@ export const load: PageServerLoad = async ({ params, parent, locals: { supabase 
 		);
 	}
 
-	return { child: { id: child.id, name: child.name }, sessions, loadError };
+	// Story 7-6: the latest deletion request (RLS: the requester / parent).
+	// An approved one erases the child, so the page is gone by then.
+	const { data: requests, error: requestsError } = await supabase
+		.from('deletion_requests')
+		.select('status, requested_at')
+		.eq('student_id', child.id)
+		.order('requested_at', { ascending: false });
+	const latest = (requests ?? [])[0];
+	const deletion =
+		latest && (latest.status === 'pending' || latest.status === 'rejected')
+			? { status: latest.status as DeletionStatus, requestedAt: latest.requested_at }
+			: null;
+
+	return {
+		child: { id: child.id, name: child.name },
+		sessions,
+		deletion,
+		deletionLoadError: Boolean(requestsError),
+		loadError
+	};
 };
 
 async function readSessionId(request: Request) {
@@ -207,5 +228,35 @@ export const actions: Actions = {
 			answer: data.answer,
 			classification: data.classification
 		};
+	},
+
+	/**
+	 * Story 7-6: submits a deletion request for this child into the admin's
+	 * queue. The database stamps requester, time and status, refuses anyone
+	 * but the child's approved parent (42501) and a second pending request
+	 * (23505). Nothing is erased until the admin approves.
+	 */
+	requestDeletion: async ({ params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+		if (!UUID_PATTERN.test(params.id)) {
+			return fail(400, { deletionError: m.deletion_error_failed() });
+		}
+
+		const { error: insertError } = await supabase
+			.from('deletion_requests')
+			.insert({ student_id: params.id })
+			.select('id')
+			.single();
+		if (insertError) {
+			if (insertError.code === '23505') {
+				return fail(400, { deletionError: m.deletion_error_duplicate() });
+			}
+			if (insertError.code === '42501') {
+				return fail(403, { deletionError: m.deletion_error_not_allowed() });
+			}
+			return fail(400, { deletionError: m.deletion_error_failed() });
+		}
+		return { action: 'requestDeletion' as const, success: true };
 	}
 };
