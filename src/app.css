@@ -261,6 +261,13 @@ ix-application-header ix-avatar {
 	--theme-btn-tertiary--color: var(--sherab-frame-text, #ffffff);
 	--theme-btn-tertiary--color--hover: var(--sherab-frame-text, #ffffff);
 }
+/* The avatar's menu (name card and items) sits on iX's light dropdown but
+   would inherit the header's white text; give it the normal text colour.
+   The initials keep their own --theme-avatar--color. */
+ix-application-header ix-avatar,
+ix-application-header ix-dropdown-item {
+	color: var(--theme-color-std-text);
+}
 
 .tile-link {
 	display: block;
