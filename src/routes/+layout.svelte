@@ -5,9 +5,11 @@
 	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import { headerHomeLink, routeIxLinks, setupIx, showToast } from '$lib/ix';
+	import { avatarLabel, headerHomeLink, routeIxLinks, setupIx, showToast } from '$lib/ix';
+	import { initials } from '$lib/initials';
 	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
@@ -54,6 +56,10 @@
 	let homeHref = $derived(resolve(roleHome(data.profile?.role) ?? '/'));
 
 	let signOutForm: HTMLFormElement | undefined = $state();
+
+	// #64: the header avatar's menu shows the display name (falling back to
+	// the e-mail), with initials on the avatar itself. No role anywhere (#62).
+	let userName = $derived(data.profile?.display_name?.trim() || data.profile?.email || '');
 
 	type NavItem = {
 		href: string;
@@ -129,48 +135,62 @@
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
-{#snippet headerItems()}
-	<!-- The "avatar" slot is the header's only right-hand slot that never
-	     collapses into the small-screen "more" overflow menu, so the language
-	     switch stays one tap away on phones. -->
-	<ix-dropdown-button
-		slot="ix-application-header-avatar"
-		enable-top-layer
-		variant="subtle-tertiary"
-		icon="globe"
-		label={localeFlags[getLocale()]?.name ?? getLocale()}
-		aria-label={m.footer_locale_label()}
-	>
-		{#each locales as locale (locale)}
-			{@const flag = localeFlags[locale]}
-			<!-- Full page load (not client routing): the locale is read server-side. -->
-			<ix-dropdown-item
-				checked={getLocale() === locale || undefined}
-				lang={locale}
-				onclick={() =>
-					window.location.assign(resolvePathname(localizeHref(page.url.pathname, { locale })))}
-			>
-				<span class="locale-option">
-					{#if flag?.icon}
-						<img src={flag.icon} alt="" width="18" height="12" />
-					{:else if flag?.emoji}
-						<span aria-hidden="true">{flag.emoji}</span>
-					{/if}
-					{flag?.name ?? locale}
-				</span>
-			</ix-dropdown-item>
-		{/each}
-	</ix-dropdown-button>
+{#snippet languageItems()}
+	{#each locales as locale (locale)}
+		{@const flag = localeFlags[locale]}
+		<!-- Full page load (not client routing): the locale is read server-side. -->
+		<ix-dropdown-item
+			checked={getLocale() === locale || undefined}
+			lang={locale}
+			onclick={() =>
+				window.location.assign(resolvePathname(localizeHref(page.url.pathname, { locale })))}
+		>
+			<span class="locale-option">
+				{#if flag?.icon}
+					<img src={flag.icon} alt="" width="18" height="12" />
+				{:else if flag?.emoji}
+					<span aria-hidden="true">{flag.emoji}</span>
+				{/if}
+				{flag?.name ?? locale}
+			</span>
+		</ix-dropdown-item>
+	{/each}
 {/snippet}
 
 {#if data.profile}
 	<ix-application>
-		<ix-application-header
-			name="Sherab"
-			name-suffix={data.profile.role}
-			use:headerHomeLink={homeHref}
-		>
-			{@render headerItems()}
+		<ix-application-header name="Sherab" use:headerHomeLink={homeHref}>
+			<!-- Decision 1 (#64): signed in, the language picker sits in the
+			     default right-hand slot next to the avatar; on small screens
+			     iX folds it into the header's "more" menu. -->
+			<ix-dropdown-button
+				enable-top-layer
+				variant="subtle-tertiary"
+				icon="globe"
+				label={localeFlags[getLocale()]?.name ?? getLocale()}
+				aria-label={m.footer_locale_label()}
+			>
+				{@render languageItems()}
+			</ix-dropdown-button>
+			<ix-avatar
+				slot="ix-application-header-avatar"
+				username={userName}
+				initials={initials(userName) || undefined}
+				use:avatarLabel={userName
+					? m.header_account_menu_label({ name: userName })
+					: m.nav_account()}
+			>
+				<ix-dropdown-item
+					icon="user"
+					label={m.nav_account()}
+					onclick={() => void goto(resolve('/account'))}
+				></ix-dropdown-item>
+				<ix-dropdown-item
+					icon="log-out"
+					label={m.nav_sign_out()}
+					onclick={() => signOutForm?.requestSubmit()}
+				></ix-dropdown-item>
+			</ix-avatar>
 		</ix-application-header>
 
 		<ix-menu start-expanded={data.menuExpanded || undefined} use:rememberMenuExpand>
@@ -184,19 +204,6 @@
 					{item.label}
 				</ix-menu-item>
 			{/each}
-			{#if data.profile}
-				<ix-menu-item
-					slot="bottom"
-					href={resolve('/account')}
-					icon="user"
-					active={page.url.pathname.endsWith('/account') || undefined}
-				>
-					{m.nav_account()}
-				</ix-menu-item>
-			{/if}
-			<ix-menu-item slot="bottom" icon="log-out" onclick={() => signOutForm?.requestSubmit()}>
-				{m.nav_sign_out()}
-			</ix-menu-item>
 		</ix-menu>
 		<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
 
@@ -209,7 +216,19 @@
 	     <ix-application> it would always show a menu toggle on small screens. -->
 	<div class="app-public">
 		<ix-application-header name="Sherab" use:headerHomeLink={resolve('/')}>
-			{@render headerItems()}
+			<!-- The "avatar" slot is the header's only right-hand slot that never
+			     collapses into the small-screen "more" overflow menu, so the
+			     language switch stays one tap away on phones. -->
+			<ix-dropdown-button
+				slot="ix-application-header-avatar"
+				enable-top-layer
+				variant="subtle-tertiary"
+				icon="globe"
+				label={localeFlags[getLocale()]?.name ?? getLocale()}
+				aria-label={m.footer_locale_label()}
+			>
+				{@render languageItems()}
+			</ix-dropdown-button>
 		</ix-application-header>
 		<main class="app-public-main">
 			{@render children()}

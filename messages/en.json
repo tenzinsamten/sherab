@@ -49,6 +49,7 @@
 	"reset_error_failed": "Could not update your password. Please request a new link and try again.",
 
 	"nav_account": "My Account",
+	"header_account_menu_label": "Account menu for {name}",
 	"account_section_label": "Account",
 	"account_heading": "My Account",
 	"account_name_heading": "Your name",

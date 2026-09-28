@@ -114,6 +114,42 @@ export function headerHomeLink(node: HTMLElement, href: string) {
 	};
 }
 
+/**
+ * Svelte action for a header <ix-avatar>: gives its menu button an accessible
+ * name. iX moves a host `aria-label` onto the avatar image only, and drops it
+ * entirely when `initials` are shown, so the button would be announced as
+ * just the initials.
+ */
+export function avatarLabel(node: HTMLElement, label: string) {
+	let current = label;
+	let destroyed = false;
+
+	// Re-queried on every write: iX may re-render its internal button.
+	function apply() {
+		const button = node.shadowRoot?.querySelector<HTMLElement>('button');
+		if (button) button.setAttribute('aria-label', current);
+		else node.setAttribute('aria-label', current);
+	}
+
+	(async () => {
+		await customElements.whenDefined('ix-avatar');
+		await (
+			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
+		).componentOnReady?.();
+		if (!destroyed) apply();
+	})();
+
+	return {
+		update(next: string) {
+			current = next;
+			if (!destroyed) apply();
+		},
+		destroy() {
+			destroyed = true;
+		}
+	};
+}
+
 /** App-wide feedback: every action error and short confirmation is an iX toast. */
 export async function showToast(type: ToastType, message: string) {
 	const ix = await setupIx();

@@ -49,6 +49,7 @@
 	"reset_error_failed": "Passwort konnte nicht aktualisiert werden. Bitte fordere einen neuen Link an.",
 
 	"nav_account": "Mein Konto",
+	"header_account_menu_label": "Kontomenü für {name}",
 	"account_section_label": "Konto",
 	"account_heading": "Mein Konto",
 	"account_name_heading": "Dein Name",
