@@ -747,5 +747,12 @@
 	"child_done_heading": "Done and Reviewed",
 	"child_attendance_heading": "Attendance",
 	"child_attendance_empty": "No attendance recorded yet.",
-	"child_skills_empty": "No skill status yet."
+	"child_skills_empty": "No skill status yet.",
+	"nav_homework": "Homework",
+	"parent_homework_intro": "Open homework for your children. Done and reviewed homework is on each child's Homework tab.",
+	"parent_homework_picker_label": "Show homework for",
+	"parent_homework_no_children": "No approved children yet. Their homework shows here once a child is approved.",
+	"parent_homework_child_error": "Could not load {name}'s homework. Please refresh.",
+	"parent_homework_history_label": "Done and reviewed:",
+	"parent_homework_row_label": "{title}, {name}: open on {name}'s Homework tab"
 }

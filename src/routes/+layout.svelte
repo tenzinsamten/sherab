@@ -119,6 +119,7 @@
 		if (role === 'parent') {
 			return [
 				{ href: resolve('/parent'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
+				{ href: resolve('/parent/homework'), label: m.nav_homework(), icon: 'tasks-open' },
 				calendar
 			];
 		}

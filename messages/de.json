@@ -747,5 +747,12 @@
 	"child_done_heading": "Erledigt und geprüft",
 	"child_attendance_heading": "Anwesenheit",
 	"child_attendance_empty": "Noch keine Anwesenheit erfasst.",
-	"child_skills_empty": "Noch kein Lernstand."
+	"child_skills_empty": "Noch kein Lernstand.",
+	"nav_homework": "Hausaufgaben",
+	"parent_homework_intro": "Offene Hausaufgaben deiner Kinder. Erledigte und geprüfte Hausaufgaben stehen im Tab Hausaufgaben des jeweiligen Kindes.",
+	"parent_homework_picker_label": "Hausaufgaben anzeigen für",
+	"parent_homework_no_children": "Noch keine bestätigten Kinder. Ihre Hausaufgaben erscheinen hier, sobald ein Kind bestätigt ist.",
+	"parent_homework_child_error": "Die Hausaufgaben von {name} konnten nicht geladen werden. Bitte neu laden.",
+	"parent_homework_history_label": "Erledigt und geprüft:",
+	"parent_homework_row_label": "{title}, {name}: im Tab Hausaufgaben von {name} öffnen"
 }

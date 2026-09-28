@@ -10,6 +10,7 @@
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { eventDomClass, toCalendarEvents, type CalendarEventProps } from '$lib/calendar-events';
+	import ChildPicker from '$lib/components/ChildPicker.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
 	import type { PageProps } from './$types';
 
@@ -437,23 +438,23 @@
 	{/if}
 
 	{#if isParent && data.children.length >= 2}
-		<!-- eslint-disable svelte/no-navigation-without-resolve -- monthHref() builds on resolve()d calendarHref and only adds ?month= / &child=. -->
-		<nav class="child-picker" aria-label={m.calendar_child_picker_label()}>
-			<a
-				href={monthHref(data.month, null)}
-				class="child-pick"
-				aria-current={data.selectedChild === null ? 'page' : undefined}
-				>{m.calendar_all_children()}</a
-			>
-			{#each data.children as child (child.id)}
-				<a
-					href={monthHref(data.month, child.id)}
-					class="child-pick"
-					aria-current={data.selectedChild === child.id ? 'page' : undefined}>{child.name}</a
-				>
-			{/each}
-		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		<ChildPicker
+			label={m.calendar_child_picker_label()}
+			options={[
+				{
+					key: 'all',
+					href: monthHref(data.month, null),
+					label: m.calendar_all_children(),
+					current: data.selectedChild === null
+				},
+				...data.children.map((child) => ({
+					key: child.id,
+					href: monthHref(data.month, child.id),
+					label: child.name,
+					current: data.selectedChild === child.id
+				}))
+			]}
+		/>
 	{/if}
 
 	{#if isParent && data.children.length === 0 && !data.loadError}
@@ -961,44 +962,6 @@
 	.parent-hint {
 		margin: 0 0 var(--space-3);
 	}
-	.child-picker {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		margin: 0 0 var(--space-4);
-	}
-	.child-pick {
-		display: inline-flex;
-		align-items: center;
-		min-height: 2rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--theme-color-soft-bdr);
-		border-radius: 999px;
-		color: var(--theme-color-std-text);
-		text-decoration: none;
-	}
-	.child-pick:hover {
-		background: var(--theme-color-ghost-primary--hover);
-	}
-	.child-pick[aria-current='page'] {
-		background: var(--theme-color-primary);
-		border-color: var(--theme-color-primary);
-		color: var(--theme-color-primary--contrast);
-	}
-	/* #70: iX colours visited links primary with a high-specificity rule
-	   (a[href]:not(.disabled):not(:disabled):visited), which turned the
-	   selected pill's text blue on blue. Out-rank it for every link state. */
-	a.child-pick.child-pick[href]:is(:link, :visited, :hover, :active) {
-		color: var(--theme-color-std-text);
-	}
-	a.child-pick.child-pick[href][aria-current='page']:is(:link, :visited, :hover, :active) {
-		color: #ffffff;
-	}
-	.child-pick:focus-visible {
-		outline: 2px solid var(--theme-color-focus-bdr);
-		outline-offset: 1px;
-	}
-
 	/* ── @event-calendar/core, in the app's iX look ─────────────────────── */
 	.calendar-wrap {
 		min-width: 0;
