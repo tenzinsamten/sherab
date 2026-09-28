@@ -28,7 +28,7 @@ export const load: PageServerLoad = async ({
 	}
 
 	const cls = rowOr404(
-		await supabase.from('classes').select('id, name').eq('id', params.classId).maybeSingle(),
+		await supabase.from('classes').select('id, name, code').eq('id', params.classId).maybeSingle(),
 		CLASS_MESSAGES
 	);
 

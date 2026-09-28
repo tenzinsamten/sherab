@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import CopyField from '$lib/components/CopyField.svelte';
 	import EnrollmentPanel from '$lib/components/EnrollmentPanel.svelte';
 	import type { PageProps } from './$types';
 
@@ -17,6 +18,7 @@
 			<p class="page-kicker">{m.classes_col_students()}</p>
 			<h1 class="page-heading">{m.enroll_heading()}</h1>
 			<p class="page-subtitle">{data.class.name}</p>
+			<CopyField label={m.class_code_label()} value={data.class.code} />
 		</div>
 		<ix-button variant="secondary" href={resolve('/admin/classes')}>
 			{m.syllabus_back_to_classes()}

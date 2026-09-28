@@ -100,6 +100,7 @@
 	"classes_error_duplicate_name": "A class called “{name}” already exists.",
 	"classes_col_name": "Name",
 	"classes_col_code": "Code",
+	"class_code_label": "Class code",
 	"classes_col_created": "Created",
 
 	"teachers_section_label": "03 / Teachers",

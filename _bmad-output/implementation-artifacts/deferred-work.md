@@ -213,3 +213,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-62-64-header-avatar.md`
   summary: Verify at phone width that the signed-in language dropdown, folded into iX's header overflow menu, opens and switches language.
   evidence: maybe-false/medium — nested ix-dropdown-button inside the header overflow dropdown is untested; settle with a phone-width manual or e2e check (B2 review triage #6).
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-53-54-class-code-copy.md`
+  summary: Teacher class page (`teacher/classes/[id]`, "Code: {code}") and teacher dashboard class cards could use `CopyField` for the class code too.
+  evidence: B3 added copy for students and the admin only (#53/#54); teachers are the main people who hand out codes (B3 review).
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-53-54-class-code-copy.md`
+  summary: "Copy join link" (`/join?code=…`) with `/join` pre-filling the class code from the query string.
+  evidence: The copied code alone doesn't tell the recipient where to enter it (B3 review); pairs with #67 (join another class).

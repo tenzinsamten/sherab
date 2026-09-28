@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import CopyField from '$lib/components/CopyField.svelte';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
@@ -135,7 +136,7 @@
 						{#each data.classes as cls (cls.id)}
 							<tr>
 								<td>{cls.name}</td>
-								<td><code>{cls.code}</code></td>
+								<td><CopyField label={m.classes_col_code()} value={cls.code} hideLabel /></td>
 								<td>
 									<span class="actions">
 										<a href={resolve('/admin/classes/[id]/students', { id: cls.id })}>
