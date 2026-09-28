@@ -657,7 +657,7 @@
 	"requests_parent_error_unconfirmed": "Dieser Elternteil hat seine E-Mail noch nicht bestätigt. Ablehnen ist möglich, Genehmigen erst nach der Bestätigung.",
 	"requests_parent_error_approve_failed": "Dieser Elternteil konnte nicht genehmigt werden. Bitte versuche es erneut.",
 	"requests_parent_error_reject_failed": "Dieser Elternteil konnte nicht abgelehnt werden. Bitte versuche es erneut.",
-	"parent_card_sessions_link": "Termine und Abwesenheit",
+	"parent_card_sessions_link": "Details",
 	"leave_kicker": "Termine und Abwesenheit",
 	"leave_back": "Zurück zu meinen Kindern",
 	"leave_sessions_label": "Termine",
@@ -727,5 +727,18 @@
 	"requests_deletion_outcome_approved": "Die Daten von {name} wurden gelöscht.",
 	"requests_deletion_outcome_rejected": "Löschantrag für {name} abgelehnt.",
 	"requests_deletion_error_not_allowed": "Nur der Admin entscheidet Löschanträge, nie für das eigene Kind.",
-	"requests_deletion_error_failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte versuch es erneut."
+	"requests_deletion_error_failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte versuch es erneut.",
+
+	"child_tabs_label": "Bereiche",
+	"child_tab_overview": "Überblick",
+	"child_tab_record": "Verlauf",
+	"child_section_error": "Dieser Bereich konnte nicht geladen werden. Bitte neu laden.",
+	"child_team_label": "Team",
+	"child_team_none": "Noch kein Team.",
+	"child_team_marker": "Team von {name}",
+	"child_teachers_heading": "Lehrkräfte",
+	"child_done_heading": "Erledigt und geprüft",
+	"child_attendance_heading": "Anwesenheit",
+	"child_attendance_empty": "Noch keine Anwesenheit erfasst.",
+	"child_skills_empty": "Noch kein Lernstand."
 }

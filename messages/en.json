@@ -657,7 +657,7 @@
 	"requests_parent_error_unconfirmed": "This parent has not confirmed their email yet. You can still reject, but approval is blocked until they confirm.",
 	"requests_parent_error_approve_failed": "Could not approve this parent. Please try again.",
 	"requests_parent_error_reject_failed": "Could not reject this parent. Please try again.",
-	"parent_card_sessions_link": "Sessions and leave",
+	"parent_card_sessions_link": "Details",
 	"leave_kicker": "Sessions and leave",
 	"leave_back": "Back to my children",
 	"leave_sessions_label": "Sessions",
@@ -727,5 +727,18 @@
 	"requests_deletion_outcome_approved": "{name}'s data has been erased.",
 	"requests_deletion_outcome_rejected": "Deletion request for {name} rejected.",
 	"requests_deletion_error_not_allowed": "Only the admin decides deletion requests, and never for their own child.",
-	"requests_deletion_error_failed": "Could not save the decision. Please try again."
+	"requests_deletion_error_failed": "Could not save the decision. Please try again.",
+
+	"child_tabs_label": "Child sections",
+	"child_tab_overview": "Overview",
+	"child_tab_record": "Record",
+	"child_section_error": "Could not load this section. Please refresh.",
+	"child_team_label": "Team",
+	"child_team_none": "No team yet.",
+	"child_team_marker": "{name}'s team",
+	"child_teachers_heading": "Teachers",
+	"child_done_heading": "Done and Reviewed",
+	"child_attendance_heading": "Attendance",
+	"child_attendance_empty": "No attendance recorded yet.",
+	"child_skills_empty": "No skill status yet."
 }

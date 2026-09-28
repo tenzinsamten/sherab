@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
+import { addDays } from '$lib/server/student-homework';
 import { actions, load } from './+page.server';
 
 /**
- * /parent/children/[id] (Stories 7-4, 7-5): a fake `locals.supabase` with one
+ * /parent/children/[id] (Stories 7-4, 7-5, 7-6 and the detail sections): a fake `locals.supabase` with one
  * result per table / RPC; `calls` records every chained query method.
  */
 const CHILD = '11111111-2222-4333-8444-555555555555';
@@ -20,21 +21,66 @@ function fakeSupabase(opts: {
 }) {
 	const calls: { table: string; method: string; args: unknown[] }[] = [];
 	const inserted: unknown[] = [];
-	function chain(table: string, result: Result) {
+	function chain(table: string, initial: Result) {
 		const c: Record<string, unknown> = {};
-		for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order']) {
+		let result = initial;
+		// eq / in filter array rows that carry the column (so a wrong id shows
+		// up in a test); rows without it pass through unchanged.
+		const filter = (keep: (row: Record<string, unknown>) => boolean) => {
+			if (Array.isArray(result.data)) {
+				result = {
+					...result,
+					data: (result.data as Record<string, unknown>[]).filter((row) => keep(row))
+				};
+			}
+		};
+		// order() keys apply like the database: first key first, rows without
+		// the column keep their place.
+		const orderKeys: { column: string; ascending: boolean }[] = [];
+		const sorted = (): Result => {
+			if (!Array.isArray(result.data) || orderKeys.length === 0) return result;
+			const rows = [...(result.data as Record<string, unknown>[])];
+			rows.sort((a, b) => {
+				for (const { column, ascending } of orderKeys) {
+					if (!(column in a) || !(column in b)) continue;
+					const x = String(a[column] ?? '');
+					const y = String(b[column] ?? '');
+					if (x !== y) return (x < y ? -1 : 1) * (ascending ? 1 : -1);
+				}
+				return 0;
+			});
+			return { ...result, data: rows };
+		};
+		for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'range']) {
 			c[method] = (...args: unknown[]) => {
 				calls.push({ table, method, args });
+				if (method === 'order') {
+					const options = args[1] as { ascending?: boolean } | undefined;
+					orderKeys.push({ column: args[0] as string, ascending: options?.ascending ?? true });
+				}
+				const [column, value] = args as [string, unknown];
+				if (method === 'eq') filter((row) => !(column in row) || row[column] === value);
+				if (method === 'in') {
+					filter((row) => !(column in row) || (value as unknown[]).includes(row[column]));
+				}
 				return c;
 			};
 		}
+		c.maybeSingle = async () => {
+			calls.push({ table, method: 'maybeSingle', args: [] });
+			result = sorted();
+			return {
+				data: Array.isArray(result.data) ? (result.data[0] ?? null) : result.data,
+				error: result.error
+			};
+		};
 		c.insert = (row: unknown) => {
 			inserted.push(row);
 			const r = opts.insert ?? { data: null, error: null };
 			const ic = { select: () => ic, single: async () => r };
 			return ic;
 		};
-		c.then = (resolve: (value: Result) => unknown) => resolve(result);
+		c.then = (resolve: (value: Result) => unknown) => resolve(sorted());
 		return c;
 	}
 	const rpc = vi.fn(async (fn: string) =>
@@ -53,18 +99,57 @@ function fakeSupabase(opts: {
 	};
 }
 
-function runLoad(fake: ReturnType<typeof fakeSupabase>, id = CHILD, parentStatus = 'approved') {
+type HomeworkRow = {
+	instanceId: string;
+	title: string;
+	dueDate: string;
+	status: string;
+	overdue: boolean;
+	referenceLinks: { url: string; label: string | null }[];
+	className: string | null;
+};
+
+type LoadResult = {
+	child: { id: string; name: string };
+	tab: string;
+	sessions: Record<string, unknown>[];
+	deletion: { status: string; requestedAt: string } | null;
+	deletionLoadError: boolean;
+	loadError: boolean;
+	streak: { currentStreak: number } | null;
+	badges: { badgeType: string; milestone: number }[];
+	team: { name: string; rank: number; total: number } | null;
+	teamId: string | null;
+	leaderboard: { teamId: string; teamName: string; totalStreak: number }[];
+	homework: {
+		open: HomeworkRow[];
+		done: HomeworkRow[];
+		donePage: number;
+		donePageCount: number;
+	};
+	attendance: { sessionDate: string; className: string; present: boolean }[];
+	skills: {
+		classId: string;
+		className: string | null;
+		current: Record<string, { level: string }>;
+		history: { id: string; notes: string | null; level: string }[];
+	}[];
+	teachers: { classId: string; className: string; teachers: { id: string; name: string }[] }[];
+	errors: Record<string, boolean>;
+};
+
+function runLoad(
+	fake: ReturnType<typeof fakeSupabase>,
+	id = CHILD,
+	parentStatus = 'approved',
+	search = ''
+) {
 	return load({
 		params: { id },
+		url: new URL(`http://localhost/parent/children/${id}${search}`),
 		parent: async () => ({ parentStatus }),
 		locals: { supabase: fake.client }
-	} as unknown as Parameters<typeof load>[0]) as Promise<{
-		child: { id: string; name: string };
-		sessions: Record<string, unknown>[];
-		deletion: { status: string; requestedAt: string } | null;
-		deletionLoadError: boolean;
-		loadError: boolean;
-	}>;
+	} as unknown as Parameters<typeof load>[0]) as Promise<LoadResult>;
 }
 
 function event(fields: Record<string, string>, fake: ReturnType<typeof fakeSupabase>) {
@@ -75,12 +160,6 @@ function event(fields: Record<string, string>, fake: ReturnType<typeof fakeSupab
 		params: { id: CHILD },
 		locals: { supabase: fake.client, safeGetSession: async () => ({ user: { id: 'p1' } }) }
 	} as unknown as Parameters<typeof actions.setLeave>[0];
-}
-
-function plusDays(isoDate: string, days: number): string {
-	const date = new Date(`${isoDate}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() + days);
-	return date.toISOString().slice(0, 10);
 }
 
 const approvedChild = { id: CHILD, name: 'Dawa', status: 'approved' };
@@ -135,24 +214,13 @@ describe('parent child leave page: sessions', () => {
 	it("lists the child's non-cancelled sessions from yesterday for 12 weeks with the current answer", async () => {
 		const fake = fakeSupabase({ linked: [approvedChild], tables });
 		const result = await runLoad(fake);
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			child: { id: CHILD, name: 'Dawa' },
 			deletion: null,
 			deletionLoadError: false,
 			loadError: false,
+			// Ordered by day, as the database returns them.
 			sessions: [
-				{
-					id: 's1',
-					day: '2099-10-04',
-					className: 'Alphabet',
-					startTime: '10:00',
-					durationMinutes: 90,
-					open: true,
-					answer: 'on_leave',
-					classification: 'short_notice',
-					decision: null,
-					sickOpen: false
-				},
 				{
 					id: 's2',
 					day: '2000-09-24',
@@ -164,12 +232,24 @@ describe('parent child leave page: sessions', () => {
 					classification: null,
 					decision: null,
 					sickOpen: false
+				},
+				{
+					id: 's1',
+					day: '2099-10-04',
+					className: 'Alphabet',
+					startTime: '10:00',
+					durationMinutes: 90,
+					open: true,
+					answer: 'on_leave',
+					classification: 'short_notice',
+					decision: null,
+					sickOpen: false
 				}
 			]
 		});
 
 		const today = todayInBerlin();
-		const yesterday = plusDays(today, -1);
+		const yesterday = addDays(today, -1);
 		const end = new Date(`${today}T00:00:00Z`);
 		end.setUTCDate(end.getUTCDate() + 84);
 		const sessionCalls = fake.calls
@@ -189,7 +269,7 @@ describe('parent child leave page: sessions', () => {
 		expect(leaveCalls).toEqual(
 			expect.arrayContaining([
 				['eq', 'student_id', CHILD],
-				['in', 'class_session_id', ['s1', 's2']]
+				['in', 'class_session_id', ['s2', 's1']]
 			])
 		);
 	});
@@ -210,10 +290,10 @@ describe('parent child leave page: sessions', () => {
 				class_enrollments: { data: [{ class_id: 'k1' }], error: null },
 				class_sessions_effective: {
 					data: [
-						row('y', plusDays(today, -1)),
-						row('yd', plusDays(today, -1)),
+						row('y', addDays(today, -1)),
+						row('yd', addDays(today, -1)),
 						row('t', today),
-						row('n', plusDays(today, 1))
+						row('n', addDays(today, 1))
 					],
 					error: null
 				},
@@ -402,5 +482,385 @@ describe('parent child page: deletion request (Story 7-6)', () => {
 		const fake = fakeSupabase({ insert: { data: null, error: err } });
 		const result = await actions.requestDeletion(event({}, fake));
 		expect(result).toMatchObject({ status, data: { deletionError: message } });
+	});
+});
+
+describe('parent child page: detail sections', () => {
+	const SIBLING = '99999999-8888-4777-8666-555555555555';
+	const today = todayInBerlin();
+	const at = (n: number) => `2026-09-${String(n).padStart(2, '0')}T08:00:00Z`;
+
+	type HistoryRow = { instance: string; student: string; status: string; at: string };
+
+	function history(rows: HistoryRow[]) {
+		return rows.map((r, i) => ({
+			id: String(i + 1).padStart(4, '0'),
+			instance_id: r.instance,
+			student_id: r.student,
+			status: r.status,
+			recorded_by: null,
+			recorded_at: r.at
+		}));
+	}
+
+	function instance(id: string, due: string) {
+		return { id, assignment_id: `a-${id}`, class_id: 'k1', due_date: due, archived_at: null };
+	}
+
+	function assignment(instanceId: string, links: unknown = []) {
+		return {
+			id: `a-${instanceId}`,
+			title: `Homework ${instanceId}`,
+			skill_area: 'language',
+			description: null,
+			reference_links: links,
+			recurrence_rule: null
+		};
+	}
+
+	const LINK = { url: 'https://example.org/song', label: 'Song' };
+
+	/**
+	 * Open: i1 (overdue), i2; Done: i3; Reviewed: i4; the sibling's i5 and its
+	 * own i1 Done. Class k2 (not enrolled): i6 still open (hidden), i7 Done.
+	 */
+	function fullTables(): Record<string, Result> {
+		return {
+			class_enrollments: { data: [{ class_id: 'k1', student_id: CHILD }], error: null },
+			classes: { data: [{ id: 'k1', name: 'Alphabet' }], error: null },
+			homework_status_history: {
+				data: history([
+					{ instance: 'i1', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i2', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i3', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i3', student: CHILD, status: 'done', at: at(10) },
+					{ instance: 'i4', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i4', student: CHILD, status: 'done', at: at(5) },
+					{ instance: 'i4', student: CHILD, status: 'reviewed', at: at(6) },
+					{ instance: 'i1', student: SIBLING, status: 'assigned', at: at(1) },
+					{ instance: 'i1', student: SIBLING, status: 'done', at: at(2) },
+					{ instance: 'i5', student: SIBLING, status: 'assigned', at: at(1) },
+					{ instance: 'i6', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i7', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i7', student: CHILD, status: 'done', at: at(8) }
+				]),
+				error: null
+			},
+			homework_instances: {
+				data: [
+					instance('i1', addDays(today, -1)),
+					instance('i2', addDays(today, 3)),
+					instance('i3', addDays(today, -7)),
+					instance('i4', addDays(today, -14)),
+					instance('i5', addDays(today, 1)),
+					{ ...instance('i6', addDays(today, 1)), class_id: 'k2' },
+					{ ...instance('i7', addDays(today, -3)), class_id: 'k2' }
+				],
+				error: null
+			},
+			homework_assignments: {
+				data: [
+					assignment('i1'),
+					assignment('i2', [LINK]),
+					assignment('i3'),
+					assignment('i4'),
+					assignment('i5'),
+					assignment('i6'),
+					assignment('i7')
+				],
+				error: null
+			},
+			student_streaks: {
+				data: [
+					{ student_id: SIBLING, current_streak: 9, last_qualifying_week: '2026-09-14' },
+					{ student_id: CHILD, current_streak: 3, last_qualifying_week: '2026-09-21' }
+				],
+				error: null
+			},
+			badges_earned: {
+				data: [
+					{ student_id: CHILD, badge_type: 'homework', milestone: 5, earned_at: at(3) },
+					{ student_id: SIBLING, badge_type: 'attendance', milestone: 10, earned_at: at(3) }
+				],
+				error: null
+			},
+			profiles: {
+				data: [
+					{ id: SIBLING, team_id: 't1' },
+					{ id: CHILD, team_id: 't2' }
+				],
+				error: null
+			},
+			// Oldest first: the load's order() must put the newest first.
+			skill_status_history: {
+				data: [
+					{
+						id: 'sk1',
+						student_id: CHILD,
+						class_id: 'k1',
+						skill_area: 'language',
+						level: 'learning',
+						notes: null,
+						recorded_at: at(2)
+					},
+					{
+						id: 'sk2',
+						student_id: CHILD,
+						class_id: 'k2',
+						skill_area: 'dance',
+						level: 'learning',
+						notes: null,
+						recorded_at: at(4)
+					},
+					{
+						id: 'sk9',
+						student_id: SIBLING,
+						class_id: 'k1',
+						skill_area: 'song',
+						level: 'learning',
+						notes: 'Sibling note',
+						recorded_at: at(15)
+					},
+					{
+						id: 'sk3',
+						student_id: CHILD,
+						class_id: 'k1',
+						skill_area: 'language',
+						level: 'confident',
+						notes: 'Reads fluently',
+						recorded_at: at(20)
+					}
+				],
+				error: null
+			}
+		};
+	}
+
+	const fullRpc: Record<string, Result> = {
+		team_leaderboard: {
+			data: [
+				{ team_id: 't1', team_name: 'Snow Lions', total_streak: 9 },
+				{ team_id: 't2', team_name: 'Yaks', total_streak: 4 }
+			],
+			error: null
+		},
+		child_attendance: {
+			data: [
+				{ session_date: '2026-09-20', class_id: 'k1', class_name: 'Alphabet', present: true },
+				{ session_date: '2026-09-13', class_id: 'k1', class_name: 'Alphabet', present: false }
+			],
+			error: null
+		},
+		class_people: {
+			data: [{ person_id: 'tch', display_name: 'Pema', is_teacher: true }],
+			error: null
+		}
+	};
+
+	const linked = [approvedChild, { id: SIBLING, name: 'Tashi', status: 'approved' }];
+
+	it('full child: every section filled, Open with 1 overdue, notes shown', async () => {
+		const fake = fakeSupabase({ linked, tables: fullTables(), rpc: fullRpc });
+		const result = await runLoad(fake);
+
+		expect(result.errors).toEqual({
+			summary: false,
+			team: false,
+			open: false,
+			done: false,
+			attendance: false,
+			skills: false,
+			teachers: false
+		});
+		expect(result.homework.open.map((h) => [h.instanceId, h.overdue, h.className])).toEqual([
+			['i1', true, 'Alphabet'],
+			['i2', false, 'Alphabet']
+		]);
+		expect(result.homework.done.map((h) => [h.instanceId, h.status, h.className])).toEqual([
+			['i3', 'done', 'Alphabet'],
+			['i7', 'done', null],
+			['i4', 'reviewed', 'Alphabet']
+		]);
+		expect(result.streak).toMatchObject({ currentStreak: 3 });
+		expect(result.badges).toEqual([{ badgeType: 'homework', milestone: 5, earnedAt: at(3) }]);
+		expect(result.team).toEqual({ name: 'Yaks', rank: 2, total: 2 });
+		expect(result.teamId).toBe('t2');
+		expect(result.leaderboard.map((t) => t.teamName)).toEqual(['Snow Lions', 'Yaks']);
+		expect(result.attendance).toEqual([
+			{ sessionDate: '2026-09-20', classId: 'k1', className: 'Alphabet', present: true },
+			{ sessionDate: '2026-09-13', classId: 'k1', className: 'Alphabet', present: false }
+		]);
+		expect(result.attendance[0]).not.toHaveProperty('notes');
+		expect(result.skills.map((k) => [k.classId, k.className])).toEqual([
+			['k1', 'Alphabet'],
+			['k2', null]
+		]);
+		expect(result.skills[0].current.language.level).toBe('confident');
+		expect(result.skills[0].history.map((h) => [h.id, h.notes])).toEqual([
+			['sk3', 'Reads fluently'],
+			['sk1', null]
+		]);
+		expect(result.teachers).toEqual([
+			{ classId: 'k1', className: 'Alphabet', teachers: [{ id: 'tch', name: 'Pema' }] }
+		]);
+
+		expect(fake.rpc).toHaveBeenCalledWith('child_attendance', { p_student_id: CHILD });
+		expect(fake.rpc).toHaveBeenCalledWith('class_people', { p_class_id: 'k1' });
+	});
+
+	it('still enrolled: open homework from a class the child left is hidden', async () => {
+		const fake = fakeSupabase({ linked, tables: fullTables(), rpc: fullRpc });
+		const { homework } = await runLoad(fake);
+		expect(homework.open.map((h) => h.instanceId)).not.toContain('i6');
+	});
+
+	it('links: reference links come through for external anchors', async () => {
+		const fake = fakeSupabase({ linked, tables: fullTables(), rpc: fullRpc });
+		const { homework } = await runLoad(fake);
+		expect(homework.open.find((h) => h.instanceId === 'i2')?.referenceLinks).toEqual([LINK]);
+	});
+
+	it("sibling isolation: only this child's homework, skills and summary", async () => {
+		const fake = fakeSupabase({ linked, tables: fullTables(), rpc: fullRpc });
+		const result = await runLoad(fake);
+		const ids = [...result.homework.open, ...result.homework.done].map((h) => h.instanceId);
+		expect(ids).not.toContain('i5');
+		// The sibling's Done on i1 does not finish it for this child.
+		expect(result.homework.open.map((h) => h.instanceId)).toContain('i1');
+		expect(result.skills.flatMap((s) => s.history.map((h) => h.id))).not.toContain('sk9');
+		expect(result.streak).toMatchObject({ currentStreak: 3 });
+
+		for (const table of ['skill_status_history', 'student_streaks', 'badges_earned']) {
+			expect(
+				fake.calls.filter((c) => c.table === table && c.method === 'eq').map(({ args }) => args)
+			).toContainEqual(['student_id', CHILD]);
+		}
+		expect(
+			fake.calls.filter((c) => c.table === 'profiles' && c.method === 'eq').map(({ args }) => args)
+		).toContainEqual(['id', CHILD]);
+	});
+
+	it('empty child: every section empty, no errors', async () => {
+		const fake = fakeSupabase({ linked: [approvedChild] });
+		const result = await runLoad(fake);
+		expect(result).toMatchObject({
+			tab: 'overview',
+			streak: null,
+			badges: [],
+			team: null,
+			teamId: null,
+			leaderboard: [],
+			homework: { open: [], done: [], donePage: 1, donePageCount: 1 },
+			attendance: [],
+			skills: [],
+			teachers: []
+		});
+		expect(Object.values(result.errors).every((e) => e === false)).toBe(true);
+	});
+
+	describe('paging', () => {
+		// 12 Done items, finished on days 1..12 (newest first: d12 .. d1).
+		function pagingTables(): Record<string, Result> {
+			const rows: HistoryRow[] = [];
+			const instances = [];
+			const assignments = [];
+			for (let n = 1; n <= 12; n++) {
+				rows.push({ instance: `d${n}`, student: CHILD, status: 'assigned', at: at(1) });
+				rows.push({ instance: `d${n}`, student: CHILD, status: 'done', at: at(n) });
+				instances.push(instance(`d${n}`, addDays(today, -30)));
+				assignments.push(assignment(`d${n}`));
+			}
+			return {
+				class_enrollments: { data: [{ class_id: 'k1', student_id: CHILD }], error: null },
+				classes: { data: [{ id: 'k1', name: 'Alphabet' }], error: null },
+				homework_status_history: { data: history(rows), error: null },
+				homework_instances: { data: instances, error: null },
+				homework_assignments: { data: assignments, error: null }
+			};
+		}
+
+		it('?tab=homework&done=2 lists items 11-12', async () => {
+			const fake = fakeSupabase({ linked: [approvedChild], tables: pagingTables() });
+			const { homework, tab } = await runLoad(fake, CHILD, 'approved', '?tab=homework&done=2');
+			expect(tab).toBe('homework');
+			expect(homework).toMatchObject({ donePage: 2, donePageCount: 2 });
+			expect(homework.done.map((h) => h.instanceId)).toEqual(['d2', 'd1']);
+		});
+
+		it.each(['abc', '0', '-1', '1.5', ''])('an invalid page (%s) is page 1', async (done) => {
+			const fake = fakeSupabase({ linked: [approvedChild], tables: pagingTables() });
+			const { homework } = await runLoad(fake, CHILD, 'approved', `?tab=homework&done=${done}`);
+			expect(homework.donePage).toBe(1);
+			expect(homework.done).toHaveLength(10);
+			expect(homework.done[0].instanceId).toBe('d12');
+		});
+	});
+
+	it('section failure: a skill read error flags only the skills section', async () => {
+		const fake = fakeSupabase({
+			linked,
+			tables: { ...fullTables(), skill_status_history: { data: null, error: { message: 'boom' } } },
+			rpc: fullRpc
+		});
+		const result = await runLoad(fake);
+		expect(result.errors).toEqual({
+			summary: false,
+			team: false,
+			open: false,
+			done: false,
+			attendance: false,
+			skills: true,
+			teachers: false
+		});
+		expect(result.skills).toEqual([]);
+		expect(result.attendance).toHaveLength(2);
+		expect(result.homework.open).toHaveLength(2);
+		expect(result.loadError).toBe(false);
+	});
+
+	it('section failure: attendance and leaderboard errors stay in their sections', async () => {
+		const fake = fakeSupabase({
+			linked,
+			tables: fullTables(),
+			rpc: {
+				...fullRpc,
+				child_attendance: { data: null, error: { code: '42501' } },
+				team_leaderboard: { data: null, error: { message: 'boom' } }
+			}
+		});
+		const result = await runLoad(fake);
+		expect(result.errors).toMatchObject({ attendance: true, team: true, skills: false });
+		expect(result).toMatchObject({ attendance: [], leaderboard: [], team: null });
+	});
+
+	const boom = { data: null, error: { message: 'boom' } };
+	it.each([
+		['student_streaks', 'table', ['summary']],
+		['badges_earned', 'table', ['summary']],
+		['profiles', 'table', ['team']],
+		['class_people', 'rpc', ['teachers']],
+		['homework_status_history', 'table', ['open', 'done']],
+		['classes', 'table', ['open', 'done', 'skills', 'teachers']]
+	] as const)('section failure: %s (%s) flags %o only', async (name, kind, flagged) => {
+		const fake = fakeSupabase({
+			linked,
+			tables: kind === 'table' ? { ...fullTables(), [name]: boom } : fullTables(),
+			rpc: kind === 'rpc' ? { ...fullRpc, [name]: boom } : fullRpc
+		});
+		const { errors } = await runLoad(fake);
+		for (const [section, value] of Object.entries(errors)) {
+			expect([section, value]).toEqual([section, (flagged as readonly string[]).includes(section)]);
+		}
+	});
+
+	it.each([
+		['?tab=record', 'record'],
+		['?tab=sessions', 'sessions'],
+		['?tab=homework', 'homework'],
+		['?tab=bogus', 'overview'],
+		['', 'overview']
+	])('tabs: %s -> %s', async (search, tab) => {
+		const fake = fakeSupabase({ linked: [approvedChild] });
+		expect((await runLoad(fake, CHILD, 'approved', search)).tab).toBe(tab);
 	});
 });

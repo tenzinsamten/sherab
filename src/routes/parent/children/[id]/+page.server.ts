@@ -1,8 +1,21 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
+import { shapeStudentBadges, type StudentBadge } from '$lib/server/badges';
 import { toHhMm } from '$lib/server/calendar';
+import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
 import { leaveErrorMessage } from '$lib/server/leave';
+import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
+import { shapeStudentStreak, type StudentStreak } from '$lib/server/streak';
+import {
+	addDays,
+	loadClassPeople,
+	loadStudentHomework,
+	teamRank,
+	type ClassPerson,
+	type StudentHomeworkItem,
+	type TeamStanding
+} from '$lib/server/student-homework';
 import type { Actions, PageServerLoad } from './$types';
 
 export type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
@@ -37,11 +50,55 @@ const LEAVE_WINDOW_DAYS = 12 * 7;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function plusDays(isoDate: string, days: number): string {
-	const date = new Date(`${isoDate}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() + days);
-	return date.toISOString().slice(0, 10);
+/** The child page's tabs (decision 1); anything else shows Overview. */
+const CHILD_TABS = ['overview', 'homework', 'sessions', 'record'] as const;
+export type ChildTab = (typeof CHILD_TABS)[number];
+
+function readTab(value: string | null): ChildTab {
+	return CHILD_TABS.find((t) => t === value) ?? 'overview';
 }
+
+/** `?done=` page number: a positive integer, anything else is page 1. */
+function readPage(value: string | null): number {
+	if (!value || !/^\d{1,6}$/.test(value)) return 1;
+	return Math.max(1, Number(value));
+}
+
+/** A homework row on the parent page (read-only): the item plus its class name. */
+export type ChildHomeworkItem = Pick<
+	StudentHomeworkItem,
+	'instanceId' | 'title' | 'dueDate' | 'status' | 'overdue' | 'referenceLinks'
+> & { className: string | null };
+
+export type ChildAttendance = {
+	sessionDate: string;
+	classId: string;
+	className: string;
+	present: boolean;
+};
+
+export type ChildSkillClass = {
+	classId: string;
+	/** null: a class the child has left (its name is no longer readable). */
+	className: string | null;
+	/** Current level per skill area (latest row). */
+	current: Record<string, SkillHistoryRow>;
+	/** Full history, newest first, with the teacher's notes. */
+	history: SkillHistoryRow[];
+};
+
+export type ChildClassTeachers = { classId: string; className: string; teachers: ClassPerson[] };
+
+/** Per-section load failures: a failing section shows its own error line. */
+export type ChildSectionErrors = {
+	summary: boolean;
+	team: boolean;
+	open: boolean;
+	done: boolean;
+	attendance: boolean;
+	skills: boolean;
+	teachers: boolean;
+};
 
 /**
  * Stories 7-4, 7-5: one approved child's non-cancelled sessions from
@@ -50,8 +107,14 @@ function plusDays(isoDate: string, days: number): string {
  * one of the caller's approved children (linked_children(), the same rule as
  * is_parent_of); anything else is a 404. RLS (is_parent_in_class,
  * is_parent_of) is the real barrier for every read.
+ *
+ * Since the detail-page follow-up (deferred from 7-3) it also reads the
+ * child's summary, homework, attendance, skills, teachers and the team
+ * leaderboard, each with the child's explicit id and its own error flag.
+ * Every section is read whatever the tab, so switching tabs never shows a
+ * stale error.
  */
-export const load: PageServerLoad = async ({ params, parent, locals: { supabase } }) => {
+export const load: PageServerLoad = async ({ params, url, parent, locals: { supabase } }) => {
 	const { parentStatus } = await parent();
 	if (parentStatus !== 'approved' || !UUID_PATTERN.test(params.id)) {
 		throw error(404, 'Not found');
@@ -74,14 +137,14 @@ export const load: PageServerLoad = async ({ params, parent, locals: { supabase 
 
 	if (classIds.length > 0) {
 		const today = todayInBerlin();
-		const yesterday = plusDays(today, -1);
+		const yesterday = addDays(today, -1);
 		const { data: rows, error: sessionsError } = await supabase
 			.from('class_sessions_effective')
 			.select('id, day, class_name, start_time, duration_minutes, starts_at')
 			.in('class_id', classIds)
 			.eq('cancelled', false)
 			.gte('day', yesterday)
-			.lte('day', plusDays(today, LEAVE_WINDOW_DAYS))
+			.lte('day', addDays(today, LEAVE_WINDOW_DAYS))
 			.order('day')
 			.order('start_time', { nullsFirst: true });
 		if (sessionsError) loadError = true;
@@ -155,14 +218,175 @@ export const load: PageServerLoad = async ({ params, parent, locals: { supabase 
 			? { status: latest.status as DeletionStatus, requestedAt: latest.requested_at }
 			: null;
 
+	const details = await loadChildDetails(supabase, child.id, classIds, {
+		enrollmentsError: Boolean(enrollmentsError),
+		donePage: readPage(url.searchParams.get('done'))
+	});
+
 	return {
 		child: { id: child.id, name: child.name },
+		tab: readTab(url.searchParams.get('tab')),
 		sessions,
 		deletion,
 		deletionLoadError: Boolean(requestsError),
-		loadError
+		loadError,
+		...details
 	};
 };
+
+type Client = App.Locals['supabase'];
+
+/**
+ * The read-only sections for one child. Homework reuses the student's own
+ * loader (the same To-do rule and numbers as homework_counts and the /parent
+ * card); history is filtered to this child by splitProgress, the skill and
+ * streak reads by an explicit student_id.
+ */
+async function loadChildDetails(
+	supabase: Client,
+	childId: string,
+	classIds: string[],
+	opts: { enrollmentsError: boolean; donePage: number }
+) {
+	const today = todayInBerlin();
+	const enrolledClassIds = new Set(classIds);
+
+	const [
+		classesResult,
+		open,
+		done,
+		{ data: streakRow, error: streakError },
+		{ data: badgeRows, error: badgesError },
+		{ data: profileRow, error: profileError },
+		{ data: teamRows, error: teamError },
+		{ data: attendanceRows, error: attendanceError },
+		{ data: skillRows, error: skillError }
+	] = await Promise.all([
+		classIds.length > 0
+			? supabase.from('classes').select('id, name').in('id', classIds)
+			: Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+		loadStudentHomework(supabase, childId, { filter: 'todo', page: 1, enrolledClassIds, today }),
+		loadStudentHomework(supabase, childId, {
+			filter: 'done',
+			page: opts.donePage,
+			enrolledClassIds,
+			today
+		}),
+		supabase
+			.from('student_streaks')
+			.select('current_streak, last_qualifying_week')
+			.eq('student_id', childId)
+			.maybeSingle(),
+		supabase
+			.from('badges_earned')
+			.select('badge_type, milestone, earned_at')
+			.eq('student_id', childId)
+			.order('badge_type')
+			.order('milestone', { ascending: true }),
+		supabase.from('profiles').select('team_id').eq('id', childId).maybeSingle(),
+		supabase.rpc('team_leaderboard'),
+		supabase.rpc('child_attendance', { p_student_id: childId }),
+		supabase
+			.from('skill_status_history')
+			.select('id, student_id, class_id, skill_area, level, notes, recorded_at')
+			.eq('student_id', childId)
+			// Newest first with an id tiebreak: pickCurrentSkillStatuses keeps
+			// the first row per key.
+			.order('recorded_at', { ascending: false })
+			.order('id', { ascending: false })
+	]);
+
+	const classes = (classesResult.data ?? [])
+		.filter((c) => enrolledClassIds.has(c.id))
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const classNames = new Map(classes.map((c) => [c.id, c.name]));
+	const classNamesError = opts.enrollmentsError || Boolean(classesResult.error);
+
+	const toChildItem = (item: StudentHomeworkItem): ChildHomeworkItem => ({
+		instanceId: item.instanceId,
+		title: item.title,
+		dueDate: item.dueDate,
+		status: item.status,
+		overdue: item.overdue,
+		referenceLinks: item.referenceLinks,
+		className: classNames.get(item.classId) ?? null
+	});
+
+	// Skills: grouped per class (enrolled classes first, then any left).
+	const history: (SkillHistoryRow & { classId: string })[] = (skillRows ?? [])
+		.filter((r) => r.student_id === childId)
+		.map((r) => ({
+			id: r.id,
+			studentId: r.student_id,
+			classId: r.class_id,
+			skillArea: r.skill_area,
+			level: r.level,
+			notes: r.notes,
+			recordedAt: r.recorded_at
+		}));
+	const skillClassIds = [
+		...classes.map((c) => c.id).filter((id) => history.some((r) => r.classId === id)),
+		...Array.from(new Set(history.map((r) => r.classId))).filter((id) => !classNames.has(id))
+	];
+	const skills: ChildSkillClass[] = skillClassIds.map((classId) => {
+		const rows = history.filter((r) => r.classId === classId);
+		const current: Record<string, SkillHistoryRow> = {};
+		for (const row of Object.values(pickCurrentSkillStatuses(rows))) {
+			current[row.skillArea] = row;
+		}
+		return { classId, className: classNames.get(classId) ?? null, current, history: rows };
+	});
+
+	// Teachers per enrolled class (class_people: teachers only for a parent).
+	const people = await Promise.all(classes.map((c) => loadClassPeople(supabase, c.id)));
+	const teachers: ChildClassTeachers[] = classes.map((c, i) => ({
+		classId: c.id,
+		className: c.name,
+		teachers: people[i].teachers
+	}));
+
+	const leaderboard: TeamRank[] = teamError ? [] : shapeTeamLeaderboard(teamRows);
+	const teamId = profileRow?.team_id ?? null;
+	const team: TeamStanding | null = teamRank(leaderboard, teamId);
+
+	const attendance: ChildAttendance[] = (attendanceRows ?? []).map((r) => ({
+		sessionDate: r.session_date,
+		classId: r.class_id,
+		className: r.class_name,
+		present: r.present
+	}));
+
+	const streak: StudentStreak | null = shapeStudentStreak(streakRow);
+	const badges: StudentBadge[] = shapeStudentBadges(badgeRows);
+
+	const errors: ChildSectionErrors = {
+		summary: Boolean(streakError || badgesError),
+		team: Boolean(teamError || profileError),
+		open: open.error || classNamesError,
+		done: done.error || classNamesError,
+		attendance: Boolean(attendanceError),
+		skills: Boolean(skillError) || classNamesError,
+		teachers: classNamesError || people.some((p) => p.error)
+	};
+
+	return {
+		streak,
+		badges,
+		team,
+		teamId: team ? teamId : null,
+		leaderboard,
+		homework: {
+			open: open.items.map(toChildItem),
+			done: done.items.map(toChildItem),
+			donePage: done.page,
+			donePageCount: done.pageCount
+		},
+		attendance,
+		skills,
+		teachers,
+		errors
+	};
+}
 
 async function readSessionId(request: Request) {
 	const formData = await request.formData();

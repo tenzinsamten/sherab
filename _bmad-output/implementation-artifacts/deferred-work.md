@@ -201,3 +201,9 @@
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/7-6-parent-deletion-request.md`
   summary: Run the RLS/trigger suite (rls.spec.ts) in CI against a Supabase service, so the deletion erasure and self-decision guards can't silently go untested.
   evidence: Every RLS block uses `describe.skipIf(!reachable)`; there is no .github/workflows, so without local Supabase the 7-6 erasure tests skip and only mocked route specs run (7-6 review triage #3).
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-parent-child-detail-page.md`
+  summary: Playwright check of the parent child page: leave and deletion posts return to their tab without JS, homework reference anchors carry target=_blank rel="noopener noreferrer", and the active tab has aria-current.
+  evidence: Only route data is unit-tested; the repo has one calendar e2e and no parent fixtures (detail-page review triage #10).
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-parent-child-detail-page.md`
+  summary: `child_attendance` (0025) returns every append-only attendance mark, so a re-marked session appears twice for the parent; it should return the current mark per session.
+  evidence: attendance_records has no uniqueness and marks are append-only (AD-5); the page only de-duplicates render keys (detail-page review triage #2). Needs a migration.
