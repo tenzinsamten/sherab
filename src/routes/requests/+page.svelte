@@ -98,6 +98,10 @@
 		if (form.action === 'rejected') showToast('success', m.requests_outcome_rejected({ name }));
 		if (form.action === 'cleared') showToast('success', m.requests_outcome_cleared({ name }));
 	});
+	// #60: the header count as a pill, hidden when nothing is waiting.
+	let pendingTotal = $derived(
+		data.pending.length + data.parentsPending.length + sickActionable + deletionActionable
+	);
 </script>
 
 <svelte:head>
@@ -115,12 +119,12 @@
 				{data.role === 'admin' ? m.requests_admin_subtitle() : m.requests_teacher_subtitle()}
 			</p>
 		</div>
-		<span class="page-counter"
-			>{data.pending.length +
-				data.parentsPending.length +
-				sickActionable +
-				deletionActionable}</span
-		>
+		{#if pendingTotal > 0}
+			<ix-pill variant="warning">
+				<span aria-hidden="true">{pendingTotal}</span>
+				<span class="sr-only">{m.requests_pending_count({ count: pendingTotal })}</span>
+			</ix-pill>
+		{/if}
 	</header>
 
 	{#if credential}
@@ -157,10 +161,16 @@
 									<div class="actions">
 										<strong>{student.registrationName}</strong>
 									</div>
+									{#if student.class}
+										<!-- #55: the class they registered with; approval enrolls nothing else. -->
+										<div style="margin: var(--space-1) 0;">
+											{m.requests_joined_class({
+												name: student.class.name,
+												code: student.class.code
+											})}
+										</div>
+									{/if}
 									<div class="muted">
-										{#if student.class}
-											<code>{student.class.code}</code> · {student.class.name} ·
-										{/if}
 										{new Date(student.createdAt).toLocaleDateString()}
 									</div>
 								</td>

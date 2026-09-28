@@ -52,44 +52,50 @@
 			<ul class="children" aria-label={m.parent_children_label()}>
 				{#each data.children as child (child.id)}
 					<li>
-						<ix-card variant="outline">
-							<ix-card-content>
-								<p class="child-name"><strong>{child.name}</strong></p>
-								{#if child.status === 'pending'}
+						{#if child.status === 'pending'}
+							<ix-card variant="outline" passive>
+								<ix-card-content>
+									<p class="child-name"><strong>{child.name}</strong></p>
 									<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
-								{:else}
-									<p class="muted child-classes">
-										<span class="section-label">{m.parent_card_classes()}</span>
-										{child.classes.length > 0
-											? child.classes.join(', ')
-											: m.parent_card_no_classes()}
-									</p>
-									<dl class="counts">
-										<div>
-											<dt class="section-label">{m.parent_card_open()}</dt>
-											<dd class={child.open === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-												{child.open}
-											</dd>
-										</div>
-										<div>
-											<dt class="section-label">{m.parent_card_overdue()}</dt>
-											<dd>
-												{#if child.overdue > 0}
-													<ix-pill variant="alarm">{child.overdue}</ix-pill>
-												{:else}
-													<span class="stat-tile-value muted">0</span>
-												{/if}
-											</dd>
-										</div>
-									</dl>
-									<p class="child-link">
-										<a href={resolve('/parent/children/[id]', { id: child.id })}>
-											{m.parent_card_sessions_link()}
-										</a>
-									</p>
-								{/if}
-							</ix-card-content>
-						</ix-card>
+								</ix-card-content>
+							</ix-card>
+						{:else}
+							<!-- #56: the whole card opens the child's page. -->
+							<a href={resolve('/parent/children/[id]', { id: child.id })} class="tile-link">
+								<ix-card variant="outline">
+									<ix-card-content>
+										<p class="child-name">
+											<strong>{child.name}</strong>
+											<ix-icon name="chevron-right" size="16" aria-hidden="true"></ix-icon>
+										</p>
+										<p class="muted child-classes">
+											<span class="section-label">{m.parent_card_classes()}</span>
+											{child.classes.length > 0
+												? child.classes.join(', ')
+												: m.parent_card_no_classes()}
+										</p>
+										<dl class="counts">
+											<div>
+												<dt class="section-label">{m.parent_card_open()}</dt>
+												<dd class={child.open === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
+													{child.open}
+												</dd>
+											</div>
+											<div>
+												<dt class="section-label">{m.parent_card_overdue()}</dt>
+												<dd>
+													{#if child.overdue > 0}
+														<ix-pill variant="alarm">{child.overdue}</ix-pill>
+													{:else}
+														<span class="stat-tile-value muted">0</span>
+													{/if}
+												</dd>
+											</div>
+										</dl>
+									</ix-card-content>
+								</ix-card>
+							</a>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -108,6 +114,10 @@
 	}
 
 	.child-name {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
 		margin: 0 0 var(--space-2);
 	}
 
@@ -126,9 +136,5 @@
 
 	.counts dd {
 		margin: 0;
-	}
-
-	.child-link {
-		margin: var(--space-3) 0 0;
 	}
 </style>

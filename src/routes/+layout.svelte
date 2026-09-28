@@ -55,16 +55,22 @@
 
 	let signOutForm: HTMLFormElement | undefined = $state();
 
-	type NavItem = { href: string; label: string; icon: string; exact?: boolean };
+	type NavItem = {
+		href: string;
+		label: string;
+		icon: string;
+		exact?: boolean;
+		/** #60: shown as the iX menu item's count pill (omitted at 0). */
+		notifications?: number;
+	};
 
 	let navItems = $derived.by((): NavItem[] => {
 		const role = data.profile?.role;
 		const requests = {
 			href: resolve('/requests'),
-			label: data.pendingRequestsCount
-				? m.nav_requests_with_count({ count: data.pendingRequestsCount })
-				: m.nav_requests(),
-			icon: 'user-check'
+			label: m.nav_requests(),
+			icon: 'user-check',
+			notifications: data.pendingRequestsCount || undefined
 		};
 		const leaderboard = {
 			href: resolve('/leaderboard'),
@@ -169,7 +175,12 @@
 
 		<ix-menu start-expanded={data.menuExpanded || undefined} use:rememberMenuExpand>
 			{#each navItems as item (item.href)}
-				<ix-menu-item href={item.href} icon={item.icon} active={isActive(item) || undefined}>
+				<ix-menu-item
+					href={item.href}
+					icon={item.icon}
+					active={isActive(item) || undefined}
+					notifications={item.notifications}
+				>
 					{item.label}
 				</ix-menu-item>
 			{/each}
