@@ -225,3 +225,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-58-parent-calendar.md`
   summary: Integration check (rls.spec) that the parent calendar's leave-history read returns the newest answer per (session, child).
   evidence: maybe-false/medium — the unit fake ignores .order(); same gap as the 7-4 student branch (B4 review triage #6).
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-52-admin-parents.md`
+  summary: Admin Playwright check of /admin/parents: Parents in the admin nav; status pills (Approved/Pending/Rejected, Email not confirmed); children with (pending)/(rejected) markers and "—"; the /requests link only when parents are pending.
+  evidence: Only the loader is unit-tested; no component tests or admin e2e journey (B6 review triage #8).

@@ -754,5 +754,22 @@
 	"parent_homework_no_children": "Noch keine bestätigten Kinder. Ihre Hausaufgaben erscheinen hier, sobald ein Kind bestätigt ist.",
 	"parent_homework_child_error": "Die Hausaufgaben von {name} konnten nicht geladen werden. Bitte neu laden.",
 	"parent_homework_history_label": "Erledigt und geprüft:",
-	"parent_homework_row_label": "{title}, {name}: im Tab Hausaufgaben von {name} öffnen"
+	"parent_homework_row_label": "{title}, {name}: im Tab Hausaufgaben von {name} öffnen",
+
+	"nav_parents": "Eltern",
+	"parents_section_label": "Eltern",
+	"parents_heading": "Eltern",
+	"parents_col_name": "Name",
+	"parents_col_email": "E-Mail",
+	"parents_col_status": "Status",
+	"parents_col_children": "Kinder",
+	"parents_status_approved": "Freigegeben",
+	"parents_status_pending": "Ausstehend",
+	"parents_status_rejected": "Abgelehnt",
+	"parents_child_pending": "(ausstehend)",
+	"parents_child_rejected": "(abgelehnt)",
+	"parents_pending_link": "Elternkonten, die auf Freigabe warten: {count}. Entscheide sie unter Anfragen.",
+	"parents_empty_heading": "Noch keine Eltern",
+	"parents_empty_body": "Elternkonten erscheinen hier, sobald sich ein Elternteil registriert.",
+	"parents_load_error": "Die Eltern konnten nicht geladen werden. Bitte neu laden."
 }

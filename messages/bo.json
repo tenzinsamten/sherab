@@ -754,5 +754,22 @@
 	"parent_homework_no_children": "No approved children yet. Their homework shows here once a child is approved.",
 	"parent_homework_child_error": "Could not load {name}'s homework. Please refresh.",
 	"parent_homework_history_label": "Done and reviewed:",
-	"parent_homework_row_label": "{title}, {name}: open on {name}'s Homework tab"
+	"parent_homework_row_label": "{title}, {name}: open on {name}'s Homework tab",
+
+	"nav_parents": "ཕ་མ།",
+	"parents_section_label": "Parents",
+	"parents_heading": "Parents",
+	"parents_col_name": "Name",
+	"parents_col_email": "Email",
+	"parents_col_status": "Status",
+	"parents_col_children": "Children",
+	"parents_status_approved": "Approved",
+	"parents_status_pending": "Pending",
+	"parents_status_rejected": "Rejected",
+	"parents_child_pending": "(pending)",
+	"parents_child_rejected": "(rejected)",
+	"parents_pending_link": "Parent accounts waiting for approval: {count}. Decide them on Requests.",
+	"parents_empty_heading": "No parents yet",
+	"parents_empty_body": "Parent accounts show here once a parent signs up.",
+	"parents_load_error": "Could not load the parents. Please refresh."
 }

@@ -93,6 +93,7 @@
 				{ href: resolve('/admin'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
 				{ href: resolve('/admin/classes'), label: m.nav_classes(), icon: 'book' },
 				{ href: resolve('/admin/teachers'), label: m.nav_teachers(), icon: 'user-reading' },
+				{ href: resolve('/admin/parents'), label: m.nav_parents(), icon: 'user-management' },
 				{ href: resolve('/admin/teams'), label: m.nav_teams(), icon: 'user-group' },
 				calendar,
 				requests,
