@@ -33,6 +33,12 @@ export type ClassSchedule = {
 /** A session's leave answer as the student sees it (Story 7-4). */
 export type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
 
+/** A linked, approved child in the parent's calendar picker (#58). */
+export type CalendarChild = { id: string; name: string };
+
+/** One enrolled child's current answer on a session, for a parent (#58). */
+export type ChildSessionAnswer = { childId: string; name: string; answer: LeaveAnswer | null };
+
 /** Postgres error codes the schedule / extra-session functions raise. */
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
@@ -87,11 +93,28 @@ export const load: PageServerLoad = async ({
 			: Promise.resolve({ data: [], error: null })
 	]);
 
+	// #58: a parent-only login sees the sessions of their approved children's
+	// classes (RLS is_parent_in_class lets them read those), optionally
+	// narrowed to one child, with each enrolled child's current answer.
+	let sessionRows = sessionsResult.data ?? [];
+	let children: CalendarChild[] = [];
+	let selectedChild: string | null = null;
+	const childAnswers: Record<string, ChildSessionAnswer[]> = {};
+	let parentError = false;
+	if (role === 'parent') {
+		const parentView = await loadParentView(supabase, url.searchParams.get('child'), sessionRows);
+		children = parentView.children;
+		selectedChild = parentView.selectedChild;
+		sessionRows = parentView.sessionRows;
+		Object.assign(childAnswers, parentView.childAnswers);
+		parentError = parentView.error;
+	}
+
 	// Story 7-4: a student's own current answer per session, read-only. RLS
 	// (session_leave_history_select) lets a student read only their own rows.
 	const leaveAnswers: Record<string, LeaveAnswer> = {};
 	let leaveError = false;
-	const monthSessionIds = (sessionsResult.data ?? []).flatMap((r) => (r.id ? [r.id] : []));
+	const monthSessionIds = sessionRows.flatMap((r) => (r.id ? [r.id] : []));
 	if (role === 'student' && monthSessionIds.length > 0) {
 		const { data: answers, error: answersError } = await supabase
 			.from('session_leave_history')
@@ -129,14 +152,118 @@ export const load: PageServerLoad = async ({
 		prevMonth: shiftMonth(month, -1),
 		nextMonth: shiftMonth(month, 1),
 		today,
-		days: shapeMonth(daysResult.data ?? [], sessionsResult.data ?? [], today),
+		days: shapeMonth(daysResult.data ?? [], sessionRows, today),
 		classSchedules,
 		leaveAnswers,
+		children,
+		selectedChild,
+		childAnswers,
 		loadError: Boolean(
-			daysResult.error || sessionsResult.error || classesResult.error || leaveError
+			daysResult.error || sessionsResult.error || classesResult.error || leaveError || parentError
 		)
 	};
 };
+
+type SupabaseClient = App.Locals['supabase'];
+type SessionRow = {
+	id: string | null;
+	class_id: string | null;
+	session_cancelled: boolean | null;
+	day_cancelled: boolean | null;
+};
+
+/**
+ * The parent branch of the calendar load (#58). Children come from
+ * linked_children() (approved only); each child's classes from
+ * class_enrollments with the child's explicit id; the current answer per
+ * (session, child) from session_leave_history, newest row first. `?child=`
+ * narrows the view when it names an approved child; anything else is the
+ * all-children view. Sessions of classes no child in view is enrolled in
+ * are dropped, so a pending child's classes never show.
+ */
+async function loadParentView<T extends SessionRow>(
+	supabase: SupabaseClient,
+	childParam: string | null,
+	rows: T[]
+): Promise<{
+	children: CalendarChild[];
+	selectedChild: string | null;
+	sessionRows: T[];
+	childAnswers: Record<string, ChildSessionAnswer[]>;
+	error: boolean;
+}> {
+	const { data: linked, error: linkedError } = await supabase.rpc('linked_children');
+	const children: CalendarChild[] = (linked ?? [])
+		.filter((c) => c.status === 'approved')
+		.map((c) => ({ id: c.id, name: c.name }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const selectedChild = children.some((c) => c.id === childParam) ? childParam : null;
+	const inView = selectedChild ? children.filter((c) => c.id === selectedChild) : children;
+	const childAnswers: Record<string, ChildSessionAnswer[]> = {};
+	if (inView.length === 0) {
+		return { children, selectedChild, sessionRows: [], childAnswers, error: Boolean(linkedError) };
+	}
+
+	const { data: enrollments, error: enrollError } = await supabase
+		.from('class_enrollments')
+		.select('class_id, student_id')
+		.in(
+			'student_id',
+			inView.map((c) => c.id)
+		);
+	const childrenByClass = new Map<string, CalendarChild[]>();
+	for (const child of inView) {
+		for (const e of enrollments ?? []) {
+			if (e.student_id !== child.id) continue;
+			const list = childrenByClass.get(e.class_id) ?? [];
+			if (!list.some((c) => c.id === child.id)) list.push(child);
+			childrenByClass.set(e.class_id, list);
+		}
+	}
+
+	const sessionRows = rows.filter((r) => r.class_id !== null && childrenByClass.has(r.class_id));
+	const sessionIds = sessionRows.flatMap((r) => (r.id ? [r.id] : []));
+
+	const current = new Map<string, LeaveAnswer>();
+	let answersError = false;
+	if (sessionIds.length > 0) {
+		const { data: answers, error } = await supabase
+			.from('session_leave_history')
+			.select('class_session_id, student_id, answer')
+			.in(
+				'student_id',
+				inView.map((c) => c.id)
+			)
+			.in('class_session_id', sessionIds)
+			.order('answered_at', { ascending: false })
+			.order('id', { ascending: false });
+		answersError = Boolean(error);
+		// Newest first: the first row per (session, child) is the current answer.
+		for (const a of answers ?? []) {
+			const key = `${a.class_session_id}:${a.student_id}`;
+			if (!current.has(key)) current.set(key, a.answer);
+		}
+	}
+
+	for (const row of sessionRows) {
+		// A cancelled session lists no answers.
+		if (!row.id || !row.class_id || row.session_cancelled || row.day_cancelled) continue;
+		const sessionId = row.id;
+		childAnswers[sessionId] = (childrenByClass.get(row.class_id) ?? []).map((c) => ({
+			childId: c.id,
+			name: c.name,
+			answer: current.get(`${sessionId}:${c.id}`) ?? null
+		}));
+	}
+
+	return {
+		children,
+		selectedChild,
+		sessionRows,
+		childAnswers,
+		error: Boolean(linkedError || enrollError || answersError)
+	};
+}
 
 function isTrue(value: FormDataEntryValue | null): boolean {
 	return value === 'true';

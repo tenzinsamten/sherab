@@ -118,7 +118,8 @@
 		}
 		if (role === 'parent') {
 			return [
-				{ href: resolve('/parent'), label: m.nav_dashboard(), icon: 'dashboard', exact: true }
+				{ href: resolve('/parent'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
+				calendar
 			];
 		}
 		return [];

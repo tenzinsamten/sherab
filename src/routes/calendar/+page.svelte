@@ -68,6 +68,19 @@
 
 	let monthLabel = $derived(formatMonth(data.month));
 
+	// #58: a parent's view. `?child=` narrows to one approved child; month
+	// navigation keeps it.
+	let isParent = $derived(data.role === 'parent');
+	function monthHref(month: string, child: string | null = data.selectedChild): string {
+		const query = `month=${encodeURIComponent(month)}`;
+		return child
+			? `${calendarHref}?${query}&child=${encodeURIComponent(child)}`
+			: `${calendarHref}?${query}`;
+	}
+	function childSessionsHref(childId: string): string {
+		return `${resolve('/parent/children/[id]', { id: childId })}?tab=sessions`;
+	}
+
 	let schedulesByClass = $derived(new Map(data.classSchedules.map((c) => [c.id, c])));
 	let classDayDates = $derived(new Set(data.days.map((d) => d.date)));
 
@@ -258,7 +271,7 @@
 		const month = monthOf(view.currentStart);
 		if (month !== data.month) {
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- calendarHref is resolve()d.
-			void goto(`${calendarHref}?month=${month}`, { keepFocus: true, noScroll: true });
+			void goto(monthHref(month), { keepFocus: true, noScroll: true });
 		}
 	}
 
@@ -363,6 +376,21 @@
 	</span>
 {/snippet}
 
+{#snippet childAnswerList(sessionId: string)}
+	<!-- eslint-disable svelte/no-navigation-without-resolve -- childSessionsHref() builds on resolve() and only adds ?tab=. -->
+	<ul class="child-answers">
+		{#each data.childAnswers[sessionId] ?? [] as entry (entry.childId)}
+			<li>
+				<a
+					href={childSessionsHref(entry.childId)}
+					aria-label={m.calendar_child_answer_link_label({ name: entry.name })}>{entry.name}</a
+				>: <span class="leave-answer">{leaveLabel(entry.answer ?? undefined)}</span>
+			</li>
+		{/each}
+	</ul>
+	<!-- eslint-enable svelte/no-navigation-without-resolve -->
+{/snippet}
+
 {#snippet dayCellContent({ date }: { date: Date })}
 	{@const iso = isoDate(date)}
 	{@const isToday = iso === data.today}
@@ -406,6 +434,30 @@
 
 	{#if data.isAdmin}
 		<p class="muted hint-line">{m.calendar_admin_click_hint()}</p>
+	{/if}
+
+	{#if isParent && data.children.length >= 2}
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- monthHref() builds on resolve()d calendarHref and only adds ?month= / &child=. -->
+		<nav class="child-picker" aria-label={m.calendar_child_picker_label()}>
+			<a
+				href={monthHref(data.month, null)}
+				class="child-pick"
+				aria-current={data.selectedChild === null ? 'page' : undefined}
+				>{m.calendar_all_children()}</a
+			>
+			{#each data.children as child (child.id)}
+				<a
+					href={monthHref(data.month, child.id)}
+					class="child-pick"
+					aria-current={data.selectedChild === child.id ? 'page' : undefined}>{child.name}</a
+				>
+			{/each}
+		</nav>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/if}
+
+	{#if isParent && data.children.length === 0 && !data.loadError}
+		<p class="muted parent-hint">{m.calendar_parent_no_children()}</p>
 	{/if}
 
 	{#if data.loadError}
@@ -492,6 +544,10 @@
 					{#if data.role === 'student' && session.status !== 'cancelled'}
 						<dt>{m.calendar_leave_label()}</dt>
 						<dd class="leave-answer">{leaveLabel(data.leaveAnswers[session.id])}</dd>
+					{/if}
+					{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
+						<dt>{m.calendar_children_answers_label()}</dt>
+						<dd>{@render childAnswerList(session.id)}</dd>
 					{/if}
 				</dl>
 				<p class="status">
@@ -621,6 +677,9 @@
 									{/if}
 									{#if data.role === 'student' && session.status !== 'cancelled'}
 										<span class="extra-tag">· {leaveLabel(data.leaveAnswers[session.id])}</span>
+									{/if}
+									{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
+										{@render childAnswerList(session.id)}
 									{/if}
 									{#if session.status === 'cancelled'}
 										<span class="sr-only">, {m.calendar_status_cancelled()}</span>
@@ -883,8 +942,52 @@
 	}
 	.day-sessions li {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-3);
 		padding: var(--space-1) 0;
+	}
+	.day-sessions .child-answers {
+		flex-basis: 100%;
+	}
+	.child-answers {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.day-sessions .child-answers li {
+		display: block;
+		padding: 0;
+	}
+	.parent-hint {
+		margin: 0 0 var(--space-3);
+	}
+	.child-picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		margin: 0 0 var(--space-4);
+	}
+	.child-pick {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2rem;
+		padding: 0 var(--space-3);
+		border: 1px solid var(--theme-color-soft-bdr);
+		border-radius: 999px;
+		color: var(--theme-color-std-text);
+		text-decoration: none;
+	}
+	.child-pick:hover {
+		background: var(--theme-color-ghost-primary--hover);
+	}
+	.child-pick[aria-current='page'] {
+		background: var(--theme-color-primary);
+		border-color: var(--theme-color-primary);
+		color: var(--theme-color-primary--contrast);
+	}
+	.child-pick:focus-visible {
+		outline: 2px solid var(--theme-color-focus-bdr);
+		outline-offset: 1px;
 	}
 
 	/* ── @event-calendar/core, in the app's iX look ─────────────────────── */

@@ -219,3 +219,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-53-54-class-code-copy.md`
   summary: "Copy join link" (`/join?code=…`) with `/join` pre-filling the class code from the query string.
   evidence: The copied code alone doesn't tell the recipient where to enter it (B3 review); pairs with #67 (join another class).
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-58-parent-calendar.md`
+  summary: Playwright parent calendar check: Calendar in the parent menu; picker only with 2+ children; ?child= narrows and survives month navigation; child answer lines link to ?tab=sessions; cancelled sessions list no answers.
+  evidence: Only the loader is unit-tested; e2e has no parent login (B4 review triage #5).
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-58-parent-calendar.md`
+  summary: Integration check (rls.spec) that the parent calendar's leave-history read returns the newest answer per (session, child).
+  evidence: maybe-false/medium — the unit fake ignores .order(); same gap as the 7-4 student branch (B4 review triage #6).

@@ -13,7 +13,7 @@ type Result = { data?: unknown; error: unknown };
 function fakeSupabase(
 	results: Record<string, Result>,
 	role = 'admin',
-	rpcResult: { error: unknown } = { error: null }
+	rpcResult: { data?: unknown; error: unknown } = { error: null }
 ) {
 	const upserted: unknown[] = [];
 	const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
@@ -179,6 +179,194 @@ describe('calendar load: leave answers (Story 7-4)', () => {
 			'student'
 		);
 		expect((await runLoad('student', fake)).loadError).toBe(true);
+	});
+});
+
+describe('calendar load: parent view (#58)', () => {
+	const session = (id: string, classId: string, extra: Record<string, unknown> = {}) => ({
+		id,
+		class_id: classId,
+		class_name: classId === 'yaks' ? 'Yaks' : 'Snow Lions',
+		class_day_id: 'd1',
+		start_time: '10:00:00',
+		duration_minutes: 60,
+		start_time_override: null,
+		duration_minutes_override: null,
+		session_cancelled: false,
+		day_cancelled: false,
+		extra: false,
+		...extra
+	});
+	const day = { id: 'd1', day: '2026-10-05', cancelled: false };
+	const linked = [
+		{ id: 'a', name: 'Anna', status: 'approved' },
+		{ id: 'b', name: 'Bodhi', status: 'approved' },
+		{ id: 'p', name: 'Pema', status: 'pending' }
+	];
+
+	type ParentResult = {
+		days: { sessions: { id: string; status: string }[] }[];
+		children: { id: string; name: string }[];
+		selectedChild: string | null;
+		childAnswers: Record<string, { childId: string; name: string; answer: string | null }[]>;
+		canEdit: boolean;
+		loadError: boolean;
+	};
+
+	function runParent(
+		results: Record<string, Result>,
+		children: unknown[] = linked,
+		query = '',
+		rpcError: unknown = null
+	): Promise<ParentResult> {
+		const fake = fakeSupabase({ class_days: { data: [day], error: null }, ...results }, 'parent', {
+			data: rpcError ? null : children,
+			error: rpcError
+		});
+		return load({
+			url: new URL(`http://localhost/calendar?month=2026-10${query}`),
+			parent: async () => ({ profile: { role: 'parent' } }),
+			locals: {
+				supabase: fake.client,
+				safeGetSession: async () => ({ user: { id: 'parent1' } })
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<ParentResult>;
+	}
+
+	const sessionIds = (r: ParentResult) => r.days.flatMap((d) => d.sessions.map((s) => s.id));
+
+	it('two children in the same class: each listed with their current answer', async () => {
+		const result = await runParent({
+			class_sessions_effective: { data: [session('s1', 'yaks')], error: null },
+			class_enrollments: {
+				data: [
+					{ class_id: 'yaks', student_id: 'a' },
+					{ class_id: 'yaks', student_id: 'b' }
+				],
+				error: null
+			},
+			session_leave_history: {
+				data: [
+					{ class_session_id: 's1', student_id: 'a', answer: 'on_leave' },
+					{ class_session_id: 's1', student_id: 'a', answer: 'coming' }
+				],
+				error: null
+			}
+		});
+		expect(result.childAnswers.s1).toEqual([
+			{ childId: 'a', name: 'Anna', answer: 'on_leave' },
+			{ childId: 'b', name: 'Bodhi', answer: null }
+		]);
+		expect(result.canEdit).toBe(false);
+		expect(result.loadError).toBe(false);
+	});
+
+	const twoClasses = {
+		class_sessions_effective: {
+			data: [session('s1', 'yaks'), session('s2', 'lions'), session('s3', 'other')],
+			error: null
+		},
+		class_enrollments: {
+			data: [
+				{ class_id: 'yaks', student_id: 'a' },
+				{ class_id: 'lions', student_id: 'b' }
+			],
+			error: null
+		},
+		session_leave_history: {
+			data: [{ class_session_id: 's2', student_id: 'b', answer: 'sick' }],
+			error: null
+		}
+	};
+
+	it('different classes: all children shows both; other classes are dropped; Sick stays Sick', async () => {
+		const result = await runParent(twoClasses);
+		expect(sessionIds(result).sort()).toEqual(['s1', 's2']);
+		expect(result.selectedChild).toBeNull();
+		expect(result.childAnswers.s1).toEqual([{ childId: 'a', name: 'Anna', answer: null }]);
+		expect(result.childAnswers.s2).toEqual([{ childId: 'b', name: 'Bodhi', answer: 'sick' }]);
+	});
+
+	it('?child= narrows to that child', async () => {
+		const result = await runParent(twoClasses, linked, '&child=a');
+		expect(result.selectedChild).toBe('a');
+		expect(sessionIds(result)).toEqual(['s1']);
+		expect(result.childAnswers.s2).toBeUndefined();
+	});
+
+	it.each(['&child=someone-else', '&child=p'])(
+		'an invalid %s is the all-children view',
+		async (q) => {
+			const result = await runParent(twoClasses, linked, q);
+			expect(result.selectedChild).toBeNull();
+			expect(sessionIds(result).sort()).toEqual(['s1', 's2']);
+		}
+	);
+
+	it('a pending child is neither listed nor their classes shown', async () => {
+		const result = await runParent(
+			{
+				class_sessions_effective: {
+					data: [session('s1', 'yaks'), session('s2', 'lions')],
+					error: null
+				},
+				class_enrollments: {
+					data: [
+						{ class_id: 'yaks', student_id: 'a' },
+						{ class_id: 'lions', student_id: 'p' }
+					],
+					error: null
+				}
+			},
+			[linked[0], linked[2]]
+		);
+		expect(result.children).toEqual([{ id: 'a', name: 'Anna' }]);
+		expect(sessionIds(result)).toEqual(['s1']);
+	});
+
+	it('no approved children: no sessions, no children', async () => {
+		const result = await runParent(
+			{ class_sessions_effective: { data: [session('s1', 'yaks')], error: null } },
+			[linked[2]]
+		);
+		expect(result.children).toEqual([]);
+		expect(sessionIds(result)).toEqual([]);
+		expect(result.loadError).toBe(false);
+	});
+
+	it('a cancelled session is shaped as cancelled (the page lists no answers for it)', async () => {
+		const result = await runParent({
+			class_sessions_effective: {
+				data: [session('s1', 'yaks', { session_cancelled: true })],
+				error: null
+			},
+			class_enrollments: { data: [{ class_id: 'yaks', student_id: 'a' }], error: null }
+		});
+		expect(result.days[0].sessions[0].status).toBe('cancelled');
+		expect(result.childAnswers.s1).toBeUndefined();
+	});
+
+	it('a failed linked_children read is a load error with no children', async () => {
+		const result = await runParent(twoClasses, linked, '', { message: 'boom' });
+		expect(result.loadError).toBe(true);
+		expect(result.children).toEqual([]);
+	});
+
+	it('a failed class_enrollments read is a load error', async () => {
+		const result = await runParent({
+			...twoClasses,
+			class_enrollments: { data: null, error: { message: 'boom' } }
+		});
+		expect(result.loadError).toBe(true);
+	});
+
+	it('a failed leave history read is a load error', async () => {
+		const result = await runParent({
+			...twoClasses,
+			session_leave_history: { data: null, error: { message: 'boom' } }
+		});
+		expect(result.loadError).toBe(true);
+		expect(sessionIds(result).sort()).toEqual(['s1', 's2']);
 	});
 });
 
