@@ -274,6 +274,10 @@ ix-application-header ix-dropdown-item {
 	color: inherit;
 	text-decoration: none;
 }
+/* #70: out-rank iX's visited-link colour so a visited card keeps its text colour. */
+a.tile-link.tile-link[href]:is(:link, :visited, :hover, :active) {
+	color: inherit;
+}
 /* Keyboard focus on a whole-card link (#56). */
 .tile-link:focus-visible {
 	outline: 2px solid var(--theme-color-primary);

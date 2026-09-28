@@ -985,6 +985,15 @@
 		border-color: var(--theme-color-primary);
 		color: var(--theme-color-primary--contrast);
 	}
+	/* #70: iX colours visited links primary with a high-specificity rule
+	   (a[href]:not(.disabled):not(:disabled):visited), which turned the
+	   selected pill's text blue on blue. Out-rank it for every link state. */
+	a.child-pick.child-pick[href]:is(:link, :visited, :hover, :active) {
+		color: var(--theme-color-std-text);
+	}
+	a.child-pick.child-pick[href][aria-current='page']:is(:link, :visited, :hover, :active) {
+		color: #ffffff;
+	}
 	.child-pick:focus-visible {
 		outline: 2px solid var(--theme-color-focus-bdr);
 		outline-offset: 1px;
