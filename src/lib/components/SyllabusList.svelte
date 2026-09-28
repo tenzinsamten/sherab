@@ -33,6 +33,12 @@
 
 	const pending = createPending();
 
+	// Preselect the current school year, else the first one (as a native
+	// <select> would), so the required field is never empty.
+	let initialYear = $derived(
+		addableYears.includes(currentYear) ? currentYear : (addableYears[0] ?? currentYear)
+	);
+
 	function firstLine(text: string | null): string {
 		return (
 			(text ?? '')
@@ -99,12 +105,21 @@
 			style="align-items:flex-end;"
 		>
 			<div class="field" style="margin:0;">
-				<label for="schoolYear">{m.syllabus_year_label()}</label>
-				<select id="schoolYear" name="schoolYear" required>
-					{#each addableYears as year (year)}
-						<option value={year} selected={year === currentYear}>{formatSchoolYear(year)}</option>
-					{/each}
-				</select>
+				<!-- Remounted when the preselected year changes: <ix-select> takes its
+				     form value only when it loads. -->
+				{#key initialYear}
+					<ix-select
+						id="schoolYear"
+						name="schoolYear"
+						label={m.syllabus_year_label()}
+						required
+						value={String(initialYear)}
+					>
+						{#each addableYears as year (year)}
+							<ix-select-item value={String(year)} label={formatSchoolYear(year)}></ix-select-item>
+						{/each}
+					</ix-select>
+				{/key}
 			</div>
 			<ix-button
 				type="submit"

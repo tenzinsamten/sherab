@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { Calendar, DayGrid, Interaction, List } from '@event-calendar/core';
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
@@ -84,6 +85,53 @@
 
 	let schedulesByClass = $derived(new Map(data.classSchedules.map((c) => [c.id, c])));
 	let classDayDates = $derived(new Set(data.days.map((d) => d.date)));
+
+	// ── Class schedules (#66) ───────────────────────────────────────────────
+	// Collapsed rows: each class shows a one-line summary, and its form (a
+	// dozen iX fields) renders only while the row is expanded, so a school
+	// with many classes still renders the grid.
+	const expandedSchedules = new SvelteSet<string>();
+	// Rows opened at least once keep their form mounted (hidden while
+	// collapsed), so collapsing a row keeps its unsaved edits.
+	const openedSchedules = new SvelteSet<string>();
+	function toggleSchedule(classId: string) {
+		if (expandedSchedules.has(classId)) expandedSchedules.delete(classId);
+		else {
+			expandedSchedules.add(classId);
+			openedSchedules.add(classId);
+		}
+	}
+
+	const WEEKDAY_SHORT = [
+		m.calendar_weekday_1,
+		m.calendar_weekday_2,
+		m.calendar_weekday_3,
+		m.calendar_weekday_4,
+		m.calendar_weekday_5,
+		m.calendar_weekday_6,
+		m.calendar_weekday_7
+	];
+	const INTERVAL_LABELS: Record<number, () => string> = {
+		2: m.calendar_schedule_interval_2,
+		3: m.calendar_schedule_interval_3,
+		4: m.calendar_schedule_interval_4
+	};
+
+	/** "Mon, Wed · 17:00 · 60 min · Every 2 weeks" (interval only when not weekly). */
+	function scheduleSummary(cls: (typeof data.classSchedules)[number]): string {
+		const parts = [
+			cls.weekdays.length > 0
+				? cls.weekdays.map((d) => WEEKDAY_SHORT[d - 1]?.() ?? String(d)).join(', ')
+				: m.calendar_schedule_no_weekdays(),
+			cls.startTime ?? m.calendar_status_unset()
+		];
+		if (cls.durationMinutes) {
+			parts.push(m.calendar_schedule_duration_short({ minutes: cls.durationMinutes }));
+		}
+		const interval = INTERVAL_LABELS[Number(cls.intervalWeeks ?? 1)];
+		if (interval) parts.push(interval());
+		return parts.join(' · ');
+	}
 
 	/** Whether clicking `iso` opens the day dialog: admin any day of the month, teachers class days. */
 	function dayClickable(iso: string): boolean {
@@ -487,37 +535,58 @@
 						form && 'scheduleErrors' in form && form.classId === cls.id
 							? form.scheduleErrors
 							: undefined}
-					<li>
-						<form
-							method="POST"
-							action="?/setClassSchedule"
-							use:enhance={pending.submit(`schedule:${cls.id}`, { reset: false })}
-							class="schedule-form"
-							data-class-id={cls.id}
-							aria-labelledby="schedule-title-{cls.id}"
-							novalidate
-						>
-							<input type="hidden" name="classId" value={cls.id} />
-							<h3 id="schedule-title-{cls.id}" class="row-title">{cls.name}</h3>
-							<ScheduleFields
-								idPrefix="schedule-{cls.id}"
-								weekdays={cls.weekdays}
-								startTime={cls.startTime}
-								durationMinutes={cls.durationMinutes}
-								startsOn={cls.startsOn}
-								endsOn={cls.endsOn}
-								intervalWeeks={cls.intervalWeeks}
-								errors={errors ?? {}}
-							/>
-							<ix-button
-								type="submit"
-								variant="secondary"
-								loading={pending.is(`schedule:${cls.id}`) || undefined}
-								disabled={pending.busy || undefined}
+					{@const open = expandedSchedules.has(cls.id)}
+					<li class="schedule-row">
+						<h3 class="schedule-heading">
+							<button
+								type="button"
+								class="schedule-toggle"
+								aria-expanded={open}
+								aria-controls={openedSchedules.has(cls.id) ? `schedule-panel-${cls.id}` : undefined}
+								data-class-id={cls.id}
+								onclick={() => toggleSchedule(cls.id)}
 							>
-								{m.calendar_save()}
-							</ix-button>
-						</form>
+								<ix-icon class="schedule-chevron" name="chevron-right" size="16" aria-hidden="true"
+								></ix-icon>
+								<span class="schedule-toggle-text">
+									<span id="schedule-title-{cls.id}" class="row-title">{cls.name}</span>
+									<span class="schedule-summary muted">{scheduleSummary(cls)}</span>
+								</span>
+							</button>
+						</h3>
+						{#if openedSchedules.has(cls.id)}
+							<form
+								id="schedule-panel-{cls.id}"
+								hidden={!open}
+								method="POST"
+								action="?/setClassSchedule"
+								use:enhance={pending.submit(`schedule:${cls.id}`, { reset: false })}
+								class="schedule-form"
+								data-class-id={cls.id}
+								aria-labelledby="schedule-title-{cls.id}"
+								novalidate
+							>
+								<input type="hidden" name="classId" value={cls.id} />
+								<ScheduleFields
+									idPrefix="schedule-{cls.id}"
+									weekdays={cls.weekdays}
+									startTime={cls.startTime}
+									durationMinutes={cls.durationMinutes}
+									startsOn={cls.startsOn}
+									endsOn={cls.endsOn}
+									intervalWeeks={cls.intervalWeeks}
+									errors={errors ?? {}}
+								/>
+								<ix-button
+									type="submit"
+									variant="secondary"
+									loading={pending.is(`schedule:${cls.id}`) || undefined}
+									disabled={pending.busy || undefined}
+								>
+									{m.calendar_save()}
+								</ix-button>
+							</form>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -887,9 +956,57 @@
 	.schedules {
 		margin-top: var(--space-6);
 	}
-	.schedule-form .row-title {
-		margin: 0 0 var(--space-2);
+	.schedule-heading {
+		margin: 0;
+		font-size: inherit;
+	}
+	/* The whole summary line is the disclosure button (#66). */
+	.schedule-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		width: 100%;
+		min-height: 2.75rem;
+		padding: var(--space-1) 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+	}
+	.schedule-toggle:focus-visible {
+		outline: 2px solid var(--theme-color-focus-bdr);
+		outline-offset: 2px;
+	}
+	.schedule-chevron {
+		flex: none;
+		margin-top: 0.3rem;
+		transition: transform 150ms ease;
+	}
+	.schedule-toggle[aria-expanded='true'] .schedule-chevron {
+		transform: rotate(90deg);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.schedule-chevron {
+			transition: none;
+		}
+	}
+	.schedule-toggle-text {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 var(--space-3);
+	}
+	.schedule-toggle .row-title {
+		flex: 0 1 auto;
 		font-size: var(--theme-font-size-l);
+	}
+	.schedule-summary {
+		font-weight: normal;
+	}
+	.schedule-form {
+		margin-top: var(--space-3);
 	}
 	.extra {
 		margin-top: var(--space-6);

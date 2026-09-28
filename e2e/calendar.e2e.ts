@@ -375,8 +375,10 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 	 * weekday, so no fixture class is scheduled on it. Removed again (its
 	 * sessions cascade) so the phone test still sees six chips.
 	 */
-	async function withOtherWeekdayClassDay(run: (date: string) => Promise<void>) {
-		const date = `${fx.month}-07`;
+	async function withOtherWeekdayClassDay(
+		run: (date: string) => Promise<void>,
+		date = `${fx.month}-07`
+	) {
 		const { error } = await service.from('class_days').insert({ day: date });
 		if (error) throw new Error(`add class day: ${error.message}`);
 		try {
@@ -390,8 +392,12 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 		page
 	}) => {
 		// Its own class (taught by the fixture teacher), so the other tests'
-		// sessions and ids stay as they are.
+		// sessions and ids stay as they are. Every 2 weeks from the first
+		// fixture day's ISO week (starting on its Monday, which may be in
+		// September): sessions on the 4th and 18th, not the 11th.
 		const name = `E2E47 ${fx.tag} D`;
+		const weekStart = new Date(`${fx.days[0]}T00:00:00Z`);
+		weekStart.setUTCDate(weekStart.getUTCDate() - (fx.weekday - 1));
 		const { data: cls, error } = await service
 			.from('classes')
 			.insert({
@@ -400,12 +406,16 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 				default_start_time: '09:00',
 				default_duration_minutes: 45,
 				schedule_weekdays: [fx.weekday],
-				schedule_starts_on: `${fx.year}-01-01`,
-				schedule_ends_on: `${fx.year}-12-20`
+				schedule_starts_on: weekStart.toISOString().slice(0, 10),
+				schedule_ends_on: `${fx.year}-12-20`,
+				schedule_interval_weeks: 2
 			})
 			.select('id')
 			.single();
 		if (error || !cls) throw new Error(`create class D: ${error?.message}`);
+		// Another weekday in the same ISO week as the 4th (Mon-Sun), so the
+		// every-2-weeks schedule still has a session there after the move.
+		const sameWeekDay = `${fx.month}-${fx.weekday === 7 ? '03' : '05'}`;
 		try {
 			const { error: assignError } = await service
 				.from('class_teachers')
@@ -417,29 +427,74 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 				await signIn(page, fx.teacher);
 				await openCalendar(page, fx.month);
 				const chipsOfD = page.locator('.ec-event.chip').filter({ hasText: name });
-				await expect(chipsOfD).toHaveCount(3);
+				await expect(chipsOfD).toHaveCount(2);
 
+				// Collapsed row (#66): a summary, no form until expanded.
+				const toggle = page.locator(`button.schedule-toggle[data-class-id="${cls.id}"]`);
 				const form = page.locator(`form.schedule-form[data-class-id="${cls.id}"]`);
-				await expect(form.getByRole('heading', { name })).toBeVisible();
+				await expect(page.getByRole('heading', { name: new RegExp(name) })).toBeVisible();
+				await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+				await expect(toggle).toContainText(
+					`${weekdayLabel(fx.weekday)} · 09:00 · 45 min · Every 2 weeks`
+				);
+				await expect(form).toHaveCount(0);
+				await toggle.click();
+				await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+				await expect(form).toBeVisible();
+
 				const current = form.getByRole('checkbox', { name: weekdayLabel(fx.weekday) });
 				const next = form.getByRole('checkbox', { name: weekdayLabel(other) });
 				await expect(current).toBeChecked();
 				await expect(next).not.toBeChecked();
+				// iX fields: their value (as posted) is a property of the host.
 				const until = form.locator(`#schedule-${cls.id}-until`);
-				await expect(until).toHaveValue(`${fx.year}-12-20`);
+				const interval = form.locator(`#schedule-${cls.id}-interval`);
+				const duration = form.locator(`#schedule-${cls.id}-duration`);
+				await expect(until).toHaveJSProperty('value', `${fx.year}-12-20`);
+				await expect(interval).toHaveJSProperty('value', '2');
+				await expect(duration).toHaveJSProperty('value', 45);
 
 				// No weekday: inline error, nothing saved.
-				await current.uncheck();
+				// <ix-checkbox> updates aria-checked on its next render, after
+				// check()/uncheck() would already have read it: click, then wait.
+				await current.click();
+				await expect(current).not.toBeChecked();
 				await form.getByRole('button', { name: 'Save' }).click();
 				await expect(form.locator('.field-error')).toHaveText('Pick at least one weekday.');
 				await expect(current).toHaveAttribute('aria-invalid', 'true');
 				await expect(current).toHaveAccessibleDescription('Pick at least one weekday.');
-				// The failed save keeps what was entered.
+				// The failed save keeps what was entered, and the row stays open.
+				await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 				await expect(current).not.toBeChecked();
-				await expect(until).toHaveValue(`${fx.year}-12-20`);
-				await expect(chipsOfD).toHaveCount(3);
+				await expect(until).toHaveJSProperty('value', `${fx.year}-12-20`);
+				await expect(chipsOfD).toHaveCount(2);
 
-				await next.check();
+				// "Until" before "From": the date field is marked invalid and
+				// its native input is described by the message.
+				await next.click();
+				await expect(next).toBeChecked();
+				await until.locator('input').first().fill(`${fx.year}-09-01`);
+				await expect(until).toHaveJSProperty('value', `${fx.year}-09-01`);
+				await form.getByRole('button', { name: 'Save' }).click();
+				const untilError = form.locator(`#schedule-${cls.id}-endsOn-error`);
+				await expect(untilError).toHaveText('“Until” must be on or after “From”.');
+				await expect(until).toHaveClass(/\bix-invalid\b/);
+				const untilInput = until.locator('input').first();
+				await expect(untilInput).toHaveAttribute('aria-invalid', 'true');
+				await expect
+					.poll(() =>
+						untilInput.evaluate((el) =>
+							(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
+						)
+					)
+					.toBe('“Until” must be on or after “From”.');
+				await expect(next).not.toHaveAttribute('aria-invalid');
+				await expect(chipsOfD).toHaveCount(2);
+
+				await until.locator('input').first().fill(`${fx.year}-12-20`);
+				await expect(until).toHaveJSProperty('value', `${fx.year}-12-20`);
+				await expect(current).not.toBeChecked();
+				await expect(next).toBeChecked();
 				await form.getByRole('button', { name: 'Save' }).click();
 				await expect(page.locator('ix-toast').getByText('Schedule saved.')).toBeVisible();
 
@@ -448,23 +503,81 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 				expect(await inside(chipsOfD.first(), gridCell(page, date))).toBe(true);
 				await expect(chipsOfD.first()).toHaveText(`09:00 ${name}`);
 				await expect(form.locator('.field-error')).toHaveCount(0);
+				await expect(until).not.toHaveClass(/\bix-invalid\b/);
+				await expect(untilInput).not.toHaveAttribute('aria-invalid');
 				await expect(next).toBeChecked();
 				await expect(current).not.toBeChecked();
 				await expect(next).not.toHaveAttribute('aria-invalid');
-				// "Until" survives a save that only changed the weekdays.
-				await expect(until).toHaveValue(`${fx.year}-12-20`);
+				// Until, interval and duration survive a save that only changed
+				// the weekdays: in the form and in the database.
+				await expect(until).toHaveJSProperty('value', `${fx.year}-12-20`);
+				await expect(interval).toHaveJSProperty('value', '2');
+				await expect(duration).toHaveJSProperty('value', 45);
 				const { data: saved } = await service
 					.from('classes')
-					.select('schedule_ends_on')
+					.select(
+						'schedule_weekdays, schedule_ends_on, schedule_interval_weeks, default_duration_minutes, default_start_time'
+					)
 					.eq('id', cls.id)
 					.single();
-				expect(saved?.schedule_ends_on).toBe(`${fx.year}-12-20`);
+				expect(saved).toEqual({
+					schedule_weekdays: [other],
+					schedule_ends_on: `${fx.year}-12-20`,
+					schedule_interval_weeks: 2,
+					default_duration_minutes: 45,
+					default_start_time: '09:00:00'
+				});
 				// Other classes are untouched.
 				await expect(fixtureChips(page)).toHaveCount(6);
-			});
+			}, sameWeekDay);
 		} finally {
 			await service.from('classes').delete().eq('id', cls.id);
 		}
+	});
+
+	test('two expanded schedule rows: saving one keeps the unsaved edit in the other', async ({
+		page
+	}) => {
+		await signIn(page, fx.admin);
+		await openCalendar(page, fx.month);
+		const rowA = page.locator(`button.schedule-toggle[data-class-id="${fx.classA.id}"]`);
+		const rowB = page.locator(`button.schedule-toggle[data-class-id="${fx.classB.id}"]`);
+		const rowC = page.locator(`button.schedule-toggle[data-class-id="${fx.classC.id}"]`);
+		// Summaries: a weekly class has no interval suffix; no start time
+		// reads "Time not set" (class C has neither time nor duration).
+		const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][fx.weekday - 1];
+		await expect(rowA).toContainText(fx.classA.name);
+		await expect(rowA.locator('.schedule-summary')).toHaveText(`${day} · 10:00 · 90 min`);
+		await expect(rowC).toContainText(fx.classC.name);
+		await expect(rowC.locator('.schedule-summary')).toHaveText(`${day} · Time not set`);
+		await rowA.click();
+		await rowB.click();
+		const formA = page.locator(`form.schedule-form[data-class-id="${fx.classA.id}"]`);
+		const formB = page.locator(`form.schedule-form[data-class-id="${fx.classB.id}"]`);
+		const durationB = formB.locator(`#schedule-${fx.classB.id}-duration`);
+		await expect(durationB).toHaveJSProperty('value', 60);
+
+		// Unsaved edit in B, then save A unchanged.
+		await durationB.locator('input').first().fill('75');
+		await expect(durationB).toHaveJSProperty('value', 75);
+		await formA.getByRole('button', { name: 'Save' }).click();
+		await expect(page.locator('ix-toast').getByText('Schedule saved.')).toBeVisible();
+
+		await expect(durationB).toHaveJSProperty('value', 75);
+
+		// Collapsing keeps the form (hidden) and its unsaved edit.
+		await rowB.click();
+		await expect(rowB).toHaveAttribute('aria-expanded', 'false');
+		await expect(formB).toBeHidden();
+		await rowB.click();
+		await expect(formB).toBeVisible();
+		await expect(durationB).toHaveJSProperty('value', 75);
+		const { data } = await service
+			.from('classes')
+			.select('default_duration_minutes')
+			.eq('id', fx.classB.id)
+			.single();
+		expect(data?.default_duration_minutes).toBe(60);
 	});
 
 	test('admin adds an extra session from the day dialog: chip on that day, marked Extra', async ({
@@ -555,14 +668,21 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 				if (checked) await expect(box).toBeChecked();
 				else await expect(box).not.toBeChecked();
 			}
-			await expect(page.locator('#new-class-from')).toHaveValue(berlinToday());
-			await expect(page.locator('#new-class-until')).toHaveValue('');
+			// iX fields (#66): the host's `value` is what the form posts; typing
+			// goes into the native <input> in its shadow DOM.
+			await expect(page.locator('#new-class-from')).toHaveJSProperty('value', berlinToday());
+			await expect(page.locator('#new-class-until')).toHaveJSProperty('value', '');
+			// Time and duration unset: not iX's defaults (current time, 0).
+			await expect(page.locator('#new-class-start')).toHaveJSProperty('value', '');
+			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
 
 			await page.locator('#name').fill(name);
-			await page.getByRole('checkbox', { name: 'Wed', exact: true }).check();
-			await page.locator('#new-class-start').fill('10:00');
-			await page.locator('#new-class-duration').fill('90');
-			await page.locator('#new-class-until').fill(`${fx.year}-12-20`);
+			// <ix-checkbox>: click and wait (see the schedule-edit test).
+			await page.getByRole('checkbox', { name: 'Wed', exact: true }).click();
+			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).toBeChecked();
+			await page.locator('#new-class-start input').first().fill('10:00');
+			await page.locator('#new-class-duration input').first().fill('90');
+			await page.locator('#new-class-until input').first().fill(`${fx.year}-12-20`);
 			await page.getByRole('button', { name: 'Create class' }).click();
 
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
@@ -586,6 +706,86 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await expect(page.getByRole('checkbox', { name: 'Sun', exact: true })).toBeChecked();
 		} finally {
 			await service.from('classes').delete().eq('name', name);
+		}
+	});
+});
+
+test.describe('admin creates a class with blank time and duration (#66)', () => {
+	test.use({ viewport: WIDE });
+
+	test('blank start time and duration are stored as null, not iX defaults', async ({ page }) => {
+		const name = `E2E47 ${fx.tag} Blank`;
+		const posts: string[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().includes('?/create')) posts.push(r.postData() ?? '');
+		});
+		try {
+			await signIn(page, fx.admin);
+			await page.goto('/admin/classes');
+			await page.waitForFunction(() => customElements.get('ix-number-input') !== undefined);
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('#new-class-start')).toHaveJSProperty('value', '');
+			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
+
+			await page.locator('#name').fill(name);
+			await page.getByRole('button', { name: 'Create class' }).click();
+			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
+
+			expect(posts).toHaveLength(1);
+			const posted = new URLSearchParams(posts[0]);
+			expect(posted.get('startTime')).toBe('');
+			expect(posted.get('durationMinutes')).toBe('');
+			expect(posted.getAll('weekday')).toEqual(['7']);
+			expect(posted.get('intervalWeeks')).toBe('1');
+			const { data } = await service
+				.from('classes')
+				.select('default_start_time, default_duration_minutes, schedule_interval_weeks')
+				.eq('name', name)
+				.single();
+			expect(data).toEqual({
+				default_start_time: null,
+				default_duration_minutes: null,
+				schedule_interval_weeks: 1
+			});
+		} finally {
+			await service.from('classes').delete().eq('name', name);
+		}
+	});
+});
+
+test.describe('many classes (#66)', () => {
+	test.use({ viewport: WIDE });
+
+	test('admin calendar with ~130 classes renders the grid with collapsed schedule rows', async ({
+		page
+	}) => {
+		test.setTimeout(90_000);
+		const prefix = `E2E66 ${fx.tag} many`;
+		// Unique codes: the run's tag plus the index.
+		const rows = Array.from({ length: 130 }, (_, i) => ({
+			name: `${prefix} ${String(i).padStart(3, '0')}`,
+			code: `M${fx.tag.toUpperCase()}${String(i).padStart(3, '0')}`
+		}));
+		const { error } = await service.from('classes').insert(rows);
+		if (error) throw new Error(`create many classes: ${error.message}`);
+		try {
+			await signIn(page, fx.admin);
+			await openCalendar(page, fx.month);
+			await expect(page.locator('.ec-day-grid')).toBeVisible({ timeout: 20_000 });
+			await expect(fixtureChips(page)).toHaveCount(6);
+
+			const toggles = page.locator('button.schedule-toggle');
+			expect(await toggles.count()).toBeGreaterThanOrEqual(130);
+			await expect(page.locator('button.schedule-toggle[aria-expanded="true"]')).toHaveCount(0);
+			await expect(page.locator('form.schedule-form')).toHaveCount(0);
+
+			const one = toggles.filter({ hasText: `${prefix} 042` });
+			await one.click();
+			await expect(one).toHaveAttribute('aria-expanded', 'true');
+			await expect(page.locator('form.schedule-form')).toHaveCount(1);
+			await expect(page.locator('form.schedule-form ix-checkbox')).toHaveCount(7);
+		} finally {
+			await service.from('classes').delete().like('name', `${prefix} %`);
 		}
 	});
 });

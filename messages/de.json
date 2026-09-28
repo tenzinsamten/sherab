@@ -597,6 +597,8 @@
 	"calendar_weekday_5": "Fr",
 	"calendar_weekday_6": "Sa",
 	"calendar_weekday_7": "So",
+	"calendar_schedule_duration_short": "{minutes} Min.",
+	"calendar_schedule_no_weekdays": "Keine Wochentage",
 	"calendar_error_weekdays_required": "Wähle mindestens einen Wochentag.",
 	"calendar_error_until_before_from": "„Bis“ muss am oder nach „Ab“ liegen.",
 	"calendar_error_interval_invalid": "Wähle jede Woche oder alle 2, 3 oder 4 Wochen.",

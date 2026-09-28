@@ -307,9 +307,12 @@ ix-card {
 	gap: var(--space-4);
 }
 
-/* ── Forms: native controls in iX's input style ──────────────────────────
-   Text fields stay native <input> so password managers, autofill and
-   use:enhance's form reset keep working; they take iX's input tokens. */
+/* ── Forms ─────────────────────────────────────────────────────────────────
+   Form fields are iX components (<ix-input>, <ix-select>, <ix-date-input>,
+   ..., #66) with their own `label`; `.field` only spaces them and holds the
+   `.field-error` message. Native controls remain only for credentials
+   (email/username/password, so password managers and autofill work) and
+   page-level fields not converted yet (B8); these take iX's input tokens. */
 .field {
 	display: flex;
 	flex-direction: column;

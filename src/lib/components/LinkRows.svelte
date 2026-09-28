@@ -47,25 +47,24 @@
 	{#each rows as row, i (row.key)}
 		<div class="link-row">
 			<div class="field" style="margin:0;">
-				<label for="{idPrefix}-url-{row.key}">{m.homework_link_url_label()} {i + 1}</label>
-				<input
+				<ix-input
 					id="{idPrefix}-url-{row.key}"
 					name="linkUrl"
-					type="text"
-					inputmode="url"
-					maxlength="2000"
-					bind:value={row.url}
-				/>
+					label="{m.homework_link_url_label()} {i + 1}"
+					max-length="2000"
+					value={row.url}
+					onvalueChange={(event: CustomEvent<string>) => (row.url = event.detail)}
+				></ix-input>
 			</div>
 			<div class="field" style="margin:0;">
-				<label for="{idPrefix}-label-{row.key}">{m.homework_link_label_label()}</label>
-				<input
+				<ix-input
 					id="{idPrefix}-label-{row.key}"
 					name="linkLabel"
-					type="text"
-					maxlength="100"
-					bind:value={row.label}
-				/>
+					label={m.homework_link_label_label()}
+					max-length="100"
+					value={row.label}
+					onvalueChange={(event: CustomEvent<string>) => (row.label = event.detail)}
+				></ix-input>
 			</div>
 			<ix-icon-button
 				icon="trashcan"

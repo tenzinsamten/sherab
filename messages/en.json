@@ -597,6 +597,8 @@
 	"calendar_weekday_5": "Fri",
 	"calendar_weekday_6": "Sat",
 	"calendar_weekday_7": "Sun",
+	"calendar_schedule_duration_short": "{minutes} min",
+	"calendar_schedule_no_weekdays": "No weekdays",
 	"calendar_error_weekdays_required": "Pick at least one weekday.",
 	"calendar_error_until_before_from": "“Until” must be on or after “From”.",
 	"calendar_error_interval_invalid": "Choose every week or every 2, 3 or 4 weeks.",

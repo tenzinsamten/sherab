@@ -14,6 +14,10 @@ import type { SubmitFunction } from '@sveltejs/kit';
  * `{ reset: false }` keeps the form's fields after a successful submit (for
  * forms whose values come back from the reloaded page data, like checkboxes,
  * which a reset would return to their server-rendered state).
+ * The reset only clears native fields: iX fields (<ix-input>, <ix-select>,
+ * ...) have no formResetCallback and ignore it, so forms that must clear
+ * them remount with {#key} after a success (EnrollmentPanel's add form, and
+ * the create form's ScheduleFields in admin/classes/+page.svelte).
  */
 export function createPending() {
 	let current = $state<string | null>(null);

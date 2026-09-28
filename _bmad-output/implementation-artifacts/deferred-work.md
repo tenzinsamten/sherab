@@ -228,3 +228,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-52-admin-parents.md`
   summary: Admin Playwright check of /admin/parents: Parents in the admin nav; status pills (Approved/Pending/Rejected, Email not confirmed); children with (pending)/(rejected) markers and "—"; the /requests link only when parents are pending.
   evidence: Only the loader is unit-tested; no component tests or admin e2e journey (B6 review triage #8).
+- source_spec: none
+  summary: B8 — iX form fields, part 2 (#66): admin, teacher, homework, calendar and requests forms moved to ix-input/ix-select/ix-textarea/ix-date-input/ix-radio/ix-checkbox.
+  evidence: Split from the batch 4 intent (B7–B10) under the single-goal rule; builds on B7's shared field patterns.
+- source_spec: none
+  summary: B9 — /join registration as ix-workflow-steps (class code → details → done/waiting) (#63).
+  evidence: Split from the batch 4 intent; depends on B7 converting the join fields.
+- source_spec: none
+  summary: B10 — ix-breadcrumb on nested pages (parent › child › tab, admin classes › class › students, teacher classes › class › homework) (#61).
+  evidence: Split from the batch 4 intent; independent of the form-field work.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b7-ix-form-fields-part1.md`
+  summary: B7b — iX form fields on the auth pages (login, register, forgot/reset password, join) and /account; credential fields (email/username/password/confirm/current password) stay native styled to match iX, other fields (display name, class code, registration name, guardian email) become ix-input.
+  evidence: Split at the B7 token gate (spec ~1750 tokens). User decision 2026-09-28: option A — keep credential fields native because ix-input hard-codes autocomplete="off" and would break password managers.

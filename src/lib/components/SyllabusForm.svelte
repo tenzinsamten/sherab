@@ -27,13 +27,15 @@
 <form method="POST" action="?/update" use:enhance={pending.submit('syllabus')}>
 	<input type="hidden" name="syllabusId" value={syllabusId} />
 	<div class="field">
-		<label for="syllabus-{syllabusId}">{m.syllabus_label()}</label>
-		<textarea
+		<ix-textarea
 			id="syllabus-{syllabusId}"
 			name="syllabus"
-			rows="10"
-			maxlength="5000"
-			value={syllabus ?? ''}></textarea>
+			label={m.syllabus_label()}
+			textarea-rows="10"
+			max-length="5000"
+			resize-behavior="vertical"
+			value={syllabus ?? ''}
+		></ix-textarea>
 	</div>
 	<LinkRows idPrefix="syllabus-{syllabusId}" {links} legend={m.syllabus_links_legend()} />
 	<div class="actions">

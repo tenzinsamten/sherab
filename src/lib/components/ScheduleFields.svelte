@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages.js';
+	import { durationValue, ixFieldError, ixValue } from '$lib/ix-fields';
 	import type { ScheduleField } from '$lib/server/calendar';
 
 	/**
@@ -48,41 +49,39 @@
 	];
 
 	const errorId = (field: ScheduleField) => `${idPrefix}-${field}-error`;
-	const describedBy = (field: ScheduleField) => (errors[field] ? errorId(field) : undefined);
-	const invalid = (field: ScheduleField) => (errors[field] ? 'true' : undefined);
+	/** Attachment: the field's iX invalid state, linked to its message below. */
+	const fieldError = (field: ScheduleField) =>
+		ixFieldError(errors[field] ? errorId(field) : undefined);
 
 	/**
-	 * aria-invalid / aria-describedby for each weekday checkbox, in an effect
-	 * of their own: as template attributes they would share the effect that
-	 * sets `checked`, and re-running that (when an error appears) puts back
-	 * the server-rendered checked state over what the user just changed.
+	 * The weekdays fieldset's description, in an attachment of its own (see
+	 * $lib/ix-fields: an error must not re-run the effect that sets the
+	 * fields' values and checked states).
 	 */
-	function weekdayErrorState(input: HTMLInputElement) {
-		const error = errors.weekdays;
-		if (error) {
-			input.setAttribute('aria-invalid', 'true');
-			input.setAttribute('aria-describedby', errorId('weekdays'));
-		} else {
-			input.removeAttribute('aria-invalid');
-			input.removeAttribute('aria-describedby');
-		}
-	}
+	const weekdaysDescription = (fieldset: HTMLFieldSetElement) => {
+		if (errors.weekdays) fieldset.setAttribute('aria-describedby', errorId('weekdays'));
+		else fieldset.removeAttribute('aria-describedby');
+	};
 </script>
 
-<fieldset class="weekdays" aria-describedby={describedBy('weekdays')}>
+<!--
+	Every value and checked state goes through ixValue: it writes only when the
+	incoming value changed (so a reload after another form's save keeps unsaved
+	edits here), and writes "empty" explicitly where iX would otherwise post its
+	default (<ix-number-input> 0, <ix-time-input> the current time).
+-->
+<fieldset class="weekdays" {@attach weekdaysDescription}>
 	<legend>{m.calendar_schedule_weekdays_label()}</legend>
 	<div class="weekday-list">
 		{#each WEEKDAYS as day (day.value)}
-			<label class="weekday">
-				<input
-					type="checkbox"
-					name="weekday"
-					value={day.value}
-					checked={weekdays.includes(day.value)}
-					{@attach weekdayErrorState}
-				/>
-				<span>{day.label()}</span>
-			</label>
+			<ix-checkbox
+				name="weekday"
+				value={String(day.value)}
+				label={day.label()}
+				aria-label={day.label()}
+				{@attach ixValue(weekdays.includes(day.value), 'checked')}
+				{@attach fieldError('weekdays')}
+			></ix-checkbox>
 		{/each}
 	</div>
 	{#if errors.weekdays}
@@ -92,19 +91,21 @@
 
 <div class="schedule-grid">
 	<div class="field">
-		<label for="{idPrefix}-interval">{m.calendar_schedule_interval_label()}</label>
-		<select
-			id="{idPrefix}-interval"
-			name="intervalWeeks"
-			aria-invalid={invalid('intervalWeeks')}
-			aria-describedby={describedBy('intervalWeeks')}
-		>
-			{#each INTERVALS as option (option.value)}
-				<option value={option.value} selected={Number(intervalWeeks ?? 1) === option.value}>
-					{option.label()}
-				</option>
-			{/each}
-		</select>
+		<!-- Remounted when the incoming interval changes: <ix-select> takes its
+		     form value only on load and on user picks, not on later `value` writes. -->
+		{#key String(intervalWeeks || 1)}
+			<ix-select
+				id="{idPrefix}-interval"
+				name="intervalWeeks"
+				label={m.calendar_schedule_interval_label()}
+				{@attach ixValue(String(intervalWeeks || 1))}
+				{@attach fieldError('intervalWeeks')}
+			>
+				{#each INTERVALS as option (option.value)}
+					<ix-select-item value={String(option.value)} label={option.label()}></ix-select-item>
+				{/each}
+			</ix-select>
+		{/key}
 		{#if errors.intervalWeeks}
 			<p id={errorId('intervalWeeks')} class="field-error" role="alert">
 				{errors.intervalWeeks}
@@ -112,33 +113,30 @@
 		{/if}
 	</div>
 	<div class="field">
-		<label for="{idPrefix}-start">{m.calendar_start_time_label()}</label>
-		<input
+		<ix-time-input
 			id="{idPrefix}-start"
 			name="startTime"
-			type="time"
-			value={startTime ?? ''}
-			aria-invalid={invalid('startTime')}
-			aria-describedby={describedBy('startTime')}
-		/>
+			label={m.calendar_start_time_label()}
+			format="HH:mm"
+			{@attach ixValue(startTime ?? '')}
+			{@attach fieldError('startTime')}
+		></ix-time-input>
 		{#if errors.startTime}
 			<p id={errorId('startTime')} class="field-error" role="alert">{errors.startTime}</p>
 		{/if}
 	</div>
 	<div class="field">
-		<label for="{idPrefix}-duration">{m.calendar_duration_label()}</label>
-		<input
+		<ix-number-input
 			id="{idPrefix}-duration"
 			name="durationMinutes"
-			type="number"
-			inputmode="numeric"
+			label={m.calendar_duration_label()}
 			min="15"
 			max="480"
 			step="5"
-			value={durationMinutes ?? ''}
-			aria-invalid={invalid('durationMinutes')}
-			aria-describedby={describedBy('durationMinutes')}
-		/>
+			allow-empty-value-change
+			{@attach ixValue(durationValue(durationMinutes))}
+			{@attach fieldError('durationMinutes')}
+		></ix-number-input>
 		{#if errors.durationMinutes}
 			<p id={errorId('durationMinutes')} class="field-error" role="alert">
 				{errors.durationMinutes}
@@ -146,30 +144,28 @@
 		{/if}
 	</div>
 	<div class="field">
-		<label for="{idPrefix}-from">{m.calendar_schedule_from_label()}</label>
-		<input
+		<ix-date-input
 			id="{idPrefix}-from"
 			name="startsOn"
-			type="date"
+			label={m.calendar_schedule_from_label()}
+			format="yyyy-MM-dd"
 			required
-			value={startsOn}
-			aria-invalid={invalid('startsOn')}
-			aria-describedby={describedBy('startsOn')}
-		/>
+			{@attach ixValue(startsOn)}
+			{@attach fieldError('startsOn')}
+		></ix-date-input>
 		{#if errors.startsOn}
 			<p id={errorId('startsOn')} class="field-error" role="alert">{errors.startsOn}</p>
 		{/if}
 	</div>
 	<div class="field">
-		<label for="{idPrefix}-until">{m.calendar_schedule_until_label()}</label>
-		<input
+		<ix-date-input
 			id="{idPrefix}-until"
 			name="endsOn"
-			type="date"
-			value={endsOn ?? ''}
-			aria-invalid={invalid('endsOn')}
-			aria-describedby={describedBy('endsOn')}
-		/>
+			label={m.calendar_schedule_until_label()}
+			format="yyyy-MM-dd"
+			{@attach ixValue(endsOn ?? '')}
+			{@attach fieldError('endsOn')}
+		></ix-date-input>
 		{#if errors.endsOn}
 			<p id={errorId('endsOn')} class="field-error" role="alert">{errors.endsOn}</p>
 		{/if}
@@ -183,26 +179,11 @@
 	.weekday-list {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-2);
+		gap: var(--space-2) var(--space-4);
 	}
-	/* Whole pill is the click target (WCAG 2.2 target size). */
-	.weekday {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
+	/* Whole label row is the click target (WCAG 2.2 target size). */
+	.weekday-list ix-checkbox {
 		min-height: 2.25rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--theme-color-soft-bdr);
-		border-radius: 999px;
-		cursor: pointer;
-	}
-	.weekday:has(input:checked) {
-		border-color: var(--theme-color-primary);
-		background: var(--theme-color-ghost-primary--hover);
-	}
-	.weekday:has(input:focus-visible) {
-		outline: 2px solid var(--theme-color-focus-bdr);
-		outline-offset: 1px;
 	}
 	.schedule-grid {
 		display: grid;
