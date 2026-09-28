@@ -247,6 +247,21 @@ h2 {
 .card > .section-label:first-child {
 	margin-top: 0;
 }
+/* #69: the header avatar on the Sherab navy frame -- iX's default avatar
+   colours assume a light header (dark initials on dark navy, visible only
+   on hover). White initials on the primary blue, like the selected menu
+   item; the avatar's button hover/press use the frame's overlay tones. */
+ix-application-header ix-avatar {
+	--theme-avatar--background: #2563eb;
+	--theme-avatar--color: var(--sherab-frame-text, #ffffff);
+	--theme-btn-tertiary--background: transparent;
+	--theme-btn-tertiary--background--hover: var(--sherab-frame-hover, rgba(255, 255, 255, 0.12));
+	--theme-btn-tertiary--background--active: var(--sherab-frame-active, rgba(255, 255, 255, 0.18));
+	--theme-btn-tertiary--background--pressed: var(--sherab-frame-active, rgba(255, 255, 255, 0.18));
+	--theme-btn-tertiary--color: var(--sherab-frame-text, #ffffff);
+	--theme-btn-tertiary--color--hover: var(--sherab-frame-text, #ffffff);
+}
+
 .tile-link {
 	display: block;
 	color: inherit;
