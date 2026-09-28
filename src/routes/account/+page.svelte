@@ -3,6 +3,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -38,27 +39,30 @@
 			class="form-narrow"
 		>
 			<div class="field">
-				<label for="displayName">{m.account_name_label()}</label>
-				<input
+				<ix-input
 					id="displayName"
 					name="displayName"
-					type="text"
-					autocomplete="name"
-					maxlength="80"
+					label={m.account_name_label()}
+					max-length="80"
 					required
-					value={data.displayName}
-				/>
+					{@attach ixValue(data.displayName)}
+				></ix-input>
 			</div>
+			<!-- Display only (no name). -->
 			{#if data.role === 'student'}
 				<div class="field">
-					<label for="username">{m.account_username_label()}</label>
-					<input id="username" type="text" value={data.username ?? ''} readonly />
+					<ix-input
+						id="username"
+						label={m.account_username_label()}
+						value={data.username ?? ''}
+						readonly
+					></ix-input>
 					<p class="muted field-note">{m.account_pin_note()}</p>
 				</div>
 			{:else}
 				<div class="field">
-					<label for="email">{m.account_email_label()}</label>
-					<input id="email" type="email" value={data.email ?? ''} readonly />
+					<ix-input id="email" label={m.account_email_label()} value={data.email ?? ''} readonly
+					></ix-input>
 				</div>
 			{/if}
 			<ix-button
@@ -78,6 +82,8 @@
 				use:enhance={pending.submit('password')}
 				class="form-narrow"
 			>
+				<!-- Password fields stay native <input>: <ix-input> forces autocomplete="off",
+				     which would break password managers (#66, B7b). -->
 				<!-- Lets password managers match the change to the right account. -->
 				<input type="hidden" name="username" autocomplete="username" value={data.email ?? ''} />
 				<div class="field">

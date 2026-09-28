@@ -37,17 +37,17 @@
 				};
 			}}
 		>
+			<!-- Email and password below stay native <input>: <ix-input> forces
+			     autocomplete="off", which would break password managers (#66, B7b). -->
 			<div class="field">
-				<label for="displayName">{m.register_name_label()}</label>
-				<input
+				<ix-input
 					id="displayName"
 					name="displayName"
-					type="text"
-					autocomplete="name"
-					maxlength="80"
+					label={m.register_name_label()}
+					max-length="80"
 					required
 					value={values?.displayName ?? ''}
-				/>
+				></ix-input>
 			</div>
 			<div class="field">
 				<label for="email">{m.register_email_label()}</label>

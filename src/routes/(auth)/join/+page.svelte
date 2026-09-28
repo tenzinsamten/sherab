@@ -4,11 +4,13 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
 	import { showToast } from '$lib/ix';
+	import { ixFieldError } from '$lib/ix-fields';
 
 	let step = $state<1 | 2 | 3>(1);
 
 	let classCode = $state('');
-	let classCodeInvalid = $state(false);
+	// The code's error, shown under the field as well as in the toast.
+	let classCodeError = $state<string | null>(null);
 	let checkingCode = $state(false);
 	let resolvedClass = $state<{ id: string; name: string } | null>(null);
 
@@ -22,19 +24,19 @@
 	async function checkClassCode() {
 		const code = classCode.trim();
 		if (!code) {
-			classCodeInvalid = true;
-			showToast('error', m.join_error_code_required());
+			classCodeError = m.join_error_code_required();
+			showToast('error', classCodeError);
 			return;
 		}
 
 		checkingCode = true;
-		classCodeInvalid = false;
+		classCodeError = null;
 		const { data, error } = await supabase.rpc('validate_class_code', { p_code: code });
 		checkingCode = false;
 
 		if (error || !data || data.length === 0) {
-			classCodeInvalid = true;
-			showToast('error', m.join_error_invalid_code());
+			classCodeError = m.join_error_invalid_code();
+			showToast('error', classCodeError);
 			resolvedClass = null;
 			return;
 		}
@@ -68,27 +70,31 @@
 	</ol>
 
 	{#if step === 1}
+		<!-- novalidate: checkClassCode checks the code, and iX's own validation
+		     would replace the error's aria-describedby (see $lib/ix-fields). -->
 		<form
+			novalidate
 			onsubmit={(event) => {
 				event.preventDefault();
 				checkClassCode();
 			}}
 		>
 			<div class="field">
-				<label for="classCode">{m.join_code_question()}</label>
-				<input
+				<ix-input
 					id="classCode"
-					type="text"
+					label={m.join_code_question()}
 					required
-					autocomplete="off"
 					placeholder={m.join_code_placeholder()}
-					aria-invalid={classCodeInvalid ? 'true' : undefined}
-					bind:value={classCode}
-					oninput={() => {
-						classCode = classCode.toUpperCase();
-						classCodeInvalid = false;
+					value={classCode}
+					onvalueChange={(event: CustomEvent<string>) => {
+						classCode = event.detail.toUpperCase();
+						classCodeError = null;
 					}}
-				/>
+					{@attach ixFieldError(classCodeError ? 'classCode-error' : undefined)}
+				></ix-input>
+				{#if classCodeError}
+					<p id="classCode-error" class="field-error" role="alert">{classCodeError}</p>
+				{/if}
 			</div>
 			<ix-button
 				class="block"
@@ -106,14 +112,13 @@
 			>
 		</p>
 		<div class="field">
-			<label for="registrationName">{m.join_name_label()}</label>
-			<input
+			<ix-input
 				id="registrationName"
-				type="text"
+				label={m.join_name_label()}
 				required
-				autocomplete="name"
-				bind:value={registrationName}
-			/>
+				value={registrationName}
+				onvalueChange={(event: CustomEvent<string>) => (registrationName = event.detail)}
+			></ix-input>
 		</div>
 		<p class="muted">{m.join_name_note()}</p>
 		<div class="actions">
@@ -140,15 +145,15 @@
 			<input type="hidden" name="registrationName" value={registrationName} />
 
 			<div class="field">
-				<label for="guardianEmail">{m.join_guardian_email_label()}</label>
-				<input
+				<ix-input
 					id="guardianEmail"
 					name="guardianEmail"
 					type="email"
+					label={m.join_guardian_email_label()}
 					required
-					autocomplete="email"
-					bind:value={guardianEmail}
-				/>
+					value={guardianEmail}
+					onvalueChange={(event: CustomEvent<string>) => (guardianEmail = event.detail)}
+				></ix-input>
 			</div>
 			<p class="muted">{m.join_guardian_email_note()}</p>
 

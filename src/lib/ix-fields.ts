@@ -33,6 +33,10 @@ async function whenReady(host: IxField) {
  * and `ariaDescribedByElements` (an id can't reach across the shadow root),
  * and the role-less host gets no ARIA. Pass `undefined` when there is no
  * error. Cleanup undoes only what this attachment set.
+ *
+ * The form must be `novalidate`: otherwise iX's own validation runs on
+ * value change and blur and sets the control's `aria-describedby`, which
+ * replaces the description linked here.
  */
 export function ixFieldError(errorId: string | undefined): Attachment<HTMLElement> {
 	return (host: IxField) => {
