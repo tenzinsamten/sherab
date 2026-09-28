@@ -43,6 +43,7 @@ export function setupIx() {
 			iconUser: icons.iconUser,
 			iconUserCheck: icons.iconUserCheck,
 			iconUserGroup: icons.iconUserGroup,
+			iconUserManagement: icons.iconUserManagement,
 			iconUserReading: icons.iconUserReading
 		});
 		await iconsLoader.defineCustomElements();
