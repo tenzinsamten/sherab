@@ -240,3 +240,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b7-ix-form-fields-part1.md`
   summary: B7b — iX form fields on the auth pages (login, register, forgot/reset password, join) and /account; credential fields (email/username/password/confirm/current password) stay native styled to match iX, other fields (display name, class code, registration name, guardian email) become ix-input.
   evidence: Split at the B7 token gate (spec ~1750 tokens). User decision 2026-09-28: option A — keep credential fields native because ix-input hard-codes autocomplete="off" and would break password managers.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b8a-ix-page-fields.md`
+  summary: B8b — iX form fields on the teacher class page (session select; per-student skill level + notes as collapsible student rows whose form loads when expanded) and homework new/edit (ix-radio groups for mode/target, dates, number, textarea, subset ix-checkboxes).
+  evidence: Split from B8 (8 page areas, well over the spec-size target), user decision 2026-09-28. Also user decision 2026-09-28: per-student skill fields become collapsible rows, because ~6 iX components per student (~180 for 30 students) risks the /calendar freeze seen in B7.

@@ -7,6 +7,7 @@
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -46,6 +47,17 @@
 					intervalWeeks: 1
 				}
 	);
+	// The last create result (every create result echoes `name`): other
+	// actions (a delete) leave it, so they don't clear a half-typed name.
+	let lastCreate: ActionData = null;
+	let createResult = $derived.by(() => {
+		if (form && 'name' in form) lastCreate = form;
+		return lastCreate;
+	});
+	let createdName = $derived(
+		createResult?.success ? '' : (createResult && 'name' in createResult && createResult.name) || ''
+	);
+
 	let scheduleErrors = $derived(
 		form && 'scheduleErrors' in form && form.scheduleErrors ? form.scheduleErrors : {}
 	);
@@ -83,16 +95,19 @@
 	<section class="card">
 		<h2>{m.classes_create_heading()}</h2>
 		<form method="POST" action="?/create" use:enhance={pending.submit('create')} novalidate>
-			<div class="field" style="max-width:32rem;">
-				<label for="name">{m.classes_name_label()}</label>
-				<input
-					id="name"
-					name="name"
-					type="text"
-					required
-					value={form?.success ? '' : (form && 'name' in form && form.name) || ''}
-				/>
-			</div>
+			<!-- Remounted after a successful create only: <ix-input> doesn't take
+			     part in form reset. A failed create keeps the name (echoed back). -->
+			{#key createResult?.success ? createResult : null}
+				<div class="field" style="max-width:32rem;">
+					<ix-input
+						id="name"
+						name="name"
+						label={m.classes_name_label()}
+						required
+						{@attach ixValue(createdName)}
+					></ix-input>
+				</div>
+			{/key}
 			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
 			{#key form}
 				<ScheduleFields

@@ -10,6 +10,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { durationValue, ixFieldError, ixValue } from '$lib/ix-fields';
 	import { eventDomClass, toCalendarEvents, type CalendarEventProps } from '$lib/calendar-events';
 	import ChildPicker from '$lib/components/ChildPicker.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
@@ -642,31 +643,30 @@
 						novalidate
 					>
 						<input type="hidden" name="sessionId" value={session.id} />
+						<!-- iX fields (#66): empty means "use the class default", so both
+						     write empty explicitly (not iX's current time / 0). -->
 						<div class="field">
-							<label for="session-start">{m.calendar_start_time_label()}</label>
-							<input
+							<ix-time-input
 								id="session-start"
 								name="startTime"
-								type="time"
-								value={session.startOverride ?? ''}
-								aria-invalid={sessionError ? 'true' : undefined}
-								aria-describedby="session-hint{sessionError ? ' session-error' : ''}"
-							/>
+								label={m.calendar_start_time_label()}
+								format="HH:mm"
+								{@attach ixValue(session.startOverride ?? '')}
+								{@attach ixFieldError(sessionError ? 'session-error' : undefined, ['session-hint'])}
+							></ix-time-input>
 						</div>
 						<div class="field">
-							<label for="session-duration">{m.calendar_duration_label()}</label>
-							<input
+							<ix-number-input
 								id="session-duration"
 								name="durationMinutes"
-								type="number"
-								inputmode="numeric"
+								label={m.calendar_duration_label()}
 								min="15"
 								max="480"
 								step="5"
-								value={session.durationOverride ?? ''}
-								aria-invalid={sessionError ? 'true' : undefined}
-								aria-describedby="session-hint{sessionError ? ' session-error' : ''}"
-							/>
+								allow-empty-value-change
+								{@attach ixValue(durationValue(session.durationOverride))}
+								{@attach ixFieldError(sessionError ? 'session-error' : undefined, ['session-hint'])}
+							></ix-number-input>
 						</div>
 						<ix-button
 							type="submit"
@@ -811,43 +811,51 @@
 								>
 									<input type="hidden" name="dayId" value={dayId} />
 									<div class="field">
-										<label for="extra-class">{m.calendar_extra_class_label()}</label>
-										<select
-											id="extra-class"
-											name="classId"
-											required
-											aria-invalid={extraError ? 'true' : undefined}
-											aria-describedby={extraError ? 'extra-error' : undefined}
-										>
-											{#each extraClasses as cls (cls.id)}
-												<option value={cls.id}>{cls.name}</option>
-											{/each}
-										</select>
+										<!-- Remounted when the offered classes change (e.g. after an
+										     add): <ix-select> takes its form value only on load and on
+										     user picks, so it would keep posting a class no longer listed. -->
+										{#key extraClasses.map((c) => c.id).join(',')}
+											<ix-select
+												id="extra-class"
+												name="classId"
+												label={m.calendar_extra_class_label()}
+												required
+												{@attach ixValue(extraClasses[0].id)}
+												{@attach ixFieldError(extraError ? 'extra-error' : undefined)}
+											>
+												{#each extraClasses as cls (cls.id)}
+													<ix-select-item value={cls.id} label={cls.name}></ix-select-item>
+												{/each}
+											</ix-select>
+										{/key}
 									</div>
 									<div class="actions inline-form">
 										<div class="field">
-											<label for="extra-start">{m.calendar_start_time_label()}</label>
-											<input
+											<ix-time-input
 												id="extra-start"
 												name="startTime"
-												type="time"
-												aria-invalid={extraError ? 'true' : undefined}
-												aria-describedby="extra-intro{extraError ? ' extra-error' : ''}"
-											/>
+												label={m.calendar_start_time_label()}
+												format="HH:mm"
+												{@attach ixValue('')}
+												{@attach ixFieldError(extraError ? 'extra-error' : undefined, [
+													'extra-intro'
+												])}
+											></ix-time-input>
 										</div>
 										<div class="field">
-											<label for="extra-duration">{m.calendar_duration_label()}</label>
-											<input
+											<ix-number-input
 												id="extra-duration"
 												name="durationMinutes"
-												type="number"
-												inputmode="numeric"
+												label={m.calendar_duration_label()}
 												min="15"
 												max="480"
 												step="5"
-												aria-invalid={extraError ? 'true' : undefined}
-												aria-describedby="extra-intro{extraError ? ' extra-error' : ''}"
-											/>
+												allow-empty-value-change
+												{@attach ixValue(null)}
+												{@attach ixFieldError(extraError ? 'extra-error' : undefined, [
+													'extra-intro'
+												])}
+											></ix-number-input>
 										</div>
 									</div>
 									{#if extraError}
@@ -874,26 +882,25 @@
 						novalidate
 					>
 						<div class="field">
-							<label for="add-start">{m.calendar_start_date_label()}</label>
-							<input
+							<ix-date-input
 								id="add-start"
 								name="startDate"
-								type="date"
+								label={m.calendar_start_date_label()}
+								format="yyyy-MM-dd"
 								required
-								value={selectedDate}
-								aria-invalid={addDaysError ? 'true' : undefined}
-								aria-describedby={addDaysError ? 'add-days-error' : undefined}
-							/>
+								{@attach ixValue(selectedDate)}
+								{@attach ixFieldError(addDaysError ? 'add-days-error' : undefined)}
+							></ix-date-input>
 						</div>
 						<div class="field">
-							<label for="add-end">{m.calendar_end_date_label()}</label>
-							<input
+							<ix-date-input
 								id="add-end"
 								name="endDate"
-								type="date"
-								aria-invalid={addDaysError ? 'true' : undefined}
-								aria-describedby={addDaysError ? 'add-days-error' : undefined}
-							/>
+								label={m.calendar_end_date_label()}
+								format="yyyy-MM-dd"
+								{@attach ixValue('')}
+								{@attach ixFieldError(addDaysError ? 'add-days-error' : undefined)}
+							></ix-date-input>
 						</div>
 						{#if addDaysError}
 							<p id="add-days-error" class="field-error" role="alert">{addDaysError}</p>

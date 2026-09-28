@@ -5,6 +5,7 @@
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -99,28 +100,32 @@
 					use:enhance={pending.submit('create')}
 					class="form-narrow"
 				>
+					<!-- The new teacher's email, not a sign-in field: an iX field (#66). -->
 					<div class="field">
-						<label for="email">{m.teachers_email_label()}</label>
-						<input
+						<ix-input
 							id="email"
 							name="email"
 							type="email"
+							label={m.teachers_email_label()}
 							required
-							value={form && 'email' in form && !('success' in form) && !('reset' in form)
-								? (form.email ?? '')
-								: ''}
-						/>
+							{@attach ixValue(
+								form && 'email' in form && !('success' in form) && !('reset' in form)
+									? (form.email ?? '')
+									: ''
+							)}
+						></ix-input>
 					</div>
 					<div class="field">
-						<label for="displayName">{m.teachers_display_name_label()}</label>
-						<input
+						<ix-input
 							id="displayName"
 							name="displayName"
-							type="text"
-							value={form && 'displayName' in form && !('success' in form)
-								? (form.displayName ?? '')
-								: ''}
-						/>
+							label={m.teachers_display_name_label()}
+							{@attach ixValue(
+								form && 'displayName' in form && !('success' in form)
+									? (form.displayName ?? '')
+									: ''
+							)}
+						></ix-input>
 					</div>
 					<fieldset>
 						<legend>{m.teachers_assign_legend()}</legend>

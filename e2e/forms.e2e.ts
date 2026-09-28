@@ -251,3 +251,216 @@ test('enrol: no student chosen sends nothing and marks the select; choosing one 
 	expect(blocked).toEqual([]);
 	expect(enrollPosts).toHaveLength(1);
 });
+
+test('admin team create: the name field is empty again after a create (#66 B8a)', async ({
+	page
+}) => {
+	const name = `E2E66 Team ${fx.tag}`;
+	try {
+		await signIn(page, fx.admin);
+		await page.goto('/admin/teams');
+		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await page.waitForLoadState('networkidle');
+
+		const field = page.locator('#name');
+		await field.locator('input').first().fill(name);
+		await expect(field).toHaveJSProperty('value', name);
+		await page.getByRole('button', { name: 'Create team' }).click();
+		await expect(page.locator('ix-toast').getByText(`Team "${name}" created.`)).toBeVisible();
+		await expect(page.getByRole('cell', { name, exact: true })).toBeVisible();
+		await expect(page.locator('#name')).toHaveJSProperty('value', '');
+
+		// A duplicate name fails: the toast shows and the name is kept.
+		await page.locator('#name input').first().fill(name);
+		await page.getByRole('button', { name: 'Create team' }).click();
+		await expect(page.locator('ix-toast').getByText(/already/i)).toBeVisible();
+		await expect(page.locator('#name')).toHaveJSProperty('value', name);
+	} finally {
+		await service.from('teams').delete().eq('name', name);
+	}
+});
+
+test('requests approve: an empty team sends nothing and marks the select; with a team the student is approved', async ({
+	page
+}) => {
+	const teamName = `E2E66 Approve Team ${fx.tag}`;
+	const registrationName = `E2E66 Pending ${fx.tag}`;
+	let teamId: string | undefined;
+	let studentId: string | undefined;
+	try {
+		const { data: team, error: teamError } = await service
+			.from('teams')
+			.insert({ name: teamName })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`create team: ${teamError?.message}`);
+		teamId = team.id;
+		// A pending student who registered for class C.
+		const { data: created, error: createError } = await service.auth.admin.createUser({
+			email: `pending-${crypto.randomUUID()}@students.internal.invalid`,
+			password: crypto.randomUUID(),
+			email_confirm: true,
+			app_metadata: { role: 'student' }
+		});
+		if (createError || !created.user) throw new Error(`create pending: ${createError?.message}`);
+		studentId = created.user.id;
+		const { error: pendingError } = await service
+			.from('profiles')
+			.update({ class_id: fx.classC.id, status: 'pending', registration_name: registrationName })
+			.eq('id', studentId);
+		if (pendingError) throw new Error(`make pending: ${pendingError.message}`);
+
+		// An empty submit must never reach the server.
+		let allowApprove = false;
+		const blocked: string[] = [];
+		const approvePosts: string[] = [];
+		await page.route(/\?\/approve/, async (route) => {
+			if (!allowApprove) {
+				blocked.push(route.request().url());
+				return route.abort();
+			}
+			approvePosts.push(route.request().postData() ?? '');
+			return route.continue();
+		});
+		await signIn(page, fx.admin);
+		await openForm(page, '/requests');
+
+		const select = page.locator(`#team-${studentId}`);
+		const row = page.locator('tr').filter({ has: select });
+		await expect(row).toContainText(registrationName);
+		await row.getByRole('button', { name: 'Approve' }).click();
+		await expect(select).toHaveClass(/\bix-invalid\b/);
+		const error = page.locator(`#team-${studentId}-error`);
+		await expect(error).toHaveText('Choose a team before approving.');
+		const selectInput = select.locator('input').first();
+		await expect(selectInput).toHaveAttribute('aria-invalid', 'true');
+		await expect
+			.poll(() =>
+				selectInput.evaluate((el) =>
+					(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
+				)
+			)
+			.toBe('Choose a team before approving.');
+		expect(blocked).toEqual([]);
+
+		// Pick the team and approve.
+		allowApprove = true;
+		await selectInput.click();
+		await select.locator(`ix-select-item[label="${teamName}"]`).click();
+		await expect(select).toHaveJSProperty('value', team.id);
+		await expect(select).not.toHaveClass(/\bix-invalid\b/);
+		await expect(error).toHaveCount(0);
+		await row.getByRole('button', { name: 'Approve' }).click();
+		await expect(page.locator('ix-message-bar')).toContainText(`${registrationName} was approved`);
+		expect(approvePosts).toHaveLength(1);
+		const posted = new URLSearchParams(approvePosts[0]);
+		expect(posted.get('studentId')).toBe(studentId);
+		expect(posted.get('teamId')).toBe(team.id);
+		await expect(page.locator(`#team-${studentId}`)).toHaveCount(0);
+
+		const { data: profile } = await service
+			.from('profiles')
+			.select('status, team_id')
+			.eq('id', studentId)
+			.single();
+		expect(profile).toEqual({ status: 'approved', team_id: team.id });
+	} finally {
+		// The student first: a team with members cannot be deleted.
+		if (studentId) await service.auth.admin.deleteUser(studentId);
+		if (teamId) await service.from('teams').delete().eq('id', teamId);
+	}
+});
+
+test('admin class create: a failed create keeps the typed name, and deleting a class does not clear it (#66 B8a)', async ({
+	page
+}) => {
+	const typed = fx.classA.name;
+	const throwaway = `E2E66 Delete ${fx.tag}`;
+	const { error: insertError } = await service
+		.from('classes')
+		.insert({ name: throwaway, code: `D${crypto.randomUUID().slice(0, 5).toUpperCase()}` });
+	if (insertError) throw new Error(`create class: ${insertError.message}`);
+	try {
+		await signIn(page, fx.admin);
+		await page.goto('/admin/classes');
+		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await page.waitForLoadState('networkidle');
+
+		// An existing name: the create fails and the name stays.
+		const field = page.locator('#name');
+		await field.locator('input').first().fill(typed);
+		await page.getByRole('button', { name: 'Create class' }).click();
+		await expect(page.locator('ix-toast').getByText(/already exists/)).toBeVisible();
+		await expect(field).toHaveJSProperty('value', typed);
+
+		// A half-typed name survives deleting another class.
+		await field.locator('input').first().fill('Half typed');
+		await expect(field).toHaveJSProperty('value', 'Half typed');
+		await page
+			.locator('tr')
+			.filter({ hasText: throwaway })
+			.getByRole('button', { name: 'Delete' })
+			.click();
+		await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).last().click();
+		await expect(page.locator('ix-toast').getByText(`Class “${throwaway}” deleted.`)).toBeVisible();
+		await expect(page.getByRole('cell', { name: throwaway, exact: true })).toHaveCount(0);
+		await expect(page.locator('#name')).toHaveJSProperty('value', 'Half typed');
+	} finally {
+		await service.from('classes').delete().eq('name', throwaway);
+	}
+});
+
+test('admin teacher create: posts email and name; a failed create keeps them, a successful one clears them (#66 B8a)', async ({
+	page
+}) => {
+	const email = `e2e-66-teacher-${fx.tag}@example.test`;
+	const displayName = `E2E66 Teacher ${fx.tag}`;
+	const posts: URLSearchParams[] = [];
+	page.on('request', (r) => {
+		if (r.method() === 'POST' && r.url().includes('?/create')) {
+			posts.push(new URLSearchParams(r.postData() ?? ''));
+		}
+	});
+	try {
+		await signIn(page, fx.admin);
+		await page.goto('/admin/teachers');
+		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await page.waitForLoadState('networkidle');
+
+		const emailField = page.locator('#email');
+		const nameField = page.locator('#displayName');
+		const classBox = page.getByRole('checkbox', { name: new RegExp(fx.classC.name) });
+
+		// An existing teacher's email: the create fails, both fields keep their values.
+		await emailField.locator('input').first().fill(fx.teacher.email);
+		await nameField.locator('input').first().fill(displayName);
+		await classBox.click();
+		await expect(classBox).toBeChecked();
+		await page.getByRole('button', { name: 'Create teacher' }).click();
+		await expect(
+			page.locator('ix-toast').getByText('A teacher with this email already exists.')
+		).toBeVisible();
+		expect(posts).toHaveLength(1);
+		expect(posts[0].get('email')).toBe(fx.teacher.email);
+		expect(posts[0].get('displayName')).toBe(displayName);
+		await expect(emailField).toHaveJSProperty('value', fx.teacher.email);
+		await expect(nameField).toHaveJSProperty('value', displayName);
+
+		// A new email: created, and the form is empty again.
+		await emailField.locator('input').first().fill(email);
+		await expect(emailField).toHaveJSProperty('value', email);
+		await page.getByRole('button', { name: 'Create teacher' }).click();
+		await expect(page.locator('ix-message-bar')).toContainText(
+			`Teacher account created for ${email}`
+		);
+		expect(posts).toHaveLength(2);
+		expect(posts[1].get('email')).toBe(email);
+		expect(posts[1].get('displayName')).toBe(displayName);
+		expect(posts[1].getAll('classIds')).toEqual([fx.classC.id]);
+		await expect(page.locator('#email')).toHaveJSProperty('value', '');
+		await expect(page.locator('#displayName')).toHaveJSProperty('value', '');
+	} finally {
+		const { data: rows } = await service.from('profiles').select('id').eq('email', email);
+		for (const row of rows ?? []) await service.auth.admin.deleteUser(row.id);
+	}
+});

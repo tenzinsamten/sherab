@@ -27,33 +27,40 @@ async function whenReady(host: IxField) {
 /**
  * A server error shown in a light-DOM element (`errorId`, usually a
  * `.field-error` under the field): iX invalid state (`ix-invalid`) plus
- * aria-invalid and a description. <ix-checkbox>'s host is the checkbox, so
- * it gets `aria-invalid` / `aria-describedby` itself. Other fields have
- * their native control in the shadow DOM: that control gets `aria-invalid`
- * and `ariaDescribedByElements` (an id can't reach across the shadow root),
- * and the role-less host gets no ARIA. Pass `undefined` when there is no
- * error. Cleanup undoes only what this attachment set.
+ * aria-invalid and a description. `describedBy` lists standing
+ * descriptions (e.g. a hint under the field): they describe the field at
+ * all times, the error after them when there is one. <ix-checkbox>'s host is
+ * the checkbox, so it gets `aria-invalid` / `aria-describedby` itself. Other
+ * fields have their native control in the shadow DOM: that control gets
+ * `aria-invalid` and `ariaDescribedByElements` (an id can't reach across
+ * the shadow root), and the role-less host gets no ARIA. Pass `undefined`
+ * when there is no error. Cleanup undoes only what this attachment set.
  *
  * The form must be `novalidate`: otherwise iX's own validation runs on
  * value change and blur and sets the control's `aria-describedby`, which
  * replaces the description linked here.
  */
-export function ixFieldError(errorId: string | undefined): Attachment<HTMLElement> {
+export function ixFieldError(
+	errorId: string | undefined,
+	describedBy: readonly string[] = []
+): Attachment<HTMLElement> {
 	return (host: IxField) => {
 		host.classList.toggle('ix-invalid', Boolean(errorId));
-		if (!errorId) return;
+		const ids = errorId ? [...describedBy, errorId] : [...describedBy];
+		if (ids.length === 0) return;
 
 		if (host.localName === 'ix-checkbox') {
-			host.setAttribute('aria-invalid', 'true');
-			host.setAttribute('aria-describedby', errorId);
+			if (errorId) host.setAttribute('aria-invalid', 'true');
+			host.setAttribute('aria-describedby', ids.join(' '));
 			return () => {
-				host.removeAttribute('aria-invalid');
+				if (errorId) host.removeAttribute('aria-invalid');
 				host.removeAttribute('aria-describedby');
 			};
 		}
 
 		let active = true;
 		let native: HTMLElement | null = null;
+		let setInvalid = false;
 		let setDescription = false;
 		(async () => {
 			await whenReady(host);
@@ -61,18 +68,23 @@ export function ixFieldError(errorId: string | undefined): Attachment<HTMLElemen
 			const control = await host.getNativeInputElement().catch(() => null);
 			if (!active || !control) return;
 			native = control;
-			native.setAttribute('aria-invalid', 'true');
-			const target = document.getElementById(errorId);
-			if (target && 'ariaDescribedByElements' in native) {
-				native.ariaDescribedByElements = [target];
+			if (errorId) {
+				native.setAttribute('aria-invalid', 'true');
+				setInvalid = true;
+			}
+			const targets = ids
+				.map((id) => document.getElementById(id))
+				.filter((el): el is HTMLElement => el !== null);
+			if (targets.length > 0 && 'ariaDescribedByElements' in native) {
+				native.ariaDescribedByElements = targets;
 				setDescription = true;
 			}
 		})();
 		return () => {
 			active = false;
-			host.classList.remove('ix-invalid');
+			if (errorId) host.classList.remove('ix-invalid');
 			if (!native) return;
-			native.removeAttribute('aria-invalid');
+			if (setInvalid) native.removeAttribute('aria-invalid');
 			if (setDescription) native.ariaDescribedByElements = null;
 		};
 	};

@@ -1,16 +1,35 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance } from '$app/forms';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { confirmAction, showToast } from '$lib/ix';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
+	import { ixFieldError } from '$lib/ix-fields';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	const pending = createPending();
+
+	// Pending rows submitted without a team. <ix-select required> doesn't
+	// block a submit by itself: stop an empty one here and show the select's
+	// invalid state instead of posting (as EnrollmentPanel does).
+	const teamMissing = new SvelteSet<string>();
+	function submitApprove(studentId: string): SubmitFunction {
+		const submit = pending.submit(`approve:${studentId}`);
+		return (input) => {
+			if (!input.formData.get('teamId')) {
+				input.cancel();
+				teamMissing.add(studentId);
+				return;
+			}
+			return submit(input);
+		};
+	}
 
 	// Approval shows the student's one-time username/PIN, so it stays on
 	// screen; rejected/cleared are short confirmations, so they're toasts.
@@ -179,26 +198,35 @@
 										<form
 											method="POST"
 											action="?/approve"
-											use:enhance={pending.submit(`approve:${student.id}`)}
+											use:enhance={submitApprove(student.id)}
 											class="actions"
 											style="align-items:flex-end;"
+											novalidate
 										>
 											<input type="hidden" name="studentId" value={student.id} />
 											<input type="hidden" name="studentName" value={student.registrationName} />
 											<div class="field" style="margin:0;">
-												<label for="team-{student.id}">{m.requests_team_label()}</label>
-												<select
+												<ix-select
 													id="team-{student.id}"
 													name="teamId"
+													label={m.requests_team_label()}
+													i18n-placeholder={m.requests_team_placeholder()}
 													required
-													disabled={data.teams.length === 0}
+													disabled={data.teams.length === 0 || undefined}
+													onvalueChange={() => teamMissing.delete(student.id)}
+													{@attach ixFieldError(
+														teamMissing.has(student.id) ? `team-${student.id}-error` : undefined
+													)}
 												>
-													<option value="" disabled selected>{m.requests_team_placeholder()}</option
-													>
 													{#each data.teams as team (team.id)}
-														<option value={team.id}>{team.name}</option>
+														<ix-select-item value={team.id} label={team.name}></ix-select-item>
 													{/each}
-												</select>
+												</ix-select>
+												{#if teamMissing.has(student.id)}
+													<p id="team-{student.id}-error" class="field-error" role="alert">
+														{m.requests_error_team_required()}
+													</p>
+												{/if}
 											</div>
 											<ix-button
 												type="submit"

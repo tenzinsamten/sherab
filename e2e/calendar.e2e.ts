@@ -153,44 +153,123 @@ test.describe('wide screen (1280px)', () => {
 		await expect(fixtureChips(page)).toHaveCount(0);
 	});
 
-	test('teacher edits a session: 11:00 saves and closes; invalid input errors in the dialog', async ({
+	test('teacher edits a session: 11:00 saves and closes; invalid input errors in the dialog; empty resets to the default', async ({
 		page
 	}) => {
+		const posts: URLSearchParams[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().includes('?/updateSession')) {
+				posts.push(new URLSearchParams(r.postData() ?? ''));
+			}
+		});
 		await signIn(page, fx.teacher);
 		await openCalendar(page, fx.month);
 		const date = fx.days[1];
 		const modal = sessionModal(page);
+		// iX fields (#66): the host's `value` is what the form posts; typing
+		// goes into the native <input> in its shadow DOM.
+		const start = modal.locator('#session-start');
+		const duration = modal.locator('#session-duration');
+		const startInput = start.locator('input').first();
+		const durationInput = duration.locator('input').first();
 
 		await chipFor(page, 'A', date).click();
 		await expect(isOpen(modal)).toBeVisible();
-		await expect(modal.locator('#session-start')).toBeVisible();
+		await expect(start).toBeVisible();
 		await expect(modal).toContainText('Leave empty to use the class default (10:00, 90 min).');
+		// No overrides: both empty, not iX's defaults (current time, 0).
+		await expect(start).toHaveJSProperty('value', '');
+		await expect(duration).toHaveJSProperty('value', null);
+		// The hint describes the fields at all times.
+		const hint = 'Leave empty to use the class default (10:00, 90 min).';
+		const description = (input: Locator) =>
+			input.evaluate((el) =>
+				(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
+			);
+		await expect.poll(() => description(startInput)).toBe(hint);
+		await expect.poll(() => description(durationInput)).toBe(hint);
 
-		// Invalid time. A type=time input cannot hold one, so turn it into a
-		// text field first (as in a browser without a time picker).
-		await modal.locator('#session-start').evaluate((el) => el.setAttribute('type', 'text'));
-		await modal.locator('#session-start').fill('25:00');
+		// Invalid duration: the error shows under the fields, both are marked
+		// invalid and their native inputs are described by the message.
+		await durationInput.fill('5');
+		await expect(duration).toHaveJSProperty('value', 5);
 		await modal.getByRole('button', { name: 'Save' }).click();
-		await expect(modal.locator('#session-error')).toHaveText('Enter a time as HH:MM.');
+		const error = modal.locator('#session-error');
+		await expect(error).toHaveText('Enter a duration between 15 and 480 minutes.');
 		await expect(isOpen(modal)).toBeVisible();
+		expect(posts.at(-1)?.get('startTime')).toBe('');
+		expect(posts.at(-1)?.get('durationMinutes')).toBe('5');
+		for (const [host, input] of [
+			[start, startInput],
+			[duration, durationInput]
+		] as const) {
+			await expect(host).toHaveClass(/\bix-invalid\b/);
+			await expect(input).toHaveAttribute('aria-invalid', 'true');
+			await expect
+				.poll(() => description(input))
+				.toBe(`${hint} Enter a duration between 15 and 480 minutes.`);
+		}
 
-		// Invalid duration.
-		await modal.locator('#session-start').fill('');
-		await modal.locator('#session-duration').fill('5');
-		await modal.getByRole('button', { name: 'Save' }).click();
-		await expect(modal.locator('#session-error')).toHaveText(
-			'Enter a duration between 15 and 480 minutes.'
-		);
-		await expect(isOpen(modal)).toBeVisible();
-
-		// Valid: 11:00.
-		await modal.locator('#session-duration').fill('');
-		await modal.locator('#session-start').fill('11:00');
+		// Valid: 11:00, default duration.
+		await durationInput.fill('');
+		// Cleared by the user, iX reports `undefined` (it loaded with `null`).
+		await expect
+			.poll(() =>
+				duration.evaluate((el) => (el as HTMLElement & { value?: unknown }).value ?? null)
+			)
+			.toBeNull();
+		await startInput.fill('11:00');
+		await expect(start).toHaveJSProperty('value', '11:00');
 		await modal.getByRole('button', { name: 'Save' }).click();
 		await expect(isOpen(modal)).toHaveCount(0);
+		expect(posts.at(-1)?.get('startTime')).toBe('11:00');
+		expect(posts.at(-1)?.get('durationMinutes')).toBe('');
 		await expect(chipFor(page, 'A', date)).toHaveText(`11:00 ${fx.classA.name}`);
 		// Only that session changed.
 		await expect(chipFor(page, 'A', fx.days[2])).toHaveText(`10:00 ${fx.classA.name}`);
+
+		// Reopened: the override is shown, without the old error.
+		await chipFor(page, 'A', date).click();
+		await expect(isOpen(modal)).toBeVisible();
+		await expect(start).toHaveJSProperty('value', '11:00');
+		await expect(duration).toHaveJSProperty('value', null);
+		await expect(error).toHaveCount(0);
+		await expect(start).not.toHaveClass(/\bix-invalid\b/);
+		await expect(startInput).not.toHaveAttribute('aria-invalid');
+		await expect.poll(() => description(startInput)).toBe(hint);
+
+		// Override 11:00 / 60 moves the chip and posts both.
+		await durationInput.fill('60');
+		await expect(duration).toHaveJSProperty('value', 60);
+		await modal.getByRole('button', { name: 'Save' }).click();
+		await expect(isOpen(modal)).toHaveCount(0);
+		expect(posts.at(-1)?.get('startTime')).toBe('11:00');
+		expect(posts.at(-1)?.get('durationMinutes')).toBe('60');
+		await chipFor(page, 'A', date).click();
+		await expect(isOpen(modal)).toBeVisible();
+		await expect(modal).toContainText('11:00–12:00');
+
+		// Reset to the default: clear both, both post empty, the class default is back.
+		await startInput.fill('');
+		await expect(start).toHaveJSProperty('value', '');
+		await durationInput.fill('');
+		// Cleared by the user, iX reports `undefined` (it loaded with `null`).
+		await expect
+			.poll(() =>
+				duration.evaluate((el) => (el as HTMLElement & { value?: unknown }).value ?? null)
+			)
+			.toBeNull();
+		await modal.getByRole('button', { name: 'Save' }).click();
+		await expect(isOpen(modal)).toHaveCount(0);
+		expect(posts.at(-1)?.get('startTime')).toBe('');
+		expect(posts.at(-1)?.get('durationMinutes')).toBe('');
+		await expect(chipFor(page, 'A', date)).toHaveText(`10:00 ${fx.classA.name}`);
+		const { data: row } = await service
+			.from('class_sessions')
+			.select('start_time_override, duration_minutes_override')
+			.eq('id', fx.sessions[`A:${date}`])
+			.single();
+		expect(row).toEqual({ start_time_override: null, duration_minutes_override: null });
 	});
 
 	test('student: chip opens read-only details without edit controls', async ({ page }) => {
@@ -223,13 +302,17 @@ test.describe('wide screen (1280px)', () => {
 		await gridCell(page, fx.emptyDate).click({ position: { x: 60, y: 60 } });
 
 		await expect(isOpen(modal)).toBeVisible();
-		await expect(modal.locator('#add-start')).toHaveValue(fx.emptyDate);
-		await modal.locator('#add-end').fill(`${fx.month}-01`);
+		await expect(modal.locator('#add-start')).toHaveJSProperty('value', fx.emptyDate);
+		const end = modal.locator('#add-end');
+		await end.locator('input').first().fill(`${fx.month}-01`);
+		await expect(end).toHaveJSProperty('value', `${fx.month}-01`);
 		await modal.getByRole('button', { name: 'Add class days' }).click();
 		await expect(modal.locator('#add-days-error')).toHaveText(
 			'The end date must be on or after the start date.'
 		);
 		await expect(isOpen(modal)).toBeVisible();
+		await expect(end).toHaveClass(/\bix-invalid\b/);
+		await expect(end.locator('input').first()).toHaveAttribute('aria-invalid', 'true');
 	});
 
 	test('admin clicks an existing class day: cancel / restore dialog', async ({ page }) => {
@@ -347,7 +430,7 @@ test.describe('wide screen (1280px)', () => {
 
 			await page.locator('ix-button.add-days-button').click();
 			await expect(isOpen(modal)).toBeVisible();
-			await expect(modal.locator('#add-start')).toHaveValue(first);
+			await expect(modal.locator('#add-start')).toHaveJSProperty('value', first);
 			await expect(modal.getByRole('button', { name: 'Cancel day' })).toHaveCount(0);
 			await page.keyboard.press('Escape');
 			await expect(isOpen(modal)).toHaveCount(0);
@@ -583,6 +666,12 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 	test('admin adds an extra session from the day dialog: chip on that day, marked Extra', async ({
 		page
 	}) => {
+		const posts: URLSearchParams[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().includes('?/addExtraSession')) {
+				posts.push(new URLSearchParams(r.postData() ?? ''));
+			}
+		});
 		await withOtherWeekdayClassDay(async (date) => {
 			await signIn(page, fx.admin);
 			await openCalendar(page, fx.month);
@@ -596,11 +685,21 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 			await page.locator(`button.day-button[data-date="${date}"]`).click();
 			await expect(isOpen(modal)).toBeVisible();
 			await expect(modal.getByRole('heading', { name: 'Add extra session' })).toBeVisible();
-			await modal.locator('#extra-class').selectOption({ label: fx.classA.name });
-			await modal.locator('#extra-start').fill('14:00');
-			await modal.locator('#extra-duration').fill('60');
+			// iX fields (#66): time and duration start empty, not iX's defaults.
+			const extraClass = modal.locator('#extra-class');
+			await expect(modal.locator('#extra-start')).toHaveJSProperty('value', '');
+			await expect(modal.locator('#extra-duration')).toHaveJSProperty('value', null);
+			await extraClass.locator('input').first().click();
+			await extraClass.locator(`ix-select-item[label="${fx.classA.name}"]`).click();
+			await expect(extraClass).toHaveJSProperty('value', fx.classA.id);
+			await modal.locator('#extra-start input').first().fill('14:00');
+			await modal.locator('#extra-duration input').first().fill('60');
 			await modal.getByRole('button', { name: 'Add extra session' }).click();
 			await expect(isOpen(modal)).toHaveCount(0);
+			expect(posts).toHaveLength(1);
+			expect(posts[0].get('classId')).toBe(fx.classA.id);
+			expect(posts[0].get('startTime')).toBe('14:00');
+			expect(posts[0].get('durationMinutes')).toBe('60');
 
 			await expect(chipOfA).toHaveCount(1);
 			await expect(chipOfA).toHaveText(`14:00 ${fx.classA.name} Extra`);
@@ -617,9 +716,22 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 
 			await page.locator(`button.day-button[data-date="${date}"]`).click();
 			await expect(isOpen(modal)).toBeVisible();
-			await expect(modal.locator('#extra-class option', { hasText: fx.classA.name })).toHaveCount(
-				0
-			);
+			await expect(
+				modal.locator(`#extra-class ix-select-item[label="${fx.classA.name}"]`)
+			).toHaveCount(0);
+			// The select posts a class it actually lists.
+			const offered = await modal
+				.locator('#extra-class ix-select-item')
+				.evaluateAll((items) => items.map((i) => i.getAttribute('value')));
+			expect(offered.length).toBeGreaterThan(0);
+			await expect
+				.poll(() => extraClass.evaluate((el) => (el as HTMLElement & { value?: unknown }).value))
+				.toBe(offered[0]);
+			const posted = await modal
+				.locator('form[action="?/addExtraSession"]')
+				.evaluate((f) => new FormData(f as HTMLFormElement).get('classId'));
+			expect(offered).toContain(posted);
+			expect(posted).not.toBe(fx.classA.id);
 		});
 	});
 
@@ -676,7 +788,7 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await expect(page.locator('#new-class-start')).toHaveJSProperty('value', '');
 			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
 
-			await page.locator('#name').fill(name);
+			await page.locator('#name input').first().fill(name);
 			// <ix-checkbox>: click and wait (see the schedule-edit test).
 			await page.getByRole('checkbox', { name: 'Wed', exact: true }).click();
 			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).toBeChecked();
@@ -702,6 +814,7 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 				default_duration_minutes: 90
 			});
 			// The form is back to the defaults for the next class.
+			await expect(page.locator('#name')).toHaveJSProperty('value', '');
 			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).not.toBeChecked();
 			await expect(page.getByRole('checkbox', { name: 'Sun', exact: true })).toBeChecked();
 		} finally {
@@ -727,7 +840,7 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 			await expect(page.locator('#new-class-start')).toHaveJSProperty('value', '');
 			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
 
-			await page.locator('#name').fill(name);
+			await page.locator('#name input').first().fill(name);
 			await page.getByRole('button', { name: 'Create class' }).click();
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
 

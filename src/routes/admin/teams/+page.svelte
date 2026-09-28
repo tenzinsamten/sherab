@@ -4,15 +4,22 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	const pending = createPending();
 
+	// Changes on each successful create, remounting the create form (see
+	// {#key}): <ix-input> doesn't take part in form reset.
+	let createKey = $state<unknown>(null);
+
 	$effect(() => {
-		if (form && 'team' in form && form.team)
+		if (form && 'team' in form && form.team) {
 			showToast('success', m.teams_created_success({ name: form.team.name }));
+			createKey = form;
+		}
 		if (form && 'deleted' in form && form.deleted)
 			showToast('success', m.teams_deleted_success({ name: form.deleted }));
 	});
@@ -49,30 +56,32 @@
 
 	<section class="card">
 		<h2>{m.teams_create_heading()}</h2>
-		<form
-			method="POST"
-			action="?/create"
-			use:enhance={pending.submit('create')}
-			class="actions"
-			style="align-items:flex-end;"
-		>
-			<div class="field" style="flex:1; min-width:14rem; margin:0;">
-				<label for="name">{m.teams_name_label()}</label>
-				<input
-					id="name"
-					name="name"
-					type="text"
-					required
-					value={form?.success ? '' : (form && 'name' in form && form.name) || ''}
-				/>
-			</div>
-			<ix-button
-				type="submit"
-				icon="add"
-				loading={pending.is('create') || undefined}
-				disabled={pending.busy || undefined}>{m.teams_create_submit()}</ix-button
+		{#key createKey}
+			<form
+				method="POST"
+				action="?/create"
+				use:enhance={pending.submit('create')}
+				class="actions"
+				style="align-items:flex-end;"
+				novalidate
 			>
-		</form>
+				<div class="field" style="flex:1; min-width:14rem; margin:0;">
+					<ix-input
+						id="name"
+						name="name"
+						label={m.teams_name_label()}
+						required
+						{@attach ixValue(form?.success ? '' : (form && 'name' in form && form.name) || '')}
+					></ix-input>
+				</div>
+				<ix-button
+					type="submit"
+					icon="add"
+					loading={pending.is('create') || undefined}
+					disabled={pending.busy || undefined}>{m.teams_create_submit()}</ix-button
+				>
+			</form>
+		{/key}
 	</section>
 
 	<section class="card">
