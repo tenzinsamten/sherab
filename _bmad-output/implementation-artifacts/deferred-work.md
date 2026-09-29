@@ -249,3 +249,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-57-b11-date-range-leave.md`
   summary: Test set_leave_range's mid-save refusal path (a session started/cancelled/decided between preview and insert is skipped and the rest saves).
   evidence: Needs two concurrent transactions in rls.spec.ts (B11 review V2); the handler is otherwise only reasoned about.
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
+  summary: B14b — H-8 promotion: when the admin creates a teacher whose email already has a parent-only login, promote that login to teacher (keeping its parents row and linked children) instead of failing with `email_exists`.
+  evidence: User chose to include H-8 in B14 (2026-09-29); split out because it changes `profiles.role` and the teacher-creation / temp-password flow, a separate shippable goal from the request path (spec ~2,000 tokens vs 1,600 target).
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
+  summary: Admin "link child to parent" on /admin/parents, so students registered before their teacher/admin parent was approved (parent_id null) can be linked.
+  evidence: User decision 2026-09-29 (B14 Q3): B14a only links children who register at /join after approval.
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
+  summary: Admin "reopen" for a rejected staff parent-access request (today a rejected row can only be reset in SQL; the card says "contact the admin").
+  evidence: B14a review (blind + edge): RPC refuses hint `rejected`, `stamp_parent_review` refuses rejected→pending, the retry button is hidden for staff rows. User chose no re-request (Q2a) for B14a.
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
+  summary: Revoke parent access (staff or admin removes an approved parents row) — no path exists for any login.
+  evidence: B14a review (blind); pre-existing for parent-only logins too.
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
+  summary: Removing a teacher who is an approved parent with linked children fails with the generic "remove failed" error; show a specific message (unlink children first).
+  evidence: B14a review (edge): `profiles.parent_id` references `parents` ON DELETE RESTRICT (0024:41); `admin/teachers` remove → `deleteUser` fails. Blocking is safe, only the message is unclear.

@@ -15,6 +15,7 @@
 		if (!form?.success) return;
 		if (form.action === 'updateName') showToast('success', m.account_name_success());
 		if (form.action === 'changePassword') showToast('success', m.account_password_success());
+		if (form.action === 'requestParentAccess') showToast('success', m.account_parent_requested());
 	});
 </script>
 
@@ -124,6 +125,29 @@
 					disabled={pending.busy || undefined}>{m.account_password_submit()}</ix-button
 				>
 			</form>
+		</section>
+	{/if}
+	<!-- B14a (#68): staff only. Parent shows in the role switcher once approved. -->
+	{#if 'parentStatus' in data}
+		<section class="card" aria-labelledby="parent-access-heading">
+			<h2 id="parent-access-heading">{m.account_parent_heading()}</h2>
+			{#if data.parentStatus === 'approved'}
+				<p>{m.account_parent_approved({ email: data.email ?? '' })}</p>
+			{:else if data.parentStatus === 'pending'}
+				<p><ix-pill variant="warning">{m.account_parent_pending()}</ix-pill></p>
+			{:else if data.parentStatus === 'rejected'}
+				<p class="muted">{m.account_parent_rejected()}</p>
+			{:else}
+				<p class="muted">{m.account_parent_intro()}</p>
+				<form method="POST" action="?/requestParentAccess" use:enhance={pending.submit('parent')}>
+					<ix-button
+						type="submit"
+						variant="secondary"
+						loading={pending.is('parent') || undefined}
+						disabled={pending.busy || undefined}>{m.account_parent_request()}</ix-button
+					>
+				</form>
+			{/if}
 		</section>
 	{/if}
 </div>

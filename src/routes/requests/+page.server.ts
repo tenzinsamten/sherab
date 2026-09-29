@@ -35,19 +35,25 @@ type ParentRow = {
 		display_name: string | null;
 		email: string;
 		email_confirmed_at: string | null;
+		role: 'admin' | 'teacher' | 'student' | 'parent';
 	} | null;
 };
 
 /**
  * parents -> profiles has two FK paths (id, reviewed_by), so the embed needs
  * the explicit hint (same PGRST201 reason as the student select below).
+ * B14a (#68): `role` tells a staff member's parent-access request (teacher
+ * or admin) from a parent-only sign-up.
  */
 const PARENT_COLUMNS =
-	'id, status, created_at, reviewed_at, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )';
+	'id, status, created_at, reviewed_at, profiles!parents_id_fkey ( display_name, email, email_confirmed_at, role )';
 
-function toParent(row: unknown) {
+function toParent(row: unknown, viewerId?: string) {
 	const r = row as ParentRow;
+	const role = r.profiles?.role;
 	return {
+		staffRole: role === 'admin' || role === 'teacher' ? role : null,
+		ownRequest: viewerId !== undefined && r.id === viewerId,
 		id: r.id,
 		status: r.status,
 		name: r.profiles?.display_name || r.profiles?.email || '',
@@ -196,8 +202,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		deletionPending = (pendingDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
 		deletionDecided = (decidedDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
 		deletionError = Boolean(pendingDeletions.error || decidedDeletions.error);
-		parentsPending = (pendingParents.data ?? []).map(toParent);
-		parentsDecided = (decidedParents.data ?? []).map(toParent);
+		parentsPending = (pendingParents.data ?? []).map((r) => toParent(r, session.user.id));
+		parentsDecided = (decidedParents.data ?? []).map((r) => toParent(r, session.user.id));
 		parentsError = Boolean(pendingParents.error || decidedParents.error);
 	}
 
@@ -550,15 +556,35 @@ export const actions: Actions = {
 			return fail(400, { error: m.requests_error_not_found(), parentId, parentName });
 		}
 
-		// Only a parent-only login is deleted. A dual-role login (deferred)
-		// must never lose its staff account here.
-		const { data: target } = await supabase
+		// Only a parent-only login is deleted. B14a (#68): a staff member's
+		// parent-access request (teacher / admin login) is only marked
+		// rejected; their staff account must never be deleted here.
+		const { data: target, error: targetError } = await supabase
 			.from('profiles')
 			.select('role')
 			.eq('id', parentId)
 			.maybeSingle();
-		if (target?.role !== 'parent') {
+		if (targetError || !target) {
 			return fail(400, { error: m.requests_parent_error_reject_failed(), parentId, parentName });
+		}
+		if (target.role !== 'parent') {
+			if (row.status === 'pending') {
+				const { error: updateError } = await supabase
+					.from('parents')
+					.update({ status: 'rejected' })
+					.eq('id', parentId)
+					.eq('status', 'pending')
+					.select('id')
+					.single();
+				if (updateError) {
+					return fail(400, {
+						error: m.requests_parent_error_reject_failed(),
+						parentId,
+						parentName
+					});
+				}
+			}
+			return { success: true, action: 'parentStaffRejected' as const, parentId, parentName };
 		}
 
 		if (row.status === 'pending') {

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import * as m from '$lib/paraglide/messages.js';
+import { getCapabilities, type ParentStatus } from '$lib/server/capabilities';
 import { checkNewPassword } from '$lib/server/password-rules';
 import { studentEmailToUsername } from '$lib/server/temp-password';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
@@ -17,8 +18,11 @@ const MAX_NAME_LENGTH = 80;
  * the student dashboard and class pages since #46). Students
  * sign in with a username + PIN a teacher or admin issues, so they can
  * change their display name but not their PIN here.
+ *
+ * B14a (#68): a teacher or admin also gets `parentStatus` (their own parents
+ * row, null when none) for the "Parent access" card.
  */
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, locals: { supabase } }) => {
 	const { session, profile } = await parent();
 
 	if (!session) {
@@ -29,6 +33,19 @@ export const load: PageServerLoad = async ({ parent }) => {
 	}
 
 	const displayName = profile.display_name ?? '';
+
+	if (profile.role === 'admin' || profile.role === 'teacher') {
+		// RLS-scoped to the caller's own row. A failed read falls back to
+		// null (the button shows; the RPC still refuses a duplicate).
+		const capabilities = await getCapabilities(supabase, session.user.id);
+		const parentStatus: ParentStatus | null = capabilities?.parentStatus ?? null;
+		return {
+			role: profile.role,
+			displayName,
+			email: profile.email ?? session.user.email,
+			parentStatus
+		};
+	}
 
 	if (profile.role !== 'student') {
 		return {
@@ -143,5 +160,37 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'changePassword' as const };
+	},
+
+	/**
+	 * B14a (#68): a teacher or admin asks for parent capability. The RPC
+	 * re-checks the role and only ever creates the caller's own pending row.
+	 */
+	requestParentAccess: async ({ locals: { supabase, safeGetSession } }) => {
+		const user = await requireRole(supabase, safeGetSession, ['admin', 'teacher']);
+		if (!user) return fail(403, { error: m.account_parent_error_failed() });
+
+		const { error: rpcError } = await supabase.rpc('request_parent_access');
+		if (rpcError) {
+			return fail(rpcError.code === '42501' ? 403 : 400, {
+				error: parentAccessErrorMessage(rpcError)
+			});
+		}
+
+		return { success: true, action: 'requestParentAccess' as const };
 	}
 };
+
+/** Maps request_parent_access()'s error hint to a message. */
+function parentAccessErrorMessage(err: { code?: string; hint?: string | null }): string {
+	switch (err.hint) {
+		case 'already_pending':
+			return m.account_parent_error_pending();
+		case 'already_parent':
+			return m.account_parent_error_parent();
+		case 'rejected':
+			return m.account_parent_error_rejected();
+		default:
+			return m.account_parent_error_failed();
+	}
+}

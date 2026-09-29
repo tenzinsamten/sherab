@@ -91,10 +91,55 @@ describe('rejectParent', () => {
 		expect(deleteUser).not.toHaveBeenCalled();
 	});
 
-	it('deletes nothing when the login is not parent-only', async () => {
+	it('B14a: rejects a teacher parent-access request without deleting the login', async () => {
+		const { e, updates } = event({
+			parents: [ok({ id: 'p1', status: 'pending' }), ok({ id: 'p1' })],
+			profiles: [ok({ role: 'teacher' })]
+		});
+		expect(await actions.rejectParent(e)).toMatchObject({
+			success: true,
+			action: 'parentStaffRejected'
+		});
+		expect(updates).toEqual([{ table: 'parents', values: { status: 'rejected' } }]);
+		expect(deleteUser).not.toHaveBeenCalled();
+	});
+
+	it('B14a: never deletes an admin login, and an already rejected staff row is a no-op', async () => {
+		const { e, updates } = event({
+			parents: [ok({ id: 'p1', status: 'rejected' })],
+			profiles: [ok({ role: 'admin' })]
+		});
+		expect(await actions.rejectParent(e)).toMatchObject({
+			success: true,
+			action: 'parentStaffRejected'
+		});
+		expect(updates).toEqual([]);
+		expect(deleteUser).not.toHaveBeenCalled();
+	});
+
+	it('B14a: a failed staff reject update deletes nothing', async () => {
+		const { e } = event({
+			parents: [ok({ id: 'p1', status: 'pending' }), { data: null, error: { message: 'x' } }],
+			profiles: [ok({ role: 'teacher' })]
+		});
+		expect(await actions.rejectParent(e)).toMatchObject({ status: 400 });
+		expect(deleteUser).not.toHaveBeenCalled();
+	});
+
+	it('deletes nothing when the login role read errors', async () => {
 		const { e, updates } = event({
 			parents: [ok({ id: 'p1', status: 'pending' })],
-			profiles: [ok({ role: 'teacher' })]
+			profiles: [{ data: null, error: { message: 'boom' } }]
+		});
+		expect(await actions.rejectParent(e)).toMatchObject({ status: 400 });
+		expect(deleteUser).not.toHaveBeenCalled();
+		expect(updates).toEqual([]);
+	});
+
+	it('deletes nothing when the login role cannot be read', async () => {
+		const { e, updates } = event({
+			parents: [ok({ id: 'p1', status: 'pending' })],
+			profiles: [ok(null)]
 		});
 		expect(await actions.rejectParent(e)).toMatchObject({ status: 400 });
 		expect(deleteUser).not.toHaveBeenCalled();
@@ -716,5 +761,62 @@ describe('load: class join requests section (B12b, #67)', () => {
 	it('a failed queue affects only its section, not the page', async () => {
 		const { run } = loadWithJoin({ data: null, error: { message: 'boom' } });
 		expect(await run).toMatchObject({ joinPending: [], joinLoadError: true, loadError: false });
+	});
+});
+
+describe('load: parent queue marks staff requests (B14a, #68)', () => {
+	function loadWithParents(pending: unknown[]) {
+		const from = (table: string) => {
+			const own: unknown[][] = [];
+			const chain: Record<string, unknown> = {};
+			for (const method of ['select', 'eq', 'in', 'order', 'neq']) {
+				chain[method] = (...args: unknown[]) => {
+					own.push([method, ...args]);
+					return chain;
+				};
+			}
+			const pendingQuery = () =>
+				own.some((c) => JSON.stringify(c) === JSON.stringify(['eq', 'status', 'pending']));
+			chain.single = async () => ({ data: { role: 'admin' }, error: null });
+			chain.then = (resolve: (value: Result) => unknown) =>
+				resolve(
+					table === 'parents' && pendingQuery()
+						? { data: pending, error: null }
+						: { data: [], error: null }
+				);
+			return chain;
+		};
+		const supabase = { from, rpc: async () => ({ data: [], error: null }) };
+		return load({
+			locals: {
+				supabase,
+				safeGetSession: async () => ({
+					session: { user: { id: 'admin1' } },
+					user: { id: 'admin1' }
+				})
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<Record<string, unknown>>;
+	}
+
+	const parentRow = (id: string, role: string) => ({
+		id,
+		status: 'pending',
+		created_at: '2026-09-29T08:00:00Z',
+		reviewed_at: null,
+		profiles: { display_name: id, email: `${id}@example.test`, email_confirmed_at: 'x', role }
+	});
+
+	it('flags teacher and admin requests and the admin own row', async () => {
+		const data = await loadWithParents([
+			parentRow('p1', 'parent'),
+			parentRow('t1', 'teacher'),
+			parentRow('admin1', 'admin')
+		]);
+		const rows = data.parentsPending as { id: string; staffRole: unknown; ownRequest: boolean }[];
+		expect(rows.map((r) => [r.id, r.staffRole, r.ownRequest])).toEqual([
+			['p1', null, false],
+			['t1', 'teacher', false],
+			['admin1', 'admin', true]
+		]);
 	});
 });

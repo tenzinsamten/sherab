@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
 import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
 import { actions, load } from './+page.server';
 
@@ -29,9 +30,18 @@ function fakeSupabase(results: Record<string, Result>) {
 
 const session = { user: { id: 'u1', email: 'x@example.com' } };
 
-function runLoad(profile: Record<string, unknown> | null) {
+function runLoad(
+	profile: Record<string, unknown> | null,
+	parentRow: Result = { data: null, error: null }
+) {
 	return load({
-		parent: async () => ({ session, profile })
+		parent: async () => ({ session, profile }),
+		locals: {
+			supabase: fakeSupabase({
+				profiles: { data: profile ? { role: profile.role } : null, error: null },
+				parents: parentRow
+			})
+		}
 	} as unknown as Parameters<typeof load>[0]);
 }
 
@@ -43,8 +53,24 @@ describe('account load', () => {
 			display_name: 'Pema',
 			email: 'pema@example.com'
 		});
-		expect(result).toEqual({ role: 'teacher', displayName: 'Pema', email: 'pema@example.com' });
+		expect(result).toEqual({
+			role: 'teacher',
+			displayName: 'Pema',
+			email: 'pema@example.com',
+			parentStatus: null
+		});
 	});
+
+	it.each(['pending', 'approved', 'rejected'] as const)(
+		'gives staff their parent-access status %s (B14a)',
+		async (status) => {
+			const result = await runLoad(
+				{ id: 'u1', role: 'admin', display_name: 'Karma', email: 'karma@example.com' },
+				{ data: { status }, error: null }
+			);
+			expect(result).toMatchObject({ role: 'admin', parentStatus: status });
+		}
+	);
 
 	it('gives a student their name and username only (#46)', async () => {
 		const result = await runLoad({
@@ -107,5 +133,59 @@ describe('account actions', () => {
 	it('lets a parent past the role gate for a name change (Story 7-1)', async () => {
 		const result = await actions.updateName(event('parent', { displayName: '  ' }));
 		expect(result).toMatchObject({ status: 400 });
+	});
+});
+
+describe('requestParentAccess (B14a, #68)', () => {
+	function event(role: string, rpcResult: { data?: unknown; error: unknown }) {
+		const rpc = vi.fn(async () => rpcResult);
+		return {
+			rpc,
+			e: {
+				request: new Request('http://localhost/account', { method: 'POST' }),
+				locals: {
+					supabase: {
+						...fakeSupabase({ profiles: { data: { role }, error: null } }),
+						rpc
+					},
+					safeGetSession: async () => ({ session, user: session.user })
+				}
+			} as unknown as Parameters<typeof actions.requestParentAccess>[0]
+		};
+	}
+
+	it.each(['teacher', 'admin'])('lets a %s request it', async (role) => {
+		const { e, rpc } = event(role, { data: 'pending', error: null });
+		expect(await actions.requestParentAccess(e)).toEqual({
+			success: true,
+			action: 'requestParentAccess'
+		});
+		expect(rpc).toHaveBeenCalledWith('request_parent_access');
+	});
+
+	it.each(['parent', 'student'])('refuses a %s before calling the RPC', async (role) => {
+		const { e, rpc } = event(role, { data: 'pending', error: null });
+		expect(await actions.requestParentAccess(e)).toMatchObject({ status: 403 });
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
+	it('maps an RPC 42501 to 403', async () => {
+		const { e } = event('teacher', { data: null, error: { code: '42501', hint: null } });
+		const result = await actions.requestParentAccess(e);
+		expect(result).toMatchObject({
+			status: 403,
+			data: { error: m.account_parent_error_failed() }
+		});
+	});
+
+	it.each([
+		['already_pending', 'account_parent_error_pending'],
+		['already_parent', 'account_parent_error_parent'],
+		['rejected', 'account_parent_error_rejected'],
+		[null, 'account_parent_error_failed']
+	] as const)('maps hint %s to its message', async (hint, key) => {
+		const { e } = event('teacher', { data: null, error: { code: '22023', hint } });
+		const result = await actions.requestParentAccess(e);
+		expect(result).toMatchObject({ status: 400, data: { error: m[key]() } });
 	});
 });

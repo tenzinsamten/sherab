@@ -174,6 +174,8 @@
 				showToast('success', m.requests_parent_outcome_approved({ name }));
 			if (form.action === 'parentRejected')
 				showToast('success', m.requests_parent_outcome_rejected({ name }));
+			if (form.action === 'parentStaffRejected')
+				showToast('success', m.requests_parent_staff_outcome_rejected({ name }));
 			return;
 		}
 		const name = form.studentName || '';
@@ -688,6 +690,13 @@
 									<td>
 										<div class="actions">
 											<strong>{parent.name}</strong>
+											{#if parent.ownRequest}
+												<ix-pill variant="info">{m.requests_parent_staff_own()}</ix-pill>
+											{:else if parent.staffRole === 'admin'}
+												<ix-pill variant="info">{m.requests_parent_staff_admin()}</ix-pill>
+											{:else if parent.staffRole === 'teacher'}
+												<ix-pill variant="info">{m.requests_parent_staff_teacher()}</ix-pill>
+											{/if}
 											{#if parent.emailConfirmedAt}
 												<ix-pill variant="success">{m.requests_email_confirmed()}</ix-pill>
 											{:else}
@@ -758,11 +767,19 @@
 									</td>
 									<td class:muted={parent.status === 'rejected'}>
 										{parent.name}
+										{#if parent.ownRequest}
+											<ix-pill variant="info">{m.requests_parent_staff_own()}</ix-pill>
+										{:else if parent.staffRole === 'admin'}
+											<ix-pill variant="info">{m.requests_parent_staff_admin()}</ix-pill>
+										{:else if parent.staffRole === 'teacher'}
+											<ix-pill variant="info">{m.requests_parent_staff_teacher()}</ix-pill>
+										{/if}
 										<div class="muted">{parent.email}</div>
 									</td>
 									<td style="text-align:right;">
-										{#if parent.status === 'rejected'}
-											<!-- Its account delete failed earlier: retry it. -->
+										{#if parent.status === 'rejected' && !parent.staffRole}
+											<!-- Its account delete failed earlier: retry it. A staff
+											     member's rejected request keeps its login (B14a). -->
 											<form
 												method="POST"
 												action="?/rejectParent"

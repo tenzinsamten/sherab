@@ -11331,3 +11331,237 @@ describe.skipIf(!reachable)('B12a class join requests (requires local Supabase)'
 		expect(await enrolled(s.id, target.id)).toEqual([]);
 	});
 });
+
+describe.skipIf(!reachable)('B14a request parent access (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const name = (label: string) => `B14a ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createClass(label: string, teacherId: string) {
+		const code = `P${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacherId });
+		return { id: data.id, code };
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** A /join student with `guardianEmail`, approved and signed in. */
+	async function child(classId: string, guardianEmail?: string) {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: name('Kid'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return { id, client: await signIn(data.user!.email!, password) };
+	}
+
+	const request = (client: Client) => client.rpc('request_parent_access');
+
+	async function parentRow(id: string) {
+		const { data } = await adminClient.from('parents').select('status').eq('id', id);
+		return data ?? [];
+	}
+
+	/** The admin decides the request the way /requests does (RLS path). */
+	async function decideAs(client: Client, id: string, status: 'approved' | 'rejected') {
+		const { error } = await client
+			.from('parents')
+			.update({ status })
+			.eq('id', id)
+			.eq('status', 'pending')
+			.select('id')
+			.single();
+		return error;
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		classTeacher = await createSignedInUser('teacher');
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('Request: a teacher creates their own pending row; a duplicate is refused; the admin approves it', async () => {
+		const teacher = await createSignedInUser('teacher');
+		expect((await teacher.client.rpc('is_parent')).data).toBe(false);
+
+		const { data, error } = await request(teacher.client);
+		expect(error).toBeNull();
+		expect(data).toBe('pending');
+		expect(await parentRow(teacher.id)).toEqual([{ status: 'pending' }]);
+		const { data: own } = await teacher.client.from('parents').select('status');
+		expect(own).toEqual([{ status: 'pending' }]);
+		// Pending grants nothing yet.
+		expect((await teacher.client.rpc('is_parent')).data).toBe(false);
+
+		const again = await request(teacher.client);
+		expect(again.error?.code).toBe('22023');
+		expect(again.error?.hint).toBe('already_pending');
+
+		// The admin's queue lists it.
+		const { data: queue } = await admin.client
+			.from('parents')
+			.select('id')
+			.eq('status', 'pending')
+			.eq('id', teacher.id);
+		expect(queue).toEqual([{ id: teacher.id }]);
+
+		expect(await decideAs(admin.client, teacher.id, 'approved')).toBeNull();
+		expect((await teacher.client.rpc('is_parent')).data).toBe(true);
+		const approved = await request(teacher.client);
+		expect(approved.error?.hint).toBe('already_parent');
+		// Still a teacher.
+		const { data: profile } = await teacher.client
+			.from('profiles')
+			.select('role')
+			.eq('id', teacher.id)
+			.single();
+		expect(profile).toEqual({ role: 'teacher' });
+	});
+
+	it("Link: a /join child with the approved staff member's email links to them", async () => {
+		const teacher = await createSignedInUser('teacher');
+		const home = await createClass('Home', classTeacher.id);
+
+		// Before approval the guardian email matches no approved parent.
+		expect((await request(teacher.client)).error).toBeNull();
+		const early = await signUpStudent({
+			classId: home.id,
+			registrationName: name('Early'),
+			guardianEmail: teacher.email
+		});
+		expect(early.error).not.toBeNull();
+
+		expect(await decideAs(admin.client, teacher.id, 'approved')).toBeNull();
+		const kid = await child(home.id, teacher.email);
+		const { data: link } = await adminClient
+			.from('profiles')
+			.select('parent_id')
+			.eq('id', kid.id)
+			.single();
+		expect(link).toEqual({ parent_id: teacher.id });
+		expect((await teacher.client.rpc('is_parent_of', { p_student_id: kid.id })).data).toBe(true);
+	});
+
+	it("Admin's own: the admin requests and approves their own row", async () => {
+		const dualAdmin = await createSignedInUser('admin');
+		expect((await request(dualAdmin.client)).data).toBe('pending');
+		const { data: queue } = await dualAdmin.client
+			.from('parents')
+			.select('id')
+			.eq('status', 'pending')
+			.eq('id', dualAdmin.id);
+		expect(queue).toEqual([{ id: dualAdmin.id }]);
+		expect(await decideAs(dualAdmin.client, dualAdmin.id, 'approved')).toBeNull();
+		expect((await dualAdmin.client.rpc('is_parent')).data).toBe(true);
+	});
+
+	it('Reject: the row stays rejected, the login keeps working, and a re-request is refused', async () => {
+		const teacher = await createSignedInUser('teacher');
+		expect((await request(teacher.client)).error).toBeNull();
+		expect(await decideAs(admin.client, teacher.id, 'rejected')).toBeNull();
+		expect(await parentRow(teacher.id)).toEqual([{ status: 'rejected' }]);
+
+		const again = await request(teacher.client);
+		expect(again.error?.code).toBe('22023');
+		expect(again.error?.hint).toBe('rejected');
+		expect(await parentRow(teacher.id)).toEqual([{ status: 'rejected' }]);
+		expect((await teacher.client.rpc('is_parent')).data).toBe(false);
+		const { data: profile } = await teacher.client
+			.from('profiles')
+			.select('role')
+			.eq('id', teacher.id)
+			.single();
+		expect(profile).toEqual({ role: 'teacher' });
+	});
+
+	it('Self-approve: a teacher cannot approve their own pending row', async () => {
+		const teacher = await createSignedInUser('teacher');
+		expect((await request(teacher.client)).error).toBeNull();
+		await teacher.client.from('parents').update({ status: 'approved' }).eq('id', teacher.id);
+		expect(await parentRow(teacher.id)).toEqual([{ status: 'pending' }]);
+		expect((await teacher.client.rpc('is_parent')).data).toBe(false);
+	});
+
+	it('Not staff: a parent-only login, a student and anon are refused', async () => {
+		const parent = await createApprovedParent();
+		const parentClient = await signIn(parent.email, parent.password);
+		const home = await createClass('Home', classTeacher.id);
+		const kid = await child(home.id);
+		for (const client of [parentClient, kid.client]) {
+			const { error } = await request(client);
+			expect(error?.code).toBe('42501');
+		}
+		const { error: anonError } = await request(anonClient());
+		expect(anonError).not.toBeNull();
+		expect(await parentRow(kid.id)).toEqual([]);
+		expect(await parentRow(parent.id)).toEqual([{ status: 'approved' }]);
+	});
+
+	it('Direct insert: a client cannot insert or delete a parents row', async () => {
+		const teacher = await createSignedInUser('teacher');
+		const { error } = await teacher.client
+			.from('parents')
+			.insert({ id: teacher.id, status: 'approved' })
+			.select('id');
+		expect(error).not.toBeNull();
+		expect(await parentRow(teacher.id)).toEqual([]);
+
+		expect((await request(teacher.client)).error).toBeNull();
+		await teacher.client.from('parents').delete().eq('id', teacher.id);
+		expect(await parentRow(teacher.id)).toEqual([{ status: 'pending' }]);
+	});
+
+	it("Own child (B12): a teacher made a parent via the RPC can't decide their child's join request", async () => {
+		const teacher = await createSignedInUser('teacher');
+		expect((await request(teacher.client)).error).toBeNull();
+		expect(await decideAs(admin.client, teacher.id, 'approved')).toBeNull();
+
+		const home = await createClass('Home', classTeacher.id);
+		const target = await createClass('Target', teacher.id);
+		const kid = await child(home.id, teacher.email);
+		expect((await kid.client.rpc('request_class_join', { p_code: target.code })).error).toBeNull();
+		const { data: rows } = await adminClient
+			.from('class_join_requests')
+			.select('id')
+			.eq('student_id', kid.id)
+			.eq('class_id', target.id)
+			.eq('status', 'pending');
+		const requestId = rows![0].id;
+
+		const { data: queue } = await teacher.client.rpc('list_class_join_requests');
+		expect(queue?.filter((r) => r.student_id === kid.id).map((r) => r.own_child)).toEqual([true]);
+		const refused = await teacher.client.rpc('decide_class_join', {
+			p_request_id: requestId,
+			p_decision: 'approved'
+		});
+		expect(refused.error?.code).toBe('42501');
+	});
+});

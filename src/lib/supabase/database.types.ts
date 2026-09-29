@@ -1283,6 +1283,10 @@ export type Database = {
 				Args: { p_code: string };
 				Returns: string;
 			};
+			request_parent_access: {
+				Args: never;
+				Returns: Database['public']['Enums']['parent_status'];
+			};
 			list_class_join_requests: {
 				Args: never;
 				Returns: {
