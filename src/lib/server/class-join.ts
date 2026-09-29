@@ -54,3 +54,50 @@ export type StudentJoinRequest = {
 	className: string;
 	status: 'pending' | 'rejected';
 };
+
+/** B12b (#67): one row of the teacher / admin queue on /requests. */
+export type ClassJoinQueueRow = {
+	id: string;
+	studentId: string;
+	studentName: string;
+	/** The student's current classes, comma-separated ('' = none). */
+	currentClasses: string;
+	classId: string;
+	className: string;
+	requestedAt: string;
+	/** The caller is the student's parent: someone else decides (AD-4). */
+	ownChild: boolean;
+};
+
+type ClassJoinListRow = {
+	request_id: string;
+	student_id: string;
+	student_name: string | null;
+	current_classes: string | null;
+	class_id: string;
+	class_name: string;
+	requested_at: string;
+	own_child: boolean;
+};
+
+/**
+ * B12b (#67): the pending join requests the caller may see
+ * (list_class_join_requests, 0031: the admin all, a teacher their classes),
+ * oldest first. A failure only empties this queue and sets joinError.
+ */
+export async function loadClassJoinRequests(supabase: App.Locals['supabase']) {
+	const { data, error } = await supabase.rpc('list_class_join_requests');
+	return {
+		joinPending: ((data ?? []) as ClassJoinListRow[]).map((r): ClassJoinQueueRow => ({
+			id: r.request_id,
+			studentId: r.student_id,
+			studentName: r.student_name || m.requests_join_unnamed_student(),
+			currentClasses: r.current_classes ?? '',
+			classId: r.class_id,
+			className: r.class_name,
+			requestedAt: r.requested_at,
+			ownChild: Boolean(r.own_child)
+		})),
+		joinError: Boolean(error)
+	};
+}

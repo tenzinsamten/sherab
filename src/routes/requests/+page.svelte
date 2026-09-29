@@ -2,6 +2,8 @@
 	import { tick } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import { SCHOOL_TIME_ZONE } from '$lib/berlin-date';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -54,6 +56,36 @@
 	let sickActionable = $derived(data.sickPending.filter((r) => !r.ownChild).length);
 	// Story 7-6: likewise, never a deletion request for the admin's own child.
 	let deletionActionable = $derived(data.deletionPending.filter((r) => !r.ownChild).length);
+	// B12b (#67): likewise, never a class join request for the viewer's own child.
+	let joinActionable = $derived(data.joinPending.filter((r) => !r.ownChild).length);
+
+	// B12b (#67): Approve and Reject both ask first, then post the shared
+	// hidden form for the chosen row and decision.
+	let joinForm: HTMLFormElement | undefined = $state();
+	let joinTarget = $state({
+		id: '',
+		name: '',
+		className: '',
+		decision: 'approved' as 'approved' | 'rejected'
+	});
+	async function decideJoin(
+		row: { id: string; studentName: string; className: string },
+		decision: 'approved' | 'rejected'
+	) {
+		const params = { name: row.studentName, className: row.className };
+		const ok = await confirmAction(
+			m.common_confirm_title(),
+			decision === 'approved'
+				? m.requests_join_approve_confirm(params)
+				: m.requests_join_reject_confirm(params),
+			decision === 'approved' ? m.requests_approve() : m.requests_reject(),
+			m.common_cancel()
+		);
+		if (!ok) return;
+		joinTarget = { id: row.id, name: row.studentName, className: row.className, decision };
+		await tick();
+		joinForm?.requestSubmit();
+	}
 
 	// Story 7-6: Approve erases the child for good, so it asks first.
 	let approveDeletionForm: HTMLFormElement | undefined = $state();
@@ -87,6 +119,27 @@
 		}
 	}
 
+	// B12b (#67): a request someone else decided meanwhile -- reload so its
+	// stale row (and buttons) go; the error toast comes from the layout.
+	$effect(() => {
+		if (form && 'joinStale' in form && form.joinStale) invalidateAll();
+	});
+
+	// B12b (#67): the request date, in the school's time zone so server and
+	// browser render the same day.
+	function formatRequestDate(iso: string): string {
+		try {
+			return new Intl.DateTimeFormat(getLocale(), {
+				day: 'numeric',
+				month: 'short',
+				year: 'numeric',
+				timeZone: SCHOOL_TIME_ZONE
+			}).format(new Date(iso));
+		} catch {
+			return iso;
+		}
+	}
+
 	$effect(() => {
 		if (!form?.success) return;
 		if ('deletionStudentName' in form) {
@@ -95,6 +148,16 @@
 				showToast('success', m.requests_deletion_outcome_approved({ name }));
 			if (form.action === 'deletionRejected')
 				showToast('success', m.requests_deletion_outcome_rejected({ name }));
+			return;
+		}
+		if (form.action === 'joinApproved' || form.action === 'joinRejected') {
+			// Names come from the clicked row, not from the server's answer.
+			if (form.requestId !== joinTarget.id) return;
+			const params = { name: joinTarget.name, className: joinTarget.className };
+			if (form.action === 'joinApproved')
+				showToast('success', m.requests_join_outcome_approved(params));
+			if (form.action === 'joinRejected')
+				showToast('success', m.requests_join_outcome_rejected(params));
 			return;
 		}
 		if ('sickStudentName' in form) {
@@ -119,7 +182,11 @@
 	});
 	// #60: the header count as a pill, hidden when nothing is waiting.
 	let pendingTotal = $derived(
-		data.pending.length + data.parentsPending.length + sickActionable + deletionActionable
+		data.pending.length +
+			data.parentsPending.length +
+			sickActionable +
+			deletionActionable +
+			joinActionable
 	);
 </script>
 
@@ -425,6 +492,75 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- B12b (#67): hidden while nothing is waiting, like the student queue. -->
+	{#if data.joinLoadError || data.joinPending.length > 0}
+		<section class="card" aria-labelledby="join-heading">
+			<h2 id="join-heading">{m.requests_join_heading()}</h2>
+			<p class="muted">{m.requests_join_subtitle()}</p>
+			{#if data.joinLoadError}
+				<p class="muted" role="alert">{m.requests_join_load_failed()}</p>
+			{:else}
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>{m.requests_col_student()}</th>
+								<th><span class="sr-only">{m.requests_join_col_decision()}</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each data.joinPending as row (row.id)}
+								<tr>
+									<td>
+										<strong>{row.studentName}</strong>
+										<div style="margin: var(--space-1) 0;">
+											{m.requests_join_asks_for({ className: row.className })}
+										</div>
+										<div class="muted">
+											{row.currentClasses
+												? m.requests_join_current({ classes: row.currentClasses })
+												: m.requests_join_no_classes()} ·
+											<time datetime={row.requestedAt}>{formatRequestDate(row.requestedAt)}</time>
+										</div>
+									</td>
+									<td>
+										{#if row.ownChild}
+											<p class="muted" style="margin:0; text-align:right;">
+												{m.requests_join_own_child()}
+											</p>
+										{:else}
+											<div class="actions" style="justify-content:flex-end;">
+												{#each ['approved', 'rejected'] as const as decision (decision)}
+													<ix-button
+														variant={decision === 'approved' ? 'primary' : 'danger-secondary'}
+														loading={pending.is(`join:${decision}:${row.id}`) || undefined}
+														disabled={pending.busy || undefined}
+														onclick={() => decideJoin(row, decision)}
+													>
+														{decision === 'approved' ? m.requests_approve() : m.requests_reject()}
+													</ix-button>
+												{/each}
+											</div>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+			<form
+				bind:this={joinForm}
+				method="POST"
+				action={joinTarget.decision === 'approved' ? '?/approveJoin' : '?/rejectJoin'}
+				use:enhance={pending.submit(() => `join:${joinTarget.decision}:${joinTarget.id}`)}
+				hidden
+			>
+				<input type="hidden" name="requestId" value={joinTarget.id} />
+			</form>
+		</section>
+	{/if}
 
 	{#if data.role === 'admin'}
 		<section class="card" aria-labelledby="deletion-heading">

@@ -9,6 +9,7 @@ import {
 } from '$lib/server/temp-password';
 import { getCapabilities } from '$lib/server/capabilities';
 import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
+import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -139,7 +140,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		{ data: pendingRows, error: pendingError },
 		{ data: decidedRows, error: decidedError },
 		{ data: teams, error: teamsError },
-		{ sickPending, sickDecided, sickError }
+		{ sickPending, sickDecided, sickError },
+		{ joinPending, joinError }
 	] = await Promise.all([
 		supabase
 			.from('profiles')
@@ -154,7 +156,10 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.in('status', ['approved', 'rejected'])
 			.order('reviewed_at', { ascending: false }),
 		supabase.from('teams').select('id, name').order('name'),
-		loadSickLeave(supabase)
+		loadSickLeave(supabase),
+		// B12b (#67): class join requests of the caller's classes (every class
+		// for the admin). A failure shows in that section only (joinLoadError).
+		loadClassJoinRequests(supabase)
 	]);
 
 	// Admin only: teachers never see parent registrations, not even a count.
@@ -219,6 +224,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		sickDecided,
 		deletionPending,
 		deletionDecided,
+		joinPending,
+		joinLoadError: joinError,
 		loadError: Boolean(
 			pendingError || decidedError || teamsError || parentsError || sickError || deletionError
 		)
@@ -588,8 +595,53 @@ export const actions: Actions = {
 	approveDeletion: async (event) => decideDeletion(event, 'approved'),
 
 	/** Story 7-6: reject a pending deletion request. Nothing is erased. */
-	rejectDeletion: async (event) => decideDeletion(event, 'rejected')
+	rejectDeletion: async (event) => decideDeletion(event, 'rejected'),
+
+	/**
+	 * B12b (#67): approve a class join request. decide_class_join (0031)
+	 * refuses anyone but the class's teacher or the admin, and never the
+	 * student's own parent; approval enrols the student.
+	 */
+	approveJoin: async (event) => decideJoin(event, 'approved'),
+
+	/** B12b (#67): reject a class join request. Nothing is enrolled. */
+	rejectJoin: async (event) => decideJoin(event, 'rejected')
 };
+
+async function decideJoin(
+	{ request, locals: { supabase, safeGetSession } }: Parameters<Actions[string]>[0],
+	decision: 'approved' | 'rejected'
+) {
+	const formData = await request.formData();
+	const requestId = String(formData.get('requestId') ?? '');
+
+	const { user } = await safeGetSession();
+	if (!user) {
+		return fail(401, { error: m.requests_error_not_signed_in(), requestId });
+	}
+	if (!UUID_PATTERN.test(requestId)) {
+		return fail(400, { error: m.requests_error_not_found(), requestId });
+	}
+
+	const { error: decideError } = await supabase.rpc('decide_class_join', {
+		p_request_id: requestId,
+		p_decision: decision
+	});
+	if (decideError) {
+		return fail(decideError.code === '42501' ? 403 : 400, {
+			error: classJoinDecisionErrorMessage(decideError),
+			requestId,
+			// Decided elsewhere: the page reloads so the stale row goes.
+			joinStale: decideError.hint === 'join_not_pending'
+		});
+	}
+
+	return {
+		success: true,
+		action: decision === 'approved' ? ('joinApproved' as const) : ('joinRejected' as const),
+		requestId
+	};
+}
 
 async function decideDeletion(
 	{ request, locals: { supabase, safeGetSession } }: Parameters<Actions[string]>[0],

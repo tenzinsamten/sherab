@@ -32,6 +32,7 @@ function runLoad(opts: {
 	pendingDeletions?: number;
 	deletionError?: unknown;
 	sickQueue?: { data: unknown; error: unknown };
+	joinQueue?: { data: unknown; error: unknown };
 }) {
 	const calls: { table: string; method: string; args: unknown[] }[] = [];
 	const chain = (table: string) => {
@@ -70,6 +71,7 @@ function runLoad(opts: {
 		from: chain,
 		rpc: async (fn: string) => {
 			rpcCalls.push(fn);
+			if (fn === 'list_class_join_requests') return opts.joinQueue ?? { data: [], error: null };
 			return opts.sickQueue ?? { data: [], error: null };
 		}
 	};
@@ -94,6 +96,24 @@ const queue = {
 		sick('decided', 'approved', false),
 		sick('rejected', 'rejected', false)
 	],
+	error: null
+};
+
+function join(id: string, ownChild: boolean) {
+	return {
+		request_id: `r-${id}`,
+		student_id: `k-${id}`,
+		student_name: id,
+		current_classes: 'Alphabet',
+		class_id: 'c2',
+		class_name: 'Grammar',
+		requested_at: '2026-09-29T08:00:00Z',
+		own_child: ownChild
+	};
+}
+
+const joinQueue = {
+	data: [join('own', true), join('other', false), join('other2', false)],
 	error: null
 };
 
@@ -154,5 +174,30 @@ describe('root layout: nav badge count', () => {
 		const { result, rpcCalls } = runLoad({ role: 'parent', sickQueue: queue });
 		expect(await result).toMatchObject({ pendingRequestsCount: 0, loadError: false });
 		expect(rpcCalls).toEqual([]);
+	});
+
+	it('adds pending class join requests the teacher may decide, never their own child (B12b)', async () => {
+		const { result, rpcCalls } = runLoad({
+			role: 'teacher',
+			pendingStudents: 1,
+			sickQueue: queue,
+			joinQueue
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
+		expect(rpcCalls).toContain('list_class_join_requests');
+	});
+
+	it('adds class join requests for the admin too', async () => {
+		const { result } = runLoad({ role: 'admin', joinQueue });
+		expect(await result).toMatchObject({ pendingRequestsCount: 2, loadError: false });
+	});
+
+	it('flags a load error when list_class_join_requests fails', async () => {
+		const { result } = runLoad({
+			role: 'teacher',
+			pendingStudents: 1,
+			joinQueue: { data: null, error: { message: 'boom' } }
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 1, loadError: true });
 	});
 });

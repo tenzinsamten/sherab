@@ -558,3 +558,163 @@ describe('load: deletion requests section (Story 7-6)', () => {
 		expect((await run).loadError).toBe(true);
 	});
 });
+
+describe('approveJoin / rejectJoin (B12b, #67)', () => {
+	const REQUEST = '11111111-2222-4333-8444-555555555555';
+
+	function joinEvent(fields: Record<string, string>, result: { error: unknown }, user = true) {
+		const calls: { fn: string; args: unknown }[] = [];
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const e = {
+			request: new Request('https://app.test/requests', { method: 'POST', body }),
+			locals: {
+				supabase: {
+					rpc: async (fn: string, args: unknown) => {
+						calls.push({ fn, args });
+						return { data: null, ...result };
+					}
+				},
+				safeGetSession: async () => ({ user: user ? { id: 't1' } : null })
+			}
+		} as unknown as Parameters<typeof actions.approveJoin>[0];
+		return { e, calls };
+	}
+
+	const fields = { requestId: REQUEST };
+
+	it.each([
+		['approveJoin', 'approved', 'joinApproved'],
+		['rejectJoin', 'rejected', 'joinRejected']
+	] as const)('%s calls decide_class_join with %s', async (action, decision, outcome) => {
+		const { e, calls } = joinEvent(fields, { error: null });
+		expect(await actions[action](e)).toEqual({
+			success: true,
+			action: outcome,
+			requestId: REQUEST
+		});
+		expect(calls).toEqual([
+			{ fn: 'decide_class_join', args: { p_request_id: REQUEST, p_decision: decision } }
+		]);
+	});
+
+	it('refuses a malformed id or a signed-out caller without calling the database', async () => {
+		const bad = joinEvent({ requestId: 'x' }, { error: null });
+		expect(await actions.approveJoin(bad.e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_error_not_found(), requestId: 'x' }
+		});
+		expect(bad.calls).toEqual([]);
+
+		const out = joinEvent(fields, { error: null }, false);
+		expect(await actions.rejectJoin(out.e)).toMatchObject({
+			status: 401,
+			data: { error: m.requests_error_not_signed_in(), requestId: REQUEST }
+		});
+		expect(out.calls).toEqual([]);
+	});
+
+	it.each([
+		[{ code: '42501' }, 403, m.class_join_error_not_allowed(), false],
+		[{ code: '22023', hint: 'join_not_pending' }, 400, m.class_join_error_not_pending(), true],
+		[
+			{ code: '22023', hint: 'join_decision_invalid' },
+			400,
+			m.class_join_error_decision_invalid(),
+			false
+		],
+		[
+			{ code: '22023', hint: 'join_student_not_approved' },
+			400,
+			m.class_join_error_student_not_approved(),
+			false
+		],
+		[{ code: '08006' }, 400, m.class_join_error_failed(), false]
+	])('maps %o to its message', async (err, status, message, joinStale) => {
+		const { e } = joinEvent(fields, { error: err });
+		expect(await actions.approveJoin(e)).toMatchObject({
+			status,
+			data: { error: message, requestId: REQUEST, joinStale }
+		});
+	});
+});
+
+describe('load: class join requests section (B12b, #67)', () => {
+	function loadWithJoin(join: { data: unknown; error: unknown }) {
+		const rpcCalls: string[] = [];
+		const from = () => {
+			const chain: Record<string, unknown> = {};
+			for (const method of ['select', 'eq', 'in', 'order']) chain[method] = () => chain;
+			chain.single = async () => ({ data: { role: 'teacher' }, error: null });
+			chain.then = (resolve: (value: Result) => unknown) => resolve({ data: [], error: null });
+			return chain;
+		};
+		const supabase = {
+			from,
+			rpc: async (fn: string) => {
+				rpcCalls.push(fn);
+				return fn === 'list_class_join_requests' ? join : { data: [], error: null };
+			}
+		};
+		const run = load({
+			locals: {
+				supabase,
+				safeGetSession: async () => ({ session: { user: { id: 't1' } }, user: { id: 't1' } })
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<Record<string, unknown>>;
+		return { run, rpcCalls };
+	}
+
+	it('maps the queue, own child flagged', async () => {
+		const { run, rpcCalls } = loadWithJoin(
+			ok([
+				{
+					request_id: 'r1',
+					student_id: 'k1',
+					student_name: 'Dawa',
+					current_classes: 'Alphabet, Reading',
+					class_id: 'c2',
+					class_name: 'Grammar',
+					requested_at: '2026-09-29T08:00:00Z',
+					own_child: false
+				},
+				{
+					request_id: 'r2',
+					student_id: 'k2',
+					student_name: null,
+					current_classes: '',
+					class_id: 'c2',
+					class_name: 'Grammar',
+					requested_at: '2026-09-29T09:00:00Z',
+					own_child: true
+				}
+			])
+		);
+		const result = await run;
+		expect(rpcCalls).toContain('list_class_join_requests');
+		expect(result.joinPending).toEqual([
+			{
+				id: 'r1',
+				studentId: 'k1',
+				studentName: 'Dawa',
+				currentClasses: 'Alphabet, Reading',
+				classId: 'c2',
+				className: 'Grammar',
+				requestedAt: '2026-09-29T08:00:00Z',
+				ownChild: false
+			},
+			expect.objectContaining({
+				id: 'r2',
+				studentName: m.requests_join_unnamed_student(),
+				currentClasses: '',
+				ownChild: true
+			})
+		]);
+		expect(result).toMatchObject({ joinLoadError: false, loadError: false });
+	});
+
+	it('a failed queue affects only its section, not the page', async () => {
+		const { run } = loadWithJoin({ data: null, error: { message: 'boom' } });
+		expect(await run).toMatchObject({ joinPending: [], joinLoadError: true, loadError: false });
+	});
+});

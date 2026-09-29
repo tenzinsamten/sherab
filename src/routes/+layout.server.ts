@@ -1,5 +1,6 @@
 import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import { loadSickLeave } from '$lib/server/leave';
+import { loadClassJoinRequests } from '$lib/server/class-join';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safeGetSession } }) => {
@@ -32,19 +33,24 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 		// to the caller's own assigned classes (or every class for admin) --
 		// same badge-count data feeding /requests' own load, kept here too so
 		// the nav badge (Story 1-2 Component Patterns) stays live everywhere.
-		const { count, error: countErr } = await supabase
-			.from('profiles')
-			.select('id', { count: 'exact', head: true })
-			.eq('role', 'student')
-			.eq('status', 'pending');
-		pendingRequestsCount = count ?? 0;
-		countError = Boolean(countErr);
-
 		// Story 7-5: pending Sick answers of the caller's classes (every class
 		// for the admin) the caller may decide -- never their own child's.
-		const { sickPending, sickError } = await loadSickLeave(supabase);
-		pendingRequestsCount += sickPending.filter((r) => !r.ownChild).length;
-		countError = countError || sickError;
+		// B12b (#67): likewise pending class join requests.
+		const [{ count, error: countErr }, { sickPending, sickError }, { joinPending, joinError }] =
+			await Promise.all([
+				supabase
+					.from('profiles')
+					.select('id', { count: 'exact', head: true })
+					.eq('role', 'student')
+					.eq('status', 'pending'),
+				loadSickLeave(supabase),
+				loadClassJoinRequests(supabase)
+			]);
+		pendingRequestsCount =
+			(count ?? 0) +
+			sickPending.filter((r) => !r.ownChild).length +
+			joinPending.filter((r) => !r.ownChild).length;
+		countError = Boolean(countErr) || sickError || joinError;
 	}
 	if (profile?.role === 'admin') {
 		// Story 7-1: pending parent accounts are admin-only requests.
