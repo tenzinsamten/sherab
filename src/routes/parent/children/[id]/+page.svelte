@@ -6,6 +6,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
@@ -147,13 +148,18 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_dashboard(), href: resolve('/parent') },
+			// On Overview the child level is the current page itself: no link.
+			{ label: data.child.name, href: data.tab === 'overview' ? undefined : baseHref },
+			{ label: tabs.find((tab) => tab.id === data.tab)?.label ?? m.child_tab_overview() }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.parent_kicker()}</p>
 			<h1 class="page-heading">{data.child.name}</h1>
-			<p class="page-subtitle">
-				<a href={resolve('/parent')}>{m.leave_back()}</a>
-			</p>
 		</div>
 	</header>
 

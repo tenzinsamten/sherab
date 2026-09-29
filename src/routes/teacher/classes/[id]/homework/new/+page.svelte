@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import LinkRows from '$lib/components/LinkRows.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import { ixValue } from '$lib/ix-fields';
 	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
@@ -38,18 +39,23 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_dashboard(), href: resolve('/teacher') },
+			{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
+			{
+				label: m.homework_heading(),
+				href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
+			},
+			{ label: m.breadcrumb_new_homework() }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.homework_section_label()}</p>
 			<h1 class="page-heading">{m.homework_create_heading()}</h1>
 			<p class="page-subtitle">{data.class.name}</p>
 		</div>
-		<ix-button
-			variant="secondary"
-			href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
-		>
-			{m.homework_back_to_list()}
-		</ix-button>
 	</header>
 
 	<section class="card">

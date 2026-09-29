@@ -7,6 +7,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import EnrollmentPanel from '$lib/components/EnrollmentPanel.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import { ixFieldError, ixValue } from '$lib/ix-fields';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
@@ -189,6 +190,9 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[{ label: m.nav_dashboard(), href: resolve('/teacher') }, { label: data.class.name }]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.roster_section_label()}</p>

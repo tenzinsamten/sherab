@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import CopyField from '$lib/components/CopyField.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
@@ -37,6 +38,12 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_my_classes(), href: resolve('/student/classes') },
+			{ label: data.class.name }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.nav_my_classes()}</p>
@@ -49,9 +56,6 @@
 			<!-- #53: the join code, to share with someone who wants to join. -->
 			<CopyField label={m.class_code_label()} value={data.class.code} />
 		</div>
-		<ix-button variant="secondary" href={resolve('/student/classes')}>
-			{m.student_classes_back()}
-		</ix-button>
 	</header>
 
 	<section class="card">

@@ -4,6 +4,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import LinkRows from '$lib/components/LinkRows.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { ixValue } from '$lib/ix-fields';
@@ -68,6 +69,17 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_dashboard(), href: resolve('/teacher') },
+			{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
+			{
+				label: m.homework_heading(),
+				href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
+			},
+			{ label: assignment.title }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.homework_section_label()} · {skillLabel(assignment.skillArea)}</p>
@@ -81,12 +93,6 @@
 			</h1>
 			<p class="page-subtitle">{data.class.name}</p>
 		</div>
-		<ix-button
-			variant="secondary"
-			href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
-		>
-			{m.homework_back_to_list()}
-		</ix-button>
 	</header>
 
 	<section class="card">

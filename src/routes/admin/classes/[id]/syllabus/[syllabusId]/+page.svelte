@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import SyllabusDetail from '$lib/components/SyllabusDetail.svelte';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { ActionData, PageProps } from './$types';
@@ -15,6 +16,17 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_classes(), href: resolve('/admin/classes') },
+			{ label: data.class.name },
+			{
+				label: m.syllabus_heading(),
+				href: resolve('/admin/classes/[id]/syllabus', { id: data.class.id })
+			},
+			{ label: year }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.syllabus_heading()} · {data.class.name}</p>
@@ -25,12 +37,6 @@
 				{/if}
 			</h1>
 		</div>
-		<ix-button
-			variant="secondary"
-			href={resolve('/admin/classes/[id]/syllabus', { id: data.class.id })}
-		>
-			{m.syllabus_back_to_list()}
-		</ix-button>
 	</header>
 
 	{#key data.syllabus.id}

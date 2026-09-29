@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import * as m from '$lib/paraglide/messages.js';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { showToast } from '$lib/ix';
@@ -24,8 +25,9 @@
 		return m.roster_skill_dance();
 	}
 
-	// Back to the list the student came from (To do or Done).
-	let backHref = $derived(
+	// The "My homework" crumb leads back to the list the student came from
+	// (To do or Done).
+	let listHref = $derived(
 		page.url.searchParams.get('from') === 'done'
 			? `${resolve('/student/homework')}?filter=done`
 			: resolve('/student/homework')
@@ -37,6 +39,9 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[{ label: m.nav_my_homework(), href: listHref }, { label: data.item.title }]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">
@@ -65,7 +70,6 @@
 				{/if}
 			</p>
 		</div>
-		<ix-button variant="secondary" href={backHref}>{m.student_homework_back()}</ix-button>
 	</header>
 
 	<section class="card">

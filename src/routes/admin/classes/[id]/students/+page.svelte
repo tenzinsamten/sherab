@@ -3,6 +3,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EnrollmentPanel from '$lib/components/EnrollmentPanel.svelte';
+	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -13,6 +14,13 @@
 </svelte:head>
 
 <div class="page">
+	<PageBreadcrumb
+		items={[
+			{ label: m.nav_classes(), href: resolve('/admin/classes') },
+			{ label: data.class.name },
+			{ label: m.classes_col_students() }
+		]}
+	/>
 	<header class="page-header">
 		<div>
 			<p class="page-kicker">{m.classes_col_students()}</p>
@@ -20,9 +28,6 @@
 			<p class="page-subtitle">{data.class.name}</p>
 			<CopyField label={m.class_code_label()} value={data.class.code} />
 		</div>
-		<ix-button variant="secondary" href={resolve('/admin/classes')}>
-			{m.syllabus_back_to_classes()}
-		</ix-button>
 	</header>
 
 	{#if data.students.length === 0}
