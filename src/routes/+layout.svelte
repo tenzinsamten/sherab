@@ -13,6 +13,7 @@
 	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
+	import logoWhite from '$lib/assets/sherab-logo-white.svg';
 
 	const localeFlags: Record<string, { emoji?: string; icon?: string; name: string }> = {
 		en: { emoji: '🇬🇧', name: 'English' },
@@ -157,7 +158,8 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" type="image/png" href="/favicon-32.png" />
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+	<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
@@ -186,6 +188,11 @@
 {#if data.profile}
 	<ix-application>
 		<ix-application-header name="Sherab" use:headerHomeLink={homeHref}>
+			<!-- ≥ 48em the logo is the home link and the name text is hidden;
+			     below it iX hides this slot and the name is the link. -->
+			<a slot="logo" class="header-logo" href={homeHref}>
+				<img src={logoWhite} alt={m.nav_logo_alt()} width="58" height="32" />
+			</a>
 			<!-- Decision 1 (#64): signed in, the language picker sits in the
 			     default right-hand slot next to the avatar; on small screens
 			     iX folds it into the header's "more" menu. -->
@@ -258,6 +265,9 @@
 	     <ix-application> it would always show a menu toggle on small screens. -->
 	<div class="app-public">
 		<ix-application-header name="Sherab" use:headerHomeLink={resolve('/')}>
+			<a slot="logo" class="header-logo" href={resolve('/')}>
+				<img src={logoWhite} alt={m.nav_logo_alt()} width="58" height="32" />
+			</a>
 			<!-- The "avatar" slot is the header's only right-hand slot that never
 			     collapses into the small-screen "more" overflow menu, so the
 			     language switch stays one tap away on phones. -->

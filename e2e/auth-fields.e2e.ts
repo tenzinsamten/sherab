@@ -273,3 +273,32 @@ test('account: the display name shows the saved one and saves a new one', async 
 	await waitForIx(page);
 	await expect(page.locator('#displayName')).toHaveJSProperty('value', name);
 });
+
+test('login: the Sherab logo shows above the card title', async ({ page }) => {
+	await page.goto('/login');
+	const logo = page.locator('.auth-card-header img');
+	await expect(logo).toBeVisible();
+	await expect(logo).toHaveAttribute('alt', 'Sherab – ཤེས་རབ་');
+	await expect(logo).toHaveAttribute('src', /sherab-logo-blue/);
+});
+
+test('signed-out header: the Sherab logo is the home link and the name text is hidden', async ({
+	page
+}) => {
+	await page.goto('/login');
+	const header = page.locator('ix-application-header');
+	const logoLink = header.locator('a.header-logo');
+	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();
+	// Computed display of the name in iX's shadow root (a locator's
+	// toBeHidden also passes when it matches nothing).
+	await expect
+		.poll(() =>
+			header.evaluate((el) => {
+				const n = el.shadowRoot?.querySelector('.left-side .name');
+				return n ? getComputedStyle(n).display : 'missing';
+			})
+		)
+		.toBe('none');
+	await logoLink.click();
+	await expect(page).toHaveURL(/\/$/);
+});

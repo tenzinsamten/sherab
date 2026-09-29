@@ -70,12 +70,21 @@ export async function confirmAction(title: string, message: string, okay: string
  * Svelte action for <ix-application-header>: makes the app name (rendered by
  * iX as plain text in its shadow DOM) behave as a link to `href`. A slotted
  * <a> can't replace it -- the logo slot is hidden below 48em and the other
- * right-hand slots can't be positioned on the left.
+ * right-hand slots can't be positioned on the left. Above 48em the slotted
+ * logo link takes over and the name is hidden.
  */
 export function headerHomeLink(node: HTMLElement, href: string) {
 	let target = href;
 	const sheet = new CSSStyleSheet();
-	sheet.replaceSync('.name { cursor: pointer; } .name:focus-visible { outline: 1px solid; }');
+	sheet.replaceSync(
+		'.name { cursor: pointer; } .name:focus-visible { outline: 1px solid; }' +
+			// iX hides the logo slot at max-width 48em; above that a slotted
+			// logo is the home link, so the name text is hidden (the exact
+			// complement of iX's query, so one of the two always shows). Only
+			// when a logo is slotted -- iX marks an empty slot `.hide-logo`.
+			' @media not all and (max-width: 48em) {' +
+			' :host .left-side .logo:not(.hide-logo) ~ .name { display: none; } }'
+	);
 
 	const isName = (event: Event) =>
 		event.composedPath().some((el) => el instanceof HTMLElement && el.classList.contains('name'));

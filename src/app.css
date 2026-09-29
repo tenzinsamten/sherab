@@ -261,6 +261,22 @@ ix-application-header ix-avatar {
 	--theme-btn-tertiary--color: var(--sherab-frame-text, #ffffff);
 	--theme-btn-tertiary--color--hover: var(--sherab-frame-text, #ffffff);
 }
+/* The Sherab logo in iX's `logo` slot: fills the slot's 32px box (iX hides
+   the slot below 48em, where the name text takes over as the home link). */
+ix-application-header .header-logo {
+	display: inline-flex;
+	align-items: center;
+	height: 2rem;
+}
+ix-application-header .header-logo:focus-visible {
+	outline: 2px solid var(--sherab-frame-text);
+	outline-offset: 2px;
+}
+ix-application-header .header-logo img {
+	display: block;
+	height: 2rem;
+	width: auto;
+}
 /* The avatar's menu (name card and items) sits on iX's light dropdown but
    would inherit the header's white text; give it the normal text colour.
    The initials keep their own --theme-avatar--color. */
@@ -449,6 +465,9 @@ code {
 }
 .auth-card-header img {
 	display: block;
+	width: 180px;
+	max-width: 100%;
+	height: auto;
 	margin: 0 auto var(--space-3);
 }
 .auth-card-header h1 {

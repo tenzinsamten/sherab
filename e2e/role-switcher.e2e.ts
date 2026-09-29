@@ -156,3 +156,37 @@ test('a parent-only login sees no switcher', async ({ page }) => {
 	await expect(page.locator('ix-avatar ix-dropdown-item[data-role-option]')).toHaveCount(0);
 	await expect(page.locator('ix-avatar ix-dropdown-header')).toHaveCount(0);
 });
+
+test('header: the Sherab logo is the home link on desktop, the name text on a phone', async ({
+	page
+}) => {
+	await signIn(page, parentOnly);
+	await expect(page).toHaveURL(/\/parent$/);
+	const header = page.locator('ix-application-header');
+	const logoLink = header.locator('a.header-logo');
+	const name = header.locator('.name');
+	// Computed display of the name in iX's shadow root (a locator's
+	// toBeHidden also passes when it matches nothing).
+	const nameDisplay = () =>
+		header.evaluate((el) => {
+			const n = el.shadowRoot?.querySelector('.left-side .name');
+			return n ? getComputedStyle(n).display : 'missing';
+		});
+
+	// Desktop: the logo shows (with its text alternative), the name is hidden.
+	await page.goto('/calendar');
+	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();
+	await expect.poll(nameDisplay).toBe('none');
+	await logoLink.click();
+	await expect(page).toHaveURL(/\/parent$/);
+
+	// Phone: iX hides the logo slot; the "Sherab" name shows and goes home.
+	await page.setViewportSize({ width: 390, height: 800 });
+	await page.goto('/calendar');
+	await expect(logoLink).toBeHidden();
+	await expect.poll(nameDisplay).not.toMatch(/^(none|missing)$/);
+	await expect(name).toBeVisible();
+	await expect(name).toHaveText('Sherab');
+	await name.click();
+	await expect(page).toHaveURL(/\/parent$/);
+});
