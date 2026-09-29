@@ -1287,6 +1287,14 @@ export type Database = {
 				Args: never;
 				Returns: Database['public']['Enums']['parent_status'];
 			};
+			promote_parent_to_teacher: {
+				Args: { p_user_id: string };
+				Returns: string;
+			};
+			demote_teacher_to_parent: {
+				Args: { p_user_id: string };
+				Returns: string;
+			};
 			list_class_join_requests: {
 				Args: never;
 				Returns: {

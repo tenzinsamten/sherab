@@ -5,12 +5,18 @@ import { service, signIn, type TestUser } from './fixtures';
  * B14a (#68): a teacher requests parent access on /account, the admin
  * approves it in the /requests parent queue, and the teacher's avatar menu
  * then offers Parent (the B13 switcher).
+ *
+ * B14b (#68): the admin creates a teacher with an approved parent-only
+ * login's email, cancels once (nothing changes), confirms the promotion, and
+ * that login is then Teacher and Parent. Removing them as teacher later keeps
+ * the parent account: they sign in and land on /parent.
  */
 
 test.describe.configure({ mode: 'serial' });
 
 const tag = crypto.randomUUID().slice(0, 8);
 const userIds: string[] = [];
+const classIds: string[] = [];
 
 let teacher: TestUser;
 let admin: TestUser;
@@ -37,6 +43,10 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
 	const problems: string[] = [];
+	for (const id of classIds) {
+		const { error } = await service.from('classes').delete().eq('id', id);
+		if (error) problems.push(`delete class ${id}: ${error.message}`);
+	}
 	for (const id of userIds) {
 		const { error } = await service.auth.admin.deleteUser(id);
 		if (error) problems.push(`delete user ${id}: ${error.message}`);
@@ -113,4 +123,128 @@ test('a parent-only login sees no Parent access card', async ({ page }) => {
 	await openAccount(page);
 	await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Parent access' })).toHaveCount(0);
+});
+
+test('B14b: the admin creates a teacher with a parent-only email, confirms, and the login is Teacher and Parent', async ({
+	page,
+	browser
+}) => {
+	const email = `e2e-68b-parent-${tag}@example.test`;
+	const password = crypto.randomUUID();
+	const { data, error } = await service.auth.admin.createUser({
+		email,
+		password,
+		email_confirm: true,
+		app_metadata: { role: 'parent' },
+		user_metadata: { display_name: `B14b parent ${tag}` }
+	});
+	if (error || !data.user) throw new Error(`create parent: ${error?.message}`);
+	userIds.push(data.user.id);
+	const { error: approveError } = await service
+		.from('parents')
+		.update({ status: 'approved' })
+		.eq('id', data.user.id);
+	expect(approveError).toBeNull();
+
+	const className = `B14b class ${tag}`;
+	const { data: cls, error: classError } = await service
+		.from('classes')
+		.insert({ name: className, code: `B${tag.slice(0, 5).toUpperCase()}` })
+		.select('id')
+		.single();
+	if (classError || !cls) throw new Error(`create class: ${classError?.message}`);
+	classIds.push(cls.id);
+
+	const roleOf = async () => {
+		const { data: profile } = await service
+			.from('profiles')
+			.select('role')
+			.eq('id', data.user!.id)
+			.single();
+		return profile?.role;
+	};
+
+	const context = await browser.newContext();
+	const adminPage = await context.newPage();
+	try {
+		await signIn(adminPage, admin);
+		await adminPage.goto('/admin/teachers');
+		await adminPage.waitForFunction(() => customElements.get('ix-checkbox') !== undefined);
+		await adminPage.waitForLoadState('networkidle');
+		await adminPage.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await adminPage.locator('#email input').first().fill(email);
+		await adminPage.locator(`ix-checkbox[value="${cls.id}"]`).click();
+		await adminPage.getByRole('button', { name: 'Create teacher' }).click();
+
+		const modal = adminPage.locator('ix-modal');
+		const question = modal.getByText(
+			'This email already has a parent account. Make them a teacher too?',
+			{ exact: false }
+		);
+
+		// Cancel first: nothing changes.
+		await expect(question).toBeVisible();
+		await modal.getByRole('button', { name: 'Cancel' }).click();
+		await expect(question).toHaveCount(0);
+		await expect(adminPage.locator('ix-toast')).toHaveCount(0);
+		expect(await roleOf()).toBe('parent');
+		await expect(adminPage.locator('tr', { hasText: email })).toHaveCount(0);
+
+		// Submit again and confirm.
+		await adminPage.getByRole('button', { name: 'Create teacher' }).click();
+		await expect(question).toBeVisible();
+		await modal.getByRole('button', { name: 'Make teacher' }).click();
+
+		await expect(
+			adminPage.locator('ix-toast').getByText(`${email} is now a teacher too.`, { exact: false })
+		).toBeVisible();
+		const row = adminPage.locator('tr', { hasText: email });
+		await expect(row).toContainText(className);
+		await expect(row).toContainText('Also a parent');
+		await expect(adminPage.getByText('Temporary password')).toHaveCount(0);
+		expect(await roleOf()).toBe('teacher');
+	} finally {
+		await context.close();
+	}
+
+	const promoted = { id: data.user.id, email, password };
+	await signIn(page, promoted);
+	await expect(page).toHaveURL(/\/teacher$/);
+	await page.waitForFunction(() => customElements.get('ix-avatar') !== undefined);
+	await page.locator('ix-avatar').click();
+	await expect(page.locator('ix-avatar ix-dropdown-item[data-role-option="teacher"]')).toHaveCount(
+		1
+	);
+	await expect(parentOption(page)).toHaveCount(1);
+
+	// The admin removes them as teacher: the parent account is kept.
+	const removeContext = await browser.newContext();
+	const removePage = await removeContext.newPage();
+	try {
+		await signIn(removePage, admin);
+		await removePage.goto('/admin/teachers');
+		await removePage.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await removePage.waitForLoadState('networkidle');
+		const row = removePage.locator('tr', { hasText: email });
+		await row.getByRole('button', { name: 'Remove' }).click();
+		const modal = removePage.locator('ix-modal');
+		await expect(modal.getByText('keep their parent account', { exact: false })).toBeVisible();
+		await modal.getByRole('button', { name: 'Remove' }).click();
+		await expect(
+			removePage.locator('ix-toast').getByText('Their parent account is kept.', { exact: false })
+		).toBeVisible();
+		await expect(removePage.locator('tr', { hasText: email })).toHaveCount(0);
+		expect(await roleOf()).toBe('parent');
+	} finally {
+		await removeContext.close();
+	}
+
+	const fresh = await browser.newContext();
+	const parentPage = await fresh.newPage();
+	try {
+		await signIn(parentPage, promoted);
+		await expect(parentPage).toHaveURL(/\/parent$/);
+	} finally {
+		await fresh.close();
+	}
 });

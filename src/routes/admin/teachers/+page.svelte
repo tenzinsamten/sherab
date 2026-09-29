@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
@@ -19,15 +19,48 @@
 	let createKey = $state(0);
 	let editingId = $state<string | null>(null);
 
+	// B14b (#68): the email belongs to an approved parent-only login. Nothing
+	// changed yet; on OK the same form (its values kept) is resubmitted with
+	// promote=1, which makes that login a teacher too.
+	let createForm: HTMLFormElement | undefined = $state();
+	let promote = $state(false);
+
+	async function confirmPromotion() {
+		const okay = await confirmAction(
+			m.common_confirm_title(),
+			m.teachers_promote_confirm(),
+			m.teachers_promote_submit(),
+			m.common_cancel()
+		);
+		if (!okay) return;
+		promote = true;
+		await tick();
+		createForm?.requestSubmit();
+		promote = false;
+	}
+
 	$effect(() => {
-		if (!form) return;
-		if ('success' in form && form.success) createKey += 1;
-		if ('updated' in form && form.updated) {
-			editingId = null;
-			showToast('success', m.teachers_classes_updated({ name: form.updated }));
-		}
-		if ('removed' in form && form.removed)
-			showToast('success', m.teachers_removed_success({ name: form.removed }));
+		const result = form;
+		if (!result) return;
+		// Only `form` is a dependency: `createKey += 1` reads createKey too,
+		// which would otherwise re-run this effect in a loop.
+		untrack(() => {
+			if ('promotable' in result && result.promotable) void confirmPromotion();
+			if ('promoted' in result && result.promoted)
+				showToast('success', m.teachers_promoted_success({ email: result.email ?? '' }));
+			if ('success' in result && result.success) createKey += 1;
+			if ('updated' in result && result.updated) {
+				editingId = null;
+				showToast('success', m.teachers_classes_updated({ name: result.updated }));
+			}
+			if ('removed' in result && result.removed)
+				showToast(
+					'success',
+					'keptParent' in result && result.keptParent
+						? m.teachers_removed_kept_parent({ name: result.removed })
+						: m.teachers_removed_success({ name: result.removed })
+				);
+		});
 	});
 
 	let actionForm: HTMLFormElement | undefined = $state();
@@ -40,9 +73,12 @@
 	}
 
 	async function runConfirmed(action: 'resetPassword' | 'remove', teacher: Teacher) {
+		// B14b (#68): a teacher who is also a parent keeps the parent account.
 		const message =
 			action === 'remove'
-				? m.teachers_remove_confirm({ name: teacherName(teacher) })
+				? teacher.alsoParent
+					? m.teachers_remove_confirm_parent({ name: teacherName(teacher) })
+					: m.teachers_remove_confirm({ name: teacherName(teacher) })
 				: m.teachers_reset_confirm({ name: teacherName(teacher) });
 		const okay = action === 'remove' ? m.teachers_remove() : m.teachers_reset_password();
 		if (!(await confirmAction(m.common_confirm_title(), message, okay, m.common_cancel()))) return;
@@ -95,11 +131,15 @@
 		{:else}
 			{#key createKey}
 				<form
+					bind:this={createForm}
 					method="POST"
 					action="?/create"
 					use:enhance={pending.submit('create')}
 					class="form-narrow"
 				>
+					{#if promote}
+						<input type="hidden" name="promote" value="1" />
+					{/if}
 					<!-- The new teacher's email, not a sign-in field: an iX field (#66). -->
 					<div class="field">
 						<ix-input
@@ -174,7 +214,12 @@
 					<tbody>
 						{#each data.teachers as teacher (teacher.id)}
 							<tr>
-								<td>{teacher.display_name ?? '—'}</td>
+								<td>
+									{teacher.display_name ?? '—'}
+									{#if teacher.alsoParent}
+										<ix-pill variant="neutral" outline>{m.teachers_also_parent()}</ix-pill>
+									{/if}
+								</td>
 								<td class="muted" style="overflow-wrap:anywhere;">{teacher.email}</td>
 								<td>
 									{#if teacher.classes.length === 0}

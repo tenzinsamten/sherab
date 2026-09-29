@@ -264,3 +264,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-68-b14-request-parent-access.md`
   summary: Removing a teacher who is an approved parent with linked children fails with the generic "remove failed" error; show a specific message (unlink children first).
   evidence: B14a review (edge): `profiles.parent_id` references `parents` ON DELETE RESTRICT (0024:41); `admin/teachers` remove → `deleteUser` fails. Blocking is safe, only the message is unclear.
+- source_spec: `_bmad-output/implementation-artifacts/spec-68-b14b-parent-to-teacher-promotion.md`
+  summary: e2e for the /admin/teachers "Edit classes" flow (Classes updated toast, edit panel closes); only create and (after B14b) remove are exercised in the browser.
+  evidence: B14b review (verification-gap): the `$effect` branches for `updated` / `removed` were restructured (untrack) and no e2e runs Edit classes; untested before B14b too.

@@ -11565,3 +11565,277 @@ describe.skipIf(!reachable)('B14a request parent access (requires local Supabase
 		expect(refused.error?.code).toBe('42501');
 	});
 });
+
+describe.skipIf(!reachable)(
+	'B14b promote a parent-only login to teacher (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teamId: string;
+
+		const name = (label: string) => `B14b ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+		async function createClass(label: string) {
+			const code = `Q${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+			const { data, error } = await adminClient
+				.from('classes')
+				.insert({ name: name(label), code })
+				.select('id')
+				.single();
+			if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+			await adminClient
+				.from('class_teachers')
+				.insert({ class_id: data.id, teacher_id: classTeacher.id });
+			return data.id;
+		}
+
+		async function signIn(email: string, password: string) {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		/** A /join student with `guardianEmail`, approved and signed in. */
+		async function child(classId: string, guardianEmail?: string) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName: name('Kid'),
+				guardianEmail
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			const password = crypto.randomUUID();
+			const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+			return { id, client: await signIn(data.user!.email!, password) };
+		}
+
+		/** A parent-only login whose parents row stays pending. */
+		async function createPendingParent() {
+			const email = `b14b-pending-${crypto.randomUUID()}@example.test`;
+			const { data, error } = await adminClient.auth.admin.createUser({
+				email,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				app_metadata: { role: 'parent' }
+			});
+			if (error || !data.user) throw new Error(`Failed to create parent: ${error?.message}`);
+			return { id: data.user.id, email };
+		}
+
+		const promote = (client: Client, id: string) =>
+			client.rpc('promote_parent_to_teacher', { p_user_id: id });
+
+		async function roleOf(id: string) {
+			const { data } = await adminClient.from('profiles').select('role').eq('id', id).single();
+			return data?.role;
+		}
+
+		async function parentRow(id: string) {
+			const { data } = await adminClient.from('parents').select('status').eq('id', id);
+			return data ?? [];
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			classTeacher = await createSignedInUser('teacher');
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('Promote: the admin makes an approved parent a teacher; parents row and child link stay; classes can be assigned', async () => {
+			const parent = await createApprovedParent();
+			const home = await createClass('Home');
+			const kid = await child(home, parent.email);
+
+			const { data, error } = await promote(admin.client, parent.id);
+			expect(error).toBeNull();
+			expect(data).toBe(parent.id);
+			expect(await roleOf(parent.id)).toBe('teacher');
+			expect(await parentRow(parent.id)).toEqual([{ status: 'approved' }]);
+			const { data: link } = await adminClient
+				.from('profiles')
+				.select('parent_id')
+				.eq('id', kid.id)
+				.single();
+			expect(link).toEqual({ parent_id: parent.id });
+
+			// The same password still signs in; the login is a teacher and a parent.
+			const promoted = await signIn(parent.email, parent.password);
+			expect((await promoted.rpc('is_parent')).data).toBe(true);
+			expect((await promoted.rpc('is_parent_of', { p_student_id: kid.id })).data).toBe(true);
+
+			// The admin assigns a class through RLS, as /admin/teachers does.
+			const taught = await createClass('Taught');
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: taught, teacher_id: parent.id });
+			expect(assignError).toBeNull();
+			expect((await promoted.rpc('is_teacher_of_class', { target_class_id: taught })).data).toBe(
+				true
+			);
+
+			// Twice: no longer parent-only.
+			const again = await promote(admin.client, parent.id);
+			expect(again.error?.code).toBe('22023');
+			expect(again.error?.hint).toBe('not_parent_only');
+			expect(await roleOf(parent.id)).toBe('teacher');
+		});
+
+		it('Pending: a pending parent sign-up is refused and stays a parent', async () => {
+			const parent = await createPendingParent();
+			const { error } = await promote(admin.client, parent.id);
+			expect(error?.code).toBe('22023');
+			expect(error?.hint).toBe('parent_not_approved');
+			expect(await roleOf(parent.id)).toBe('parent');
+			expect(await parentRow(parent.id)).toEqual([{ status: 'pending' }]);
+		});
+
+		it('Not parent-only: teacher, student and admin targets are refused', async () => {
+			const teacher = await createSignedInUser('teacher');
+			const otherAdmin = await createSignedInUser('admin');
+			const home = await createClass('Home');
+			const kid = await child(home);
+			for (const [id, role] of [
+				[teacher.id, 'teacher'],
+				[otherAdmin.id, 'admin'],
+				[kid.id, 'student'],
+				[crypto.randomUUID(), undefined]
+			] as const) {
+				const { error } = await promote(admin.client, id);
+				expect(error?.code).toBe('22023');
+				expect(error?.hint).toBe('not_parent_only');
+				if (role) expect(await roleOf(id)).toBe(role);
+			}
+		});
+
+		it('Not admin: a teacher, the parent itself, a student and anon are refused', async () => {
+			const parent = await createApprovedParent();
+			const parentClient = await signIn(parent.email, parent.password);
+			const teacher = await createSignedInUser('teacher');
+			const home = await createClass('Home');
+			const kid = await child(home, parent.email);
+			for (const client of [teacher.client, parentClient, kid.client]) {
+				const { error } = await promote(client, parent.id);
+				expect(error?.code).toBe('42501');
+			}
+			const { error: anonError } = await promote(anonClient(), parent.id);
+			expect(anonError).not.toBeNull();
+			expect(await roleOf(parent.id)).toBe('parent');
+		});
+
+		it('Guard: a client still cannot change a role directly (42501)', async () => {
+			// A pending student is a row the admin may update (registration
+			// review policy), so the role change reaches the guard trigger.
+			const home = await createClass('Home');
+			const { id: pendingId, error: signUpError } = await signUpStudent({
+				classId: home,
+				registrationName: name('Pending')
+			});
+			if (signUpError || !pendingId) throw new Error(`sign up: ${signUpError?.message}`);
+			const refused = await admin.client
+				.from('profiles')
+				.update({ role: 'teacher' })
+				.eq('id', pendingId)
+				.select('id');
+			expect(refused.error?.code).toBe('42501');
+			expect(await roleOf(pendingId)).toBe('student');
+
+			// A parent updating its own row: no policy matches, nothing changes.
+			const parent = await createApprovedParent();
+			const parentClient = await signIn(parent.email, parent.password);
+			await parentClient.from('profiles').update({ role: 'teacher' }).eq('id', parent.id);
+			expect(await roleOf(parent.id)).toBe('parent');
+		});
+
+		const demote = (client: Client, id: string) =>
+			client.rpc('demote_teacher_to_parent', { p_user_id: id });
+
+		async function classTeacherRows(id: string) {
+			const { data } = await adminClient
+				.from('class_teachers')
+				.select('class_id')
+				.eq('teacher_id', id);
+			return data ?? [];
+		}
+
+		/** An approved parent with a linked child, promoted and teaching one class. */
+		async function dualRoleTeacher() {
+			const parent = await createApprovedParent();
+			const home = await createClass('Home');
+			const kid = await child(home, parent.email);
+			const { error } = await promote(admin.client, parent.id);
+			if (error) throw new Error(`promote: ${error.message}`);
+			const taught = await createClass('Taught');
+			const { error: assignError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: taught, teacher_id: parent.id });
+			if (assignError) throw new Error(`assign: ${assignError.message}`);
+			return { ...parent, kid, taught };
+		}
+
+		it('Demote: the admin makes a dual-role teacher parent-only; classes go, child link stays', async () => {
+			const dual = await dualRoleTeacher();
+			expect(await classTeacherRows(dual.id)).toHaveLength(1);
+
+			const { data, error } = await demote(admin.client, dual.id);
+			expect(error).toBeNull();
+			expect(data).toBe(dual.id);
+			expect(await roleOf(dual.id)).toBe('parent');
+			expect(await classTeacherRows(dual.id)).toEqual([]);
+			expect(await parentRow(dual.id)).toEqual([{ status: 'approved' }]);
+
+			// Same password; still the parent of the child, no longer a teacher.
+			const client = await signIn(dual.email, dual.password);
+			expect((await client.rpc('is_parent_of', { p_student_id: dual.kid.id })).data).toBe(true);
+			expect((await client.rpc('is_teacher_of_class', { target_class_id: dual.taught })).data).toBe(
+				false
+			);
+
+			// Twice: no longer a teacher.
+			const again = await demote(admin.client, dual.id);
+			expect(again.error?.code).toBe('22023');
+			expect(again.error?.hint).toBe('not_teacher');
+		});
+
+		it('Demote not admin: a teacher, the dual-role teacher itself, a student and anon are refused', async () => {
+			const dual = await dualRoleTeacher();
+			const self = await signIn(dual.email, dual.password);
+			const teacher = await createSignedInUser('teacher');
+			for (const client of [teacher.client, self, dual.kid.client]) {
+				const { error } = await demote(client, dual.id);
+				expect(error?.code).toBe('42501');
+			}
+			const { error: anonError } = await demote(anonClient(), dual.id);
+			expect(anonError).not.toBeNull();
+			expect(await roleOf(dual.id)).toBe('teacher');
+			expect(await classTeacherRows(dual.id)).toHaveLength(1);
+		});
+
+		it('Demote refused: a teacher without an approved parents row, and admin targets', async () => {
+			const teacher = await createSignedInUser('teacher');
+			const plain = await demote(admin.client, teacher.id);
+			expect(plain.error?.code).toBe('22023');
+			expect(plain.error?.hint).toBe('parent_not_approved');
+			expect(await roleOf(teacher.id)).toBe('teacher');
+
+			const otherAdmin = await createSignedInUser('admin');
+			for (const id of [otherAdmin.id, admin.id]) {
+				const { error } = await demote(admin.client, id);
+				expect(error?.code).toBe('22023');
+				expect(error?.hint).toBe('not_teacher');
+				expect(await roleOf(id)).toBe('admin');
+			}
+		});
+	}
+);
