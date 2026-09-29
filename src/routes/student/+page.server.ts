@@ -1,4 +1,5 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
 import { shapeStudentBadges } from '$lib/server/badges';
 import { shapeTeamLeaderboard } from '$lib/server/leaderboard';
@@ -9,6 +10,12 @@ import {
 	markHomeworkDone,
 	teamRank
 } from '$lib/server/student-homework';
+import {
+	MAX_JOIN_CODE_LENGTH,
+	classJoinDismissErrorMessage,
+	classJoinErrorMessage,
+	type StudentJoinRequest
+} from '$lib/server/class-join';
 import type { Actions, PageServerLoad } from './$types';
 
 /** How many upcoming homework the dashboard lists. */
@@ -16,7 +23,9 @@ const NEXT_DUE_COUNT = 3;
 
 /**
  * Student dashboard (#46): homework tiles, streak and badges, team standing,
- * the next homework due, and a card per class. The student's landing page.
+ * the next homework due, a card per class, and (#67) the "Join another
+ * class" card with the student's pending / rejected join requests. The
+ * student's landing page.
  */
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
@@ -46,7 +55,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		{ data: streakRow, error: streakError },
 		{ data: badgeRows, error: badgesError },
 		{ data: teamRows, error: teamError },
-		{ data: countRows, error: countsError }
+		{ data: countRows, error: countsError },
+		{ data: joinRows, error: joinError }
 	] = await Promise.all([
 		loadStudentHomework(supabase, user.id, {
 			filter: 'todo',
@@ -67,7 +77,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.order('milestone', { ascending: true }),
 		supabase.rpc('team_leaderboard'),
 		// The one Open/Overdue count (Story 7-3), shared with the parent cards.
-		supabase.rpc('homework_counts', { p_student_id: user.id })
+		supabase.rpc('homework_counts', { p_student_id: user.id }),
+		// Pending and not-dismissed rejected requests, newest first (0031).
+		supabase.rpc('my_class_join_requests')
 	]);
 	const counts = countRows?.[0];
 
@@ -87,6 +99,12 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		badges: shapeStudentBadges(badgeRows),
 		nextDue: homework.items.slice(0, NEXT_DUE_COUNT),
 		classes: classes.map((c) => ({ ...c, todo: todoByClass.get(c.id) ?? 0 })),
+		joinRequests: (joinRows ?? []).map((r): StudentJoinRequest => ({
+			id: r.id,
+			className: r.class_name,
+			status: r.status
+		})),
+		joinLoadError: Boolean(joinError),
 		loadError: Boolean(
 			classesError || homework.error || streakError || badgesError || teamError || countsError
 		)
@@ -97,5 +115,50 @@ export const actions: Actions = {
 	markDone: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		return markHomeworkDone({ request, supabase, user });
+	},
+
+	/** #67: ask to join another class by its code (request_class_join, 0031). */
+	requestJoin: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { joinError: m.student_homework_error_not_signed_in() });
+		}
+		const formData = await request.formData();
+		const code = String(formData.get('code') ?? '')
+			.trim()
+			.toUpperCase();
+
+		if (!code) {
+			return fail(400, { joinError: m.student_join_error_code_required(), code });
+		}
+		// Far longer than any class code: the same answer as an unknown one.
+		if (code.length > MAX_JOIN_CODE_LENGTH) {
+			return fail(400, { joinError: m.student_join_error_invalid(), code });
+		}
+
+		const { data: className, error } = await supabase.rpc('request_class_join', { p_code: code });
+		if (error) {
+			return fail(400, { joinError: classJoinErrorMessage(error), code });
+		}
+		return { joinSent: className ?? code };
+	},
+
+	/** #67: hide a rejected request (dismiss_class_join, 0031). */
+	dismissJoin: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { joinError: m.student_homework_error_not_signed_in() });
+		}
+		const formData = await request.formData();
+		const id = String(formData.get('id') ?? '');
+		if (!id) {
+			return fail(400, { joinError: m.student_join_error_dismiss_failed() });
+		}
+
+		const { error } = await supabase.rpc('dismiss_class_join', { p_request_id: id });
+		if (error) {
+			return fail(400, { joinError: classJoinDismissErrorMessage(error) });
+		}
+		return { joinDismissed: true };
 	}
 };

@@ -305,6 +305,61 @@ export type Database = {
 					}
 				];
 			};
+			class_join_requests: {
+				Row: {
+					class_id: string;
+					dismissed_at: string | null;
+					id: string;
+					requested_at: string;
+					reviewed_at: string | null;
+					reviewed_by: string | null;
+					status: 'pending' | 'approved' | 'rejected';
+					student_id: string;
+				};
+				Insert: {
+					class_id: string;
+					dismissed_at?: string | null;
+					id?: string;
+					requested_at?: string;
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: 'pending' | 'approved' | 'rejected';
+					student_id: string;
+				};
+				Update: {
+					class_id?: string;
+					dismissed_at?: string | null;
+					id?: string;
+					requested_at?: string;
+					reviewed_at?: string | null;
+					reviewed_by?: string | null;
+					status?: 'pending' | 'approved' | 'rejected';
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_join_requests_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_join_requests_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'class_join_requests_reviewed_by_fkey';
+						columns: ['reviewed_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_syllabi: {
 				Row: {
 					class_id: string;
@@ -1222,6 +1277,42 @@ export type Database = {
 					team_id: string;
 					team_name: string;
 					total_streak: number;
+				}[];
+			};
+			request_class_join: {
+				Args: { p_code: string };
+				Returns: string;
+			};
+			list_class_join_requests: {
+				Args: never;
+				Returns: {
+					request_id: string;
+					student_id: string;
+					student_name: string | null;
+					current_classes: string;
+					class_id: string;
+					class_name: string;
+					requested_at: string;
+					own_child: boolean;
+				}[];
+			};
+			decide_class_join: {
+				Args: { p_request_id: string; p_decision: 'approved' | 'rejected' };
+				Returns: undefined;
+			};
+			dismiss_class_join: {
+				Args: { p_request_id: string };
+				Returns: undefined;
+			};
+			my_class_join_requests: {
+				Args: never;
+				Returns: {
+					id: string;
+					class_id: string;
+					class_name: string;
+					status: 'pending' | 'rejected';
+					requested_at: string;
+					reviewed_at: string | null;
 				}[];
 			};
 			validate_class_code: {

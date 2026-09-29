@@ -10812,3 +10812,522 @@ describe.skipIf(!reachable)('B11 leave range (requires local Supabase)', () => {
 		expect(streak).toEqual([{ student_id: kid }]);
 	});
 });
+
+/**
+ * B12a (#67): class join requests (migration 0031). One test per I/O matrix
+ * row, plus direct client writes being refused. Every student starts in a
+ * class of their own and asks to join another.
+ */
+describe.skipIf(!reachable)('B12a class join requests (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	type Fixture = { id: string; client: Client };
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const name = (label: string) => `B12a ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createClass(label: string, teacherId = teacher.id) {
+		const code = `J${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+		const className = name(label);
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: className, code })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacherId });
+		return { id: data.id, code, name: className };
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** A student registered into `classId`, approved unless `approve` is false, signed in. */
+	async function student(
+		classId: string,
+		{ approve = true, guardianEmail }: { approve?: boolean; guardianEmail?: string } = {}
+	): Promise<Fixture> {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: name('Student'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register student: ${error?.message}`);
+		if (approve) {
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve student: ${approveError.message}`);
+		}
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return { id, client: await signIn(data.user!.email!, password) };
+	}
+
+	function request(client: Client, code: string) {
+		return client.rpc('request_class_join', { p_code: code });
+	}
+
+	function decide(client: Client, requestId: string, decision: 'approved' | 'rejected') {
+		return client.rpc('decide_class_join', { p_request_id: requestId, p_decision: decision });
+	}
+
+	async function requestsOf(studentId: string) {
+		const { data, error } = await adminClient
+			.from('class_join_requests')
+			.select('id, class_id, status, reviewed_by, dismissed_at')
+			.eq('student_id', studentId)
+			.order('requested_at');
+		if (error) throw new Error(`Failed to read requests: ${error.message}`);
+		return data ?? [];
+	}
+
+	async function pendingId(studentId: string, classId: string) {
+		const row = (await requestsOf(studentId)).find(
+			(r) => r.class_id === classId && r.status === 'pending'
+		);
+		if (!row) throw new Error('No pending request');
+		return row.id;
+	}
+
+	async function mine(client: Client) {
+		const { data, error } = await client.rpc('my_class_join_requests');
+		if (error) throw new Error(`my_class_join_requests failed: ${error.message}`);
+		return (data ?? []).map((r) => [r.class_name, r.status]);
+	}
+
+	async function enrolled(studentId: string, classId: string) {
+		const { data } = await adminClient
+			.from('class_enrollments')
+			.select('enrolled_by')
+			.eq('student_id', studentId)
+			.eq('class_id', classId);
+		return data ?? [];
+	}
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		admin = await createSignedInUser('admin');
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('Request: an approved student sends a (lower-case, padded) code and sees Pending', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+
+		const { data, error } = await request(s.client, `  ${target.code.toLowerCase()} `);
+		expect(error).toBeNull();
+		expect(data).toBe(target.name);
+		expect(await mine(s.client)).toEqual([[target.name, 'pending']]);
+		expect(await requestsOf(s.id)).toMatchObject([{ class_id: target.id, status: 'pending' }]);
+		// The student reads their own row directly too.
+		const { data: own } = await s.client.from('class_join_requests').select('status');
+		expect(own).toEqual([{ status: 'pending' }]);
+
+		// Newest first.
+		const second = await createClass('Second');
+		expect((await request(s.client, second.code)).error).toBeNull();
+		expect(await mine(s.client)).toEqual([
+			[second.name, 'pending'],
+			[target.name, 'pending']
+		]);
+	});
+
+	it('Unknown or own class: the same refusal, nothing created', async () => {
+		const home = await createClass('Home');
+		const s = await student(home.id);
+
+		const unknown = await request(s.client, 'ZZZZZZZZ');
+		const own = await request(s.client, home.code);
+		for (const refused of [unknown, own]) {
+			expect(refused.error?.code).toBe('22023');
+			expect(refused.error?.hint).toBe('join_code_invalid');
+		}
+		expect(unknown.error?.message).toBe(own.error?.message);
+		expect(await requestsOf(s.id)).toEqual([]);
+	});
+
+	it('Duplicate: a second request for a pending class is refused (23505)', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+
+		const again = await request(s.client, target.code);
+		expect(again.error?.code).toBe('23505');
+		expect(again.error?.hint).toBe('join_already_pending');
+		expect(await requestsOf(s.id)).toHaveLength(1);
+	});
+
+	it('Cap: a 4th pending request is refused', async () => {
+		const home = await createClass('Home');
+		const s = await student(home.id);
+		for (const label of ['One', 'Two', 'Three']) {
+			const cls = await createClass(label);
+			expect((await request(s.client, cls.code)).error).toBeNull();
+		}
+		const fourth = await createClass('Four');
+		const refused = await request(s.client, fourth.code);
+		expect(refused.error?.code).toBe('22023');
+		expect(refused.error?.hint).toBe('join_limit');
+		expect(await requestsOf(s.id)).toHaveLength(3);
+	});
+
+	it('Cap: 3 rejected / approved requests do not block a new one', async () => {
+		const home = await createClass('Home');
+		const s = await student(home.id);
+		for (const decision of ['rejected', 'approved', 'rejected'] as const) {
+			const cls = await createClass(decision);
+			expect((await request(s.client, cls.code)).error).toBeNull();
+			const id = await pendingId(s.id, cls.id);
+			expect((await decide(teacher.client, id, decision)).error).toBeNull();
+		}
+		const next = await createClass('Next');
+		expect((await request(s.client, next.code)).error).toBeNull();
+	});
+
+	it('Enrolled another way: the pending request leaves both lists and the cap; approving it just marks it approved', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+		for (const label of ['Two', 'Three']) {
+			const cls = await createClass(label);
+			expect((await request(s.client, cls.code)).error).toBeNull();
+		}
+
+		// The teacher enrols the student directly (enroll_student, 0016).
+		const { error: enrollError } = await teacher.client.rpc('enroll_student', {
+			p_class_id: target.id,
+			p_student_id: s.id
+		});
+		expect(enrollError).toBeNull();
+
+		expect((await mine(s.client)).map(([className]) => className)).not.toContain(target.name);
+		for (const client of [teacher.client, admin.client]) {
+			const { data: queue } = await client.rpc('list_class_join_requests');
+			expect(queue?.some((r) => r.request_id === id)).toBe(false);
+		}
+		// Only 2 pending count now: a third is allowed.
+		const fourth = await createClass('Four');
+		expect((await request(s.client, fourth.code)).error).toBeNull();
+
+		// Approving it anyway: no error, no second enrolment.
+		expect((await decide(admin.client, id, 'approved')).error).toBeNull();
+		expect(await enrolled(s.id, target.id)).toEqual([{ enrolled_by: teacher.id }]);
+		expect((await requestsOf(s.id)).find((r) => r.id === id)).toMatchObject({
+			status: 'approved'
+		});
+	});
+
+	it('Not allowed: a pending student, a teacher, a parent and the admin are refused (42501)', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const pendingStudent = await student(home.id, { approve: false });
+		const rejectedStudent = await student(home.id, { approve: false });
+		const { error: rejectError } = await adminClient
+			.from('profiles')
+			.update({ status: 'rejected' })
+			.eq('id', rejectedStudent.id);
+		if (rejectError) throw new Error(`Failed to reject student: ${rejectError.message}`);
+		const parent = await createApprovedParent();
+		const parentClient = await signIn(parent.email, parent.password);
+
+		for (const client of [
+			pendingStudent.client,
+			rejectedStudent.client,
+			teacher.client,
+			parentClient,
+			admin.client
+		]) {
+			const { error } = await request(client, target.code);
+			expect(error?.code).toBe('42501');
+		}
+		const { count } = await adminClient
+			.from('class_join_requests')
+			.select('id', { count: 'exact', head: true })
+			.eq('class_id', target.id);
+		expect(count).toBe(0);
+
+		// Signed out: no execute grant at all.
+		const anonCall = await request(anonClient(), target.code);
+		expect(anonCall.error).not.toBeNull();
+	});
+
+	it("Approve: the class's teacher approves; the student is enrolled, gets the open homework and sees the class", async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const { data: assignment, error: assignmentError } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: target.id,
+				title: name('Homework'),
+				skill_area: 'song',
+				whole_class: true
+			})
+			.select('id')
+			.single();
+		if (assignmentError || !assignment)
+			throw new Error(`Failed to create homework: ${assignmentError?.message}`);
+		const due = `${new Date().getUTCFullYear() + 1}-06-01`;
+		const { data: instance, error: instanceError } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment.id,
+				class_id: target.id,
+				period_start: due,
+				due_date: due
+			})
+			.select('id')
+			.single();
+		if (instanceError || !instance)
+			throw new Error(`Failed to create instance: ${instanceError?.message}`);
+
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+
+		const { data: queue } = await teacher.client.rpc('list_class_join_requests');
+		const row = queue?.find((r) => r.student_id === s.id);
+		expect(row).toMatchObject({
+			class_id: target.id,
+			class_name: target.name,
+			current_classes: home.name,
+			own_child: false
+		});
+		expect(row?.student_name).toBeTruthy();
+
+		const { error } = await decide(teacher.client, row!.request_id, 'approved');
+		expect(error).toBeNull();
+		expect(await requestsOf(s.id)).toMatchObject([{ status: 'approved', reviewed_by: teacher.id }]);
+		expect(await enrolled(s.id, target.id)).toEqual([{ enrolled_by: teacher.id }]);
+		for (const client of [teacher.client, admin.client]) {
+			const { data: after } = await client.rpc('list_class_join_requests');
+			expect(after?.some((r) => r.request_id === row!.request_id)).toBe(false);
+		}
+
+		const { data: history } = await adminClient
+			.from('homework_status_history')
+			.select('status')
+			.eq('instance_id', instance.id)
+			.eq('student_id', s.id);
+		expect(history).toEqual([{ status: 'assigned' }]);
+
+		// My classes: the student now reads the class; the request is gone from the card.
+		const { data: classes } = await s.client.from('classes').select('id').eq('id', target.id);
+		expect(classes).toEqual([{ id: target.id }]);
+		expect(await mine(s.client)).toEqual([]);
+		// Now a class they're in: the same refusal as an unknown code.
+		expect((await request(s.client, target.code)).error?.hint).toBe('join_code_invalid');
+	});
+
+	it('Reject then retry: Rejected shows until a new request, then Pending', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const first = await pendingId(s.id, target.id);
+
+		expect((await decide(admin.client, first, 'rejected')).error).toBeNull();
+		expect(await enrolled(s.id, target.id)).toEqual([]);
+		for (const client of [teacher.client, admin.client]) {
+			const { data: queue } = await client.rpc('list_class_join_requests');
+			expect(queue?.some((r) => r.request_id === first)).toBe(false);
+		}
+		expect(await mine(s.client)).toEqual([[target.name, 'rejected']]);
+
+		expect((await request(s.client, target.code)).error).toBeNull();
+		expect(await mine(s.client)).toEqual([[target.name, 'pending']]);
+		const rows = await requestsOf(s.id);
+		expect(rows.map((r) => r.status)).toEqual(['rejected', 'pending']);
+		expect(rows[0].dismissed_at).not.toBeNull();
+	});
+
+	it('Dismiss: the student hides their rejected request; nobody else can, and not a pending one', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const other = await createClass('Other');
+		const s = await student(home.id);
+		const someoneElse = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		expect((await request(s.client, other.code)).error).toBeNull();
+		const rejected = await pendingId(s.id, target.id);
+		const stillPending = await pendingId(s.id, other.id);
+		expect((await decide(teacher.client, rejected, 'rejected')).error).toBeNull();
+
+		const notMine = await someoneElse.client.rpc('dismiss_class_join', {
+			p_request_id: rejected
+		});
+		expect(notMine.error?.code).toBe('42501');
+		const pendingOne = await s.client.rpc('dismiss_class_join', { p_request_id: stillPending });
+		expect(pendingOne.error?.hint).toBe('join_not_rejected');
+
+		const { error } = await s.client.rpc('dismiss_class_join', { p_request_id: rejected });
+		expect(error).toBeNull();
+		expect(await mine(s.client)).toEqual([[other.name, 'pending']]);
+	});
+
+	it("Own child: a teacher of the class or an admin who is the student's parent is refused; another admin decides", async () => {
+		const dual = await createSignedInUser('teacher');
+		const { error: parentError } = await adminClient
+			.from('parents')
+			.insert({ id: dual.id, status: 'approved' });
+		if (parentError) throw new Error(`Failed to make parent: ${parentError.message}`);
+		const home = await createClass('Home');
+		const target = await createClass('Target', dual.id);
+		const kid = await student(home.id, { guardianEmail: dual.email });
+		expect((await request(kid.client, target.code)).error).toBeNull();
+		const id = await pendingId(kid.id, target.id);
+
+		const { data: queue } = await dual.client.rpc('list_class_join_requests');
+		expect(queue?.filter((r) => r.student_id === kid.id).map((r) => r.own_child)).toEqual([true]);
+
+		const refused = await decide(dual.client, id, 'approved');
+		expect(refused.error?.code).toBe('42501');
+		expect(await enrolled(kid.id, target.id)).toEqual([]);
+
+		// An admin who is the student's parent is refused too (AD-4).
+		const dualAdmin = await createSignedInUser('admin');
+		const { error: adminParentError } = await adminClient
+			.from('parents')
+			.insert({ id: dualAdmin.id, status: 'approved' });
+		if (adminParentError) throw new Error(`Failed to make parent: ${adminParentError.message}`);
+		const adminKid = await student(home.id, { guardianEmail: dualAdmin.email });
+		expect((await request(adminKid.client, target.code)).error).toBeNull();
+		const adminKidRequest = await pendingId(adminKid.id, target.id);
+		const { data: adminQueue } = await dualAdmin.client.rpc('list_class_join_requests');
+		expect(adminQueue?.filter((r) => r.student_id === adminKid.id).map((r) => r.own_child)).toEqual(
+			[true]
+		);
+		expect((await decide(dualAdmin.client, adminKidRequest, 'rejected')).error?.code).toBe('42501');
+		expect((await requestsOf(adminKid.id))[0].status).toBe('pending');
+
+		// The admin who isn't the parent decides.
+		expect((await decide(admin.client, id, 'approved')).error).toBeNull();
+		expect(await enrolled(kid.id, target.id)).toEqual([{ enrolled_by: admin.id }]);
+	});
+
+	it("Other class's teacher: not listed, can't read the row, and deciding is refused", async () => {
+		const outsider = await createSignedInUser('teacher');
+		await createClass('Outsider', outsider.id);
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+
+		const { data: queue, error: queueError } = await outsider.client.rpc(
+			'list_class_join_requests'
+		);
+		expect(queueError).toBeNull();
+		expect(queue?.some((r) => r.request_id === id)).toBe(false);
+		const { data: rows } = await outsider.client
+			.from('class_join_requests')
+			.select('id')
+			.eq('id', id);
+		expect(rows).toEqual([]);
+
+		expect((await decide(outsider.client, id, 'approved')).error?.code).toBe('42501');
+		expect(await enrolled(s.id, target.id)).toEqual([]);
+
+		// The admin and the class's teacher both list it; students can't list at all.
+		const { data: adminQueue } = await admin.client.rpc('list_class_join_requests');
+		expect(adminQueue?.some((r) => r.request_id === id)).toBe(true);
+		const { data: teacherQueue } = await teacher.client.rpc('list_class_join_requests');
+		expect(teacherQueue?.some((r) => r.request_id === id)).toBe(true);
+		expect((await s.client.rpc('list_class_join_requests')).error?.code).toBe('42501');
+		// Nor decide their own request.
+		expect((await decide(s.client, id, 'approved')).error?.code).toBe('42501');
+	});
+
+	it('Decided twice: a request that is no longer pending is refused', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+		expect((await decide(teacher.client, id, 'rejected')).error).toBeNull();
+
+		const again = await decide(admin.client, id, 'approved');
+		expect(again.error?.code).toBe('22023');
+		expect(again.error?.hint).toBe('join_not_pending');
+		expect(await requestsOf(s.id)).toMatchObject([{ status: 'rejected', reviewed_by: teacher.id }]);
+		expect(await enrolled(s.id, target.id)).toEqual([]);
+	});
+
+	it('Invalid decision: anything but approved / rejected is refused', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+
+		const { error } = await teacher.client.rpc('decide_class_join', {
+			p_request_id: id,
+			p_decision: 'maybe' as 'approved'
+		});
+		expect(error?.code).toBe('22023');
+		expect(error?.hint).toBe('join_decision_invalid');
+		expect(await requestsOf(s.id)).toMatchObject([{ status: 'pending' }]);
+	});
+
+	it('No longer approved: the request leaves the queue and approving it is refused with a hint', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+		const { error: rejectError } = await adminClient
+			.from('profiles')
+			.update({ status: 'rejected' })
+			.eq('id', s.id);
+		if (rejectError) throw new Error(`Failed to reject student: ${rejectError.message}`);
+
+		const { data: queue } = await admin.client.rpc('list_class_join_requests');
+		expect(queue?.some((r) => r.request_id === id)).toBe(false);
+		const refused = await decide(admin.client, id, 'approved');
+		expect(refused.error?.code).toBe('22023');
+		expect(refused.error?.hint).toBe('join_student_not_approved');
+		expect(await enrolled(s.id, target.id)).toEqual([]);
+	});
+
+	it('Direct writes: clients cannot insert, update or delete requests', async () => {
+		const home = await createClass('Home');
+		const target = await createClass('Target');
+		const s = await student(home.id);
+
+		const inserted = await s.client
+			.from('class_join_requests')
+			.insert({ student_id: s.id, class_id: target.id });
+		expect(inserted.error).not.toBeNull();
+		expect(await requestsOf(s.id)).toEqual([]);
+
+		expect((await request(s.client, target.code)).error).toBeNull();
+		const id = await pendingId(s.id, target.id);
+		for (const client of [s.client, teacher.client, admin.client]) {
+			const updated = await client
+				.from('class_join_requests')
+				.update({ status: 'approved' })
+				.eq('id', id);
+			expect(updated.error).not.toBeNull();
+			const deleted = await client.from('class_join_requests').delete().eq('id', id).select('id');
+			expect(deleted.error).not.toBeNull();
+			expect(deleted.data).toBeNull();
+		}
+		expect(await requestsOf(s.id)).toMatchObject([{ id, status: 'pending' }]);
+		expect(await enrolled(s.id, target.id)).toEqual([]);
+	});
+});
