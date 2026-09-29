@@ -246,3 +246,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b8b-ix-teacher-homework-fields.md`
   summary: Make `npm run test:e2e` (on a freshly reset DB) part of the pre-commit rule or a CI job, so UI-only regressions can't pass reset/test/check/build alone.
   evidence: Vitest only collects src/**/*.spec.ts, there is no .github/workflows, and the B7–B8 UI behaviour is verified only by e2e (B8b review V1).
+- source_spec: `_bmad-output/implementation-artifacts/spec-57-b11-date-range-leave.md`
+  summary: Test set_leave_range's mid-save refusal path (a session started/cancelled/decided between preview and insert is skipped and the rest saves).
+  evidence: Needs two concurrent transactions in rls.spec.ts (B11 review V2); the handler is otherwise only reasoned about.

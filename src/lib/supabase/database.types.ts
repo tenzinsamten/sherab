@@ -1122,6 +1122,38 @@ export type Database = {
 				Args: { p_class_session_id: string; p_student_id: string };
 				Returns: 'planned' | 'short_notice' | null;
 			};
+			preview_leave_range: {
+				Args: {
+					p_student: string;
+					p_from: string;
+					p_to: string;
+					p_class?: string | null;
+					p_answer?: 'on_leave' | 'coming';
+				};
+				Returns: {
+					session_id: string;
+					day: string;
+					class_id: string;
+					class_name: string;
+					outcome: LeaveRangeOutcome;
+				}[];
+			};
+			set_leave_range: {
+				Args: {
+					p_student: string;
+					p_from: string;
+					p_to: string;
+					p_class: string | null;
+					p_answer: 'on_leave' | 'coming';
+				};
+				Returns: {
+					session_id: string;
+					day: string;
+					class_id: string;
+					class_name: string;
+					outcome: LeaveRangeOutcome;
+				}[];
+			};
 			classify_leave: {
 				Args: { p_class_session_id: string; p_at: string };
 				Returns: 'planned' | 'short_notice' | null;
@@ -1347,3 +1379,16 @@ export type HomeworkStatusValue = 'assigned' | 'done' | 'reviewed';
 export type BadgeType = 'attendance' | 'homework';
 /** One entry of homework_assignments.reference_links (0013). */
 export type HomeworkReferenceLink = { url: string; label: string | null };
+/** B11 (#57): what a leave-range save does (did) to one session (0030). */
+export type LeaveRangeOutcome =
+	| 'planned'
+	| 'short_notice'
+	| 'coming'
+	| 'already_on_leave'
+	| 'already_coming'
+	| 'started'
+	| 'cancelled'
+	| 'decided'
+	| 'sick'
+	/** Refused at save time for another reason (e.g. the session was deleted). */
+	| 'skipped';

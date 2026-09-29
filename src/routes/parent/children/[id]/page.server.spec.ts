@@ -424,6 +424,212 @@ describe('parent child leave page: actions', () => {
 	});
 });
 
+describe('parent child page: leave period (B11, #57)', () => {
+	const CLASS = '99999999-8888-4777-8666-555555555555';
+	const from = addDays(todayInBerlin(), 10);
+	const to = addDays(todayInBerlin(), 24);
+	const enrolled = {
+		class_enrollments: { data: [{ class_id: CLASS, student_id: CHILD }], error: null }
+	};
+	const rows = [
+		{
+			session_id: 's1',
+			day: from,
+			class_id: CLASS,
+			class_name: 'Alphabet',
+			outcome: 'short_notice'
+		},
+		{ session_id: 's2', day: to, class_id: CLASS, class_name: 'Alphabet', outcome: 'planned' },
+		{ session_id: 's3', day: to, class_id: CLASS, class_name: 'Alphabet', outcome: 'started' }
+	];
+	const mapped = rows.map((r) => ({
+		sessionId: r.session_id,
+		day: r.day,
+		classId: r.class_id,
+		className: r.class_name,
+		outcome: r.outcome
+	}));
+
+	it('previewLeaveRange asks preview_leave_range for this child (all classes) and maps the rows', async () => {
+		const fake = fakeSupabase({ rpc: { preview_leave_range: { data: rows, error: null } } });
+		const result = await actions.previewLeaveRange(
+			event({ from, to, classId: 'all', answer: 'on_leave' }, fake)
+		);
+		expect(fake.rpc).toHaveBeenCalledWith('preview_leave_range', {
+			p_student: CHILD,
+			p_from: from,
+			p_to: to,
+			p_class: null,
+			p_answer: 'on_leave'
+		});
+		expect(result).toEqual({
+			action: 'previewLeaveRange',
+			range: { from, to, classId: null, answer: 'on_leave' },
+			rows: mapped,
+			listEnd: addDays(todayInBerlin(), 84)
+		});
+	});
+
+	it("previewLeaveRange with one of the child's classes passes it on", async () => {
+		const fake = fakeSupabase({
+			tables: enrolled,
+			rpc: { preview_leave_range: { data: [], error: null } }
+		});
+		const result = await actions.previewLeaveRange(
+			event({ from, to, classId: CLASS, answer: 'coming' }, fake)
+		);
+		expect(fake.rpc).toHaveBeenCalledWith(
+			'preview_leave_range',
+			expect.objectContaining({ p_class: CLASS, p_answer: 'coming' })
+		);
+		expect(result).toMatchObject({ action: 'previewLeaveRange', rows: [] });
+		expect(
+			fake.calls
+				.filter((c) => c.table === 'class_enrollments' && c.method === 'eq')
+				.map((c) => c.args)
+		).toEqual([
+			['student_id', CHILD],
+			['class_id', CLASS]
+		]);
+	});
+
+	it.each([
+		['a class the child is not in', { classId: '12345678-1234-4234-8234-123456789012' }, 'class'],
+		['a malformed class id', { classId: 'nope' }, 'class'],
+		['a missing answer', { answer: '' }, 'answer'],
+		['Sick as the answer', { answer: 'sick' }, 'answer'],
+		['a malformed date', { from: '2026-13-01' }, 'dates'],
+		['a missing end', { to: '' }, 'dates'],
+		['a start in the past', { from: addDays(todayInBerlin(), -1) }, 'dates'],
+		['an end before the start', { to: addDays(from, -1) }, 'dates'],
+		['more than 26 weeks (to - from = 182)', { to: addDays(from, 182) }, 'dates']
+	] as const)('refuses %s without calling the database', async (_label, override, field) => {
+		const fake = fakeSupabase({ tables: enrolled });
+		for (const action of [actions.previewLeaveRange, actions.setLeaveRange]) {
+			const result = await action(
+				event({ from, to, classId: 'all', answer: 'on_leave', ...override }, fake)
+			);
+			expect(result).toMatchObject({ status: 400, data: { rangeField: field } });
+		}
+		expect(fake.rpc).not.toHaveBeenCalled();
+	});
+
+	it('the error messages match the field', async () => {
+		const fake = fakeSupabase({ tables: enrolled });
+		const dates = await actions.previewLeaveRange(
+			event({ from, to: addDays(from, 182), classId: 'all', answer: 'on_leave' }, fake)
+		);
+		expect(dates).toMatchObject({
+			data: {
+				rangeError: m.leave_range_error_invalid(),
+				range: { from, to: addDays(from, 182), classId: null, answer: 'on_leave' }
+			}
+		});
+		const answer = await actions.previewLeaveRange(
+			event({ from, to, classId: 'all', answer: 'maybe' }, fake)
+		);
+		expect(answer).toMatchObject({ data: { rangeError: m.leave_range_error_answer() } });
+		const cls = await actions.previewLeaveRange(
+			event({ from, to, classId: 'nope', answer: 'on_leave' }, fake)
+		);
+		expect(cls).toMatchObject({ data: { rangeError: m.leave_range_error_class() } });
+	});
+
+	it('26 weeks including both dates (to - from = 181) is allowed', async () => {
+		const fake = fakeSupabase({ rpc: { preview_leave_range: { data: [], error: null } } });
+		const result = await actions.previewLeaveRange(
+			event({ from, to: addDays(from, 181), classId: 'all', answer: 'on_leave' }, fake)
+		);
+		expect(result).toMatchObject({ action: 'previewLeaveRange' });
+	});
+
+	it('setLeaveRange calls set_leave_range and counts the changed sessions', async () => {
+		const fake = fakeSupabase({ rpc: { set_leave_range: { data: rows, error: null } } });
+		const result = await actions.setLeaveRange(
+			event({ from, to, classId: 'all', answer: 'on_leave' }, fake)
+		);
+		expect(fake.rpc).toHaveBeenCalledWith('set_leave_range', {
+			p_student: CHILD,
+			p_from: from,
+			p_to: to,
+			p_class: null,
+			p_answer: 'on_leave'
+		});
+		expect(result).toEqual({
+			action: 'setLeaveRange',
+			success: true,
+			range: { from, to, classId: null, answer: 'on_leave' },
+			rows: mapped,
+			changed: 2,
+			skipped: 1
+		});
+	});
+
+	it('setLeaveRange counts Coming as a change on undo', async () => {
+		const fake = fakeSupabase({
+			rpc: {
+				set_leave_range: {
+					data: [
+						{ ...rows[0], outcome: 'coming' },
+						{ ...rows[1], outcome: 'already_coming' }
+					],
+					error: null
+				}
+			}
+		});
+		const result = await actions.setLeaveRange(
+			event({ from, to, classId: 'all', answer: 'coming' }, fake)
+		);
+		expect(result).toMatchObject({ success: true, changed: 1, skipped: 1 });
+	});
+
+	it.each([
+		[{ code: '42501' }, 403, m.leave_error_not_allowed(), null],
+		[{ code: '22023', hint: 'leave_range_invalid' }, 400, m.leave_range_error_invalid(), 'dates'],
+		[{ code: '08006' }, 400, m.leave_range_error_failed(), null]
+	])('maps %o to its message', async (err, status, message, field) => {
+		for (const [action, fn] of [
+			[actions.previewLeaveRange, 'preview_leave_range'],
+			[actions.setLeaveRange, 'set_leave_range']
+		] as const) {
+			const fake = fakeSupabase({ rpc: { [fn]: { data: null, error: err } } });
+			const result = await action(event({ from, to, classId: 'all', answer: 'on_leave' }, fake));
+			expect(result).toMatchObject({
+				status,
+				data: { rangeError: message, rangeField: field, range: { from, to } }
+			});
+		}
+	});
+
+	it('the load offers the child classes for the period', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: {
+				...enrolled,
+				classes: { data: [{ id: CLASS, name: 'Alphabet' }], error: null }
+			}
+		});
+		const result = (await runLoad(fake)) as LoadResult & {
+			rangeClasses: unknown;
+			rangeLoadError: boolean;
+		};
+		expect(result.rangeClasses).toEqual([{ id: CLASS, name: 'Alphabet' }]);
+		expect(result.rangeLoadError).toBe(false);
+	});
+
+	it('a failed class read flags the period card instead of hiding it', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: { ...enrolled, classes: { data: null, error: { message: 'boom' } } }
+		});
+		const result = (await runLoad(fake)) as LoadResult & {
+			rangeClasses: unknown;
+			rangeLoadError: boolean;
+		};
+		expect(result).toMatchObject({ rangeClasses: [], rangeLoadError: true });
+	});
+});
+
 describe('parent child page: deletion request (Story 7-6)', () => {
 	it('shows the latest request: pending, or rejected (a new one is allowed)', async () => {
 		for (const status of ['pending', 'rejected'] as const) {

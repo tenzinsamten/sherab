@@ -6,10 +6,11 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { ixFieldError, ixValue } from '$lib/ix-fields';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
-	import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
+	import type { LeaveRangeOutcome, SkillArea, SkillLevel } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
 	/**
@@ -23,6 +24,10 @@
 	 * Detail-page follow-up (deferred from 7-3): four link-based tabs
 	 * (?tab=overview|homework|sessions|record), all read-only apart from the
 	 * leave and deletion forms, which post back to the tab they sit on.
+	 *
+	 * B11 (#57): "Plan a leave period" sets On leave (or back to Coming) for
+	 * every session in a from / to period, all classes or one, after a
+	 * preview dialog that lists what happens to each session.
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -125,6 +130,135 @@
 		}
 		if (form && 'action' in form && form.action === 'requestDeletion' && form.success) {
 			showToast('success', m.deletion_requested());
+		}
+	});
+
+	// ── B11: leave period ─────────────────────────────────────────────────
+	type ModalElement = HTMLElement & {
+		showModal(): Promise<void>;
+		closeModal(reason?: unknown): Promise<void>;
+	};
+	type RangeResult = Extract<NonNullable<ActionData>, { action: 'previewLeaveRange' }>;
+
+	const CHANGING: readonly LeaveRangeOutcome[] = ['planned', 'short_notice', 'coming'];
+
+	let rangeModal = $state<HTMLElement>();
+	let rangeOpen = $state(false);
+	let rangePreview = $state<RangeResult | null>(null);
+	let rangeAnswer = $state<'on_leave' | 'coming'>('on_leave');
+
+	// The fields' values as last posted (kept after an error or a preview).
+	let rangeValues = $derived(
+		form && 'range' in form && form.range
+			? form.range
+			: { from: '', to: '', classId: null, answer: 'on_leave' as const }
+	);
+	// A range error is dropped once the dialog it was shown in is closed.
+	let dismissedRangeForm = $state<unknown>(null);
+	let rangeError = $derived(
+		form && form !== dismissedRangeForm && 'rangeError' in form && form.rangeError
+			? { field: form.rangeField ?? null, message: form.rangeError }
+			: null
+	);
+	// The card shows errors only while the dialog is closed (the dialog has its own).
+	let fieldError = $derived(rangeOpen ? null : rangeError);
+	// Set when the dialog is closed so the dates can be fixed: keep that error.
+	let closingForDates = false;
+
+	let rangeCounts = $derived.by(() => {
+		const rows = rangePreview?.rows ?? [];
+		const count = (outcome: LeaveRangeOutcome) => rows.filter((r) => r.outcome === outcome).length;
+		const changing = rows.filter((r) => CHANGING.includes(r.outcome)).length;
+		return {
+			total: rows.length,
+			planned: count('planned'),
+			short: count('short_notice'),
+			coming: count('coming'),
+			changing,
+			skipped: rows.length - changing
+		};
+	});
+
+	function pickRangeAnswer(event: CustomEvent<string>) {
+		if (event.detail === 'on_leave' || event.detail === 'coming') rangeAnswer = event.detail;
+	}
+
+	function outcomeLabel(outcome: LeaveRangeOutcome): string {
+		switch (outcome) {
+			case 'planned':
+				return m.leave_range_outcome_planned();
+			case 'short_notice':
+				return m.leave_range_outcome_short_notice();
+			case 'coming':
+				return m.leave_range_outcome_coming();
+			case 'already_on_leave':
+				return m.leave_range_outcome_already_on_leave();
+			case 'already_coming':
+				return m.leave_range_outcome_already_coming();
+			case 'started':
+				return m.leave_range_outcome_started();
+			case 'cancelled':
+				return m.leave_range_outcome_cancelled();
+			case 'decided':
+				return m.leave_range_outcome_decided();
+			case 'sick':
+				return m.leave_range_outcome_sick();
+			default:
+				return m.leave_range_outcome_skipped();
+		}
+	}
+
+	function outcomeVariant(outcome: LeaveRangeOutcome): string {
+		if (outcome === 'planned' || outcome === 'short_notice') return 'warning';
+		if (outcome === 'coming') return 'success';
+		return 'neutral';
+	}
+
+	async function openRangeModal() {
+		await tick();
+		const modal = rangeModal as
+			(ModalElement & { componentOnReady?: () => Promise<unknown> }) | undefined;
+		if (!modal) return;
+		await customElements.whenDefined('ix-modal');
+		await modal.componentOnReady?.();
+		// The <dialog> is in ix-modal's shadow DOM: name it directly.
+		modal.shadowRoot
+			?.querySelector('dialog')
+			?.setAttribute('aria-label', m.leave_range_dialog_title());
+		rangeOpen = true;
+		await modal.showModal();
+	}
+
+	function closeRangeModal() {
+		void (rangeModal as ModalElement | undefined)?.closeModal();
+	}
+
+	function onRangeClosed() {
+		rangeOpen = false;
+		if (!closingForDates) dismissedRangeForm = form;
+		closingForDates = false;
+		void tick().then(() => document.getElementById('range-preview')?.focus());
+	}
+
+	// A new preview opens the dialog; a saved period closes it with a toast.
+	let lastRangeForm: unknown;
+	$effect(() => {
+		const f = form as ActionData;
+		if (!f || f === lastRangeForm) return;
+		lastRangeForm = f;
+		if ('action' in f && f.action === 'previewLeaveRange') {
+			rangePreview = f;
+			rangeAnswer = f.range.answer;
+			void openRangeModal();
+		} else if ('action' in f && f.action === 'setLeaveRange' && f.success) {
+			showToast('success', m.leave_range_saved({ count: f.changed, skipped: f.skipped }));
+			if (rangeOpen) closeRangeModal();
+			rangePreview = null;
+		} else if ('rangeField' in f && f.rangeField === 'dates' && rangeOpen) {
+			// The period no longer holds (e.g. its start has passed): close the
+			// dialog so the dates can be fixed, keeping the error on them.
+			closingForDates = true;
+			closeRangeModal();
 		}
 	});
 
@@ -323,6 +457,204 @@
 			{/if}
 		</section>
 	{:else if data.tab === 'sessions'}
+		{#if data.rangeLoadError}
+			<section class="card" aria-labelledby="range-heading">
+				<h2 id="range-heading">{m.leave_range_heading()}</h2>
+				<ix-empty-state header={m.load_error_generic()} icon="info"></ix-empty-state>
+			</section>
+		{:else if data.rangeClasses.length > 0}
+			<section class="card" aria-labelledby="range-heading">
+				<h2 id="range-heading">{m.leave_range_heading()}</h2>
+				<p id="range-intro" class="muted">{m.leave_range_intro()}</p>
+				<form
+					method="POST"
+					action="?tab=sessions&/previewLeaveRange"
+					use:enhance={pending.submit('rangePreview', { reset: false })}
+					novalidate
+				>
+					<div class="range-dates">
+						<div class="field">
+							<ix-date-input
+								id="range-from"
+								name="from"
+								label={m.leave_range_from()}
+								format="yyyy-MM-dd"
+								required
+								{@attach ixValue(rangeValues.from)}
+								{@attach ixFieldError(
+									fieldError?.field === 'dates' ? 'range-dates-error' : undefined,
+									['range-intro']
+								)}
+							></ix-date-input>
+						</div>
+						<div class="field">
+							<ix-date-input
+								id="range-to"
+								name="to"
+								label={m.leave_range_to()}
+								format="yyyy-MM-dd"
+								required
+								{@attach ixValue(rangeValues.to)}
+								{@attach ixFieldError(
+									fieldError?.field === 'dates' ? 'range-dates-error' : undefined,
+									['range-intro']
+								)}
+							></ix-date-input>
+						</div>
+					</div>
+					{#if fieldError?.field === 'dates'}
+						<p id="range-dates-error" class="field-error" role="alert">{fieldError.message}</p>
+					{/if}
+					<div class="field">
+						<ix-select
+							id="range-class"
+							name="classId"
+							label={m.leave_range_class()}
+							{@attach ixValue(rangeValues.classId ?? 'all')}
+							{@attach ixFieldError(
+								fieldError?.field === 'class' ? 'range-class-error' : undefined
+							)}
+						>
+							<ix-select-item value="all" label={m.leave_range_all_classes()}></ix-select-item>
+							{#each data.rangeClasses as cls (cls.id)}
+								<ix-select-item value={cls.id} label={cls.name}></ix-select-item>
+							{/each}
+						</ix-select>
+						{#if fieldError?.field === 'class'}
+							<p id="range-class-error" class="field-error" role="alert">{fieldError.message}</p>
+						{/if}
+					</div>
+					<div class="field">
+						<ix-radio-group
+							id="range-answer"
+							label={m.leave_range_answer()}
+							value={rangeAnswer}
+							onvalueChange={pickRangeAnswer}
+							{@attach ixFieldError(
+								fieldError?.field === 'answer' ? 'range-answer-error' : undefined
+							)}
+						>
+							<ix-radio name="answer" value="on_leave" label={m.leave_answer_on_leave()}></ix-radio>
+							<ix-radio name="answer" value="coming" label={m.leave_answer_coming()}></ix-radio>
+						</ix-radio-group>
+						{#if fieldError?.field === 'answer'}
+							<p id="range-answer-error" class="field-error" role="alert">{fieldError.message}</p>
+						{/if}
+					</div>
+					{#if fieldError && fieldError.field === null}
+						<p class="field-error" role="alert">{fieldError.message}</p>
+					{/if}
+					<ix-button
+						id="range-preview"
+						type="submit"
+						loading={pending.is('rangePreview') || undefined}
+						disabled={pending.busy || undefined}
+					>
+						{m.leave_range_preview()}
+					</ix-button>
+				</form>
+			</section>
+
+			<ix-modal
+				bind:this={rangeModal}
+				size="600"
+				ondialogClose={onRangeClosed}
+				ondialogDismiss={onRangeClosed}
+			>
+				<!-- svelte-ignore a11y_unknown_aria_attribute -->
+				<ix-modal-header aria-label-close-icon-button={m.calendar_dialog_close()}>
+					{m.leave_range_dialog_title()}
+				</ix-modal-header>
+				<ix-modal-content>
+					{#if rangePreview}
+						{@const range = rangePreview.range}
+						<p class="range-period">
+							<strong
+								>{m.leave_range_period({
+									from: formatDay(range.from),
+									to: formatDay(range.to)
+								})}</strong
+							>
+							<span class="muted">
+								· {range.classId
+									? (data.rangeClasses.find((c) => c.id === range.classId)?.name ?? '')
+									: m.leave_range_all_classes()}
+								· {range.answer === 'coming' ? m.leave_answer_coming() : m.leave_answer_on_leave()}
+							</span>
+						</p>
+						{#if range.to > rangePreview.listEnd}
+							<p class="range-beyond muted">
+								{m.leave_range_beyond_list({ date: formatDay(rangePreview.listEnd) })}
+							</p>
+						{/if}
+						{#if rangeCounts.total === 0}
+							<p class="range-summary" role="status">{m.leave_range_empty()}</p>
+						{:else}
+							<p class="range-summary" role="status">
+								{range.answer === 'coming'
+									? m.leave_range_summary_coming({
+											total: rangeCounts.total,
+											coming: rangeCounts.coming,
+											skipped: rangeCounts.skipped
+										})
+									: m.leave_range_summary_on_leave({
+											total: rangeCounts.total,
+											planned: rangeCounts.planned,
+											short: rangeCounts.short,
+											skipped: rangeCounts.skipped
+										})}
+							</p>
+							<ul class="plain-list range-list">
+								{#each rangePreview.rows as row (row.sessionId)}
+									<li class="row">
+										<span>
+											<time datetime={row.day}>{formatDay(row.day)}</time>
+											<span class="muted">· {row.className}</span>
+										</span>
+										<ix-pill
+											variant={outcomeVariant(row.outcome)}
+											outline={!CHANGING.includes(row.outcome) || undefined}
+										>
+											{outcomeLabel(row.outcome)}
+										</ix-pill>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						{#if rangeError && rangeOpen}
+							<p class="field-error" role="alert">{rangeError.message}</p>
+						{/if}
+					{/if}
+				</ix-modal-content>
+				<ix-modal-footer>
+					<ix-button variant="secondary" onclick={closeRangeModal}>
+						{m.common_cancel()}
+					</ix-button>
+					{#if rangePreview}
+						<form
+							method="POST"
+							action="?tab=sessions&/setLeaveRange"
+							use:enhance={pending.submit('rangeSave', { reset: false })}
+							class="inline-form"
+						>
+							<input type="hidden" name="from" value={rangePreview.range.from} />
+							<input type="hidden" name="to" value={rangePreview.range.to} />
+							<input type="hidden" name="classId" value={rangePreview.range.classId ?? 'all'} />
+							<input type="hidden" name="answer" value={rangePreview.range.answer} />
+							<ix-button
+								type="submit"
+								variant="primary"
+								loading={pending.is('rangeSave') || undefined}
+								disabled={pending.busy || rangeCounts.changing === 0 || undefined}
+							>
+								{m.leave_range_save()}
+							</ix-button>
+						</form>
+					{/if}
+				</ix-modal-footer>
+			</ix-modal>
+		{/if}
+
 		<section class="card">
 			<h2>{m.leave_sessions_label()}</h2>
 			<p class="muted">{m.leave_intro()}</p>
@@ -777,5 +1109,22 @@
 	.preview {
 		flex-basis: 100%;
 		margin: 0;
+	}
+
+	.range-dates {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0 var(--space-4);
+	}
+
+	.range-period,
+	.range-beyond,
+	.range-summary {
+		margin: 0 0 var(--space-2);
+	}
+
+	.range-list {
+		max-height: 50vh;
+		overflow-y: auto;
 	}
 </style>

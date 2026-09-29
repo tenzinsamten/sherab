@@ -10298,3 +10298,517 @@ describe.skipIf(!reachable)('7-6 deletion requests (requires local Supabase)', (
 		}
 	});
 });
+
+/**
+ * B11 (#57): date-range leave (migration 0030). preview_leave_range /
+ * set_leave_range, one test per I/O matrix row. Each test uses fresh classes
+ * whose schedule lies in the past (2000-01-02), so the only sessions in the
+ * period are the ones the test creates with sessionFor().
+ */
+describe.skipIf(!reachable)('B11 leave range (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	type Outcome = { session_id: string; outcome: string };
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const today = todayInBerlin();
+	const plusDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	const name = (label: string) => `B11 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createClass(label: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: name(label),
+				code: `R${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+				schedule_starts_on: '2000-01-02',
+				schedule_ends_on: '2000-01-02'
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: teacherError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: teacher.id });
+		if (teacherError) throw new Error(`Failed to assign teacher: ${teacherError.message}`);
+		return data.id;
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function newParent() {
+		const p = await createApprovedParent();
+		return { id: p.id, email: p.email, client: await signIn(p.email, p.password) };
+	}
+
+	/** An approved child of `parentEmail` in `classes[0]`, also enrolled in the rest. */
+	async function child(parentEmail: string, ...classes: string[]) {
+		const { id, error } = await signUpStudent({
+			classId: classes[0],
+			registrationName: name('Kid'),
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		for (const cls of classes.slice(1)) {
+			const { error: enrollError } = await adminClient
+				.from('class_enrollments')
+				.insert({ student_id: id, class_id: cls });
+			if (enrollError) throw new Error(`Failed to enroll child: ${enrollError.message}`);
+		}
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.updateUserById(id, { password });
+		if (error || !data.user?.email) throw new Error(`Failed to set password: ${error?.message}`);
+		return signIn(data.user.email, password);
+	}
+
+	function preview(
+		client: Client,
+		student: string,
+		from: string,
+		to: string,
+		cls: string | null = null,
+		answer: 'on_leave' | 'coming' = 'on_leave'
+	) {
+		return client.rpc('preview_leave_range', {
+			p_student: student,
+			p_from: from,
+			p_to: to,
+			p_class: cls,
+			p_answer: answer
+		});
+	}
+
+	function setRange(
+		client: Client,
+		student: string,
+		from: string,
+		to: string,
+		cls: string | null = null,
+		answer: 'on_leave' | 'coming' = 'on_leave'
+	) {
+		return client.rpc('set_leave_range', {
+			p_student: student,
+			p_from: from,
+			p_to: to,
+			p_class: cls,
+			p_answer: answer
+		});
+	}
+
+	function setLeave(
+		client: Client,
+		sessionId: string,
+		studentId: string,
+		answer: 'coming' | 'on_leave' | 'sick'
+	) {
+		return client
+			.from('session_leave_history')
+			.insert({ class_session_id: sessionId, student_id: studentId, answer })
+			.select('answer, classification')
+			.single();
+	}
+
+	async function history(studentId: string) {
+		const { data, error } = await adminClient
+			.from('session_leave_history')
+			.select('class_session_id, answer, classification, answered_by')
+			.eq('student_id', studentId)
+			.order('answered_at')
+			.order('id');
+		if (error) throw new Error(`Failed to read leave history: ${error.message}`);
+		return data ?? [];
+	}
+
+	async function latest(sessionId: string, studentId: string) {
+		const { data, error } = await adminClient
+			.from('session_leave_history')
+			.select('answer, classification')
+			.eq('class_session_id', sessionId)
+			.eq('student_id', studentId)
+			.order('answered_at', { ascending: false })
+			.order('id', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+		if (error) throw new Error(`Failed to read the latest answer: ${error.message}`);
+		return data;
+	}
+
+	const outcomes = (rows: Outcome[] | null) =>
+		Object.fromEntries((rows ?? []).map((r) => [r.session_id, r.outcome]));
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		admin = await createSignedInUser('admin');
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('Two-week leave: the preview classifies each session and the save freezes the same classification', async () => {
+		const cls = await createClass('Two weeks');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		const short = await sessionFor(cls, plusDays(today, 10));
+		const planned = await sessionFor(cls, plusDays(today, 15));
+		const planned2 = await sessionFor(cls, plusDays(today, 22));
+		const outside = await sessionFor(cls, plusDays(today, 25));
+		const from = plusDays(today, 10);
+		const to = plusDays(today, 24);
+
+		const before = await preview(parent.client, kid, from, to);
+		expect(before.error).toBeNull();
+		expect((before.data ?? []).map((r) => [r.session_id, r.outcome])).toEqual([
+			[short, 'short_notice'],
+			[planned, 'planned'],
+			[planned2, 'planned']
+		]);
+		expect(before.data?.[0]).toMatchObject({ day: from, class_id: cls });
+		// The preview writes nothing.
+		expect(await history(kid)).toEqual([]);
+
+		const saved = await setRange(parent.client, kid, from, to);
+		expect(saved.error).toBeNull();
+		expect(outcomes(saved.data)).toEqual(outcomes(before.data));
+
+		expect(await history(kid)).toEqual([
+			{
+				class_session_id: short,
+				answer: 'on_leave',
+				classification: 'short_notice',
+				answered_by: parent.id
+			},
+			{
+				class_session_id: planned,
+				answer: 'on_leave',
+				classification: 'planned',
+				answered_by: parent.id
+			},
+			{
+				class_session_id: planned2,
+				answer: 'on_leave',
+				classification: 'planned',
+				answered_by: parent.id
+			}
+		]);
+		expect(await latest(outside, kid)).toBeNull();
+	});
+
+	it('One class: only the picked class is covered', async () => {
+		const clsA = await createClass('A');
+		const clsB = await createClass('B');
+		const parent = await newParent();
+		const kid = await child(parent.email, clsA, clsB);
+		const inA = await sessionFor(clsA, plusDays(today, 20));
+		const inB = await sessionFor(clsB, plusDays(today, 21));
+		const from = plusDays(today, 18);
+		const to = plusDays(today, 30);
+
+		const all = await preview(parent.client, kid, from, to);
+		expect(Object.keys(outcomes(all.data)).sort()).toEqual([inA, inB].sort());
+
+		const one = await setRange(parent.client, kid, from, to, clsA);
+		expect(one.error).toBeNull();
+		expect(outcomes(one.data)).toEqual({ [inA]: 'planned' });
+		expect(await latest(inA, kid)).toEqual({ answer: 'on_leave', classification: 'planned' });
+		expect(await latest(inB, kid)).toBeNull();
+
+		// A class the child is not enrolled in covers nothing.
+		const other = await createClass('Other');
+		await sessionFor(other, plusDays(today, 20));
+		expect((await preview(parent.client, kid, from, to, other)).data).toEqual([]);
+	});
+
+	it('Already on leave: a Planned session is left untouched (not re-frozen as Short-notice)', async () => {
+		const cls = await createClass('Already');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		const early = await sessionFor(cls, plusDays(today, 16));
+		expect((await setLeave(parent.client, early, kid, 'on_leave')).data).toEqual({
+			answer: 'on_leave',
+			classification: 'planned'
+		});
+		const fresh = await sessionFor(cls, plusDays(today, 5));
+
+		const saved = await setRange(parent.client, kid, today, plusDays(today, 20));
+		expect(saved.error).toBeNull();
+		expect(outcomes(saved.data)).toEqual({ [early]: 'already_on_leave', [fresh]: 'short_notice' });
+		const rows = await history(kid);
+		expect(rows.filter((r) => r.class_session_id === early)).toHaveLength(1);
+		expect(await latest(early, kid)).toEqual({ answer: 'on_leave', classification: 'planned' });
+	});
+
+	it('Started / cancelled / decided / sick: skipped, reported, and the rest still saves', async () => {
+		const started = await createClass('Started');
+		const decided = await createClass('Decided');
+		const sick = await createClass('Sick');
+		const parent = await newParent();
+		const kid = await child(parent.email, started, decided, sick);
+
+		// Today at 00:00 (no start time): already started.
+		const startedSession = await sessionFor(started, today);
+		// Cancelled, three days ahead.
+		const cancelledSession = await sessionFor(started, plusDays(today, 3));
+		await adminClient.from('class_sessions').update({ cancelled: true }).eq('id', cancelledSession);
+		// Sick today, decided by the teacher.
+		const decidedSession = await sessionFor(decided, today);
+		expect((await setLeave(parent.client, decidedSession, kid, 'sick')).error).toBeNull();
+		const { error: decideError } = await teacher.client
+			.from('sick_leave_decisions')
+			.insert({ class_session_id: decidedSession, student_id: kid, decision: 'approved' });
+		expect(decideError).toBeNull();
+		// Sick today, not started yet (23:59), undecided.
+		const sickSession = await sessionFor(sick, today);
+		await adminClient
+			.from('class_sessions')
+			.update({ start_time_override: '23:59' })
+			.eq('id', sickSession);
+		expect((await setLeave(parent.client, sickSession, kid, 'sick')).error).toBeNull();
+		// One open session that does change.
+		const open = await sessionFor(sick, plusDays(today, 4));
+		const before = (await history(kid)).length;
+
+		const expected = {
+			[startedSession]: 'started',
+			[cancelledSession]: 'cancelled',
+			[decidedSession]: 'decided',
+			[sickSession]: 'sick',
+			[open]: 'short_notice'
+		};
+		const previewed = await preview(parent.client, kid, today, plusDays(today, 6));
+		expect(outcomes(previewed.data)).toEqual(expected);
+
+		const saved = await setRange(parent.client, kid, today, plusDays(today, 6));
+		expect(saved.error).toBeNull();
+		expect(outcomes(saved.data)).toEqual(expected);
+		const after = await history(kid);
+		expect(after).toHaveLength(before + 1);
+		expect(after.at(-1)).toMatchObject({ class_session_id: open, answer: 'on_leave' });
+		expect(await latest(sickSession, kid)).toMatchObject({ answer: 'sick' });
+	});
+
+	it('Undo: Coming over the same range resets only the On leave sessions', async () => {
+		const cls = await createClass('Undo');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		const a = await sessionFor(cls, plusDays(today, 12));
+		const b = await sessionFor(cls, plusDays(today, 19));
+		const from = plusDays(today, 10);
+		const to = plusDays(today, 24);
+		expect((await setRange(parent.client, kid, from, to, cls)).error).toBeNull();
+		// Added after the leave was set: never answered.
+		const later = await sessionFor(cls, plusDays(today, 23));
+
+		const previewed = await preview(parent.client, kid, from, to, null, 'coming');
+		expect(outcomes(previewed.data)).toEqual({
+			[a]: 'coming',
+			[b]: 'coming',
+			[later]: 'already_coming'
+		});
+
+		const undo = await setRange(parent.client, kid, from, to, null, 'coming');
+		expect(undo.error).toBeNull();
+		expect(outcomes(undo.data)).toEqual(outcomes(previewed.data));
+		expect(await latest(a, kid)).toEqual({ answer: 'coming', classification: null });
+		expect(await latest(b, kid)).toEqual({ answer: 'coming', classification: null });
+		expect(await latest(later, kid)).toBeNull();
+
+		// Again: nothing is On leave any more, nothing is written.
+		const count = (await history(kid)).length;
+		const again = await setRange(parent.client, kid, from, to, null, 'coming');
+		expect(Object.values(outcomes(again.data))).toEqual([
+			'already_coming',
+			'already_coming',
+			'already_coming'
+		]);
+		expect(await history(kid)).toHaveLength(count);
+	});
+
+	it('Invalid range: past start, end before start, over 26 weeks, a bad answer -> 22023 leave_range_invalid, nothing written', async () => {
+		const cls = await createClass('Limits');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		await sessionFor(cls, plusDays(today, 3));
+
+		const bad: [string, string][] = [
+			[plusDays(today, -1), plusDays(today, 5)],
+			[plusDays(today, 5), plusDays(today, 4)],
+			// 26 weeks inclusive is to - from = 181: one day more is refused.
+			[today, plusDays(today, 182)]
+		];
+		for (const [from, to] of bad) {
+			for (const call of [preview, setRange]) {
+				const { error } = await call(parent.client, kid, from, to);
+				expect(error).toMatchObject({ code: '22023', hint: 'leave_range_invalid' });
+			}
+		}
+		const badAnswer = await parent.client.rpc('set_leave_range', {
+			p_student: kid,
+			p_from: today,
+			p_to: plusDays(today, 5),
+			p_class: null,
+			p_answer: 'sick' as 'coming'
+		});
+		expect(badAnswer.error).toMatchObject({ code: '22023', hint: 'leave_range_invalid' });
+		expect(await history(kid)).toEqual([]);
+
+		// Exactly 26 weeks (182 days including both dates) is allowed.
+		expect((await preview(parent.client, kid, today, plusDays(today, 181))).error).toBeNull();
+	});
+
+	it('Not the parent: another parent, a teacher, the admin, the student and the service role are refused (42501)', async () => {
+		const cls = await createClass('Not parent');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		await sessionFor(cls, plusDays(today, 8));
+		const other = await newParent();
+		const kidClient = await signInStudent(kid);
+		const to = plusDays(today, 14);
+
+		for (const client of [other.client, teacher.client, admin.client, kidClient, adminClient]) {
+			for (const call of [preview, setRange]) {
+				const { error } = await call(client, kid, today, to);
+				expect(error?.code).toBe('42501');
+			}
+		}
+		expect(await history(kid)).toEqual([]);
+
+		// Permission comes first: a bad answer from a non-parent is still 42501.
+		const otherBadAnswer = await other.client.rpc('set_leave_range', {
+			p_student: kid,
+			p_from: today,
+			p_to: to,
+			p_class: null,
+			p_answer: 'sick' as 'coming'
+		});
+		expect(otherBadAnswer.error?.code).toBe('42501');
+	});
+
+	it('Answered since the preview: an answer saved after the preview is left alone', async () => {
+		const cls = await createClass('Since preview');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		// Not started yet today, so Sick is allowed and On leave would be too.
+		const sickLater = await sessionFor(cls, today);
+		const { error: timeError } = await adminClient
+			.from('class_sessions')
+			.update({ start_time_override: '23:59' })
+			.eq('id', sickLater);
+		if (timeError) throw new Error(`Failed to set start time: ${timeError.message}`);
+		const plannedLater = await sessionFor(cls, plusDays(today, 16));
+		const range = [today, plusDays(today, 20)] as const;
+
+		const previewed = await preview(parent.client, kid, ...range);
+		expect(outcomes(previewed.data)).toEqual({
+			[sickLater]: 'short_notice',
+			[plannedLater]: 'planned'
+		});
+
+		// Another tab / the other parent answers in between.
+		expect((await setLeave(parent.client, sickLater, kid, 'sick')).error).toBeNull();
+		expect((await setLeave(parent.client, plannedLater, kid, 'on_leave')).data).toEqual({
+			answer: 'on_leave',
+			classification: 'planned'
+		});
+		const count = (await history(kid)).length;
+
+		const saved = await setRange(parent.client, kid, ...range);
+		expect(saved.error).toBeNull();
+		expect(outcomes(saved.data)).toEqual({
+			[sickLater]: 'sick',
+			[plannedLater]: 'already_on_leave'
+		});
+		expect(await history(kid)).toHaveLength(count);
+		expect(await latest(sickLater, kid)).toEqual({ answer: 'sick', classification: null });
+		expect(await latest(plannedLater, kid)).toEqual({
+			answer: 'on_leave',
+			classification: 'planned'
+		});
+	});
+
+	it('A teacher who is also a parent sets a range for their own child', async () => {
+		const teacherParent = await createSignedInUser('teacher');
+		const { error: parentError } = await adminClient
+			.from('parents')
+			.insert({ id: teacherParent.id, status: 'approved' });
+		expect(parentError).toBeNull();
+		const cls = await createClass('Teacher parent');
+		const kid = await child(teacherParent.email, cls);
+		const session = await sessionFor(cls, plusDays(today, 9));
+
+		const saved = await setRange(teacherParent.client, kid, today, plusDays(today, 14));
+		expect(saved.error).toBeNull();
+		expect(outcomes(saved.data)).toEqual({ [session]: 'short_notice' });
+		expect(await history(kid)).toEqual([
+			{
+				class_session_id: session,
+				answer: 'on_leave',
+				classification: 'short_notice',
+				answered_by: teacherParent.id
+			}
+		]);
+	});
+
+	it("Two children: a range on one child leaves the sibling's sessions unchanged", async () => {
+		const cls = await createClass('Siblings');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		const sibling = await child(parent.email, cls);
+		const session = await sessionFor(cls, plusDays(today, 11));
+
+		expect((await setRange(parent.client, kid, today, plusDays(today, 14))).error).toBeNull();
+		expect(await latest(session, kid)).toMatchObject({ answer: 'on_leave' });
+		expect(await history(sibling)).toEqual([]);
+		expect(await latest(session, sibling)).toBeNull();
+	});
+
+	it('Empty range: no sessions -> an empty preview and nothing saved', async () => {
+		const cls = await createClass('Empty');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		const from = plusDays(today, 40);
+		const to = plusDays(today, 50);
+		expect(await preview(parent.client, kid, from, to)).toMatchObject({ data: [], error: null });
+		expect(await setRange(parent.client, kid, from, to)).toMatchObject({ data: [], error: null });
+		expect(await history(kid)).toEqual([]);
+	});
+
+	it('Streak: each saved answer recomputes the child streak (the AFTER INSERT trigger)', async () => {
+		const cls = await createClass('Streak');
+		const parent = await newParent();
+		const kid = await child(parent.email, cls);
+		await sessionFor(cls, plusDays(today, 20));
+		await adminClient.from('student_streaks').delete().eq('student_id', kid);
+
+		expect(
+			(await setRange(parent.client, kid, plusDays(today, 15), plusDays(today, 25))).error
+		).toBeNull();
+		const { data: streak } = await adminClient
+			.from('student_streaks')
+			.select('student_id')
+			.eq('student_id', kid);
+		expect(streak).toEqual([{ student_id: kid }]);
+	});
+});

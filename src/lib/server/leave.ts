@@ -28,6 +28,17 @@ export function leaveErrorMessage(err: PgError): string {
 }
 
 /**
+ * B11 (#57): maps a preview_leave_range / set_leave_range refusal. 42501 =
+ * not the child's approved parent; leave_range_invalid = the period's
+ * limits (from today on, to on or after from, at most 182 days).
+ */
+export function leaveRangeErrorMessage(err: PgError): string {
+	if (err?.code === '42501') return m.leave_error_not_allowed();
+	if (err?.hint === 'leave_range_invalid') return m.leave_range_error_invalid();
+	return m.leave_range_error_failed();
+}
+
+/**
  * Story 7-5: maps a sick_leave_decisions insert refusal to the teacher /
  * admin message. 42501 = RLS or the trigger's caller check (not their class,
  * or their own child); 23505 = already decided; leave_not_sick = the current

@@ -4,7 +4,7 @@ import { todayInBerlin } from '$lib/berlin-date';
 import { shapeStudentBadges, type StudentBadge } from '$lib/server/badges';
 import { toHhMm } from '$lib/server/calendar';
 import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
-import { leaveErrorMessage } from '$lib/server/leave';
+import { leaveErrorMessage, leaveRangeErrorMessage } from '$lib/server/leave';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
 import { shapeStudentStreak, type StudentStreak } from '$lib/server/streak';
 import {
@@ -16,6 +16,7 @@ import {
 	type StudentHomeworkItem,
 	type TeamStanding
 } from '$lib/server/student-homework';
+import type { LeaveRangeOutcome } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
 export type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
@@ -49,6 +50,28 @@ export type ChildSession = {
 const LEAVE_WINDOW_DAYS = 12 * 7;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** B11 (#57): the longest leave period: 26 weeks, both dates included (to - from <= 181). */
+const LEAVE_RANGE_MAX_DAYS = 181;
+
+export type LeaveRangeAnswer = 'on_leave' | 'coming';
+/** The period form's values, echoed back so the preview dialog and the fields keep them. */
+export type LeaveRangeInput = {
+	from: string;
+	to: string;
+	/** null = all of the child's classes. */
+	classId: string | null;
+	answer: LeaveRangeAnswer;
+};
+/** Which field a range error belongs to (null = the form as a whole). */
+export type LeaveRangeField = 'dates' | 'class' | 'answer' | null;
+export type LeaveRangeRow = {
+	sessionId: string;
+	day: string;
+	classId: string;
+	className: string;
+	outcome: LeaveRangeOutcome;
+};
 
 /** The child page's tabs (decision 1); anything else shows Overview. */
 const CHILD_TABS = ['overview', 'homework', 'sessions', 'record'] as const;
@@ -218,6 +241,21 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 			? { status: latest.status as DeletionStatus, requestedAt: latest.requested_at }
 			: null;
 
+	// B11: the leave period's class choice, straight from the enrollments.
+	let rangeClasses: { id: string; name: string }[] = [];
+	let rangeLoadError = Boolean(enrollmentsError);
+	if (classIds.length > 0) {
+		const { data: rangeRows, error: rangeError } = await supabase
+			.from('classes')
+			.select('id, name')
+			.in('id', classIds);
+		if (rangeError) rangeLoadError = true;
+		rangeClasses = (rangeRows ?? [])
+			.filter((c) => classIds.includes(c.id))
+			.map((c) => ({ id: c.id, name: c.name }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+
 	const details = await loadChildDetails(supabase, child.id, classIds, {
 		enrollmentsError: Boolean(enrollmentsError),
 		donePage: readPage(url.searchParams.get('done'))
@@ -230,6 +268,8 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 		deletion,
 		deletionLoadError: Boolean(requestsError),
 		loadError,
+		rangeClasses,
+		rangeLoadError,
 		...details
 	};
 };
@@ -393,6 +433,96 @@ async function readSessionId(request: Request) {
 	return { formData, sessionId: String(formData.get('sessionId') ?? '') };
 }
 
+/** A real calendar date written `YYYY-MM-DD`. */
+function isIsoDate(value: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const date = new Date(`${value}T00:00:00Z`);
+	return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function daysBetween(from: string, to: string): number {
+	return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * B11 (#57): reads and checks the leave-period form. The database checks the
+ * same limits again (22023 leave_range_invalid) and the parent rule (42501);
+ * this only gives the field its inline error without a round trip.
+ */
+async function readLeaveRange(
+	request: Request,
+	supabase: Client,
+	childId: string
+): Promise<
+	| { ok: true; range: LeaveRangeInput }
+	| { ok: false; range: LeaveRangeInput; field: LeaveRangeField; message: string }
+> {
+	const formData = await request.formData();
+	const from = String(formData.get('from') ?? '').trim();
+	const to = String(formData.get('to') ?? '').trim();
+	const rawClass = String(formData.get('classId') ?? '').trim();
+	const rawAnswer = String(formData.get('answer') ?? '');
+	const answer: LeaveRangeAnswer = rawAnswer === 'coming' ? 'coming' : 'on_leave';
+	const classId = rawClass === '' || rawClass === 'all' ? null : rawClass;
+	const range: LeaveRangeInput = { from, to, classId, answer };
+
+	if (rawAnswer !== 'on_leave' && rawAnswer !== 'coming') {
+		return { ok: false, range, field: 'answer', message: m.leave_range_error_answer() };
+	}
+	if (
+		!isIsoDate(from) ||
+		!isIsoDate(to) ||
+		from < todayInBerlin() ||
+		to < from ||
+		daysBetween(from, to) > LEAVE_RANGE_MAX_DAYS
+	) {
+		return { ok: false, range, field: 'dates', message: m.leave_range_error_invalid() };
+	}
+	if (classId !== null) {
+		const { data: enrolled, error: enrolledError } = UUID_PATTERN.test(classId)
+			? await supabase
+					.from('class_enrollments')
+					.select('class_id')
+					.eq('student_id', childId)
+					.eq('class_id', classId)
+			: { data: [], error: null };
+		if (enrolledError) {
+			return { ok: false, range, field: null, message: m.leave_range_error_failed() };
+		}
+		if ((enrolled ?? []).length === 0) {
+			return { ok: false, range, field: 'class', message: m.leave_range_error_class() };
+		}
+	}
+	return { ok: true, range };
+}
+
+type LeaveRangeRpcRow = {
+	session_id: string;
+	day: string;
+	class_id: string;
+	class_name: string;
+	outcome: LeaveRangeOutcome;
+};
+
+function toRangeRows(rows: LeaveRangeRpcRow[] | null): LeaveRangeRow[] {
+	return (rows ?? []).map((r) => ({
+		sessionId: r.session_id,
+		day: r.day,
+		classId: r.class_id,
+		className: r.class_name,
+		outcome: r.outcome
+	}));
+}
+
+/** A refused range RPC: 42501 -> 403, anything else 400; the limits belong to the dates. */
+function rangeFailure(err: { code?: string; hint?: string | null } | null, range: LeaveRangeInput) {
+	return fail(err?.code === '42501' ? 403 : 400, {
+		rangeError: leaveRangeErrorMessage(err),
+		rangeField: (err?.hint === 'leave_range_invalid' ? 'dates' : null) as LeaveRangeField,
+		range
+	});
+}
+
 export const actions: Actions = {
 	/** The classification an On leave saved now would get (preview_leave, never computed here). */
 	preview: async ({ request, params, locals: { supabase, safeGetSession } }) => {
@@ -451,6 +581,72 @@ export const actions: Actions = {
 			sessionId,
 			answer: data.answer,
 			classification: data.classification
+		};
+	},
+
+	/**
+	 * B11 (#57): what saving the period would do to each session
+	 * (preview_leave_range); nothing is written.
+	 */
+	previewLeaveRange: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const read = await readLeaveRange(request, supabase, params.id);
+		if (!read.ok) {
+			return fail(400, { rangeError: read.message, rangeField: read.field, range: read.range });
+		}
+		const { range } = read;
+		const { data, error: rpcError } = await supabase.rpc('preview_leave_range', {
+			p_student: params.id,
+			p_from: range.from,
+			p_to: range.to,
+			p_class: range.classId,
+			p_answer: range.answer
+		});
+		if (rpcError) return rangeFailure(rpcError, range);
+		return {
+			action: 'previewLeaveRange' as const,
+			range,
+			rows: toRangeRows(data),
+			// The last day the Sessions list shows: sessions after it are set too.
+			listEnd: addDays(todayInBerlin(), LEAVE_WINDOW_DAYS)
+		};
+	},
+
+	/**
+	 * B11 (#57): sets the period (set_leave_range). The database appends one
+	 * answer per changing session through the existing triggers and reports
+	 * every session's outcome, with the frozen classification.
+	 */
+	setLeaveRange: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const read = await readLeaveRange(request, supabase, params.id);
+		if (!read.ok) {
+			return fail(400, { rangeError: read.message, rangeField: read.field, range: read.range });
+		}
+		const { range } = read;
+		const { data, error: rpcError } = await supabase.rpc('set_leave_range', {
+			p_student: params.id,
+			p_from: range.from,
+			p_to: range.to,
+			p_class: range.classId,
+			p_answer: range.answer
+		});
+		if (rpcError) return rangeFailure(rpcError, range);
+		const rows = toRangeRows(data);
+		const changed = rows.filter(
+			(r) => r.outcome === 'planned' || r.outcome === 'short_notice' || r.outcome === 'coming'
+		).length;
+		return {
+			action: 'setLeaveRange' as const,
+			success: true,
+			range,
+			rows,
+			changed,
+			skipped: rows.length - changed
 		};
 	},
 
