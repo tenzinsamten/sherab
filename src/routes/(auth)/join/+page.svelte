@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
+	import JoinSteps from '$lib/components/JoinSteps.svelte';
 	import { showToast } from '$lib/ix';
 	import { ixFieldError } from '$lib/ix-fields';
 
@@ -54,7 +56,27 @@
 		if (step > 1) step = (step - 1) as 1 | 2;
 	}
 
-	const steps = [m.join_code_label(), m.join_name_label(), m.join_consent_checkbox_label()];
+	// A finished step picked in the workflow steps: go back to it (the typed
+	// values are kept in state) and move focus to that step's field, since
+	// the steps are rebuilt and the picked one is gone.
+	const stepField: Record<1 | 2, string> = { 1: 'classCode', 2: 'registrationName' };
+	async function goToStep(target: 1 | 2 | 3 | 4) {
+		if (target >= step) return;
+		step = target as 1 | 2;
+		await tick();
+		const field = document.getElementById(stepField[step]) as
+			| (HTMLElement & {
+					componentOnReady?: () => Promise<unknown>;
+					getNativeInputElement?: () => Promise<HTMLElement>;
+			  })
+			| null;
+		if (!field) return;
+		await customElements.whenDefined(field.localName);
+		await field.componentOnReady?.();
+		// The host doesn't pass focus on: focus iX's own input.
+		const input = await field.getNativeInputElement?.().catch(() => null);
+		(input ?? field).focus();
+	}
 </script>
 
 <svelte:head>
@@ -62,12 +84,9 @@
 </svelte:head>
 
 <AuthCard title={m.join_heading()}>
-	<p class="sr-only" aria-live="polite">{m.join_step_progress({ step: `${step}` })}</p>
-	<ol class="join-steps" aria-hidden="true">
-		{#each steps as label, i (i)}
-			<li class:active={step === i + 1} class:done={step > i + 1}>{i + 1}. {label}</li>
-		{/each}
-	</ol>
+	<!-- Not while the code is checked or the form is sent: going back would
+	     unmount the form mid-request. -->
+	<JoinSteps current={step} onselect={checkingCode || submitting ? undefined : goToStep} />
 
 	{#if step === 1}
 		<!-- novalidate: checkClassCode checks the code, and iX's own validation

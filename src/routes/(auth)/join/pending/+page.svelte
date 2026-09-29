@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
+	import JoinSteps from '$lib/components/JoinSteps.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -12,6 +13,7 @@
 </svelte:head>
 
 <AuthCard title={m.join_pending_heading()} subtitle={m.join_pending_explanation()}>
+	<JoinSteps current={4} />
 	<p style="text-align:center; margin: 0 0 var(--space-4);">
 		<ix-pill variant="warning">{m.join_pending_status_badge()}</ix-pill>
 	</p>
