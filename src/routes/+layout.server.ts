@@ -1,9 +1,21 @@
 import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import { loadSickLeave } from '$lib/server/leave';
 import { loadClassJoinRequests } from '$lib/server/class-join';
+import { getCapabilities } from '$lib/server/capabilities';
+import {
+	ACTIVE_ROLE_COOKIE,
+	activeRole,
+	heldRoles,
+	withoutLocale,
+	type Role
+} from '$lib/server/roles';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safeGetSession } }) => {
+export const load: LayoutServerLoad = async ({
+	cookies,
+	url,
+	locals: { supabase, safeGetSession }
+}) => {
 	const { session, user } = await safeGetSession();
 	// Read here so the menu is rendered expanded or collapsed from the start,
 	// with no flash after hydration.
@@ -14,6 +26,8 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 			session: null,
 			profile: null,
 			pendingRequestsCount: 0,
+			roles: [] as Role[],
+			activeRole: null as Role | null,
 			menuExpanded,
 			loadError: false
 		};
@@ -25,6 +39,26 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 		.select('*')
 		.eq('id', user.id)
 		.single();
+
+	// B13 (#68): a login whose profile role isn't `parent` (in practice a
+	// teacher or admin) may also hold an approved parents row; getCapabilities
+	// is the single source for that. A parent-only login holds just `parent`,
+	// so its row is not read. A failed read falls back to the profile role
+	// alone -- no switcher, and no load error for what is only a preference.
+	let parentStatus: string | null = null;
+	if (profile && profile.role !== 'parent') {
+		parentStatus = (await getCapabilities(supabase, user.id))?.parentStatus ?? null;
+	}
+	const roles = heldRoles(profile?.role, parentStatus);
+	// The URL is read only for a multi-role login, so a single-role login's
+	// layout load keeps not re-running on every navigation; only the pathname
+	// is read, so a query-string change never re-runs it. The cookie is a
+	// preference only: activeRole() checks it against the held roles, and
+	// guards / RLS never read it.
+	const active =
+		roles.length > 1
+			? activeRole(roles, cookies.get(ACTIVE_ROLE_COOKIE), withoutLocale(url.pathname))
+			: (roles[0] ?? null);
 
 	let pendingRequestsCount = 0;
 	let countError = false;
@@ -78,6 +112,8 @@ export const load: LayoutServerLoad = async ({ cookies, locals: { supabase, safe
 		session,
 		profile: profile ?? null,
 		pendingRequestsCount,
+		roles,
+		activeRole: active,
 		menuExpanded,
 		loadError: Boolean(error || countError)
 	};

@@ -580,3 +580,36 @@ describe('class schedule actions (Story 6-4)', () => {
 		expect(fake.rpcCalls).toEqual([]);
 	});
 });
+
+describe('calendar load: active role (B13 #68)', () => {
+	function runActive(activeRole: string | null) {
+		const fake = fakeSupabase({}, 'teacher', { data: [], error: null });
+		const result = load({
+			url: new URL('http://localhost/calendar?month=2026-10'),
+			parent: async () => ({ profile: { role: 'teacher' }, activeRole }),
+			locals: {
+				supabase: fake.client,
+				safeGetSession: async () => ({ user: { id: 'u1' } })
+			}
+		} as unknown as Parameters<typeof load>[0]) as Promise<{ role: string; canEdit: boolean }>;
+		return { result, fake };
+	}
+
+	it('a teacher-parent with Parent active gets the parent view', async () => {
+		const { result, fake } = runActive('parent');
+		expect(await result).toMatchObject({ role: 'parent', canEdit: false });
+		expect(fake.rpcCalls.map((c) => c.fn)).toEqual(['linked_children']);
+		expect(fake.tablesRead).not.toContain('classes');
+	});
+
+	it('with the staff role active it stays the teacher view', async () => {
+		const { result, fake } = runActive('teacher');
+		expect(await result).toMatchObject({ role: 'teacher', canEdit: true });
+		expect(fake.rpcCalls).toEqual([]);
+	});
+
+	it('without an active role it falls back to the profile role', async () => {
+		const { result } = runActive(null);
+		expect(await result).toMatchObject({ role: 'teacher', canEdit: true });
+	});
+});

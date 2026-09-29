@@ -27,6 +27,11 @@ function sick(id: string, decision: 'approved' | 'rejected' | null, ownChild: bo
 
 function runLoad(opts: {
 	role: 'admin' | 'teacher' | 'parent';
+	/** B13: the caller's own parents row status (getCapabilities' read). */
+	parentStatus?: string;
+	parentReadError?: unknown;
+	cookie?: string;
+	path?: string;
 	pendingStudents?: number;
 	pendingParents?: number;
 	pendingDeletions?: number;
@@ -62,7 +67,15 @@ function runLoad(opts: {
 									error: null
 								}
 						: { data: null, error: null }
-				)
+				),
+			maybeSingle: async (): Promise<Result> =>
+				table === 'profiles'
+					? { data: { role: opts.role }, error: null }
+					: table === 'parents'
+						? opts.parentReadError
+							? { data: null, error: opts.parentReadError }
+							: { data: opts.parentStatus ? { status: opts.parentStatus } : null, error: null }
+						: { data: null, error: null }
 		};
 		return c;
 	};
@@ -76,13 +89,16 @@ function runLoad(opts: {
 		}
 	};
 	const result = load({
-		cookies: { get: () => undefined },
+		cookies: { get: (name: string) => (name === 'active_role' ? opts.cookie : undefined) },
+		url: new URL(`http://localhost${opts.path ?? '/calendar'}`),
 		locals: {
 			supabase,
 			safeGetSession: async () => ({ session: {}, user: { id: 'u1' } })
 		}
 	} as unknown as Parameters<typeof load>[0]) as Promise<{
 		pendingRequestsCount: number;
+		roles: string[];
+		activeRole: string | null;
 		loadError: boolean;
 	}>;
 	return { result, rpcCalls, calls };
@@ -199,5 +215,80 @@ describe('root layout: nav badge count', () => {
 			joinQueue: { data: null, error: { message: 'boom' } }
 		});
 		expect(await result).toMatchObject({ pendingRequestsCount: 1, loadError: true });
+	});
+});
+
+describe('root layout: roles and active role (B13 #68)', () => {
+	it('a single-role login holds just its role', async () => {
+		for (const role of ['teacher', 'admin', 'parent'] as const) {
+			const { result } = runLoad({ role, cookie: 'parent' });
+			expect(await result).toMatchObject({ roles: [role], activeRole: role });
+		}
+	});
+
+	it('never reads the parents row of a parent-only login', async () => {
+		const { calls } = runLoad({ role: 'parent' });
+		expect(calls.some((c) => c.table === 'parents')).toBe(false);
+	});
+
+	it('a teacher-parent defaults to the teacher role', async () => {
+		const { result } = runLoad({ role: 'teacher', parentStatus: 'approved' });
+		expect(await result).toMatchObject({ roles: ['teacher', 'parent'], activeRole: 'teacher' });
+	});
+
+	it('the cookie picks Parent on a shared route', async () => {
+		const { result } = runLoad({ role: 'teacher', parentStatus: 'approved', cookie: 'parent' });
+		expect(await result).toMatchObject({ activeRole: 'parent' });
+	});
+
+	it('the URL wins over the cookie, localized paths included', async () => {
+		const teacherPage = runLoad({
+			role: 'teacher',
+			parentStatus: 'approved',
+			cookie: 'parent',
+			path: '/teacher/classes/c1'
+		});
+		expect(await teacherPage.result).toMatchObject({ activeRole: 'teacher' });
+		const parentPage = runLoad({
+			role: 'admin',
+			parentStatus: 'approved',
+			cookie: 'admin',
+			path: '/de/parent/homework'
+		});
+		expect(await parentPage.result).toMatchObject({ activeRole: 'parent' });
+	});
+
+	it('a forged cookie is ignored', async () => {
+		const { result } = runLoad({ role: 'teacher', parentStatus: 'approved', cookie: 'admin' });
+		expect(await result).toMatchObject({ activeRole: 'teacher' });
+	});
+
+	it('a pending parent holds only the staff role', async () => {
+		const { result } = runLoad({ role: 'teacher', parentStatus: 'pending', cookie: 'parent' });
+		expect(await result).toMatchObject({ roles: ['teacher'], activeRole: 'teacher' });
+	});
+
+	it('the badge count stays on for a teacher-parent with Parent active', async () => {
+		const { result } = runLoad({
+			role: 'teacher',
+			parentStatus: 'approved',
+			cookie: 'parent',
+			pendingStudents: 2
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 2 });
+	});
+
+	it('a failed parents read falls back to the profile role, with no load error', async () => {
+		const { result } = runLoad({
+			role: 'teacher',
+			parentStatus: 'approved',
+			parentReadError: { message: 'boom' },
+			cookie: 'parent'
+		});
+		expect(await result).toMatchObject({
+			roles: ['teacher'],
+			activeRole: 'teacher',
+			loadError: false
+		});
 	});
 });

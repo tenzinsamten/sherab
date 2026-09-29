@@ -53,12 +53,36 @@
 	// than 25 routes (TypeScript's union comparison limit).
 	const resolvePathname = (path: string) => (resolve as (p: Pathname) => string)(path as Pathname);
 
-	let homeHref = $derived(resolve(roleHome(data.profile?.role) ?? '/'));
+	// B13 (#68): menu, home link and `/` follow the active role -- the only
+	// role for a single-role login, the picked one for a login whose profile
+	// role isn't parent (in practice a teacher or admin) that is also an
+	// approved parent. Access itself never depends on it.
+	let role = $derived(data.activeRole ?? data.profile?.role);
+	let homeHref = $derived(resolve(roleHome(role) ?? '/'));
 
 	let signOutForm: HTMLFormElement | undefined = $state();
+	let roleForm: HTMLFormElement | undefined = $state();
+	let roleInput: HTMLInputElement | undefined = $state();
+
+	const roleNames: Record<string, () => string> = {
+		admin: m.role_name_admin,
+		teacher: m.role_name_teacher,
+		parent: m.role_name_parent,
+		student: m.role_name_student
+	};
+
+	// Always posted, even for the checked role: on a /teacher or /parent page
+	// the URL decided the check, and the cookie may still hold the other role.
+	function switchRole(next: string) {
+		if (!roleForm || !roleInput) return;
+		roleInput.value = next;
+		roleForm.requestSubmit();
+	}
 
 	// #64: the header avatar's menu shows the display name (falling back to
-	// the e-mail), with initials on the avatar itself. No role anywhere (#62).
+	// the e-mail), with initials on the avatar itself. No role label next to
+	// the name (#62); B13 lists the roles as menu items only for a login
+	// holding more than one.
 	let userName = $derived(data.profile?.display_name?.trim() || data.profile?.email || '');
 
 	type NavItem = {
@@ -71,7 +95,6 @@
 	};
 
 	let navItems = $derived.by((): NavItem[] => {
-		const role = data.profile?.role;
 		const requests = {
 			href: resolve('/requests'),
 			label: m.nav_requests(),
@@ -183,6 +206,19 @@
 					? m.header_account_menu_label({ name: userName })
 					: m.nav_account()}
 			>
+				{#if data.roles.length > 1}
+					<!-- B13 (#68): only a login holding more than one role sees these. -->
+					<ix-dropdown-header label={m.role_switch_label()}></ix-dropdown-header>
+					{#each data.roles as held (held)}
+						<ix-dropdown-item
+							data-role-option={held}
+							label={roleNames[held]?.() ?? held}
+							checked={held === role || undefined}
+							onclick={() => switchRole(held)}
+						></ix-dropdown-item>
+					{/each}
+					<ix-divider></ix-divider>
+				{/if}
 				<ix-dropdown-item
 					icon="user"
 					label={m.nav_account()}
@@ -209,6 +245,9 @@
 			{/each}
 		</ix-menu>
 		<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
+		<form bind:this={roleForm} method="POST" action={resolve('/role')} hidden>
+			<input bind:this={roleInput} type="hidden" name="role" />
+		</form>
 
 		<ix-content>
 			{@render children()}

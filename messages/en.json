@@ -837,5 +837,10 @@
 	"parents_pending_link": "Parent accounts waiting for approval: {count}. Decide them on Requests.",
 	"parents_empty_heading": "No parents yet",
 	"parents_empty_body": "Parent accounts show here once a parent signs up.",
-	"parents_load_error": "Could not load the parents. Please refresh."
+	"parents_load_error": "Could not load the parents. Please refresh.",
+	"role_switch_label": "Switch role",
+	"role_name_admin": "Admin",
+	"role_name_teacher": "Teacher",
+	"role_name_parent": "Parent",
+	"role_name_student": "Student"
 }

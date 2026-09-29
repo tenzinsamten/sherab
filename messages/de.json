@@ -837,5 +837,10 @@
 	"parents_pending_link": "Elternkonten, die auf Freigabe warten: {count}. Entscheide sie unter Anfragen.",
 	"parents_empty_heading": "Noch keine Eltern",
 	"parents_empty_body": "Elternkonten erscheinen hier, sobald sich ein Elternteil registriert.",
-	"parents_load_error": "Die Eltern konnten nicht geladen werden. Bitte neu laden."
+	"parents_load_error": "Die Eltern konnten nicht geladen werden. Bitte neu laden.",
+	"role_switch_label": "Rolle wechseln",
+	"role_name_admin": "Admin",
+	"role_name_teacher": "Lehrkraft",
+	"role_name_parent": "Elternteil",
+	"role_name_student": "Schüler:in"
 }

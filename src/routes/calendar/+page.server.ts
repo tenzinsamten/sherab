@@ -58,8 +58,12 @@ export const load: PageServerLoad = async ({
 	if (!user) {
 		throw redirect(303, '/login');
 	}
-	const { profile } = await parent();
-	const role = profile?.role ?? null;
+	// B13 (#68): the view follows the active role, so a teacher-parent with
+	// Parent active gets the parent (children) view. activeRole is always a
+	// role the login holds (parent only when approved); RLS still decides
+	// what each query returns.
+	const { profile, activeRole } = await parent();
+	const role = activeRole ?? profile?.role ?? null;
 
 	// One clock read, so today and the current month agree at a month end.
 	const now = new Date();
@@ -93,9 +97,10 @@ export const load: PageServerLoad = async ({
 			: Promise.resolve({ data: [], error: null })
 	]);
 
-	// #58: a parent-only login sees the sessions of their approved children's
-	// classes (RLS is_parent_in_class lets them read those), optionally
-	// narrowed to one child, with each enrolled child's current answer.
+	// #58: a parent (a parent-only login, or B13 a staff login with Parent
+	// active) sees the sessions of their approved children's classes (RLS
+	// is_parent_in_class lets them read those), optionally narrowed to one
+	// child, with each enrolled child's current answer.
 	let sessionRows = sessionsResult.data ?? [];
 	let children: CalendarChild[] = [];
 	let selectedChild: string | null = null;
