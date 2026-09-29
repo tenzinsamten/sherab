@@ -174,7 +174,6 @@
 	"roster_attendance_saved": "Anwesenheit für {date} erfasst.",
 	"roster_attendance_saved_partial": "Anwesenheit für {date} erfasst, aber für folgende Personen fehlgeschlagen: {names}. Bitte für sie erneut versuchen.",
 	"roster_skills_heading": "Lernstand",
-	"roster_col_student": "Schüler:in",
 	"roster_col_history": "Verlauf",
 	"roster_skill_language": "Sprache",
 	"roster_skill_song": "Lied",

@@ -243,3 +243,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b8a-ix-page-fields.md`
   summary: B8b — iX form fields on the teacher class page (session select; per-student skill level + notes as collapsible student rows whose form loads when expanded) and homework new/edit (ix-radio groups for mode/target, dates, number, textarea, subset ix-checkboxes).
   evidence: Split from B8 (8 page areas, well over the spec-size target), user decision 2026-09-28. Also user decision 2026-09-28: per-student skill fields become collapsible rows, because ~6 iX components per student (~180 for 30 students) risks the /calendar freeze seen in B7.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mv-66-b8b-ix-teacher-homework-fields.md`
+  summary: Make `npm run test:e2e` (on a freshly reset DB) part of the pre-commit rule or a CI job, so UI-only regressions can't pass reset/test/check/build alone.
+  evidence: Vitest only collects src/**/*.spec.ts, there is no .github/workflows, and the B7–B8 UI behaviour is verified only by e2e (B8b review V1).

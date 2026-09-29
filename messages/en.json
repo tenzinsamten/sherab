@@ -174,7 +174,6 @@
 	"roster_attendance_saved": "Attendance recorded for {date}.",
 	"roster_attendance_saved_partial": "Attendance recorded for {date}, but saving failed for: {names}. Please try again for them.",
 	"roster_skills_heading": "Skill status",
-	"roster_col_student": "Student",
 	"roster_col_history": "History",
 	"roster_skill_language": "Language",
 	"roster_skill_song": "Song",

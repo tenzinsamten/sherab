@@ -26,7 +26,7 @@ function loadEnv(): Record<string, string> {
 	return { ...env, ...(process.env as Record<string, string>) };
 }
 
-const env = loadEnv();
+export const env = loadEnv();
 const SUPABASE_URL = env.PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {

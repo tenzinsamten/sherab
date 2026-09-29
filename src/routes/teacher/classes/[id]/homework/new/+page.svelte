@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import LinkRows from '$lib/components/LinkRows.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { PageProps } from './$types';
@@ -15,6 +16,15 @@
 	// Success redirects to the list, which shows the toast; errors come from
 	// the root layout's form-error toast.
 	const pending = createPending();
+
+	// <ix-radio-group> emits valueChange but doesn't update its own `value`:
+	// the state here drives it (and which fields show).
+	function pickMode(event: CustomEvent<string>) {
+		if (event.detail === 'once' || event.detail === 'weekly') assignmentMode = event.detail;
+	}
+	function pickTarget(event: CustomEvent<string>) {
+		if (event.detail === 'all' || event.detail === 'subset') targetMode = event.detail;
+	}
 
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
@@ -45,88 +55,98 @@
 	<section class="card">
 		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
 			<div class="field">
-				<label for="title">{m.homework_title_label()}</label>
-				<input id="title" name="title" type="text" required />
+				<ix-input id="title" name="title" label={m.homework_title_label()} required></ix-input>
 			</div>
 			<div class="field">
-				<label for="skillArea">{m.homework_skill_area_label()}</label>
-				<select id="skillArea" name="skillArea" required>
+				<ix-select
+					id="skillArea"
+					name="skillArea"
+					label={m.homework_skill_area_label()}
+					required
+					{@attach ixValue(skillAreas[0])}
+				>
 					{#each skillAreas as area (area)}
-						<option value={area}>{skillLabel(area)}</option>
+						<ix-select-item value={area} label={skillLabel(area)}></ix-select-item>
 					{/each}
-				</select>
+				</ix-select>
 			</div>
 			<div class="field">
-				<label for="description">{m.homework_description_label()}</label>
-				<textarea id="description" name="description" rows="4" maxlength="2000"></textarea>
+				<ix-textarea
+					id="description"
+					name="description"
+					label={m.homework_description_label()}
+					textarea-rows="4"
+					max-length="2000"
+					resize-behavior="vertical"
+				></ix-textarea>
 			</div>
 			<LinkRows idPrefix="create" />
 
-			<fieldset class="check-list" style="margin-bottom: var(--space-4);">
-				<legend>{m.homework_mode_legend()}</legend>
-				<label
-					style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
+			<div class="field">
+				<ix-radio-group
+					id="mode"
+					label={m.homework_mode_legend()}
+					value={assignmentMode}
+					onvalueChange={pickMode}
 				>
-					<input type="radio" name="mode" value="once" bind:group={assignmentMode} />
-					{m.homework_mode_once()}
-				</label>
-				<label style="display:flex; align-items:center; gap: var(--space-2);">
-					<input type="radio" name="mode" value="weekly" bind:group={assignmentMode} />
-					{m.homework_mode_weekly()}
-				</label>
-			</fieldset>
+					<ix-radio name="mode" value="once" label={m.homework_mode_once()}></ix-radio>
+					<ix-radio name="mode" value="weekly" label={m.homework_mode_weekly()}></ix-radio>
+				</ix-radio-group>
+			</div>
 
 			{#if assignmentMode === 'once'}
 				<div class="field">
-					<label for="dueDate">{m.homework_due_date_label()}</label>
-					<input id="dueDate" name="dueDate" type="date" required />
+					<ix-date-input
+						id="dueDate"
+						name="dueDate"
+						label={m.homework_due_date_label()}
+						format="yyyy-MM-dd"
+						required
+					></ix-date-input>
 				</div>
 
-				<fieldset class="check-list" style="margin-bottom: var(--space-4);">
-					<legend>{m.homework_target_legend()}</legend>
-					<label
-						style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
+				<div class="field">
+					<ix-radio-group
+						id="targetMode"
+						label={m.homework_target_legend()}
+						value={targetMode}
+						onvalueChange={pickTarget}
 					>
-						<input type="radio" name="targetMode" value="all" bind:group={targetMode} />
-						{m.homework_target_all()}
-					</label>
-					<label
-						style="display:flex; align-items:center; gap: var(--space-2); margin-bottom: var(--space-2);"
-					>
-						<input type="radio" name="targetMode" value="subset" bind:group={targetMode} />
-						{m.homework_target_subset()}
-					</label>
-					{#if targetMode === 'subset'}
-						<ul style="list-style:none; padding:0; margin: var(--space-2) 0 0 0;">
-							{#each data.students as student (student.id)}
-								<li style="padding: var(--space-1) 0;">
-									<label style="display:flex; align-items:center; gap: var(--space-2);">
-										<input type="checkbox" name="studentIds" value={student.id} />
-										{student.displayName}
-									</label>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</fieldset>
+						<ix-radio name="targetMode" value="all" label={m.homework_target_all()}></ix-radio>
+						<ix-radio name="targetMode" value="subset" label={m.homework_target_subset()}
+						></ix-radio>
+					</ix-radio-group>
+				</div>
+				{#if targetMode === 'subset'}
+					<fieldset class="check-list student-list">
+						<legend class="sr-only">{m.homework_target_subset()}</legend>
+						{#each data.students as student (student.id)}
+							<ix-checkbox name="studentIds" value={student.id} label={student.displayName}
+							></ix-checkbox>
+						{/each}
+					</fieldset>
+				{/if}
 			{:else}
 				<div class="field">
-					<label for="startDate">{m.homework_start_date_label()}</label>
-					<input id="startDate" name="startDate" type="date" required />
+					<ix-date-input
+						id="startDate"
+						name="startDate"
+						label={m.homework_start_date_label()}
+						format="yyyy-MM-dd"
+						required
+					></ix-date-input>
 				</div>
 				<div class="field">
-					<label for="dueOffsetDays">{m.homework_due_offset_label()}</label>
-					<input
+					<ix-number-input
 						id="dueOffsetDays"
 						name="dueOffsetDays"
-						type="number"
-						inputmode="numeric"
+						label={m.homework_due_offset_label()}
 						min="0"
 						max="365"
 						step="1"
-						value="7"
 						required
-					/>
+						{@attach ixValue(7)}
+					></ix-number-input>
 				</div>
 				<p style="color: var(--theme-color-soft-text); font-size: var(--theme-font-size-default);">
 					{m.homework_recurring_note()}
@@ -141,3 +161,13 @@
 		</form>
 	</section>
 </div>
+
+<style>
+	.student-list {
+		margin-bottom: var(--space-4);
+	}
+	/* Whole label row is the click target (WCAG 2.2 target size). */
+	.student-list ix-checkbox {
+		min-height: 2.25rem;
+	}
+</style>

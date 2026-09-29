@@ -6,6 +6,7 @@
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import { createPending } from '$lib/pending.svelte';
+	import { ixValue } from '$lib/ix-fields';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -124,40 +125,41 @@
 				style="margin-top: var(--space-3);"
 			>
 				<input type="hidden" name="assignmentId" value={assignment.id} />
+				<!-- Values through ixValue: the form stays mounted, so a save shows the
+				     saved values, and a reload after another action keeps unsaved edits. -->
 				<div class="field">
-					<label for={`edit-title-${assignment.id}`}>{m.homework_title_label()}</label>
-					<input
+					<ix-input
 						id={`edit-title-${assignment.id}`}
 						name="title"
-						type="text"
-						value={assignment.title}
+						label={m.homework_title_label()}
 						required
-					/>
+						{@attach ixValue(assignment.title)}
+					></ix-input>
 				</div>
 				<div class="field">
-					<label for={`edit-description-${assignment.id}`}>{m.homework_description_label()}</label>
-					<textarea
+					<ix-textarea
 						id={`edit-description-${assignment.id}`}
 						name="description"
-						rows="4"
-						maxlength="2000"
-						value={assignment.description ?? ''}></textarea>
+						label={m.homework_description_label()}
+						textarea-rows="4"
+						max-length="2000"
+						resize-behavior="vertical"
+						{@attach ixValue(assignment.description ?? '')}
+					></ix-textarea>
 				</div>
 				<LinkRows idPrefix={`edit-${assignment.id}`} links={assignment.referenceLinks} />
 				{#if assignment.isRecurring}
 					<div class="field">
-						<label for={`edit-offset-${assignment.id}`}>{m.homework_due_offset_label()}</label>
-						<input
+						<ix-number-input
 							id={`edit-offset-${assignment.id}`}
 							name="dueOffsetDays"
-							type="number"
-							inputmode="numeric"
+							label={m.homework_due_offset_label()}
 							min="0"
 							max="365"
 							step="1"
-							value={assignment.dueOffsetDays ?? 0}
 							required
-						/>
+							{@attach ixValue(assignment.dueOffsetDays ?? 0)}
+						></ix-number-input>
 					</div>
 				{/if}
 				<ix-button
