@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import * as m from '$lib/paraglide/messages.js';
 import {
-	parseDescription,
+	parseHomeworkContent,
 	parseNonNegativeInt,
 	parseReferenceLinks
 } from '$lib/server/homework-details';
@@ -13,6 +13,7 @@ import {
 	fetchInstancesAndHistory,
 	type AssignmentRow
 } from '$lib/server/homework-view';
+import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
 import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -200,7 +201,9 @@ export const actions: Actions = {
 		return { success: true, action: 'archiveInstance' as const };
 	},
 
-	// Edits an assignment's text and links, one-off or series (#26/#27). Never
+	// Edits an assignment's title, content, language and links, one-off or
+	// series (#26/#27, #72-#74). Content is required here too, so homework
+	// from before #72 that has none gets it on its first edit. Never
 	// touches homework_instances or status history (Story 3-2's Always
 	// boundary), so existing Done/Reviewed marks are untouched. The due-date
 	// offset only exists on a series; a one-off's due date and targets stay
@@ -214,7 +217,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const assignmentId = String(formData.get('assignmentId') ?? '');
 		const title = String(formData.get('title') ?? '').trim();
-		const description = parseDescription(formData.get('description'));
+		const homework = parseHomeworkContent(formData);
 		const referenceLinks = parseReferenceLinks(formData);
 
 		if (!assignmentId || !title) {
@@ -223,11 +226,8 @@ export const actions: Actions = {
 				action: 'editAssignment' as const
 			});
 		}
-		if (!description.ok) {
-			return fail(400, {
-				error: m.homework_error_description_too_long(),
-				action: 'editAssignment' as const
-			});
+		if (!homework.ok) {
+			return fail(400, { error: homework.error, action: 'editAssignment' as const });
 		}
 		if (!referenceLinks.ok) {
 			return fail(400, {
@@ -254,12 +254,14 @@ export const actions: Actions = {
 
 		const updates: {
 			title: string;
-			description: string | null;
+			content: RichTextDoc;
+			content_language: ContentLanguage;
 			reference_links: HomeworkReferenceLink[];
 			due_offset_days?: number;
 		} = {
 			title,
-			description: description.value,
+			content: homework.content,
+			content_language: homework.language,
 			reference_links: referenceLinks.value
 		};
 

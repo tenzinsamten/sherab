@@ -5,7 +5,9 @@
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { formatSchoolYear } from '$lib/school-year';
+	import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
+	import RichText from './RichText.svelte';
 	import SyllabusForm from './SyllabusForm.svelte';
 	import TextWithLinks from './TextWithLinks.svelte';
 
@@ -21,7 +23,8 @@
 		syllabus: {
 			id: string;
 			schoolYear: number;
-			content: string | null;
+			content: RichTextDoc | null;
+			contentLanguage: ContentLanguage;
 			links: HomeworkReferenceLink[];
 		};
 		startInEdit: boolean;
@@ -60,11 +63,15 @@
 		<SyllabusForm
 			syllabusId={syllabus.id}
 			syllabus={syllabus.content}
+			language={syllabus.contentLanguage}
 			links={syllabus.links}
 			oncancel={() => (editing = false)}
 		/>
 	{:else}
-		<TextWithLinks text={syllabus.content} links={syllabus.links} empty={m.syllabus_empty()} />
+		{#if syllabus.content}
+			<RichText content={syllabus.content} lang={syllabus.contentLanguage} />
+		{/if}
+		<TextWithLinks links={syllabus.links} empty={syllabus.content ? '' : m.syllabus_empty()} />
 		<div class="actions" style="margin-top: var(--space-4);">
 			<ix-button icon="pen" onclick={() => (editing = true)}>{m.syllabus_edit()}</ix-button>
 			<ix-button

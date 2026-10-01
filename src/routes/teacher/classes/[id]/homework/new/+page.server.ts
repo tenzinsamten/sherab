@@ -4,7 +4,7 @@ import { loadClassRoster } from '$lib/server/enrollments';
 import * as m from '$lib/paraglide/messages.js';
 import {
 	isValidDate,
-	parseDescription,
+	parseHomeworkContent,
 	parseNonNegativeInt,
 	parseReferenceLinks
 } from '$lib/server/homework-details';
@@ -48,7 +48,7 @@ export const actions: Actions = {
 		const mode = String(formData.get('mode') ?? 'once');
 		const title = String(formData.get('title') ?? '').trim();
 		const skillArea = String(formData.get('skillArea') ?? '');
-		const description = parseDescription(formData.get('description'));
+		const homework = parseHomeworkContent(formData);
 		const referenceLinks = parseReferenceLinks(formData);
 
 		if (!title) {
@@ -57,11 +57,8 @@ export const actions: Actions = {
 				action: 'createAssignment' as const
 			});
 		}
-		if (!description.ok) {
-			return fail(400, {
-				error: m.homework_error_description_too_long(),
-				action: 'createAssignment' as const
-			});
+		if (!homework.ok) {
+			return fail(400, { error: homework.error, action: 'createAssignment' as const });
 		}
 		if (!referenceLinks.ok) {
 			return fail(400, {
@@ -111,7 +108,8 @@ export const actions: Actions = {
 				class_id: classId,
 				title,
 				skill_area: skillArea as SkillArea,
-				description: description.value,
+				content: homework.content,
+				content_language: homework.language,
 				reference_links: referenceLinks.value,
 				whole_class: true,
 				created_by: user.id,
@@ -185,7 +183,8 @@ export const actions: Actions = {
 				class_id: classId,
 				title,
 				skill_area: skillArea as SkillArea,
-				description: description.value,
+				content: homework.content,
+				content_language: homework.language,
 				reference_links: referenceLinks.value,
 				whole_class: targetMode === 'all',
 				created_by: user.id

@@ -1,7 +1,13 @@
+import * as m from '$lib/paraglide/messages.js';
+import {
+	isContentLanguage,
+	parseContent,
+	type ContentLanguage,
+	type RichTextDoc
+} from '$lib/rich-text';
 import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 
 /** Mirrors the check constraints in 0013_homework_details_and_late_joiners.sql. */
-export const MAX_DESCRIPTION_LENGTH = 2000;
 export const MAX_REFERENCE_LINKS = 10;
 export const MAX_LINK_URL_LENGTH = 2000;
 export const MAX_LINK_LABEL_LENGTH = 100;
@@ -29,17 +35,30 @@ export function parseNonNegativeInt(value: string): number | null {
 }
 
 /**
- * Plain-text homework description: trimmed, empty becomes null. Returns
- * `{ ok: false }` when it is longer than the column allows, so the action can
- * show an error instead of letting the insert fail on the constraint.
+ * The homework form's rich-text content and its language (#72-#74), or the
+ * message to show: content is required, and the language must be one the
+ * form offers.
  */
-export function parseDescription(
-	raw: FormDataEntryValue | null,
-	max = MAX_DESCRIPTION_LENGTH
-): { ok: true; value: string | null } | { ok: false } {
-	const value = String(raw ?? '').trim();
-	if (value.length > max) return { ok: false };
-	return { ok: true, value: value || null };
+export function parseHomeworkContent(
+	formData: FormData
+): { ok: true; content: RichTextDoc; language: ContentLanguage } | { ok: false; error: string } {
+	const content = parseContent(formData.get('content'));
+	if (!content.ok) {
+		return {
+			ok: false,
+			error:
+				content.reason === 'required'
+					? m.homework_error_content_required()
+					: content.reason === 'too_large'
+						? m.homework_error_content_too_large()
+						: m.homework_error_content_invalid()
+		};
+	}
+	const language = formData.get('contentLanguage');
+	if (!isContentLanguage(language)) {
+		return { ok: false, error: m.homework_error_content_language() };
+	}
+	return { ok: true, content: content.value, language };
 }
 
 /**

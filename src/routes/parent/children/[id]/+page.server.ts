@@ -90,7 +90,7 @@ function readPage(value: string | null): number {
 /** A homework row on the parent page (read-only): the item plus its class name. */
 export type ChildHomeworkItem = Pick<
 	StudentHomeworkItem,
-	'instanceId' | 'title' | 'dueDate' | 'status' | 'overdue' | 'referenceLinks'
+	'instanceId' | 'title' | 'contentLanguage' | 'dueDate' | 'status' | 'overdue' | 'referenceLinks'
 > & { className: string | null };
 
 export type ChildAttendance = {
@@ -345,6 +345,7 @@ async function loadChildDetails(
 	const toChildItem = (item: StudentHomeworkItem): ChildHomeworkItem => ({
 		instanceId: item.instanceId,
 		title: item.title,
+		contentLanguage: item.contentLanguage,
 		dueDate: item.dueDate,
 		status: item.status,
 		overdue: item.overdue,

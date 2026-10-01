@@ -4,6 +4,7 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
+	import RichText from '$lib/components/RichText.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { showToast } from '$lib/ix';
@@ -64,10 +65,12 @@
 				? m.student_syllabus_heading({ year: formatSchoolYear(data.syllabus.schoolYear) })
 				: m.syllabus_heading()}
 		</h2>
+		{#if data.syllabus?.content}
+			<RichText content={data.syllabus.content} lang={data.syllabus.contentLanguage} />
+		{/if}
 		<TextWithLinks
-			text={data.syllabus?.content ?? null}
 			links={data.syllabus?.links ?? []}
-			empty={m.student_syllabus_empty()}
+			empty={data.syllabus?.content ? '' : m.student_syllabus_empty()}
 		/>
 	</section>
 

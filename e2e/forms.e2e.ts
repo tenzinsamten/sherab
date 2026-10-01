@@ -77,7 +77,22 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	await page.waitForURL(/edit=1/);
 	await page.waitForLoadState('networkidle');
 
-	await page.locator('ix-textarea textarea').fill('Week 1: alphabet\nWeek 2: songs');
+	// The syllabus text is rich text in a chosen language (#75): Tibetan, a
+	// bold first line, then a plain one.
+	const editor = page.locator('.rte-input');
+	await expect(editor).toHaveAttribute('contenteditable', 'true');
+	const language = page.locator('ix-select[name="contentLanguage"]');
+	await expect(language).toHaveJSProperty('value', 'en');
+	await language.locator('input').first().click();
+	await language.locator('ix-select-item[value="bo"]').click();
+	await expect(language).toHaveJSProperty('value', 'bo');
+	await editor.click();
+	const bold = page.getByRole('button', { name: 'Bold', exact: true });
+	await bold.click();
+	await page.keyboard.type('སློབ་ཚན་དང་པོ།');
+	await bold.click();
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('Week 2: songs');
 	await page.getByRole('button', { name: 'Add link' }).click();
 	await page.getByRole('button', { name: 'Add link' }).click();
 	// iX fields: typing goes into the native <input> in their shadow DOM.
@@ -101,25 +116,41 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// The add form preselects the current school year.
 	const { data: saved } = await service
 		.from('class_syllabi')
-		.select('school_year, content, links')
+		.select('school_year, content_doc, content_language, links')
 		.eq('class_id', fx.classC.id)
 		.single();
 	expect(saved).toEqual({
 		school_year: currentSchoolYear(),
-		content: 'Week 1: alphabet\nWeek 2: songs',
+		content_doc: {
+			type: 'doc',
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'སློབ་ཚན་དང་པོ།', marks: [{ type: 'bold' }] }]
+				},
+				{ type: 'paragraph', content: [{ type: 'text', text: 'Week 2: songs' }] }
+			]
+		},
+		content_language: 'bo',
 		links: [
 			{ url: 'https://a.example', label: 'Alphabet' },
 			{ url: 'https://c.example', label: 'Songs' }
 		]
 	});
 
-	// Reopened: text and both links, in order.
+	// Saved: shown formatted, in the Tibetan font under the English interface.
+	const shown = page.locator('.rich-text');
+	await expect(shown).toHaveAttribute('lang', 'bo');
+	await expect(shown).toHaveCSS('font-family', /Noto Serif Tibetan/);
+	await expect(shown.locator('p strong')).toHaveText('སློབ་ཚན་དང་པོ།');
+	await expect(shown.locator('p').nth(1)).toHaveText('Week 2: songs');
+
+	// Reopened: text, language and both links, in order.
 	await openForm(page, page.url().replace(/\?.*$/, ''));
 	await page.getByRole('button', { name: 'Edit syllabus' }).click();
-	await expect(page.locator('ix-textarea')).toHaveJSProperty(
-		'value',
-		'Week 1: alphabet\nWeek 2: songs'
-	);
+	await expect(page.locator('.rte-input')).toHaveAttribute('contenteditable', 'true');
+	await expect(page.locator('.rte-input p')).toHaveText(['སློབ་ཚན་དང་པོ།', 'Week 2: songs']);
+	await expect(page.locator('ix-select[name="contentLanguage"]')).toHaveJSProperty('value', 'bo');
 	await expect(page.locator('ix-input[name="linkUrl"]')).toHaveCount(2);
 	await expect(page.locator('ix-input[name="linkUrl"]').nth(0)).toHaveJSProperty(
 		'value',

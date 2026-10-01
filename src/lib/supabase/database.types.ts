@@ -364,6 +364,8 @@ export type Database = {
 				Row: {
 					class_id: string;
 					content: string | null;
+					content_doc: unknown | null;
+					content_language: string;
 					created_at: string;
 					created_by: string | null;
 					id: string;
@@ -374,6 +376,8 @@ export type Database = {
 				Insert: {
 					class_id: string;
 					content?: string | null;
+					content_doc?: unknown | null;
+					content_language?: string;
 					created_at?: string;
 					created_by?: string | null;
 					id?: string;
@@ -384,6 +388,8 @@ export type Database = {
 				Update: {
 					class_id?: string;
 					content?: string | null;
+					content_doc?: unknown | null;
+					content_language?: string;
 					created_at?: string;
 					created_by?: string | null;
 					id?: string;
@@ -515,6 +521,8 @@ export type Database = {
 			homework_assignments: {
 				Row: {
 					class_id: string;
+					content: unknown | null;
+					content_language: string;
 					created_at: string;
 					created_by: string | null;
 					description: string | null;
@@ -532,6 +540,8 @@ export type Database = {
 				};
 				Insert: {
 					class_id: string;
+					content?: unknown | null;
+					content_language?: string;
 					created_at?: string;
 					created_by?: string | null;
 					description?: string | null;
@@ -549,6 +559,8 @@ export type Database = {
 				};
 				Update: {
 					class_id?: string;
+					content?: unknown | null;
+					content_language?: string;
 					created_at?: string;
 					created_by?: string | null;
 					description?: string | null;

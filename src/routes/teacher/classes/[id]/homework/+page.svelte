@@ -127,7 +127,7 @@
 							})}
 						>
 							<span class="homework-row-title">
-								{item.title}
+								<span lang={item.contentLanguage}>{item.title}</span>
 								{#if item.isRecurring}
 									<ix-pill variant="neutral" outline
 										><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill

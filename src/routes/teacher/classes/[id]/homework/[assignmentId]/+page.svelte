@@ -1,13 +1,18 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
+	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
+	import RichText from '$lib/components/RichText.svelte';
+	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { ixValue } from '$lib/ix-fields';
+	import type { ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
 
@@ -15,6 +20,9 @@
 
 	const pending = createPending();
 	let assignment = $derived(data.assignment);
+	// The edit form's language (#74): starts as the saved one and, like the
+	// other edit fields, keeps the teacher's pick when the page data reloads.
+	let editLanguage = $state<ContentLanguage>(untrack(() => data.assignment.contentLanguage));
 
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
@@ -84,7 +92,7 @@
 		<div>
 			<p class="page-kicker">{m.homework_section_label()} · {skillLabel(assignment.skillArea)}</p>
 			<h1 class="page-heading" style="display:flex; align-items:center; gap: var(--space-2);">
-				{assignment.title}
+				<span lang={assignment.contentLanguage}>{assignment.title}</span>
 				{#if assignment.isRecurring}
 					<ix-pill variant="neutral" outline
 						><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
@@ -96,8 +104,8 @@
 	</header>
 
 	<section class="card">
-		{#if assignment.description}
-			<p class="homework-description">{assignment.description}</p>
+		{#if assignment.content}
+			<RichText content={assignment.content} lang={assignment.contentLanguage} />
 		{/if}
 
 		{#if assignment.referenceLinks.length > 0}
@@ -138,21 +146,19 @@
 						id={`edit-title-${assignment.id}`}
 						name="title"
 						label={m.homework_title_label()}
+						lang={editLanguage}
 						required
 						{@attach ixValue(assignment.title)}
 					></ix-input>
 				</div>
-				<div class="field">
-					<ix-textarea
-						id={`edit-description-${assignment.id}`}
-						name="description"
-						label={m.homework_description_label()}
-						textarea-rows="4"
-						max-length="2000"
-						resize-behavior="vertical"
-						{@attach ixValue(assignment.description ?? '')}
-					></ix-textarea>
-				</div>
+				<ContentLanguageSelect id={`edit-language-${assignment.id}`} bind:value={editLanguage} />
+				<RichTextEditor
+					id={`edit-content-${assignment.id}`}
+					label={m.homework_content_label()}
+					lang={editLanguage}
+					initial={assignment.content}
+					required
+				/>
 				<LinkRows idPrefix={`edit-${assignment.id}`} links={assignment.referenceLinks} />
 				{#if assignment.isRecurring}
 					<div class="field">
@@ -346,11 +352,6 @@
 </div>
 
 <style>
-	.homework-description {
-		margin: 0 0 var(--space-2);
-		white-space: pre-line;
-	}
-
 	.homework-links {
 		margin: var(--space-1) 0;
 		padding-left: var(--space-4);

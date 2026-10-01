@@ -1,6 +1,12 @@
 import { fail } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
+import {
+	readContent,
+	readContentLanguage,
+	type ContentLanguage,
+	type RichTextDoc
+} from '$lib/rich-text';
 import type { Database, HomeworkReferenceLink, SkillArea } from '$lib/supabase/database.types';
 import { readReferenceLinks } from './homework-details';
 import {
@@ -34,7 +40,10 @@ export type StudentHomeworkItem = {
 	classId: string;
 	title: string;
 	skillArea: SkillArea;
-	description: string | null;
+	/** null: homework from before #72 that never had a description. */
+	content: RichTextDoc | null;
+	/** Language the title and content are written in (#74). */
+	contentLanguage: ContentLanguage;
 	referenceLinks: HomeworkReferenceLink[];
 	dueDate: string;
 	status: StudentHomeworkStatus;
@@ -50,11 +59,16 @@ export type InstanceRow = {
 	archived_at: string | null;
 };
 
+/** The assignment columns a student's homework row or detail page needs. */
+export const STUDENT_ASSIGNMENT_COLUMNS =
+	'id, title, skill_area, content, content_language, reference_links, recurrence_rule';
+
 export type AssignmentRow = {
 	id: string;
 	title: string;
 	skill_area: SkillArea;
-	description: string | null;
+	content: unknown | null;
+	content_language: string;
 	reference_links: unknown;
 	recurrence_rule: unknown | null;
 };
@@ -90,7 +104,8 @@ export function toItem(
 		classId: instance.class_id,
 		title: assignment.title,
 		skillArea: assignment.skill_area,
-		description: assignment.description,
+		content: readContent(assignment.content),
+		contentLanguage: readContentLanguage(assignment.content_language),
 		referenceLinks: readReferenceLinks(assignment.reference_links),
 		dueDate: instance.due_date,
 		status: statusOf(entry),
@@ -158,10 +173,7 @@ export async function fetchInstances(supabase: Client, ids: string[]) {
 
 export async function fetchAssignments(supabase: Client, ids: string[]) {
 	return fetchByIds<AssignmentRow>(ids, (chunk) =>
-		supabase
-			.from('homework_assignments')
-			.select('id, title, skill_area, description, reference_links, recurrence_rule')
-			.in('id', chunk)
+		supabase.from('homework_assignments').select(STUDENT_ASSIGNMENT_COLUMNS).in('id', chunk)
 	);
 }
 

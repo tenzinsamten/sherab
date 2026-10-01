@@ -99,7 +99,7 @@
 									aria-label={m.parent_homework_row_label({
 										title: item.title,
 										name: item.childName
-									})}><strong>{item.title}</strong></a
+									})}><strong lang={item.contentLanguage}>{item.title}</strong></a
 								>
 								{#if item.overdue}
 									<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>

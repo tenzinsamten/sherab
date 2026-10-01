@@ -2,16 +2,23 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
+	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 	import { ixValue } from '$lib/ix-fields';
 	import { createPending } from '$lib/pending.svelte';
+	import { readContentLanguage, type ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const skillAreas: SkillArea[] = ['language', 'song', 'dance'];
+	// Language the homework is written in (#74): starts as the teacher's
+	// interface language and sets the font of the title and content fields.
+	let contentLanguage = $state<ContentLanguage>(readContentLanguage(getLocale()));
 	let targetMode = $state<'all' | 'subset'>('all');
 	let assignmentMode = $state<'once' | 'weekly'>('once');
 	// Success redirects to the list, which shows the toast; errors come from
@@ -61,7 +68,13 @@
 	<section class="card">
 		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
 			<div class="field">
-				<ix-input id="title" name="title" label={m.homework_title_label()} required></ix-input>
+				<ix-input
+					id="title"
+					name="title"
+					label={m.homework_title_label()}
+					lang={contentLanguage}
+					required
+				></ix-input>
 			</div>
 			<div class="field">
 				<ix-select
@@ -76,16 +89,13 @@
 					{/each}
 				</ix-select>
 			</div>
-			<div class="field">
-				<ix-textarea
-					id="description"
-					name="description"
-					label={m.homework_description_label()}
-					textarea-rows="4"
-					max-length="2000"
-					resize-behavior="vertical"
-				></ix-textarea>
-			</div>
+			<ContentLanguageSelect id="contentLanguage" bind:value={contentLanguage} />
+			<RichTextEditor
+				id="content"
+				label={m.homework_content_label()}
+				lang={contentLanguage}
+				required
+			/>
 			<LinkRows idPrefix="create" />
 
 			<div class="field">

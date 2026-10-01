@@ -6,6 +6,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { firstLine, type ContentLanguage, type RichTextDoc } from '$lib/rich-text';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 
@@ -23,7 +24,8 @@
 		syllabi: {
 			id: string;
 			schoolYear: number;
-			content: string | null;
+			content: RichTextDoc | null;
+			contentLanguage: ContentLanguage;
 			links: HomeworkReferenceLink[];
 		}[];
 		currentYear: number;
@@ -38,15 +40,6 @@
 	let initialYear = $derived(
 		addableYears.includes(currentYear) ? currentYear : (addableYears[0] ?? currentYear)
 	);
-
-	function firstLine(text: string | null): string {
-		return (
-			(text ?? '')
-				.split('\n')
-				.find((l) => l.trim())
-				?.trim() ?? ''
-		);
-	}
 
 	// A delete redirects here with ?deleted=<year>: show the toast once.
 	$effect(() => {
@@ -81,8 +74,8 @@
 							{s.links.length > 0
 								? m.syllabus_links_count({ count: s.links.length })
 								: m.syllabus_no_links()}
-							{#if firstLine(s.content)}
-								· {firstLine(s.content)}
+							{#if s.content && firstLine(s.content)}
+								· <span lang={s.contentLanguage}>{firstLine(s.content)}</span>
 							{/if}
 						</span>
 					</a>

@@ -27,7 +27,7 @@ const futureDays = [`${futureYear}-03-08`, `${futureYear}-03-15`];
 
 let teacher: TestUser;
 let classId: string;
-const students: { id: string; name: string }[] = [];
+const students: { id: string; name: string; user: TestUser }[] = [];
 /** Session ids by day. */
 const sessions: Record<string, string> = {};
 const userIds: string[] = [];
@@ -85,7 +85,7 @@ async function addStudent(index: number) {
 			`enroll student ${index}`
 		);
 	}
-	students[index] = { id: user.id, name };
+	students[index] = { id: user.id, name, user };
 }
 
 async function cleanup() {
@@ -226,6 +226,22 @@ function capturePosts(page: Page, action: string): URLSearchParams[] {
 	});
 	return posts;
 }
+
+/**
+ * The homework content editor's editable area (#72-#74). Tiptap loads after
+ * the page, so wait until it can be typed in.
+ */
+async function contentEditor(page: Page, id: string) {
+	const area = page.locator(`#${id}`);
+	await expect(area).toHaveAttribute('contenteditable', 'true');
+	return area;
+}
+
+/** A homework content document of one plain paragraph. */
+const textDoc = (text: string) => ({
+	type: 'doc',
+	content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+});
 
 test('attendance: picking a session updates the leave pills, and the save keeps it selected', async ({
 	page
@@ -383,6 +399,9 @@ test('homework create: one-off for a subset of two students', async ({ page }) =
 	await page.locator('#title input').first().fill(title);
 	await expect(page.locator('#skillArea')).toHaveJSProperty('value', 'language');
 	await pick(page, 'skillArea', 'song');
+	// The content language starts as the interface language.
+	await expect(page.locator('#contentLanguage')).toHaveJSProperty('value', 'en');
+	await (await contentEditor(page, 'content')).fill('Practise the song');
 	await page.locator('#dueDate input').first().fill(`${year}-04-01`);
 	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-01`);
 
@@ -401,6 +420,9 @@ test('homework create: one-off for a subset of two students', async ({ page }) =
 	expect(posted.get('mode')).toBe('once');
 	expect(posted.get('title')).toBe(title);
 	expect(posted.get('skillArea')).toBe('song');
+	expect(posted.get('contentLanguage')).toBe('en');
+	expect(JSON.parse(posted.get('content') ?? 'null')).toEqual(textDoc('Practise the song'));
+	expect(posted.has('description')).toBe(false);
 	expect(posted.get('dueDate')).toBe(`${year}-04-01`);
 	expect(posted.get('targetMode')).toBe('subset');
 	expect(posted.getAll('studentIds').sort()).toEqual([students[2].id, students[3].id].sort());
@@ -409,11 +431,16 @@ test('homework create: one-off for a subset of two students', async ({ page }) =
 
 	const { data } = await service
 		.from('homework_assignments')
-		.select('skill_area, whole_class')
+		.select('skill_area, whole_class, content, content_language')
 		.eq('class_id', classId)
 		.eq('title', title)
 		.single();
-	expect(data).toEqual({ skill_area: 'song', whole_class: false });
+	expect(data).toEqual({
+		skill_area: 'song',
+		whole_class: false,
+		content: textDoc('Practise the song'),
+		content_language: 'en'
+	});
 });
 
 test('homework create: weekly via the keyboard, then edit title and offset', async ({ page }) => {
@@ -423,6 +450,7 @@ test('homework create: weekly via the keyboard, then edit title and offset', asy
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
 	await page.locator('#title input').first().fill(title);
+	await (await contentEditor(page, 'content')).fill('Sing it every week');
 	// Arrow keys move the mode choice and swap the fields.
 	const once = page.getByRole('radio', { name: 'One-off' });
 	await expect(once).toBeChecked();
@@ -492,6 +520,7 @@ test('homework create: an empty subset shows the server error and keeps the type
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
 	await page.locator('#title input').first().fill(title);
+	await (await contentEditor(page, 'content')).fill('Kept content');
 	await page.locator('#dueDate input').first().fill(`${year}-04-02`);
 	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-02`);
 	await page.getByRole('radio', { name: 'Specific students' }).click();
@@ -505,6 +534,7 @@ test('homework create: an empty subset shows the server error and keeps the type
 	expect(posts[0].getAll('studentIds')).toEqual([]);
 	await expect(page).toHaveURL(/\/homework\/new$/);
 	await expect(page.locator('#title')).toHaveJSProperty('value', title);
+	await expect(page.locator('#content')).toHaveText('Kept content');
 	await expect(page.getByRole('radio', { name: 'Specific students' })).toBeChecked();
 
 	const { data } = await service
@@ -525,7 +555,7 @@ test('homework edit: a server error shows the toast and keeps the typed values',
 			class_id: classId,
 			title,
 			skill_area: 'dance',
-			description: 'Original description',
+			content: textDoc('Original content'),
 			whole_class: true,
 			created_by: teacher.id,
 			recurrence_rule: { frequency: 'weekly' },
@@ -541,16 +571,16 @@ test('homework edit: a server error shows the toast and keeps the typed values',
 	await open(page, `/teacher/classes/${classId}/homework/${created.id}`);
 	await page.getByText('Edit', { exact: true }).click();
 	const titleField = page.locator(`#edit-title-${created.id}`);
-	const descriptionField = page.locator(`#edit-description-${created.id}`);
+	const contentField = await contentEditor(page, `edit-content-${created.id}`);
 	const offsetField = page.locator(`#edit-offset-${created.id}`);
 	await expect(titleField).toHaveJSProperty('value', title);
-	await expect(descriptionField).toHaveJSProperty('value', 'Original description');
+	await expect(contentField).toHaveText('Original content');
 	await expect(offsetField).toHaveJSProperty('value', 5);
 
 	// An offset over 365 is rejected by the server's editAssignment validation.
 	const typedTitle = `${title} typed`;
 	await titleField.locator('input').first().fill(typedTitle);
-	await descriptionField.locator('textarea').first().fill('Typed description');
+	await contentField.fill('Typed content');
 	await offsetField.locator('input').first().fill('400');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(
@@ -559,18 +589,18 @@ test('homework edit: a server error shows the toast and keeps the typed values',
 
 	expect(edits).toHaveLength(1);
 	expect(edits[0].get('title')).toBe(typedTitle);
-	expect(edits[0].get('description')).toBe('Typed description');
+	expect(JSON.parse(edits[0].get('content') ?? 'null')).toEqual(textDoc('Typed content'));
 	expect(edits[0].get('dueOffsetDays')).toBe('400');
 	await expect(titleField).toHaveJSProperty('value', typedTitle);
-	await expect(descriptionField).toHaveJSProperty('value', 'Typed description');
+	await expect(contentField).toHaveText('Typed content');
 	await expect(offsetField).toHaveJSProperty('value', 400);
 
 	const { data: saved } = await service
 		.from('homework_assignments')
-		.select('title, description, due_offset_days')
+		.select('title, content, due_offset_days')
 		.eq('id', created.id)
 		.single();
-	expect(saved).toEqual({ title, description: 'Original description', due_offset_days: 5 });
+	expect(saved).toEqual({ title, content: textDoc('Original content'), due_offset_days: 5 });
 });
 
 test('skills: a server error shows the toast, keeps the level and notes, and Save works again', async ({
@@ -645,10 +675,11 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	await open(page, `/teacher/classes/${classId}/homework/${id}`);
 	await page.getByText('Edit', { exact: true }).click();
 	const titleField = page.locator(`#edit-title-${id}`);
-	const descriptionField = page.locator(`#edit-description-${id}`);
+	const contentField = await contentEditor(page, `edit-content-${id}`);
 	await expect(titleField).toHaveJSProperty('value', assignment!.title);
+	await expect(contentField).toHaveText('Practise the song');
 	await titleField.locator('input').first().fill('Unsaved title');
-	await descriptionField.locator('textarea').first().fill('Unsaved description');
+	await contentField.fill('Unsaved content');
 
 	await page.getByText('Student status', { exact: true }).first().click();
 	await page.getByRole('button', { name: `Mark done for ${students[2].name}` }).click();
@@ -658,11 +689,130 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	);
 
 	await expect(titleField).toHaveJSProperty('value', 'Unsaved title');
-	await expect(descriptionField).toHaveJSProperty('value', 'Unsaved description');
+	await expect(contentField).toHaveText('Unsaved content');
 	const { data: stored } = await service
 		.from('homework_assignments')
 		.select('title')
 		.eq('id', id)
 		.single();
 	expect(stored).toEqual({ title: assignment!.title });
+});
+
+test('homework create: content is required (#72)', async ({ page }) => {
+	const title = `E2E66T no content ${tag}`;
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}/homework/new`);
+
+	await page.locator('#title input').first().fill(title);
+	await contentEditor(page, 'content');
+	await page.locator('#dueDate input').first().fill(`${year}-04-03`);
+	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-03`);
+	await page.getByRole('button', { name: 'Create assignment' }).click();
+	await expect(page.locator('ix-toast').getByText('Content is required.')).toBeVisible();
+
+	await expect(page).toHaveURL(/\/homework\/new$/);
+	await expect(page.locator('#title')).toHaveJSProperty('value', title);
+	const { data } = await service
+		.from('homework_assignments')
+		.select('id')
+		.eq('class_id', classId)
+		.eq('title', title);
+	expect(data).toEqual([]);
+});
+
+test('homework create: Tibetan homework with formatting, longer than the old limit, shows in the Tibetan font for a student with an English interface (#73, #74)', async ({
+	page,
+	browser
+}) => {
+	const title = `བོད་ཡིག་སློབ་སྦྱོང་། ${tag}`;
+	// Well over the old 2000-character limit.
+	const long = 'ཀ་ཁ་ག་ང་། '.repeat(400).trim();
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}/homework/new`);
+
+	await page.locator('#title input').first().fill(title);
+	await pick(page, 'contentLanguage', 'bo');
+	const area = await contentEditor(page, 'content');
+	// The editing area follows the chosen language.
+	await expect(page.locator('.rte-body')).toHaveAttribute('lang', 'bo');
+	await area.click();
+	const tool = (name: string) => page.getByRole('button', { name, exact: true });
+	await tool('Bold').click();
+	await expect(tool('Bold')).toHaveAttribute('aria-pressed', 'true');
+	await page.keyboard.type('གལ་ཆེན།');
+	await tool('Bold').click();
+	await page.keyboard.press('Enter');
+	await page.keyboard.insertText(long);
+	await page.keyboard.press('Enter');
+	await tool('Bullet list').click();
+	await page.keyboard.type('དང་པོ།');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('གཉིས་པ།');
+	await page.locator('#dueDate input').first().fill(`${year}-04-04`);
+	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-04`);
+
+	await page.getByRole('button', { name: 'Create assignment' }).click();
+	await page.waitForURL(/\/homework(\?|$)/);
+
+	const { data: saved } = await service
+		.from('homework_assignments')
+		.select('id, content, content_language')
+		.eq('class_id', classId)
+		.eq('title', title)
+		.single();
+	const item = (text: string) => ({
+		type: 'listItem',
+		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+	});
+	expect(saved).toMatchObject({
+		content_language: 'bo',
+		content: {
+			type: 'doc',
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'གལ་ཆེན།', marks: [{ type: 'bold' }] }]
+				},
+				{ type: 'paragraph', content: [{ type: 'text', text: long }] },
+				{ type: 'bulletList', content: [item('དང་པོ།'), item('གཉིས་པ།')] }
+			]
+		}
+	});
+
+	// Teacher's list: the title carries the homework's language.
+	await expect(
+		page.locator('.homework-row-title span[lang="bo"]', { hasText: title })
+	).toBeVisible();
+
+	// A student of the class, in a fresh session with the English interface.
+	const { data: instance } = await service
+		.from('homework_instances')
+		.select('id')
+		.eq('assignment_id', saved!.id)
+		.single();
+	const context = await browser.newContext();
+	try {
+		const studentPage = await context.newPage();
+		await signIn(studentPage, students[5].user);
+		await open(studentPage, `/student/homework/${instance!.id}`);
+
+		await expect(studentPage.locator('html')).toHaveAttribute('lang', 'en');
+		const heading = studentPage.locator('h1 span[lang="bo"]');
+		await expect(heading).toHaveText(title);
+		await expect(heading).toHaveCSS('font-family', /Noto Serif Tibetan/);
+
+		const content = studentPage.locator('.rich-text');
+		await expect(content).toHaveAttribute('lang', 'bo');
+		await expect(content).toHaveCSS('font-family', /Noto Serif Tibetan/);
+		await expect(content.locator('p strong')).toHaveText('གལ་ཆེན།');
+		await expect(content.locator('p').nth(1)).toHaveText(long);
+		await expect(content.locator('ul > li')).toHaveText(['དང་པོ།', 'གཉིས་པ།']);
+		// The page around it keeps the interface's font.
+		await expect(studentPage.locator('.page-subtitle')).not.toHaveCSS(
+			'font-family',
+			/Noto Serif Tibetan/
+		);
+	} finally {
+		await context.close();
+	}
 });

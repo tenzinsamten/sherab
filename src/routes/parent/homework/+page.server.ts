@@ -9,7 +9,7 @@ export type HomeworkChild = { id: string; name: string };
 /** One open homework row on the shared page: the item, its child and class name. */
 export type ParentHomeworkItem = Pick<
 	StudentHomeworkItem,
-	'instanceId' | 'title' | 'dueDate' | 'overdue' | 'referenceLinks'
+	'instanceId' | 'title' | 'contentLanguage' | 'dueDate' | 'overdue' | 'referenceLinks'
 > & {
 	childId: string;
 	childName: string;
@@ -64,6 +64,7 @@ async function loadChildOpen(
 			childName: child.name,
 			instanceId: item.instanceId,
 			title: item.title,
+			contentLanguage: item.contentLanguage,
 			dueDate: item.dueDate,
 			overdue: item.overdue,
 			referenceLinks: item.referenceLinks,

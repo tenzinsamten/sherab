@@ -1,10 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import { HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
-import { markHomeworkDone, toItem } from '$lib/server/student-homework';
+import { markHomeworkDone, STUDENT_ASSIGNMENT_COLUMNS, toItem } from '$lib/server/student-homework';
 import type { Actions, PageServerLoad } from './$types';
 
-/** One homework for the student (#43): description, links and the Done action. */
+/** One homework for the student (#43): content, links and the Done action. */
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) {
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		await Promise.all([
 			supabase
 				.from('homework_assignments')
-				.select('id, title, skill_area, description, reference_links, recurrence_rule')
+				.select(STUDENT_ASSIGNMENT_COLUMNS)
 				.eq('id', instance.assignment_id)
 				.maybeSingle(),
 			supabase

@@ -880,7 +880,7 @@
 		{#each items as item (item.instanceId)}
 			<li class="homework">
 				<p class="homework-title">
-					<strong>{item.title}</strong>
+					<strong lang={item.contentLanguage}>{item.title}</strong>
 					{#if item.overdue}
 						<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>
 					{/if}

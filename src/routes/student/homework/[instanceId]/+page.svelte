@@ -5,6 +5,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
+	import RichText from '$lib/components/RichText.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
@@ -54,7 +55,7 @@
 				{/if}
 			</p>
 			<h1 class="page-heading actions">
-				{data.item.title}
+				<span lang={data.item.contentLanguage}>{data.item.title}</span>
 				{#if data.item.isRecurring}
 					<ix-pill variant="neutral" outline
 						><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
@@ -73,10 +74,12 @@
 	</header>
 
 	<section class="card">
+		{#if data.item.content}
+			<RichText content={data.item.content} lang={data.item.contentLanguage} />
+		{/if}
 		<TextWithLinks
-			text={data.item.description}
 			links={data.item.referenceLinks}
-			empty={m.student_homework_no_details()}
+			empty={data.item.content ? '' : m.student_homework_no_details()}
 		/>
 
 		<div class="actions status-row">

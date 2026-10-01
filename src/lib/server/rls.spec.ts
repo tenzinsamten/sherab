@@ -3297,6 +3297,64 @@ describe.skipIf(!reachable)(
 				.eq('id', assignmentId);
 			expect(readAttempt.data).toEqual([]);
 		});
+
+		it("the class's teacher edits a homework's content and its language (#72-#74, 0034); another teacher cannot, bad values are refused and other columns stay closed", async () => {
+			const today = new Date().toISOString().slice(0, 10);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 0
+			});
+			const content = {
+				type: 'doc',
+				content: [{ type: 'paragraph', content: [{ type: 'text', text: 'བོད་ཡིག' }] }]
+			};
+
+			const edit = await teacherA.client
+				.from('homework_assignments')
+				.update({ content, content_language: 'bo' })
+				.eq('id', assignmentId)
+				.select('content, content_language')
+				.single();
+			expect(edit.error).toBeNull();
+			expect(edit.data).toEqual({ content, content_language: 'bo' });
+
+			const otherTeacher = await teacherB.client
+				.from('homework_assignments')
+				.update({ content: { type: 'doc', content: [] }, content_language: 'de' })
+				.eq('id', assignmentId)
+				.select('id');
+			expect(otherTeacher.error).toBeNull();
+			expect(otherTeacher.data).toEqual([]);
+
+			// The check constraints: a language the app doesn't offer, and
+			// content that is not a document object.
+			const unknownLanguage = await teacherA.client
+				.from('homework_assignments')
+				.update({ content_language: 'fr' })
+				.eq('id', assignmentId);
+			expect(unknownLanguage.error).not.toBeNull();
+			const notADocument = await teacherA.client
+				.from('homework_assignments')
+				.update({ content: 'plain text' })
+				.eq('id', assignmentId);
+			expect(notADocument.error).not.toBeNull();
+
+			// Still a column-level grant: whole_class is set at creation only.
+			const outsideGrant = await teacherA.client
+				.from('homework_assignments')
+				.update({ whole_class: true })
+				.eq('id', assignmentId);
+			expect(outsideGrant.error).not.toBeNull();
+
+			const { data: stored } = await adminClient
+				.from('homework_assignments')
+				.select('content, content_language, whole_class')
+				.eq('id', assignmentId)
+				.single();
+			expect(stored).toEqual({ content, content_language: 'bo', whole_class: false });
+		});
 	}
 );
 

@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
+	import type { ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import RepeatIcon from './RepeatIcon.svelte';
 
@@ -18,6 +19,8 @@
 		items: {
 			instanceId: string;
 			title: string;
+			/** Language the title is written in: selects its font (#74). */
+			contentLanguage: ContentLanguage;
 			skillArea: SkillArea;
 			dueDate: string;
 			status: 'assigned' | 'done' | 'reviewed';
@@ -48,7 +51,7 @@
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- detailHref() builds on resolve() and only adds ?from=done. -->
 			<a class="homework-row" href={detailHref(item.instanceId)}>
 				<span class="homework-row-title">
-					{item.title}
+					<span lang={item.contentLanguage}>{item.title}</span>
 					{#if item.isRecurring}
 						<ix-pill variant="neutral" outline
 							><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill

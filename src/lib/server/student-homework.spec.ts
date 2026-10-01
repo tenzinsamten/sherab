@@ -172,7 +172,8 @@ describe('loadStudentHomework', () => {
 			id: 'a1',
 			title: 'Practice',
 			skill_area: 'song',
-			description: null,
+			content: null,
+			content_language: 'en',
 			reference_links: [],
 			recurrence_rule: null
 		}

@@ -1,4 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+	readContent,
+	readContentLanguage,
+	type ContentLanguage,
+	type RichTextDoc
+} from '$lib/rich-text';
 import type { Database, HomeworkReferenceLink, SkillArea } from '$lib/supabase/database.types';
 import { readReferenceLinks } from './homework-details';
 import { buildHomeworkProgress, isOverdue, type HomeworkHistoryRow } from './homework-status';
@@ -34,7 +40,10 @@ export type AssignmentView = {
 	id: string;
 	title: string;
 	skillArea: SkillArea;
-	description: string | null;
+	/** null: homework from before #72 that never had a description. */
+	content: RichTextDoc | null;
+	/** Language the title and content are written in (#74). */
+	contentLanguage: ContentLanguage;
 	referenceLinks: HomeworkReferenceLink[];
 	createdAt: string;
 	isRecurring: boolean;
@@ -46,13 +55,14 @@ export type AssignmentView = {
 };
 
 export const ASSIGNMENT_COLUMNS =
-	'id, title, skill_area, description, reference_links, whole_class, recurrence_rule, due_offset_days, ends_on, paused_at, created_at';
+	'id, title, skill_area, content, content_language, reference_links, whole_class, recurrence_rule, due_offset_days, ends_on, paused_at, created_at';
 
 export type AssignmentRow = {
 	id: string;
 	title: string;
 	skill_area: SkillArea;
-	description: string | null;
+	content: unknown | null;
+	content_language: string;
 	reference_links: unknown;
 	whole_class: boolean;
 	recurrence_rule: unknown | null;
@@ -268,7 +278,8 @@ export function buildAssignmentViews(
 			id: a.id,
 			title: a.title,
 			skillArea: a.skill_area,
-			description: a.description,
+			content: readContent(a.content),
+			contentLanguage: readContentLanguage(a.content_language),
 			referenceLinks: readReferenceLinks(a.reference_links),
 			createdAt: a.created_at,
 			isRecurring: a.recurrence_rule !== null,
@@ -284,6 +295,7 @@ export function buildAssignmentViews(
 export type AssignmentSummary = {
 	id: string;
 	title: string;
+	contentLanguage: ContentLanguage;
 	skillArea: SkillArea;
 	isRecurring: boolean;
 	/** Earliest open instance due today or later, else the latest instance's due date. */
@@ -311,6 +323,7 @@ export function summarise(view: AssignmentView, open: boolean, today: string): A
 	return {
 		id: view.id,
 		title: view.title,
+		contentLanguage: view.contentLanguage,
 		skillArea: view.skillArea,
 		isRecurring: view.isRecurring,
 		nextDue: upcoming[0] ?? latestDueDate,

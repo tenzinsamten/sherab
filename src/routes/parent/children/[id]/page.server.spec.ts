@@ -718,7 +718,8 @@ describe('parent child page: detail sections', () => {
 			id: `a-${instanceId}`,
 			title: `Homework ${instanceId}`,
 			skill_area: 'language',
-			description: null,
+			content: null,
+			content_language: 'en',
 			reference_links: links,
 			recurrence_rule: null
 		};

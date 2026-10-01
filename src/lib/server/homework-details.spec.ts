@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
 import {
-	MAX_DESCRIPTION_LENGTH,
 	MAX_REFERENCE_LINKS,
-	parseDescription,
+	parseHomeworkContent,
 	parseReferenceLinks,
 	readReferenceLinks
 } from './homework-details';
@@ -16,22 +16,50 @@ function linkForm(rows: [string, string][]): FormData {
 	return fd;
 }
 
-describe('parseDescription', () => {
-	it('trims and keeps line breaks inside the text', () => {
-		expect(parseDescription('  Line one\nLine two  ')).toEqual({
+function contentForm(content: string | null, language: string | null): FormData {
+	const fd = new FormData();
+	if (content !== null) fd.set('content', content);
+	if (language !== null) fd.set('contentLanguage', language);
+	return fd;
+}
+
+const DOC = {
+	type: 'doc',
+	content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Read page 4' }] }]
+};
+
+describe('parseHomeworkContent', () => {
+	it('returns the document and its language', () => {
+		expect(parseHomeworkContent(contentForm(JSON.stringify(DOC), 'bo'))).toEqual({
 			ok: true,
-			value: 'Line one\nLine two'
+			content: DOC,
+			language: 'bo'
 		});
 	});
 
-	it('turns empty or missing into null', () => {
-		expect(parseDescription('   ')).toEqual({ ok: true, value: null });
-		expect(parseDescription(null)).toEqual({ ok: true, value: null });
+	it('requires content', () => {
+		const missing = parseHomeworkContent(contentForm(null, 'en'));
+		const empty = parseHomeworkContent(
+			contentForm(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }), 'en')
+		);
+		expect(missing).toEqual({ ok: false, error: m.homework_error_content_required() });
+		expect(empty).toEqual({ ok: false, error: m.homework_error_content_required() });
 	});
 
-	it('accepts exactly the maximum and rejects one more', () => {
-		expect(parseDescription('a'.repeat(MAX_DESCRIPTION_LENGTH)).ok).toBe(true);
-		expect(parseDescription('a'.repeat(MAX_DESCRIPTION_LENGTH + 1)).ok).toBe(false);
+	it('refuses a document that is not one the editor makes', () => {
+		expect(parseHomeworkContent(contentForm('<p>hello</p>', 'en'))).toEqual({
+			ok: false,
+			error: m.homework_error_content_invalid()
+		});
+	});
+
+	it('refuses a language the form does not offer', () => {
+		for (const language of [null, '', 'fr']) {
+			expect(parseHomeworkContent(contentForm(JSON.stringify(DOC), language))).toEqual({
+				ok: false,
+				error: m.homework_error_content_language()
+			});
+		}
 	});
 });
 

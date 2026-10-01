@@ -131,6 +131,16 @@ a {
 	font-family: var(--font-tibetan);
 	line-height: 1.6;
 }
+/* Homework is shown in the language it was written in, whatever the
+   interface language (#74): its title and content carry their own `lang`.
+   Tibetan homework inside an English or German interface is covered by the
+   rule above; this is the reverse, English or German homework inside a
+   Tibetan interface, which gets iX's font and the body's line height back. */
+[lang='bo'] [lang]:not([lang='bo']),
+[lang='bo'] [lang]:not([lang='bo']) :is(h1, h2, h3) {
+	font-family: var(--theme-font-family, 'Siemens Sans', Arial, Helvetica, sans-serif);
+	line-height: 1.5;
+}
 
 .sr-only {
 	position: absolute;

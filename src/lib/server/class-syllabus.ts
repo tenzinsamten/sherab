@@ -1,64 +1,90 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
+import {
+	isContentLanguage,
+	parseContent,
+	readContent,
+	readContentLanguage,
+	type ContentLanguage,
+	type RichTextDoc
+} from '$lib/rich-text';
 import { currentSchoolYear, formatSchoolYear, selectableSchoolYears } from '$lib/school-year';
 import type { Database, HomeworkReferenceLink } from '$lib/supabase/database.types';
 import { CLASS_MESSAGES, SYLLABUS_MESSAGES, rowOr404 } from './class-access';
 import { UNIQUE_VIOLATION_CODE } from './class-code';
-import { parseDescription, parseReferenceLinks, readReferenceLinks } from './homework-details';
+import { parseReferenceLinks, readReferenceLinks } from './homework-details';
 
 /**
  * Class syllabi, one per school year (#37, 0015_class_syllabi.sql). Shared by
  * the teacher routes (/teacher/classes/[id]/syllabus) and the admin routes
  * (/admin/classes/[id]/syllabus); RLS decides who may read or change them.
+ * The text is rich text in a chosen language, like homework content (#75,
+ * 0035_syllabus_content.sql).
  */
 
 type Client = SupabaseClient<Database>;
 
-/** Mirrors class_syllabi_content_length in 0015. */
-export const MAX_SYLLABUS_LENGTH = 5000;
-
-export type SyllabusInput = { syllabus: string | null; links: HomeworkReferenceLink[] };
+export type SyllabusInput = {
+	content: RichTextDoc | null;
+	language: ContentLanguage;
+	links: HomeworkReferenceLink[];
+};
 
 export type Syllabus = {
 	id: string;
 	schoolYear: number;
-	content: string | null;
+	content: RichTextDoc | null;
+	/** Language the syllabus is written in: selects its font (#75). */
+	contentLanguage: ContentLanguage;
 	links: HomeworkReferenceLink[];
 	updatedAt: string;
 };
 
 /**
- * Reads the syllabus form: a `syllabus` textarea plus the LinkRows
- * `linkUrl` / `linkLabel` fields.
+ * Reads the syllabus form: the editor's `content` document, its
+ * `contentLanguage`, and the LinkRows `linkUrl` / `linkLabel` fields. The
+ * text is optional (a syllabus may be links only), so an empty editor gives
+ * null, which also clears a saved text.
  */
 export function parseSyllabusForm(
 	formData: FormData
-): { ok: true; value: SyllabusInput } | { ok: false; problem: 'length' | 'links' } {
-	const syllabus = parseDescription(formData.get('syllabus'), MAX_SYLLABUS_LENGTH);
-	if (!syllabus.ok) return { ok: false, problem: 'length' };
+):
+	| { ok: true; value: SyllabusInput }
+	| { ok: false; problem: 'content' | 'size' | 'language' | 'links' } {
+	const content = parseContent(formData.get('content'));
+	if (!content.ok && content.reason !== 'required') {
+		return { ok: false, problem: content.reason === 'too_large' ? 'size' : 'content' };
+	}
+	const language = formData.get('contentLanguage');
+	if (!isContentLanguage(language)) return { ok: false, problem: 'language' };
 	const links = parseReferenceLinks(formData);
 	if (!links.ok) return { ok: false, problem: 'links' };
-	return { ok: true, value: { syllabus: syllabus.value, links: links.value } };
+	return {
+		ok: true,
+		value: { content: content.ok ? content.value : null, language, links: links.value }
+	};
 }
 
 function toSyllabus(row: {
 	id: string;
 	school_year: number;
-	content: string | null;
+	content_doc: unknown | null;
+	content_language: string;
 	links: unknown;
 	updated_at: string;
 }): Syllabus {
 	return {
 		id: row.id,
 		schoolYear: row.school_year,
-		content: row.content,
+		content: readContent(row.content_doc),
+		contentLanguage: readContentLanguage(row.content_language),
 		links: readReferenceLinks(row.links),
 		updatedAt: row.updated_at
 	};
 }
 
-const SYLLABUS_COLUMNS = 'id, school_year, content, links, updated_at';
+const SYLLABUS_COLUMNS = 'id, school_year, content_doc, content_language, links, updated_at';
 
 /** A class's syllabi, newest school year first. */
 export async function listSyllabi(
@@ -172,10 +198,13 @@ export async function updateSyllabus({ request, classId, supabase, user }: Actio
 	const syllabusId = String(formData.get('syllabusId') ?? '');
 	const parsed = parseSyllabusForm(formData);
 	if (!parsed.ok) {
-		return fail(400, {
-			error:
-				parsed.problem === 'length' ? m.syllabus_error_length() : m.homework_error_links_invalid()
-		});
+		const messages = {
+			content: m.homework_error_content_invalid,
+			size: m.syllabus_error_too_large,
+			language: m.syllabus_error_language,
+			links: m.homework_error_links_invalid
+		};
+		return fail(400, { error: messages[parsed.problem]() });
 	}
 
 	// .select() + row check: RLS turns a forbidden update into zero rows, not
@@ -183,7 +212,8 @@ export async function updateSyllabus({ request, classId, supabase, user }: Actio
 	const { data, error } = await supabase
 		.from('class_syllabi')
 		.update({
-			content: parsed.value.syllabus,
+			content_doc: parsed.value.content,
+			content_language: parsed.value.language,
 			links: parsed.value.links,
 			updated_at: new Date().toISOString()
 		})
