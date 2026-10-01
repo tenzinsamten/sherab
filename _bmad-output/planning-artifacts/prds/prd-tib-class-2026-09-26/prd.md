@@ -2,7 +2,7 @@
 title: "PRD: Parent Role — tib-class"
 status: final
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-01
 ---
 
 # PRD: Parent Role — tib-class
@@ -12,6 +12,8 @@ updated: 2026-09-26
 **Status:** Ready for architecture, UX, and stories. Go-live is blocked on Open Question 1 (GDPR). The app isn't in use by real families yet, so there's no data to migrate.
 
 This PRD adds a Parent role to Sherab, the Munich Tibetan Sunday school class tracker. It builds on the existing contract in `_bmad-output/specs/spec-class-tracker/` (SPEC.md and companions), the architecture spine, and the UX design, and doesn't repeat them. It's written for the maintainer and for downstream work: the architecture update, UX, and stories. §3 fixes the vocabulary, §4 lists features with globally numbered FRs, and §5 lists the spec changes this PRD requires. Technical notes are in `addendum.md`. Assumptions inferred during drafting in FR-2, FR-6, FR-10, FR-11, FR-12, SM-1, SM-2, and SM-C1 were confirmed by the product owner on 2026-09-26.
+
+**Extended on 2026-10-01:** §4.6 (FR-13 to FR-16) adds rich-text Homework Content and Syllabus with a Content Language. These requirements are for Teachers and Students, not the Parent role. They were reported by the product owner during manual verification (issues #72 to #75 in `_bmad-output/manual-verification-issues.md`), decided the same day, and are already built; this PRD records them because it is the project's only PRD. Their spec changes are listed in §5 and were applied to the spec files the same day.
 
 ## 1. Vision
 
@@ -68,6 +70,9 @@ The same teacher meeting flagged last-minute cancellations. Teachers plan each s
 - **Child Summary**: The per-child card on the Parent's landing page.
 - **Open Homework**: Homework assigned to the child that isn't Done and isn't archived. "Pending" is used only for account and approval states.
 - **Deletion Request**: The existing request type (CAP-8) to erase a Student's data.
+- **Homework Content**: The formatted text of a Homework that tells the Student what to do. Required. Replaces the earlier optional plain-text description.
+- **Syllabus**: A Class's plan for one school year, written by its Teacher or the Admin: optional formatted text plus optional links. One per Class per school year.
+- **Content Language**: The language a Homework or a Syllabus is written in: Tibetan, English, or German. It selects the font the text is shown in, independent of the viewer's interface language.
 - Existing terms (Student, Teacher, Admin, Pending, Class, Homework, Done, Reviewed, Overdue, Session, Streak, Badge, Team) keep their meaning from `specs/spec-class-tracker/SPEC.md`.
 
 ## 4. Features
@@ -221,6 +226,57 @@ A Parent can manage their own account details.
 - The Parent Email is shown read-only.
 - The page supports German, English, and Tibetan like the rest of the app.
 
+### 4.6 Homework Content & Syllabus
+
+**Description:** A Teacher writes what a Homework asks for, and a Class's Syllabus, as formatted text in a chosen language. Before this, Homework had an optional plain-text description of at most 2000 characters and a Syllabus had plain text of at most 5000. Neither had a language, so Tibetan text was shown in the Tibetan font only to a viewer whose interface was set to Tibetan. Added 2026-10-01; not part of the Parent role.
+
+#### FR-13: Homework Content is required
+
+A Teacher must write Homework Content when creating or editing a Homework.
+
+**Consequences (testable):**
+- A Homework can't be saved without Homework Content. A text of only blank lines or spaces counts as empty, and the Teacher sees "Content is required."
+- This applies to one-off and weekly Homework, on create and on edit.
+- The Content field replaces the Description field and spans the full width of the form.
+- When saving fails for any reason, what the Teacher typed stays in the form.
+- A Homework created before this change shows its old description as its Homework Content, one paragraph per line. One that had no description has no content until a Teacher edits it, and that edit must add content.
+
+#### FR-14: Formatting and length
+
+Homework Content is formatted text with no length limit a Teacher can reach.
+
+**Consequences (testable):**
+- The Teacher can apply bold, italic, underline, two heading sizes, bullet lists, numbered lists, and links.
+- A link in the text may lead only to a web address (http or https) or an email address (mailto), and opens externally.
+- There is no character counter and no stated limit. A text far longer than the old 2000 characters saves.
+- The Student sees the Homework Content with its formatting, exactly as the Teacher wrote it.
+- Text a Teacher types is always shown as text. Typed markup is never run as part of the page.
+- The reference links listed under a Homework are unchanged and stay separate from links inside the text.
+
+#### FR-15: Content Language
+
+The Teacher chooses the Content Language of a Homework, and it decides the font the Homework is shown in.
+
+**Consequences (testable):**
+- The choices are Tibetan, English, and German. The Teacher's interface language is preselected.
+- The Homework Content is shown in the Content Language's font to every viewer, whatever their interface language. A Student with an English interface sees Tibetan Homework in the Tibetan font, and a Student with a Tibetan interface sees English Homework in the standard font.
+- The Homework's title follows the same rule wherever Homework is listed or opened: for the Teacher, the Student, and the Parent.
+- While the Teacher writes, the editing area uses the chosen language's font.
+- The Content Language can be changed when the Homework is edited.
+- A Homework created before this change is Tibetan if its title or description contains Tibetan script, otherwise English.
+
+#### FR-16: Syllabus with formatting and Content Language
+
+A Class's Syllabus is formatted text with a Content Language, like Homework Content.
+
+**Consequences (testable):**
+- The Teacher of the Class or the Admin writes the Syllabus with the same formatting tools as FR-14 and chooses its Content Language as in FR-15.
+- The Syllabus text stays optional: a Syllabus may consist of links only, and clearing the text is allowed.
+- There is no length limit a Teacher can reach. A text far longer than the old 5000 characters saves.
+- The Syllabus is shown formatted and in its Content Language's font on the Teacher's and Admin's Syllabus pages and on the Student's class page. The one-line preview in the list of Syllabi follows the same font rule.
+- A Syllabus written before this change keeps its text, one paragraph per line, and is Tibetan if that text contains Tibetan script, otherwise English.
+- One Syllabus per Class per school year, as before.
+
 ## 5. Changes to the Existing Spec
 
 This PRD overrides parts of the current contract. When it's finalized, update these files:
@@ -248,6 +304,20 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 - Add Parent approval to the Admin's responsibilities.
 - Allow one login to hold both a Teacher or Admin role and the Parent role (FR-1).
 
+**Added 2026-10-01 for §4.6. Applied to the spec files on 2026-10-01.**
+
+**`SPEC.md`**
+- **CAP-3:** a Homework's fields become title, skill area, Content Language, required Homework Content (formatted text), target students, due date, and optional reference links (FR-13 to FR-15).
+- **CAP-14 (new):** the Syllabus wasn't in the spec. It came from manual verification (issues #32 and #37) and now has formatted text and a Content Language (FR-16).
+- **Constraints:** the Content Language decides the font; the formatting tools are limited to those in FR-14; typed text is never run as markup.
+- **Non-goals:** images, tables, attachments, or embedded media in the text; more than one Content Language per item.
+- **Open Questions:** whether a Parent should see the Homework Content; whether the Syllabus text should be required.
+
+**`homework-workflow.md`**
+- "Creating an assignment" gains Content Language and required Homework Content with the formatting tools of FR-14. "Title / instructions" becomes the title only.
+- "Editing the series (title, links, due-date offset)" also covers the Homework Content and its Content Language.
+- "Student side": the Student sees the formatted Homework Content in its Content Language's font (FR-14, FR-15).
+
 ## 6. Non-Goals
 
 - Notifications to Parents (email or push). Planned for a later stage.
@@ -258,10 +328,13 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 - Changing the Parent Email, because the email is what links every Linked Child.
 - Teachers approving Parents.
 - Student registration without a Parent account.
+- Images, tables, file attachments, or embedded media in Homework Content or a Syllabus (§4.6).
+- More than one Content Language per Homework or Syllabus. Mixed text is allowed, but one language is chosen and decides the font.
+- A paid or hosted editor service. The editor runs in the Teacher's browser and the text is stored in the school's own database.
 
 ## 7. MVP Scope
 
-**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan.
+**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan. FR-13 to FR-16 were added on 2026-10-01 and are built; the Tibetan wording of their new labels is still to be supplied (§10, Open Question 7).
 
 **Out of scope:** everything in §6.
 
@@ -295,3 +368,7 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 3. What happens to a Parent account when all its Linked Children are deleted or leave the school?
 4. **Planned Leave edge cases** (deferred): switching On leave → Coming → On leave; Sessions added or moved inside the Leave Notice Period; and whether changing the Leave Notice Period reclassifies earlier leave.
 5. How does a Parent regain access after losing access to their email? Possibly with the Admin's help.
+6. **Should a Parent see the Homework Content?** Today the Parent sees a Homework's title, due date, status, and reference links (FR-7), not the content the Teacher wrote. UJ-2 has Dolma talking to Tenzin about an overdue item, which the content would help with.
+7. **Tibetan wording** for the labels added with §4.6 (Content, the language names, the formatting tools, and the new messages). They currently appear in English under the Tibetan interface. Owner: product owner.
+8. **Title font in two places.** The Homework title is shown in the interface's font, not the Content Language's, in the page breadcrumb and inside the title field while the Teacher types (a limit of the interface components used). Accept, or fix?
+9. **Should the Syllabus text be required**, as Homework Content is? Kept optional for now (FR-16).

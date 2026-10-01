@@ -23,8 +23,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **success:** A substitute teacher opens a class they're assigned to and sees complete status history, not just the latest value; a teacher not assigned to that class cannot see it.
 
 - **CAP-3**
-  - **intent:** A teacher creates one-off or recurring homework (title, skill area, target students, due date, optional reference links) scoped to their own class; a student sees their own class's open homework, opens reference links externally, and self-marks items Done; a teacher reviews items to Reviewed.
-  - **success:** A recurring assignment auto-generates each period with independent per-instance Done/Reviewed status; overdue, not-Done items stay visible and flagged overdue until a teacher explicitly archives them, never expiring silently. See `homework-workflow.md`.
+  - **intent:** A teacher creates one-off or recurring homework (title, skill area, content language, required formatted content, target students, due date, optional reference links) scoped to their own class; a student sees their own class's open homework with its formatted content, opens reference links externally, and self-marks items Done; a teacher reviews items to Reviewed.
+  - **success:** A homework cannot be saved without content; its title and content are shown in the font of the language chosen for it, whatever the viewer's interface language. A recurring assignment auto-generates each period with independent per-instance Done/Reviewed status; overdue, not-Done items stay visible and flagged overdue until a teacher explicitly archives them, never expiring silently. See `homework-workflow.md`.
 
 - **CAP-4**
   - **intent:** The system tracks a per-student streak of consecutive weeks with both attendance and homework Done (Reviewed not required), surviving an admin-configurable number of missed weeks (default 2). Leave protects the streak only when planned early enough or when it is teacher-approved sick leave.
@@ -66,6 +66,10 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **intent:** An approved parent picks a linked child from per-child summary cards (open and overdue homework counts) and sees that child's homework, attendance history, skill status with history, teacher notes, streak, badges, team and leaderboard, sessions and leave answers, and teachers. The parent also has a My Profile page like the teacher's.
   - **success:** The parent can change nothing about homework, attendance, skills, or notes, and sees no other student's personal data beyond what the leaderboard shows the child. See `roles-and-permissions.md`.
 
+- **CAP-14**
+  - **intent:** Any teacher assigned to a class, or the admin, writes that class's syllabus, one per school year (September to August): optional formatted text in a chosen content language, plus optional links. Students enrolled in the class see it on their class page.
+  - **success:** A student sees the current school year's syllabus of a class they are enrolled in, or the newest one when this year has none, with its formatting and in the font of its language; a teacher not assigned to the class can neither see nor change it; a syllabus may consist of links only.
+
 ## Constraints
 
 - Teachers are created and verified admin-side only — no teacher self-registration.
@@ -82,6 +86,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 - Minimize personal data collected on minors (nickname + progress only); no public-facing leaderboard or profile.
 - Data deletion is never automatic — it requires an explicit, recorded admin approval step.
 - UI must support German, English, and Tibetan.
+- Homework content and syllabus text are written in one chosen content language (Tibetan, English, or German). That language, not the viewer's interface language, decides the font the text and a homework's title are shown in.
+- Homework content and syllabus text are formatted text limited to bold, italic, underline, two heading sizes, bullet and numbered lists, and links to web or email addresses. They have no length limit a teacher can reach. Whatever a teacher types is shown as text, never run as markup.
 - Must run as a low/near-free-cost PWA usable on existing family phones/tablets, with no app-store install required.
 - Must tolerate two teachers editing the same class concurrently without clobbering each other's updates.
 - The Munich Tibetan group owns the app and its data long-term, not any individual — bears on hosting-account ownership, domain, and admin-access continuity.
@@ -96,6 +102,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 - More than one parent account per family, in-app parent-teacher messaging, parents editing the child's profile, changing the parent email, and teachers approving parents.
 - A structured Duolingo-style curriculum engine (lesson sequencing, spaced repetition, adaptive difficulty, speech recognition) — only plain outbound reference links are in scope for v1.
 - Embedded in-app media player/preview for reference links — v1 links open externally as plain "Open reference" actions.
+- Images, tables, file attachments, or embedded media inside homework content or a syllabus, and more than one content language per homework or syllabus.
 - Photo/audio proof-of-completion attachments — a possible future option, not v1; homework completion is self-reported only.
 - Offline queueing/sync — nice-to-have, not day-one scope.
 - A public/marketing website or video-lesson platform for the school.
@@ -126,3 +133,5 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 - What happens to a parent account when all its linked children are deleted or leave the school?
 - Planned-leave edge cases: flipping On leave → Coming → On leave, sessions added or moved inside the notice period, and whether changing the notice period reclassifies earlier leave.
 - How does a parent regain access after losing access to their email?
+- Should a parent see a homework's content? Today the parent sees its title, due date, status, and reference links, not the content the teacher wrote.
+- Should the syllabus text be required, as homework content is? It is optional for now.

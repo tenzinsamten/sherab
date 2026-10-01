@@ -4,8 +4,10 @@ Detail behind CAP-3. The kernel states the intent and success criterion; this ho
 
 ## Creating an assignment (teacher, scoped to their own class)
 
-- Title / instructions (e.g. "Write ཀ-ཁ-ག-ང ten times").
+- Title (e.g. "Write ཀ-ཁ-ག-ང ten times").
 - Skill area: language / song / dance.
+- Content language: Tibetan, English, or German; the teacher's interface language is preselected. It decides the font the title and content are shown in.
+- Content (required): formatted text telling the student what to do. Tools: bold, italic, underline, two heading sizes, bullet list, numbered list, and links to web or email addresses. No length limit a teacher can reach. A text of only blank lines or spaces counts as empty.
 - Assigned to: whole class, or a chosen subset of students.
 - Due date: default "next Sunday"; must support longer windows (e.g. "in two weeks").
 - Optional reference link(s): one or more URLs (website, video, audio) shown as a plain "Open reference" link/button, opening externally — no embedded player/preview, no link validation needed (only admin-verified teachers can create assignments, so trust is already established).
@@ -15,12 +17,13 @@ Detail behind CAP-3. The kernel states the intent and success criterion; this ho
 - A teacher can mark a task recurring with a repeat cadence (weekly is the main case); it auto-generates a new instance each period without teacher re-creation.
 - Set up once; continues until the teacher pauses or ends the series.
 - Each generated instance has its own independent Done/Reviewed status per student — completing one instance never marks future instances done.
-- Editing the series (title, links, due-date offset) or ending it only affects instances going forward; past instances are untouched.
+- Editing the series (title, content, content language, links, due-date offset) or ending it only affects instances going forward; past instances are untouched. Content is required on every edit, of a series or of a one-off.
 - Recurring assignments must be visually distinguishable from one-off assignments on roster/assignment views (e.g. a repeat icon).
 
 ## Student side
 
 - Sees their own open homework list (own class only), grouped by due date or skill.
+- Opens a homework to read its content with the teacher's formatting. The title and content are shown in the font of the homework's content language, whatever the student's interface language.
 - Reference links open externally (new tab/browser), never embedded in-app.
 - Marks each item **Done** themselves during the week.
 - No proof required by default (self-report, low friction); photo/audio attachment is a possible future option, not v1.
