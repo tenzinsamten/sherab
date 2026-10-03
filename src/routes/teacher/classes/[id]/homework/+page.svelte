@@ -2,6 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { isoDay, num } from '$lib/format';
 	import { untrack } from 'svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
@@ -30,12 +31,12 @@
 	}
 
 	let filters = $derived([
-		{ value: 'open' as const, label: m.homework_filter_open({ count: data.counts.open }) },
+		{ value: 'open' as const, label: m.homework_filter_open({ count: num(data.counts.open) }) },
 		{
 			value: 'archived' as const,
-			label: m.homework_filter_archived({ count: data.counts.archived })
+			label: m.homework_filter_archived({ count: num(data.counts.archived) })
 		},
-		{ value: 'all' as const, label: m.homework_filter_all({ count: data.counts.all }) }
+		{ value: 'all' as const, label: m.homework_filter_all({ count: num(data.counts.all) }) }
 	]);
 
 	let emptyText = $derived(
@@ -55,9 +56,12 @@
 		untrack(() => {
 			if (created === 'weekly') showToast('success', m.homework_created_weekly());
 			else if (failed > 0)
-				showToast('error', m.homework_created_partial_count({ count: created, failed }));
+				showToast(
+					'error',
+					m.homework_created_partial_count({ count: num(created), failed: num(failed) })
+				);
 			else if (created === '0') showToast('success', m.homework_created_empty());
-			else showToast('success', m.homework_created_count({ count: created }));
+			else showToast('success', m.homework_created_count({ count: num(created) }));
 
 			const url = new URL(page.url);
 			url.searchParams.delete('created');
@@ -142,9 +146,12 @@
 							<span class="muted homework-row-meta">
 								{skillLabel(item.skillArea)}
 								{#if item.nextDue}
-									· {m.homework_row_due({ date: item.nextDue })}
+									· {m.homework_row_due({ date: isoDay(item.nextDue) })}
 								{/if}
-								· {m.homework_row_done({ done: item.latestDone, total: item.latestTotal })}
+								· {m.homework_row_done({
+									done: num(item.latestDone),
+									total: num(item.latestTotal)
+								})}
 							</span>
 						</a>
 					</li>
@@ -156,7 +163,7 @@
 	{#if data.pageCount > 1}
 		<nav
 			class="pager"
-			aria-label={m.homework_pager_status({ page: data.page, total: data.pageCount })}
+			aria-label={m.homework_pager_status({ page: num(data.page), total: num(data.pageCount) })}
 		>
 			<ix-button
 				variant="secondary"
@@ -166,7 +173,7 @@
 				{m.homework_pager_prev()}
 			</ix-button>
 			<span class="muted"
-				>{m.homework_pager_status({ page: data.page, total: data.pageCount })}</span
+				>{m.homework_pager_status({ page: num(data.page), total: num(data.pageCount) })}</span
 			>
 			<ix-button
 				variant="secondary"

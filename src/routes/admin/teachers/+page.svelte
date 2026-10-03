@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
@@ -113,7 +114,7 @@
 			<p class="page-kicker">{m.teachers_section_label()}</p>
 			<h1 class="page-heading">{m.teachers_heading()}</h1>
 		</div>
-		<span class="page-counter">{data.teachers.length}</span>
+		<span class="page-counter">{num(data.teachers.length)}</span>
 	</header>
 
 	{#if credential}

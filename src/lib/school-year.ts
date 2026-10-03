@@ -1,3 +1,4 @@
+import { num } from '$lib/format';
 /**
  * School years (#37). A school year runs September to August and is stored
  * by its starting year: 2025 means 2025/26. 0015_class_syllabi.sql uses the
@@ -13,7 +14,7 @@ export function currentSchoolYear(date: Date = new Date()): number {
 
 /** 2025 -> "2025/26". */
 export function formatSchoolYear(startYear: number): string {
-	return `${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`;
+	return num(`${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`);
 }
 
 /**

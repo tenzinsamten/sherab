@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeRole, heldRoles, isRole, roleForPath, withoutLocale } from './roles';
+import { activeRole, heldRoles, isRole, localeFromPath, roleForPath, withoutLocale } from './roles';
 
 describe('heldRoles', () => {
 	it('is just the profile role for a single-role login', () => {
@@ -90,6 +90,17 @@ describe('isRole', () => {
 		expect(isRole('parent')).toBe(true);
 		expect(isRole('root')).toBe(false);
 		expect(isRole(undefined)).toBe(false);
+	});
+});
+
+describe('localeFromPath', () => {
+	it('reads a leading locale segment only', () => {
+		expect(localeFromPath('/bo/teacher')).toBe('bo');
+		expect(localeFromPath('/de')).toBe('de');
+		expect(localeFromPath('/en/login')).toBe('en');
+		expect(localeFromPath('/teacher')).toBeNull();
+		expect(localeFromPath('/born/x')).toBeNull();
+		expect(localeFromPath('/')).toBeNull();
 	});
 });
 

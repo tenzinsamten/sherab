@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 
 	/** A student's streak and badges tiles (Stories 4-1/4-2), shown on /account (#44). */
@@ -17,8 +18,8 @@
 		milestone: number;
 	}): string {
 		return badge.badgeType === 'homework'
-			? m.student_badges_entry_homework({ count: badge.milestone })
-			: m.student_badges_entry_attendance({ count: badge.milestone });
+			? m.student_badges_entry_homework({ count: num(badge.milestone) })
+			: m.student_badges_entry_attendance({ count: num(badge.milestone) });
 	}
 </script>
 
@@ -34,9 +35,9 @@
 			{:else if streak && streak.currentStreak > 0}
 				<p
 					class="stat-tile-value"
-					aria-label={m.student_streak_aria_label({ count: streak.currentStreak })}
+					aria-label={num(m.student_streak_aria_label({ count: streak.currentStreak }))}
 				>
-					{m.student_streak_weeks({ count: streak.currentStreak })}
+					{num(m.student_streak_weeks({ count: streak.currentStreak }))}
 				</p>
 			{:else}
 				<p class="muted" style="margin:0;">{m.student_streak_empty()}</p>

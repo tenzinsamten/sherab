@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
-	import { getLocale } from '$lib/paraglide/runtime';
+	import { formatDay as formatIsoDay } from '$lib/format';
 	import ChildPicker from '$lib/components/ChildPicker.svelte';
 	import type { PageProps } from './$types';
 
@@ -34,18 +34,8 @@
 	]);
 
 	// Wall-clock dates: format as UTC so no time zone shifts the day (as the child page).
-	function formatDay(date: string): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), {
-				weekday: 'short',
-				day: 'numeric',
-				month: 'long',
-				timeZone: 'UTC'
-			}).format(new Date(`${date}T00:00:00Z`));
-		} catch {
-			return date;
-		}
-	}
+	const formatDay = (date: string) =>
+		formatIsoDay(date, { weekday: 'short', day: 'numeric', month: 'long' });
 </script>
 
 <svelte:head>

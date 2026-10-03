@@ -2,13 +2,19 @@
 	import '@siemens/ix/dist/siemens-ix/siemens-ix.css';
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
+	import { getLocale, locales, setLocale } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import { avatarLabel, headerHomeLink, routeIxLinks, setupIx, showToast } from '$lib/ix';
+	import {
+		avatarLabel,
+		dropdownButtonLabelRoom,
+		headerHomeLink,
+		routeIxLinks,
+		setupIx,
+		showToast
+	} from '$lib/ix';
 	import { initials } from '$lib/initials';
 	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
@@ -48,11 +54,6 @@
 			showToast('error', m.load_error_generic());
 		}
 	});
-
-	// resolve() for an arbitrary pathname. Passing a Pathname union straight to
-	// resolve()'s per-route overloads stops type-checking once the app has more
-	// than 25 routes (TypeScript's union comparison limit).
-	const resolvePathname = (path: string) => (resolve as (p: Pathname) => string)(path as Pathname);
 
 	// B13 (#68): menu, home link and `/` follow the active role -- the only
 	// role for a single-role login, the picked one for a login whose profile
@@ -166,12 +167,12 @@
 {#snippet languageItems()}
 	{#each locales as locale (locale)}
 		{@const flag = localeFlags[locale]}
-		<!-- Full page load (not client routing): the locale is read server-side. -->
+		<!-- #79: writes the language cookie and reloads the page (the server
+		     picks names and messages from it). -->
 		<ix-dropdown-item
 			checked={getLocale() === locale || undefined}
 			lang={locale}
-			onclick={() =>
-				window.location.assign(resolvePathname(localizeHref(page.url.pathname, { locale })))}
+			onclick={() => setLocale(locale)}
 		>
 			<span class="locale-option">
 				{#if flag?.icon}
@@ -202,6 +203,7 @@
 				icon="globe"
 				label={localeFlags[getLocale()]?.name ?? getLocale()}
 				aria-label={m.footer_locale_label()}
+				use:dropdownButtonLabelRoom
 			>
 				{@render languageItems()}
 			</ix-dropdown-button>
@@ -278,6 +280,7 @@
 				icon="globe"
 				label={localeFlags[getLocale()]?.name ?? getLocale()}
 				aria-label={m.footer_locale_label()}
+				use:dropdownButtonLabelRoom
 			>
 				{@render languageItems()}
 			</ix-dropdown-button>

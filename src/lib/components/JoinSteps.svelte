@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 
 	/**
@@ -25,7 +26,7 @@
 </script>
 
 <p class="sr-only" aria-live="polite">
-	{m.join_step_progress({ step: `${current}`, label: labels[current - 1]() })}
+	{m.join_step_progress({ step: num(current), label: labels[current - 1]() })}
 </p>
 <!-- Keyed: <ix-workflow-steps> reads selected-index only when it loads.
      Vertical: each horizontal step is a fixed 12rem with a one-line,

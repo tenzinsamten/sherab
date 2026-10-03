@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
@@ -72,7 +73,7 @@
 						</span>
 						<span class="muted">
 							{s.links.length > 0
-								? m.syllabus_links_count({ count: s.links.length })
+								? m.syllabus_links_count({ count: num(s.links.length) })
 								: m.syllabus_no_links()}
 							{#if s.content && firstLine(s.content)}
 								· <span lang={s.contentLanguage}>{firstLine(s.content)}</span>

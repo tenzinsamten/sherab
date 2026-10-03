@@ -3,7 +3,11 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
-	import { getLocale } from '$lib/paraglide/runtime';
+	import {
+		formatDay as formatIsoDay,
+		formatInstant as formatSchoolInstant,
+		num
+	} from '$lib/format';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { ixFieldError, ixValue } from '$lib/ix-fields';
@@ -59,34 +63,13 @@
 	}
 
 	// A timestamp as a Berlin calendar date (same on server and client).
-	function formatInstant(iso: string): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), {
-				day: 'numeric',
-				month: 'short',
-				year: 'numeric',
-				timeZone: 'Europe/Berlin'
-			}).format(new Date(iso));
-		} catch {
-			return iso.slice(0, 10);
-		}
-	}
+	const formatInstant = (iso: string) => formatSchoolInstant(iso);
 
 	const pending = createPending();
 
 	// Wall-clock dates: format as UTC so no time zone shifts the day.
-	function formatDay(date: string): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), {
-				weekday: 'short',
-				day: 'numeric',
-				month: 'long',
-				timeZone: 'UTC'
-			}).format(new Date(`${date}T00:00:00Z`));
-		} catch {
-			return date;
-		}
-	}
+	const formatDay = (date: string) =>
+		formatIsoDay(date, { weekday: 'short', day: 'numeric', month: 'long' });
 
 	function answerLabel(answer: string | null): string {
 		if (answer === 'coming') return m.leave_answer_coming();
@@ -251,7 +234,7 @@
 			rangeAnswer = f.range.answer;
 			void openRangeModal();
 		} else if ('action' in f && f.action === 'setLeaveRange' && f.success) {
-			showToast('success', m.leave_range_saved({ count: f.changed, skipped: f.skipped }));
+			showToast('success', m.leave_range_saved({ count: num(f.changed), skipped: num(f.skipped) }));
 			if (rangeOpen) closeRangeModal();
 			rangePreview = null;
 		} else if ('rangeField' in f && f.rangeField === 'dates' && rangeOpen) {
@@ -326,7 +309,10 @@
 					<span class="section-label">{m.child_team_label()}</span>
 					{#if data.team}
 						<strong class="stat-tile-value"
-							>{m.student_team_rank({ rank: data.team.rank, total: data.team.total })}</strong
+							>{m.student_team_rank({
+								rank: num(data.team.rank),
+								total: num(data.team.total)
+							})}</strong
 						>
 						<span class="muted">{data.team.name}</span>
 					{:else}
@@ -339,7 +325,7 @@
 					<ol class="leaderboard">
 						{#each data.leaderboard as row, index (row.teamId)}
 							<li class:own={row.teamId === data.teamId}>
-								<span class="rank">{index + 1}</span>
+								<span class="rank">{num(index + 1)}</span>
 								<span class="team-name">
 									{row.teamName}
 									{#if row.teamId === data.teamId}
@@ -348,7 +334,7 @@
 										>
 									{/if}
 								</span>
-								<span>{m.leaderboard_streak_weeks({ count: row.totalStreak })}</span>
+								<span>{num(m.leaderboard_streak_weeks({ count: row.totalStreak }))}</span>
 							</li>
 						{/each}
 					</ol>
@@ -593,15 +579,15 @@
 							<p class="range-summary" role="status">
 								{range.answer === 'coming'
 									? m.leave_range_summary_coming({
-											total: rangeCounts.total,
-											coming: rangeCounts.coming,
-											skipped: rangeCounts.skipped
+											total: num(rangeCounts.total),
+											coming: num(rangeCounts.coming),
+											skipped: num(rangeCounts.skipped)
 										})
 									: m.leave_range_summary_on_leave({
-											total: rangeCounts.total,
-											planned: rangeCounts.planned,
-											short: rangeCounts.short,
-											skipped: rangeCounts.skipped
+											total: num(rangeCounts.total),
+											planned: num(rangeCounts.planned),
+											short: num(rangeCounts.short),
+											skipped: num(rangeCounts.skipped)
 										})}
 							</p>
 							<ul class="plain-list range-list">
@@ -672,7 +658,7 @@
 									<span>
 										{session.startTime ?? m.calendar_status_unset()}
 										{#if session.durationMinutes}
-											· {m.leave_duration({ minutes: session.durationMinutes })}
+											· {m.leave_duration({ minutes: num(session.durationMinutes) })}
 										{/if}
 									</span>
 								</p>

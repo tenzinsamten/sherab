@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -16,7 +17,7 @@
 			<p class="page-kicker">{m.student_section_label()}</p>
 			<h1 class="page-heading">{m.nav_my_classes()}</h1>
 		</div>
-		<span class="page-counter">{data.classes.length}</span>
+		<span class="page-counter">{num(data.classes.length)}</span>
 	</header>
 
 	{#if data.classes.length === 0}
@@ -37,7 +38,7 @@
 									: m.student_class_no_teachers()}
 							</p>
 							<p style="margin: var(--space-2) 0 0;">
-								{m.student_class_todo_count({ count: cls.todo })}
+								{m.student_class_todo_count({ count: num(cls.todo) })}
 							</p>
 						</ix-card-content>
 					</ix-card>

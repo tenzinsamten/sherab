@@ -2,7 +2,6 @@ import { error, redirect } from '@sveltejs/kit';
 import { getCapabilities } from '$lib/server/capabilities';
 import { ACTIVE_ROLE_COOKIE, heldRoles, isRole } from '$lib/server/roles';
 import { roleHome } from '$lib/role-home';
-import { localizeHref } from '$lib/paraglide/runtime';
 import type { RequestHandler } from './$types';
 
 const ONE_YEAR = 60 * 60 * 24 * 365;
@@ -36,6 +35,5 @@ export const POST: RequestHandler = async ({ request, cookies, locals }) => {
 		httpOnly: true,
 		maxAge: ONE_YEAR
 	});
-	// Keep the caller's locale (paraglide reads the URL first).
-	throw redirect(303, localizeHref(roleHome(role) ?? '/'));
+	throw redirect(303, roleHome(role) ?? '/');
 };

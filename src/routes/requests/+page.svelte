@@ -3,10 +3,9 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { SCHOOL_TIME_ZONE } from '$lib/berlin-date';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
-	import { getLocale } from '$lib/paraglide/runtime';
+	import { formatDay as formatIsoDay, formatInstant, num } from '$lib/format';
 	import { confirmAction, showToast } from '$lib/ix';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
@@ -105,19 +104,8 @@
 	}
 
 	// Wall-clock dates: format as UTC so no time zone shifts the day.
-	function formatDay(date: string): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), {
-				weekday: 'short',
-				day: 'numeric',
-				month: 'long',
-				year: 'numeric',
-				timeZone: 'UTC'
-			}).format(new Date(`${date}T00:00:00Z`));
-		} catch {
-			return date;
-		}
-	}
+	const formatDay = (date: string) =>
+		formatIsoDay(date, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 
 	// B12b (#67): a request someone else decided meanwhile -- reload so its
 	// stale row (and buttons) go; the error toast comes from the layout.
@@ -127,18 +115,7 @@
 
 	// B12b (#67): the request date, in the school's time zone so server and
 	// browser render the same day.
-	function formatRequestDate(iso: string): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), {
-				day: 'numeric',
-				month: 'short',
-				year: 'numeric',
-				timeZone: SCHOOL_TIME_ZONE
-			}).format(new Date(iso));
-		} catch {
-			return iso;
-		}
-	}
+	const formatRequestDate = (iso: string) => formatInstant(iso);
 
 	$effect(() => {
 		if (!form?.success) return;
@@ -209,8 +186,8 @@
 		</div>
 		{#if pendingTotal > 0}
 			<ix-pill variant="warning">
-				<span aria-hidden="true">{pendingTotal}</span>
-				<span class="sr-only">{m.requests_pending_count({ count: pendingTotal })}</span>
+				<span aria-hidden="true">{num(pendingTotal)}</span>
+				<span class="sr-only">{m.requests_pending_count({ count: num(pendingTotal) })}</span>
 			</ix-pill>
 		{/if}
 	</header>
@@ -259,7 +236,7 @@
 										</div>
 									{/if}
 									<div class="muted">
-										{new Date(student.createdAt).toLocaleDateString()}
+										{formatRequestDate(student.createdAt)}
 									</div>
 								</td>
 								<td>
@@ -341,8 +318,8 @@
 	<section class="card">
 		<h2>
 			{m.requests_decided_heading({
-				approved: data.decided.filter((s) => s.status === 'approved').length,
-				rejected: data.decided.filter((s) => s.status === 'rejected').length
+				approved: num(data.decided.filter((s) => s.status === 'approved').length),
+				rejected: num(data.decided.filter((s) => s.status === 'rejected').length)
 			})}
 		</h2>
 		{#if data.decided.length === 0}
@@ -586,7 +563,7 @@
 										<strong>{row.studentName}</strong>
 										<div class="muted">
 											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
-											{new Date(row.requestedAt).toLocaleDateString()}
+											{formatRequestDate(row.requestedAt)}
 										</div>
 									</td>
 									<td>
@@ -660,7 +637,7 @@
 										{row.studentName ?? m.requests_deletion_deleted_student()}
 										<div class="muted">
 											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
-											{new Date(row.requestedAt).toLocaleDateString()}
+											{formatRequestDate(row.requestedAt)}
 										</div>
 									</td>
 								</tr>
@@ -704,7 +681,7 @@
 											{/if}
 										</div>
 										<div class="muted">
-											{parent.email} · {new Date(parent.createdAt).toLocaleDateString()}
+											{parent.email} · {formatRequestDate(parent.createdAt)}
 										</div>
 									</td>
 									<td>

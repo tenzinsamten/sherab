@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
@@ -15,9 +16,9 @@
 	 */
 	function rowAriaLabel(rank: number, teamName: string, totalStreak: number): string {
 		return m.leaderboard_row_aria_label({
-			rank,
+			rank: num(rank),
 			team: teamName,
-			weeks: m.leaderboard_streak_weeks({ count: totalStreak })
+			weeks: num(m.leaderboard_streak_weeks({ count: totalStreak }))
 		});
 	}
 </script>
@@ -42,10 +43,10 @@
 						<ix-card variant="outline" passive>
 							<ix-card-content>
 								<div class="leaderboard-row">
-									<span class="leaderboard-rank" class:top={index === 0}>{index + 1}</span>
+									<span class="leaderboard-rank" class:top={index === 0}>{num(index + 1)}</span>
 									<span class="leaderboard-team">{team.teamName}</span>
 									<span class="stat-tile-value"
-										>{m.leaderboard_streak_weeks({ count: team.totalStreak })}</span
+										>{num(m.leaderboard_streak_weeks({ count: team.totalStreak }))}</span
 									>
 								</div>
 							</ix-card-content>

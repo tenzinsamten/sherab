@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
@@ -86,7 +87,7 @@
 								? 'stat-tile-value muted'
 								: 'stat-tile-value'}
 						>
-							{data.loadError ? '—' : tile.value}
+							{data.loadError ? '—' : num(tile.value)}
 						</p>
 					</ix-card-content>
 				</ix-card>
@@ -98,7 +99,7 @@
 					<p class="section-label">{m.student_tile_team()}</p>
 					{#if data.team}
 						<p class="stat-tile-value">
-							{m.student_team_rank({ rank: data.team.rank, total: data.team.total })}
+							{m.student_team_rank({ rank: num(data.team.rank), total: num(data.team.total) })}
 						</p>
 						<p class="muted" style="margin:0;">{data.team.name}</p>
 					{:else}
@@ -139,7 +140,7 @@
 							<ix-card-content>
 								<p class="section-label">{cls.name}</p>
 								<p class="muted" style="margin:0;">
-									{m.student_class_todo_count({ count: cls.todo })}
+									{m.student_class_todo_count({ count: num(cls.todo) })}
 								</p>
 							</ix-card-content>
 						</ix-card>

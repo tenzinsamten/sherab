@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { isoDay, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
@@ -41,7 +42,7 @@
 		if (!a.isRecurring) return null;
 		if (a.pausedAt) return m.homework_series_paused_label();
 		if (a.endsOn && a.endsOn <= data.today) {
-			return m.homework_series_ended_label({ date: a.endsOn });
+			return m.homework_series_ended_label({ date: isoDay(a.endsOn) });
 		}
 		return null;
 	}
@@ -225,9 +226,9 @@
 				<tbody>
 					{#each assignment.instances as instance (instance.id)}
 						<tr>
-							<td>{instance.dueDate}</td>
-							<td>{instance.doneCount} / {instance.students.length}</td>
-							<td>{instance.reviewedCount} / {instance.students.length}</td>
+							<td>{isoDay(instance.dueDate)}</td>
+							<td>{num(instance.doneCount)} / {num(instance.students.length)}</td>
+							<td>{num(instance.reviewedCount)} / {num(instance.students.length)}</td>
 							<td>
 								{#if instance.archivedAt}
 									<ix-pill variant="neutral">{m.homework_archived_label()}</ix-pill>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatInstant, isoDay, num } from '$lib/format';
 	import { tick, untrack } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -173,12 +174,12 @@
 				showToast(
 					'error',
 					m.roster_attendance_saved_partial({
-						date: form.sessionDate,
+						date: isoDay(form.sessionDate),
 						names: form.failedStudentIds.map(studentName).join(', ')
 					})
 				);
 			} else {
-				showToast('success', m.roster_attendance_saved({ date: form.sessionDate }));
+				showToast('success', m.roster_attendance_saved({ date: isoDay(form.sessionDate) }));
 			}
 		}
 		if (form.action === 'skillStatus') showToast('success', m.roster_skill_saved());
@@ -209,7 +210,7 @@
 				<ix-card-content>
 					<p class="section-label">{m.dashboard_tile_students()}</p>
 					<p class={data.students.length === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-						{data.students.length}
+						{num(data.students.length)}
 					</p>
 					<p class="muted card-note">{m.class_card_students_note()}</p>
 				</ix-card-content>
@@ -220,12 +221,12 @@
 				<ix-card-content>
 					<p class="section-label">{m.homework_heading()}</p>
 					<p class={data.homeworkCounts.total === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-						{data.homeworkCounts.open}
+						{num(data.homeworkCounts.open)}
 					</p>
 					<p class="muted card-note">
 						{m.class_homework_count({
-							open: data.homeworkCounts.open,
-							total: data.homeworkCounts.total
+							open: num(data.homeworkCounts.open),
+							total: num(data.homeworkCounts.total)
 						})}
 					</p>
 				</ix-card-content>
@@ -236,7 +237,7 @@
 				<ix-card-content>
 					<p class="section-label">{m.syllabus_list_heading()}</p>
 					<p class={data.syllabusCounts.total === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-						{data.syllabusCounts.total}
+						{num(data.syllabusCounts.total)}
 					</p>
 					<p class="muted card-note">
 						{data.syllabusCounts.hasCurrent
@@ -412,7 +413,7 @@
 												<li>
 													<strong>{skillLabel(entry.skillArea)}</strong> — {levelLabel(entry.level)}
 													<span class="muted">
-														· {new Date(entry.recordedAt).toLocaleString()}
+														· {formatInstant(entry.recordedAt, true)}
 													</span>
 													{#if entry.notes}
 														<p class="muted" style="margin: var(--space-1) 0 0 0;">

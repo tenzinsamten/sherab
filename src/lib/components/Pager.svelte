@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 
 	/** Previous / Page n of m / Next. `hrefFor` returns an already resolve()d href. */
@@ -10,7 +11,10 @@
 </script>
 
 {#if pageCount > 1}
-	<nav class="pager" aria-label={m.homework_pager_status({ page, total: pageCount })}>
+	<nav
+		class="pager"
+		aria-label={m.homework_pager_status({ page: num(page), total: num(pageCount) })}
+	>
 		<ix-button
 			variant="secondary"
 			disabled={page <= 1 || undefined}
@@ -18,7 +22,7 @@
 		>
 			{m.homework_pager_prev()}
 		</ix-button>
-		<span class="muted">{m.homework_pager_status({ page, total: pageCount })}</span>
+		<span class="muted">{m.homework_pager_status({ page: num(page), total: num(pageCount) })}</span>
 		<ix-button
 			variant="secondary"
 			disabled={page >= pageCount || undefined}

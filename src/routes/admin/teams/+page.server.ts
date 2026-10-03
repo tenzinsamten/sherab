@@ -1,3 +1,4 @@
+import { num } from '$lib/format';
 import { fail } from '@sveltejs/kit';
 import { UNIQUE_VIOLATION_CODE } from '$lib/server/class-code';
 import * as m from '$lib/paraglide/messages.js';
@@ -117,7 +118,9 @@ export const actions: Actions = {
 			return fail(400, { error: m.teams_error_delete_failed() });
 		}
 		if (count) {
-			return fail(400, { error: m.teams_error_delete_has_members({ name: teamName, count }) });
+			return fail(400, {
+				error: m.teams_error_delete_has_members({ name: teamName, count: num(count) })
+			});
 		}
 
 		const { data: deleted, error } = await supabase

@@ -28,13 +28,13 @@ export default defineConfig({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
 			emitTsDeclarations: true,
-			// Default strategy (['cookie', 'globalVariable', 'baseLocale']) never
-			// checks the URL at all, so the locale-prefixed links localizeHref()
-			// generates (e.g. /de/...) were silently never honored -- 'url' must
-			// come first so an explicit locale link overrides a previously-set
-			// cookie; 'cookie' after that persists the choice across plain,
-			// unprefixed navigation (e.g. clicking "Sign in" -> /login).
-			strategy: ['url', 'cookie', 'baseLocale']
+			// #79: the cookie is the language. With 'url' in the list an
+			// unprefixed address always resolved to English (the base locale's
+			// pattern matches everything), and in-app links carry no prefix, so
+			// the choice was lost on the first click. A /de/... or /bo/... link
+			// still works: handleLocalePrefix (hooks.server.ts) turns it into
+			// the cookie and redirects to the unprefixed address.
+			strategy: ['cookie', 'baseLocale']
 		}),
 
 		// AD-1: SvelteKit serves the frontend as an installable PWA.

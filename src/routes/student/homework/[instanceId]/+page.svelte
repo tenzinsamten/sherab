@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { isoDay } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
@@ -64,7 +65,7 @@
 			</h1>
 			<p class="page-subtitle actions">
 				{skillLabel(data.item.skillArea)} · {m.student_homework_due_label({
-					date: data.item.dueDate
+					date: isoDay(data.item.dueDate)
 				})}
 				{#if data.item.overdue}
 					<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>

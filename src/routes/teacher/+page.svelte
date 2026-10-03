@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -16,33 +17,33 @@
 		{
 			label: m.dashboard_tile_students(),
 			value: data.studentsCount,
-			text: `${data.studentsCount}`
+			text: num(data.studentsCount)
 		},
 		{
 			label: m.dashboard_tile_pending_requests(),
 			value: pendingRequestsCount,
-			text: `${pendingRequestsCount}`,
+			text: num(pendingRequestsCount),
 			href: resolve('/requests')
 		},
 		{
 			label: m.dashboard_tile_due_this_week(),
 			value: data.dueThisWeek,
-			text: `${data.dueThisWeek}`
+			text: num(data.dueThisWeek)
 		},
 		{
 			label: m.dashboard_tile_overdue(),
 			value: data.overdue,
-			text: `${data.overdue}`
+			text: num(data.overdue)
 		},
 		{
 			label: m.dashboard_tile_awaiting_review(),
 			value: data.awaitingReview,
-			text: `${data.awaitingReview}`
+			text: num(data.awaitingReview)
 		},
 		{
 			label: m.dashboard_tile_completion(),
 			value: data.completionPercent,
-			text: m.dashboard_tile_completion_value({ percent: data.completionPercent })
+			text: m.dashboard_tile_completion_value({ percent: num(data.completionPercent) })
 		}
 	] as { label: string; value: number; text: string; href?: string }[]);
 </script>

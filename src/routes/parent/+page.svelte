@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -78,16 +79,16 @@
 											<div>
 												<dt class="section-label">{m.parent_card_open()}</dt>
 												<dd class={child.open === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-													{child.open}
+													{num(child.open)}
 												</dd>
 											</div>
 											<div>
 												<dt class="section-label">{m.parent_card_overdue()}</dt>
 												<dd>
 													{#if child.overdue > 0}
-														<ix-pill variant="alarm">{child.overdue}</ix-pill>
+														<ix-pill variant="alarm">{num(child.overdue)}</ix-pill>
 													{:else}
-														<span class="stat-tile-value muted">0</span>
+														<span class="stat-tile-value muted">{num(0)}</span>
 													{/if}
 												</dd>
 											</div>

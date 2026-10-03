@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import Pager from '$lib/components/Pager.svelte';
@@ -24,8 +25,8 @@
 	}
 
 	let filters = $derived([
-		{ value: 'todo' as const, label: m.student_filter_todo({ count: data.counts.todo }) },
-		{ value: 'done' as const, label: m.student_filter_done({ count: data.counts.done }) }
+		{ value: 'todo' as const, label: m.student_filter_todo({ count: num(data.counts.todo) }) },
+		{ value: 'done' as const, label: m.student_filter_done({ count: num(data.counts.done) }) }
 	]);
 
 	let enrolledIds = $derived(new Set(data.classes.map((c) => c.id)));

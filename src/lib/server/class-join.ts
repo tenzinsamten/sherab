@@ -1,3 +1,4 @@
+import { num } from '$lib/format';
 import * as m from '$lib/paraglide/messages.js';
 import { pickLocalized } from '$lib/localized-name';
 
@@ -25,7 +26,7 @@ export function classJoinErrorMessage(err: PgError): string {
 		case 'join_already_pending':
 			return m.student_join_error_already_pending();
 		case 'join_limit':
-			return m.student_join_error_limit({ max: MAX_PENDING_JOIN_REQUESTS });
+			return m.student_join_error_limit({ max: num(MAX_PENDING_JOIN_REQUESTS) });
 	}
 	return m.student_join_error_failed();
 }

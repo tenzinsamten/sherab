@@ -33,6 +33,14 @@ export function heldRoles(
 	return roles;
 }
 
+/** The locale a `pathname` starts with (`/bo/teacher` -> `bo`), or null. */
+export function localeFromPath(pathname: string): (typeof locales)[number] | null {
+	const segment = pathname.split('/')[1] ?? '';
+	return (locales as readonly string[]).includes(segment)
+		? (segment as (typeof locales)[number])
+		: null;
+}
+
 /** `pathname` without a leading locale segment (`/de/parent` -> `/parent`). */
 export function withoutLocale(pathname: string): string {
 	const segment = pathname.split('/')[1] ?? '';

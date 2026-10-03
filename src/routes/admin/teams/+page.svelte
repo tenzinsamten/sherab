@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { formatInstant, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
@@ -75,7 +76,7 @@
 			<p class="page-kicker">{m.teams_section_label()}</p>
 			<h1 class="page-heading">{m.teams_heading()}</h1>
 		</div>
-		<span class="page-counter">{data.teams.length}</span>
+		<span class="page-counter">{num(data.teams.length)}</span>
 	</header>
 
 	<section class="card">
@@ -117,8 +118,8 @@
 										<span class="muted other-name" lang={other.lang}>{other.name}</span>
 									{/each}
 								</td>
-								<td>{team.memberCount}</td>
-								<td class="muted">{new Date(team.created_at).toLocaleDateString()}</td>
+								<td>{num(team.memberCount)}</td>
+								<td class="muted">{formatInstant(team.created_at)}</td>
 								<td>
 									<div class="actions" style="justify-content:flex-end;">
 										<ix-button

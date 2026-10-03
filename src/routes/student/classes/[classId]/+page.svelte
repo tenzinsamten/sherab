@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import CopyField from '$lib/components/CopyField.svelte';
@@ -29,8 +30,8 @@
 	}
 
 	let filters = $derived([
-		{ value: 'todo' as const, label: m.student_filter_todo({ count: data.counts.todo }) },
-		{ value: 'done' as const, label: m.student_filter_done({ count: data.counts.done }) }
+		{ value: 'todo' as const, label: m.student_filter_todo({ count: num(data.counts.todo) }) },
+		{ value: 'done' as const, label: m.student_filter_done({ count: num(data.counts.done) }) }
 	]);
 </script>
 
@@ -105,7 +106,7 @@
 	</section>
 
 	<section class="card">
-		<h2>{m.student_classmates_heading({ count: data.classmates.length })}</h2>
+		<h2>{m.student_classmates_heading({ count: num(data.classmates.length) })}</h2>
 		{#if data.classmates.length === 0}
 			<p class="muted" style="margin:0;">{m.student_classmates_empty()}</p>
 		{:else}

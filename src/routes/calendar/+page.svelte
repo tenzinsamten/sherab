@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
+	import { formatDay as formatIsoDay, num } from '$lib/format';
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { durationValue, ixFieldError, ixValue } from '$lib/ix-fields';
@@ -41,15 +42,7 @@
 	};
 
 	// Wall-clock dates: format them as UTC so no time zone shifts the day.
-	function format(date: string, options: Intl.DateTimeFormatOptions): string {
-		try {
-			return new Intl.DateTimeFormat(getLocale(), { ...options, timeZone: 'UTC' }).format(
-				new Date(`${date}T00:00:00Z`)
-			);
-		} catch {
-			return date;
-		}
-	}
+	const format = (date: string, options: Intl.DateTimeFormatOptions) => formatIsoDay(date, options);
 	const formatMonth = (month: string) => format(`${month}-01`, { month: 'long', year: 'numeric' });
 	const formatDay = (date: string) =>
 		format(date, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -127,7 +120,7 @@
 			cls.startTime ?? m.calendar_status_unset()
 		];
 		if (cls.durationMinutes) {
-			parts.push(m.calendar_schedule_duration_short({ minutes: cls.durationMinutes }));
+			parts.push(m.calendar_schedule_duration_short({ minutes: num(cls.durationMinutes) }));
 		}
 		const interval = INTERVAL_LABELS[Number(cls.intervalWeeks ?? 1)];
 		if (interval) parts.push(interval());
@@ -143,16 +136,19 @@
 	function timeText(session: Session): string {
 		if (!session.start) return m.calendar_status_unset();
 		return session.end
-			? m.calendar_time_range({ start: session.start, end: session.end })
-			: m.calendar_time_from({ start: session.start });
+			? m.calendar_time_range({ start: num(session.start), end: num(session.end) })
+			: m.calendar_time_from({ start: num(session.start) });
 	}
 
 	function defaultHint(classId: string): string {
 		const cls = schedulesByClass.get(classId);
 		if (!cls?.startTime) return m.calendar_session_hint();
 		return cls.durationMinutes
-			? m.calendar_session_default_hint({ start: cls.startTime, duration: cls.durationMinutes })
-			: m.calendar_session_default_hint_start({ start: cls.startTime });
+			? m.calendar_session_default_hint({
+					start: num(cls.startTime),
+					duration: num(cls.durationMinutes)
+				})
+			: m.calendar_session_default_hint_start({ start: num(cls.startTime) });
 	}
 
 	// ── Dialogs ─────────────────────────────────────────────────────────────
@@ -268,7 +264,8 @@
 		if (!f || f === lastForm || !f.success) return;
 		lastForm = f;
 		const messages: Record<string, () => string> = {
-			daysAdded: () => m.calendar_days_added({ added: f.added ?? 0, existed: f.existed ?? 0 }),
+			daysAdded: () =>
+				m.calendar_days_added({ added: num(f.added ?? 0), existed: num(f.existed ?? 0) }),
 			dayCancelled: m.calendar_day_cancelled,
 			dayRestored: m.calendar_day_restored,
 			scheduleSaved: m.calendar_schedule_saved,
@@ -341,6 +338,15 @@
 			firstDay: 1 as const,
 			date: `${data.month}-01`,
 			locale: getLocale(),
+			// #80: browsers have no Tibetan date data, so the headings are written here.
+			...(getLocale() === 'bo'
+				? {
+						dayHeaderFormat: (date: Date) => format(isoDate(date), { weekday: 'short' }),
+						listDayFormat: (date: Date) => format(isoDate(date), { weekday: 'long' }),
+						listDaySideFormat: (date: Date) =>
+							format(isoDate(date), { day: 'numeric', month: 'long', year: 'numeric' })
+					}
+				: {}),
 			headerToolbar: { start: 'prev,today,next', center: '', end: '' },
 			buttonText: (text: Record<string, string>) => ({
 				...text,
@@ -444,7 +450,7 @@
 {#snippet dayCellContent({ date }: { date: Date })}
 	{@const iso = isoDate(date)}
 	{@const isToday = iso === data.today}
-	{@const label = isPhone ? format(iso, { weekday: 'long' }) : String(date.getDate())}
+	{@const label = isPhone ? format(iso, { weekday: 'long' }) : num(date.getDate())}
 	{#if dayClickable(iso)}
 		<button
 			type="button"

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { formatInstant, num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import CopyField from '$lib/components/CopyField.svelte';
@@ -109,7 +110,7 @@
 			<p class="page-kicker">{m.classes_section_label()}</p>
 			<h1 class="page-heading">{m.classes_heading()}</h1>
 		</div>
-		<span class="page-counter">{data.classes.length}</span>
+		<span class="page-counter">{num(data.classes.length)}</span>
 	</header>
 
 	<section class="card">
@@ -172,11 +173,11 @@
 								<td>
 									<span class="actions">
 										<a href={resolve('/admin/classes/[id]/students', { id: cls.id })}>
-											{m.classes_students_summary({ approved: cls.approvedCount })}
+											{m.classes_students_summary({ approved: num(cls.approvedCount) })}
 										</a>
 										{#if cls.pendingCount > 0}
 											<ix-pill variant="warning">
-												{m.classes_pending_summary({ pending: cls.pendingCount })}
+												{m.classes_pending_summary({ pending: num(cls.pendingCount) })}
 											</ix-pill>
 										{/if}
 									</span>
@@ -186,7 +187,7 @@
 										{cls.syllabusCount} · {m.classes_syllabi_open()}
 									</a>
 								</td>
-								<td class="muted">{new Date(cls.created_at).toLocaleDateString()}</td>
+								<td class="muted">{formatInstant(cls.created_at)}</td>
 								<td>
 									<div class="actions" style="justify-content:flex-end;">
 										<ix-button

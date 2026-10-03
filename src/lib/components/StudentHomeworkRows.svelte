@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { isoDay } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ContentLanguage } from '$lib/rich-text';
@@ -62,7 +63,9 @@
 					{/if}
 				</span>
 				<span class="muted homework-row-meta">
-					{skillLabel(item.skillArea)} · {m.student_homework_due_label({ date: item.dueDate })}
+					{skillLabel(item.skillArea)} · {m.student_homework_due_label({
+						date: isoDay(item.dueDate)
+					})}
 				</span>
 			</a>
 			<div class="homework-row-side">

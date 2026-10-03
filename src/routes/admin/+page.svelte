@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -16,36 +17,36 @@
 		{
 			label: m.dashboard_tile_classes(),
 			value: data.classesCount,
-			text: `${data.classesCount}`,
+			text: num(data.classesCount),
 			href: resolve('/admin/classes')
 		},
 		{
 			label: m.dashboard_tile_teachers(),
 			value: data.teachersCount,
-			text: `${data.teachersCount}`,
+			text: num(data.teachersCount),
 			href: resolve('/admin/teachers')
 		},
 		{
 			label: m.dashboard_tile_pending_requests(),
 			value: data.pendingRequestsCount,
-			text: `${data.pendingRequestsCount}`,
+			text: num(data.pendingRequestsCount),
 			href: resolve('/requests')
 		},
 		// No destination screen exists for these yet (Boundaries: "Do not build a per-class breakdown table").
 		{
 			label: m.dashboard_tile_students(),
 			value: data.studentsCount,
-			text: `${data.studentsCount}`
+			text: num(data.studentsCount)
 		},
 		{
 			label: m.dashboard_tile_homework_assignments(),
 			value: data.homeworkAssignmentsCount,
-			text: `${data.homeworkAssignmentsCount}`
+			text: num(data.homeworkAssignmentsCount)
 		},
 		{
 			label: m.dashboard_tile_completion(),
 			value: data.homeworkCompletionPercent,
-			text: m.dashboard_tile_completion_value({ percent: data.homeworkCompletionPercent })
+			text: m.dashboard_tile_completion_value({ percent: num(data.homeworkCompletionPercent) })
 		}
 	] as { label: string; value: number; text: string; href?: string }[]);
 </script>

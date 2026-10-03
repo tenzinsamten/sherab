@@ -131,6 +131,26 @@ export function headerHomeLink(node: HTMLElement, href: string) {
 }
 
 /**
+ * Svelte action for <ix-dropdown-button>: lets the label's line fill the
+ * button. iX clips the label to one 1.43em line inside its shadow DOM, which
+ * cuts the feet of Tibetan letters (drawn 1.5x, #78); the inner <ix-button>
+ * is out of reach of page CSS.
+ */
+export function dropdownButtonLabelRoom(node: HTMLElement) {
+	const sheet = new CSSStyleSheet();
+	sheet.replaceSync('ix-button { line-height: 2rem; }');
+
+	(async () => {
+		await customElements.whenDefined('ix-dropdown-button');
+		await (
+			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
+		).componentOnReady?.();
+		const root = node.shadowRoot;
+		if (root) root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+	})();
+}
+
+/**
  * Svelte action for a header <ix-avatar>: gives its menu button an accessible
  * name. iX moves a host `aria-label` onto the avatar image only, and drops it
  * entirely when `initials` are shown, so the button would be announced as

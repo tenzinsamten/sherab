@@ -366,10 +366,38 @@ test('admin team names: edit the names, and each interface language shows its ow
 			german
 		);
 
-		// The leaderboard shows the team under the viewer's language.
-		await page.goto('/de/leaderboard');
-		await expect(page.getByText(german, { exact: true })).toBeVisible();
+		// #80: under Tibetan, dates and numbers are written in Tibetan (the
+		// Gregorian date, Tibetan digits); the browser has no Tibetan data.
+		const tibetanRow = page.locator('tr').filter({ hasText: tibetan });
+		await expect(
+			tibetanRow.getByText(/^ཕྱི་ལོ་ [༠-༩]{4} ཟླ་ [༠-༩]{1,2} ཚེས་ [༠-༩]{1,2}$/)
+		).toBeVisible();
+		await expect(tibetanRow.getByRole('cell', { name: '༠', exact: true })).toBeVisible();
+		await expect(page.locator('.page-counter')).toHaveText(/^[༠-༩]+$/);
+
+		// #79: a locale link sets the language and lands on the plain address;
+		// the language then holds across in-app navigation.
+		await expect(page).toHaveURL(/\/admin\/teams$/);
+		await page.locator('ix-menu-item').filter({ hasText: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' }).click();
+		await expect(page).toHaveURL(/\/leaderboard$/);
+		await expect(page.getByText(tibetan, { exact: true })).toBeVisible();
 		await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+
+		// #80: the calendar's weekday headings and title are Tibetan too.
+		await page.goto('/calendar');
+		await expect(page.getByRole('columnheader').filter({ hasText: 'སྤེན་པ' })).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: /^ཕྱི་ལོ་ [༠-༩]{4} ཟླ་ [༠-༩]{1,2}$/ })
+		).toBeVisible();
+		await page.goto('/leaderboard');
+
+		// The language picker switches the name too.
+		await page.locator('ix-application-header ix-dropdown-button[icon="globe"]').click();
+		await page.locator('ix-dropdown-item[lang="de"]').click();
+		await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+		await expect(page).toHaveURL(/\/leaderboard$/);
+		await expect(page.getByText(german, { exact: true })).toBeVisible();
+		await expect(page.getByText(tibetan, { exact: true })).toHaveCount(0);
 	} finally {
 		await service.from('teams').delete().eq('name', name);
 	}

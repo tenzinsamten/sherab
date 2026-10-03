@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -26,7 +27,7 @@
 			<h1 class="page-heading">{m.parents_heading()}</h1>
 		</div>
 		{#if !data.loadError}
-			<span class="page-counter">{data.parents.length}</span>
+			<span class="page-counter">{num(data.parents.length)}</span>
 		{/if}
 	</header>
 
@@ -37,7 +38,9 @@
 	{:else}
 		{#if data.pendingCount > 0}
 			<p>
-				<a href={resolve('/requests')}>{m.parents_pending_link({ count: data.pendingCount })}</a>
+				<a href={resolve('/requests')}
+					>{m.parents_pending_link({ count: num(data.pendingCount) })}</a
+				>
 			</p>
 		{/if}
 
