@@ -86,6 +86,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 - Minimize personal data collected on minors (nickname + progress only); no public-facing leaderboard or profile.
 - Data deletion is never automatic — it requires an explicit, recorded admin approval step.
 - UI must support German, English, and Tibetan.
+- A class and a team have a name in each interface language. English and Tibetan are required when the admin creates or edits one; German is optional. Everyone sees the name of their interface language, and the English name when that language has none. A name cannot repeat within one language.
 - Homework content and syllabus text are written in one chosen content language (Tibetan, English, or German). That language, not the viewer's interface language, decides the font the text and a homework's title are shown in.
 - Homework content and syllabus text are formatted text limited to bold, italic, underline, two heading sizes, bullet and numbered lists, and links to web or email addresses. They have no length limit a teacher can reach. Whatever a teacher types is shown as text, never run as markup.
 - Must run as a low/near-free-cost PWA usable on existing family phones/tablets, with no app-store install required.

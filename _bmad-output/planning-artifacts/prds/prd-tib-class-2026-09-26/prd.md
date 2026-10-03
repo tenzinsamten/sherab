@@ -2,7 +2,7 @@
 title: "PRD: Parent Role — tib-class"
 status: final
 created: 2026-09-26
-updated: 2026-10-01
+updated: 2026-10-03
 ---
 
 # PRD: Parent Role — tib-class
@@ -14,6 +14,8 @@ updated: 2026-10-01
 This PRD adds a Parent role to Sherab, the Munich Tibetan Sunday school class tracker. It builds on the existing contract in `_bmad-output/specs/spec-class-tracker/` (SPEC.md and companions), the architecture spine, and the UX design, and doesn't repeat them. It's written for the maintainer and for downstream work: the architecture update, UX, and stories. §3 fixes the vocabulary, §4 lists features with globally numbered FRs, and §5 lists the spec changes this PRD requires. Technical notes are in `addendum.md`. Assumptions inferred during drafting in FR-2, FR-6, FR-10, FR-11, FR-12, SM-1, SM-2, and SM-C1 were confirmed by the product owner on 2026-09-26.
 
 **Extended on 2026-10-01:** §4.6 (FR-13 to FR-16) adds rich-text Homework Content and Syllabus with a Content Language. These requirements are for Teachers and Students, not the Parent role. They were reported by the product owner during manual verification (issues #72 to #75 in `_bmad-output/manual-verification-issues.md`), decided the same day, and are already built; this PRD records them because it is the project's only PRD. Their spec changes are listed in §5 and were applied to the spec files the same day.
+
+**Extended on 2026-10-03:** §4.7 (FR-17) gives every Class and Team a name per interface language. It is for the Admin and for everyone who sees a Class or Team name, not only the Parent role. It was reported by the product owner (issue #76 in `_bmad-output/manual-verification-issues.md`), decided the same day, and is already built. §4.8 (FR-18), added the same day from issue #77 and also built, sets the font Tibetan text is shown in.
 
 ## 1. Vision
 
@@ -277,6 +279,34 @@ A Class's Syllabus is formatted text with a Content Language, like Homework Cont
 - A Syllabus written before this change keeps its text, one paragraph per line, and is Tibetan if that text contains Tibetan script, otherwise English.
 - One Syllabus per Class per school year, as before.
 
+### 4.7 Class & Team Names
+
+**Description:** A Class and a Team have a name in each interface language. Before this, each had one name, typed once by the Admin and shown unchanged under German, English, and Tibetan, and it couldn't be changed afterwards. Added 2026-10-03; not part of the Parent role.
+
+#### FR-17: Class and Team names per language
+
+The Admin gives a Class or a Team an English, a Tibetan, and (optionally) a German name; everyone sees the name of their interface language.
+
+**Consequences (testable):**
+- Creating a Class or a Team asks for three names. English and Tibetan are required: without either, nothing is created and the names typed so far are kept. German is optional.
+- A viewer sees the name of their interface language wherever a Class or Team name appears (lists, page titles, breadcrumbs, the calendar, the leaderboard, requests, the join steps, the Parent's pages). Switching the interface language switches the names.
+- When a Class or Team has no name in the viewer's language, the English name is shown. This covers a missing German name and every Class and Team created before this change.
+- The Admin can edit the three names of an existing Class or Team ("Edit names") with the same rules as at creation. A Teacher can't.
+- A name can't repeat within one language (ignoring case and surrounding spaces), for Classes and for Teams. The message names the name that is already taken.
+- The Admin's lists of Classes and Teams show the name of the interface language with the names of the other languages under it, so a missing name is visible.
+
+### 4.8 Tibetan Font
+
+**Description:** All Tibetan text is shown in the Atisha font (by Lobsang Monlam), which the app serves itself. Before this, Tibetan text used Noto Serif Tibetan, loaded from Google Fonts. Added 2026-10-03; not part of the Parent role.
+
+#### FR-18: Tibetan text uses the Atisha font
+
+**Consequences (testable):**
+- Tibetan text is shown in Atisha wherever the Tibetan font applies: the whole interface under the Tibetan interface language, Homework and Syllabus text written in Tibetan (FR-15, FR-16), and the Tibetan names of Classes and Teams (FR-17).
+- The font is part of the app. Opening any page loads nothing from Google or another third party for fonts.
+- Only Tibetan characters use Atisha. English or German words and digits inside Tibetan text keep the font they had before.
+- Atisha has one weight. Bold Tibetan text (headings, bold in Homework Content) is drawn from that weight by the browser.
+
 ## 5. Changes to the Existing Spec
 
 This PRD overrides parts of the current contract. When it's finalized, update these files:
@@ -318,6 +348,11 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 - "Editing the series (title, links, due-date offset)" also covers the Homework Content and its Content Language.
 - "Student side": the Student sees the formatted Homework Content in its Content Language's font (FR-14, FR-15).
 
+**Added 2026-10-03 for §4.7. Applied to the spec files on 2026-10-03.**
+
+**`SPEC.md`**
+- **Constraints:** a Class and a Team have a name per interface language (English and Tibetan required, German optional); the viewer's interface language decides which is shown, with the English name as the fallback; names are unique per language (FR-17).
+
 ## 6. Non-Goals
 
 - Notifications to Parents (email or push). Planned for a later stage.
@@ -334,7 +369,7 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 
 ## 7. MVP Scope
 
-**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan. FR-13 to FR-16 were added on 2026-10-01 and are built; the Tibetan wording of their new labels is still to be supplied (§10, Open Question 7).
+**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan. FR-13 to FR-16 were added on 2026-10-01 and are built; the Tibetan wording of their new labels is still to be supplied (§10, Open Question 7). FR-17 and FR-18 were added on 2026-10-03 and are built; FR-17's new labels are also still English under the Tibetan interface.
 
 **Out of scope:** everything in §6.
 
@@ -372,3 +407,6 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 7. **Tibetan wording** for the labels added with §4.6 (Content, the language names, the formatting tools, and the new messages). They currently appear in English under the Tibetan interface. Owner: product owner.
 8. **Title font in two places.** The Homework title is shown in the interface's font, not the Content Language's, in the page breadcrumb and inside the title field while the Teacher types (a limit of the interface components used). Accept, or fix?
 9. **Should the Syllabus text be required**, as Homework Content is? Kept optional for now (FR-16).
+10. **Existing Classes and Teams have no Tibetan or German name** until the Admin adds them with "Edit names" (FR-17); until then the English name is shown. Owner: Admin.
+11. **Licence of the Atisha font** (FR-18). The font's own notice reads "Copyright (c) 2014 by Lobsang monlam. All rights reserved." and names no licence. Confirm with Monlam IT (monlamit.org) that it may be served from a website and kept in the code repository. Go-live precondition. Owner: product owner.
+12. **Size of Tibetan text.** At the same font size Atisha looks slightly smaller than the Latin text beside it. Should it be scaled up?
