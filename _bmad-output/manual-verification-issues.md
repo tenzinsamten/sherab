@@ -1146,3 +1146,25 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 
 - 2026-10-03: user asked to commit. #78, #79 and #80 committed on `main` in one code commit and one
   docs commit; not pushed. No migration.
+
+- 2026-10-03: #81 logged, not fixed: the user ran the app locally (`npm run dev:hosted`) and saw no
+  PWA install option. Two causes. (1) In dev, `SvelteKitPWA` in `vite.config.ts` has no
+  `devOptions.enabled`, so `/manifest.webmanifest`, `/sw.js` and `/registerSW.js` all return 404.
+  (2) In the build the files are generated (`.svelte-kit/cloudflare/manifest.webmanifest`, `sw.js`,
+  `registerSW.js`), but no page links them: `src/app.html` and `src/routes/+layout.svelte` have no
+  `<link rel="manifest">` and nothing loads `registerSW.js` or `virtual:pwa-register`, so a
+  browser never offers install on the deployed site either. Not checked on the deployed site
+  itself. Open: whether the service worker should also run in dev. Waiting for the user to plan
+  or fix.
+
+- 2026-10-03: #81 built on `main`, not committed: the root layout links the manifest and registers
+  the service worker (`src/routes/+layout.svelte`, types in `src/app.d.ts`); `vite.config.ts`
+  turns the PWA on in dev and sets `navigateFallback: null`, because the plugin's default served
+  every navigation from a precached `/` that this server-rendered app doesn't have; `/dev-dist`
+  is ignored. Verified after a reset: 906 unit tests, `npm run check` and `npm run build` exit 0,
+  Prettier and ESLint pass on the changed files. On `npm run dev:hosted` the page carries the
+  manifest link and `/manifest.webmanifest` and the dev service worker return 200. Browser tests
+  not run; the install prompt itself not checked in a browser. No migration.
+
+- 2026-10-03: user asked to commit. #81 committed on `main` in one code commit and one docs
+  commit; not pushed. No migration.
