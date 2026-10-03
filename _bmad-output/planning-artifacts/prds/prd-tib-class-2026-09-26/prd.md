@@ -290,6 +290,8 @@ The Admin gives a Class or a Team an English, a Tibetan, and (optionally) a Germ
 **Consequences (testable):**
 - Creating a Class or a Team asks for three names. English and Tibetan are required: without either, nothing is created and the names typed so far are kept. German is optional.
 - A viewer sees the name of their interface language wherever a Class or Team name appears (lists, page titles, breadcrumbs, the calendar, the leaderboard, requests, the join steps, the Parent's pages). Switching the interface language switches the names.
+- Under the Tibetan interface language, dates, weekday names and numbers are in Tibetan: the Gregorian date in Tibetan words (`ཕྱི་ལོ་ ༢༠༢༦ ཟླ་ ༡༠ ཚེས་ ༣ གཟའ་སྤེན་པ`), not the Tibetan lunar calendar, and Tibetan digits (༠–༩) for counts, ranks, times and dates. Date and time input fields, and digits inside names, class codes and typed content, stay as they are (issue #80, 2026-10-03).
+- The chosen interface language holds until the viewer picks another: across every link in the app, sign-in and sign-out, and a later visit. The address of a page does not contain the language; an older link that does (`/bo/…`, `/de/…`) still opens the page in that language (issue #79, 2026-10-03).
 - When a Class or Team has no name in the viewer's language, the English name is shown. This covers a missing German name and every Class and Team created before this change.
 - The Admin can edit the three names of an existing Class or Team ("Edit names") with the same rules as at creation. A Teacher can't.
 - A name can't repeat within one language (ignoring case and surrounding spaces), for Classes and for Teams. The message names the name that is already taken.
@@ -306,6 +308,9 @@ The Admin gives a Class or a Team an English, a Tibetan, and (optionally) a Germ
 - The font is part of the app. Opening any page loads nothing from Google or another third party for fonts.
 - Only Tibetan characters use Atisha. English or German words and digits inside Tibetan text keep the font they had before.
 - Atisha has one weight. Bold Tibetan text (headings, bold in Homework Content) is drawn from that weight by the browser.
+- This holds for every part of the page, including menus, buttons, form fields and their labels, and for Tibetan text shown under the English or German interface language (issue #78, 2026-10-03).
+- Tibetan text is drawn 1.5 times the size of the English or German text around it (issue #78, 2026-10-03).
+- No Tibetan letter is cut off at the top or bottom, in running text or inside buttons, menus and form fields. Lines of Tibetan text are 1.2 to 1.5 times the Tibetan text size apart (issue #78, 2026-10-03).
 
 ## 5. Changes to the Existing Spec
 
@@ -409,4 +414,4 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 9. **Should the Syllabus text be required**, as Homework Content is? Kept optional for now (FR-16).
 10. **Existing Classes and Teams have no Tibetan or German name** until the Admin adds them with "Edit names" (FR-17); until then the English name is shown. Owner: Admin.
 11. **Licence of the Atisha font** (FR-18). The font's own notice reads "Copyright (c) 2014 by Lobsang monlam. All rights reserved." and names no licence. Confirm with Monlam IT (monlamit.org) that it may be served from a website and kept in the code repository. Go-live precondition. Owner: product owner.
-12. **Size of Tibetan text.** At the same font size Atisha looks slightly smaller than the Latin text beside it. Should it be scaled up?
+12. **Size of Tibetan text.** At the same font size Atisha looks slightly smaller than the Latin text beside it. Should it be scaled up? **Decided (product owner, 2026-10-03, issue #78):** yes, 1.5 times the size of English and German text; see FR-18.
