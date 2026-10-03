@@ -1,4 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
+import { pickLocalized } from '$lib/localized-name';
 
 /**
  * B12a (#67): class join requests. The 0031 functions name their refusal in
@@ -74,8 +75,12 @@ type ClassJoinListRow = {
 	student_id: string;
 	student_name: string | null;
 	current_classes: string | null;
+	current_classes_bo?: string | null;
+	current_classes_de?: string | null;
 	class_id: string;
 	class_name: string;
+	class_name_bo?: string | null;
+	class_name_de?: string | null;
 	requested_at: string;
 	own_child: boolean;
 };
@@ -92,9 +97,13 @@ export async function loadClassJoinRequests(supabase: App.Locals['supabase']) {
 			id: r.request_id,
 			studentId: r.student_id,
 			studentName: r.student_name || m.requests_join_unnamed_student(),
-			currentClasses: r.current_classes ?? '',
+			currentClasses: pickLocalized(
+				r.current_classes ?? '',
+				r.current_classes_bo,
+				r.current_classes_de
+			),
 			classId: r.class_id,
-			className: r.class_name,
+			className: pickLocalized(r.class_name, r.class_name_bo, r.class_name_de),
 			requestedAt: r.requested_at,
 			ownChild: Boolean(r.own_child)
 		})),

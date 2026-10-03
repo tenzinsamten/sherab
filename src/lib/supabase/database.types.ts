@@ -416,6 +416,8 @@ export type Database = {
 					default_start_time: string | null;
 					id: string;
 					name: string;
+					name_bo: string | null;
+					name_de: string | null;
 					schedule_ends_on: string | null;
 					schedule_interval_weeks: number;
 					schedule_starts_on: string;
@@ -431,6 +433,8 @@ export type Database = {
 					default_start_time?: string | null;
 					id?: string;
 					name: string;
+					name_bo?: string | null;
+					name_de?: string | null;
 					schedule_ends_on?: string | null;
 					schedule_interval_weeks?: number;
 					schedule_starts_on?: string;
@@ -446,6 +450,8 @@ export type Database = {
 					default_start_time?: string | null;
 					id?: string;
 					name?: string;
+					name_bo?: string | null;
+					name_de?: string | null;
 					schedule_ends_on?: string | null;
 					schedule_interval_weeks?: number;
 					schedule_starts_on?: string;
@@ -1029,16 +1035,22 @@ export type Database = {
 					created_at: string;
 					id: string;
 					name: string;
+					name_bo: string | null;
+					name_de: string | null;
 				};
 				Insert: {
 					created_at?: string;
 					id?: string;
 					name: string;
+					name_bo?: string | null;
+					name_de?: string | null;
 				};
 				Update: {
 					created_at?: string;
 					id?: string;
 					name?: string;
+					name_bo?: string | null;
+					name_de?: string | null;
 				};
 				Relationships: [];
 			};
@@ -1050,6 +1062,8 @@ export type Database = {
 					class_day_id: string | null;
 					class_id: string | null;
 					class_name: string | null;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					day: string | null;
 					day_cancelled: boolean | null;
 					duration_minutes: number | null;
@@ -1113,6 +1127,8 @@ export type Database = {
 					display_name: string | null;
 					email: string | null;
 					class_names: string;
+					class_names_bo: string;
+					class_names_de: string;
 				}[];
 			};
 			is_enrolled_in_class: {
@@ -1202,6 +1218,8 @@ export type Database = {
 					day: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					outcome: LeaveRangeOutcome;
 				}[];
 			};
@@ -1218,6 +1236,8 @@ export type Database = {
 					day: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					outcome: LeaveRangeOutcome;
 				}[];
 			};
@@ -1245,6 +1265,8 @@ export type Database = {
 					student_name: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					day: string;
 					start_time: string | null;
 					answered_at: string;
@@ -1260,6 +1282,8 @@ export type Database = {
 					session_date: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					present: boolean;
 				}[];
 			};
@@ -1288,6 +1312,8 @@ export type Database = {
 				Returns: {
 					team_id: string;
 					team_name: string;
+					team_name_bo: string | null;
+					team_name_de: string | null;
 					total_streak: number;
 				}[];
 			};
@@ -1314,8 +1340,12 @@ export type Database = {
 					student_id: string;
 					student_name: string | null;
 					current_classes: string;
+					current_classes_bo: string;
+					current_classes_de: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					requested_at: string;
 					own_child: boolean;
 				}[];
@@ -1334,6 +1364,8 @@ export type Database = {
 					id: string;
 					class_id: string;
 					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
 					status: 'pending' | 'rejected';
 					requested_at: string;
 					reviewed_at: string | null;
@@ -1344,6 +1376,8 @@ export type Database = {
 				Returns: {
 					id: string;
 					name: string;
+					name_bo: string | null;
+					name_de: string | null;
 				}[];
 			};
 		};

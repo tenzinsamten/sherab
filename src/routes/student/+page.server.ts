@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
+import { localizedName, pickLocalized } from '$lib/localized-name';
 import { todayInBerlin } from '$lib/berlin-date';
 import { shapeStudentBadges } from '$lib/server/badges';
 import { shapeTeamLeaderboard } from '$lib/server/leaderboard';
@@ -101,7 +102,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		classes: classes.map((c) => ({ ...c, todo: todoByClass.get(c.id) ?? 0 })),
 		joinRequests: (joinRows ?? []).map((r): StudentJoinRequest => ({
 			id: r.id,
-			className: r.class_name,
+			className: pickLocalized(r.class_name, r.class_name_bo, r.class_name_de),
 			status: r.status
 		})),
 		joinLoadError: Boolean(joinError),
@@ -140,7 +141,10 @@ export const actions: Actions = {
 		if (error) {
 			return fail(400, { joinError: classJoinErrorMessage(error), code });
 		}
-		return { joinSent: className ?? code };
+		// request_class_join returns the English name only (0031, kept as is by
+		// 0036): the names in every language come from the code lookup.
+		const { data: names } = await supabase.rpc('validate_class_code', { p_code: code });
+		return { joinSent: names?.[0] ? localizedName(names[0]) : (className ?? code) };
 	},
 
 	/** #67: hide a rejected request (dismiss_class_join, 0031). */

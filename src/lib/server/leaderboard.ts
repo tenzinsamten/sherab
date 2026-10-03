@@ -1,3 +1,5 @@
+import { pickLocalized } from '$lib/localized-name';
+
 export type TeamRank = {
 	teamId: string;
 	teamName: string;
@@ -7,6 +9,8 @@ export type TeamRank = {
 export type TeamRankRow = {
 	team_id: string;
 	team_name: string;
+	team_name_bo?: string | null;
+	team_name_de?: string | null;
 	total_streak: number;
 };
 
@@ -24,7 +28,7 @@ export function shapeTeamLeaderboard(rows: TeamRankRow[] | null): TeamRank[] {
 	if (!rows) return [];
 	return rows.map((row) => ({
 		teamId: row.team_id,
-		teamName: row.team_name,
+		teamName: pickLocalized(row.team_name, row.team_name_bo, row.team_name_de),
 		totalStreak: row.total_streak
 	}));
 }

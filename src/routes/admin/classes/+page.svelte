@@ -7,12 +7,18 @@
 	import { confirmAction, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
-	import { ixValue } from '$lib/ix-fields';
+	import LocalizedNameFields from '$lib/components/LocalizedNameFields.svelte';
+	import { otherNames } from '$lib/localized-name';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
+	type ClassRow = (typeof data.classes)[number];
+
 	const pending = createPending();
+
+	// #76: the class whose names are being edited (one row at a time).
+	let editingId = $state<string | null>(null);
 
 	$effect(() => {
 		if (form && 'class' in form && form.class) {
@@ -24,7 +30,19 @@
 		if (form && 'deleted' in form && form.deleted) {
 			showToast('success', m.classes_deleted_success({ name: form.deleted }));
 		}
+		if (form && 'renamed' in form && form.renamed) {
+			editingId = null;
+			showToast('success', m.names_saved({ name: form.renamed }));
+		}
 	});
+
+	// A failed save keeps what was typed; otherwise the class's current names.
+	function editValues(cls: ClassRow) {
+		if (form && 'renameValues' in form && form.renameValues && form.renameId === cls.id) {
+			return form.renameValues;
+		}
+		return { name: cls.name, nameBo: cls.name_bo, nameDe: cls.name_de };
+	}
 
 	// A failed create keeps what was entered; otherwise the new-class default
 	// schedule: Sunday, weekly, from today (Berlin), no end, time unset (Story 6-4).
@@ -47,15 +65,17 @@
 					intervalWeeks: 1
 				}
 	);
-	// The last create result (every create result echoes `name`): other
-	// actions (a delete) leave it, so they don't clear a half-typed name.
+	// The last create result (every create result echoes the names): other
+	// actions (a delete, a rename) leave it, so they don't clear a half-typed name.
 	let lastCreate: ActionData = null;
 	let createResult = $derived.by(() => {
 		if (form && 'name' in form) lastCreate = form;
 		return lastCreate;
 	});
-	let createdName = $derived(
-		createResult?.success ? '' : (createResult && 'name' in createResult && createResult.name) || ''
+	let createdNames = $derived(
+		createResult && 'name' in createResult && !createResult.success
+			? { name: createResult.name, nameBo: createResult.nameBo, nameDe: createResult.nameDe }
+			: { name: '', nameBo: '', nameDe: '' }
 	);
 
 	let scheduleErrors = $derived(
@@ -65,15 +85,15 @@
 	let deleteForm: HTMLFormElement | undefined = $state();
 	let deleteTarget = $state({ id: '', name: '' });
 
-	async function deleteClass(cls: { id: string; name: string }) {
+	async function deleteClass(cls: ClassRow) {
 		const ok = await confirmAction(
 			m.common_confirm_title(),
-			m.classes_delete_confirm({ name: cls.name }),
+			m.classes_delete_confirm({ name: cls.label }),
 			m.common_delete(),
 			m.common_cancel()
 		);
 		if (!ok) return;
-		deleteTarget = { id: cls.id, name: cls.name };
+		deleteTarget = { id: cls.id, name: cls.label };
 		await tick(); // hidden inputs pick up deleteTarget before submitting
 		deleteForm?.requestSubmit();
 	}
@@ -96,17 +116,9 @@
 		<h2>{m.classes_create_heading()}</h2>
 		<form method="POST" action="?/create" use:enhance={pending.submit('create')} novalidate>
 			<!-- Remounted after a successful create only: <ix-input> doesn't take
-			     part in form reset. A failed create keeps the name (echoed back). -->
+			     part in form reset. A failed create keeps the names (echoed back). -->
 			{#key createResult?.success ? createResult : null}
-				<div class="field" style="max-width:32rem;">
-					<ix-input
-						id="name"
-						name="name"
-						label={m.classes_name_label()}
-						required
-						{@attach ixValue(createdName)}
-					></ix-input>
-				</div>
+				<LocalizedNameFields label={m.classes_name_label()} values={createdNames} />
 			{/key}
 			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
 			{#key form}
@@ -150,7 +162,12 @@
 					<tbody>
 						{#each data.classes as cls (cls.id)}
 							<tr>
-								<td>{cls.name}</td>
+								<td>
+									{cls.label}
+									{#each otherNames(cls) as other (other.lang)}
+										<span class="muted other-name" lang={other.lang}>{other.name}</span>
+									{/each}
+								</td>
 								<td><CopyField label={m.classes_col_code()} value={cls.code} hideLabel /></td>
 								<td>
 									<span class="actions">
@@ -170,20 +187,66 @@
 									</a>
 								</td>
 								<td class="muted">{new Date(cls.created_at).toLocaleDateString()}</td>
-								<td style="text-align:right;">
-									{#if cls.approvedCount === 0 && cls.pendingCount === 0}
+								<td>
+									<div class="actions" style="justify-content:flex-end;">
 										<ix-button
-											variant="danger-tertiary"
-											icon="trashcan"
-											loading={pending.is(`delete:${cls.id}`) || undefined}
+											variant="tertiary"
+											icon="pen"
 											disabled={pending.busy || undefined}
-											onclick={() => deleteClass(cls)}
+											onclick={() => (editingId = editingId === cls.id ? null : cls.id)}
 										>
-											{m.common_delete()}
+											{m.names_edit()}
 										</ix-button>
-									{/if}
+										{#if cls.approvedCount === 0 && cls.pendingCount === 0}
+											<ix-button
+												variant="danger-tertiary"
+												icon="trashcan"
+												loading={pending.is(`delete:${cls.id}`) || undefined}
+												disabled={pending.busy || undefined}
+												onclick={() => deleteClass(cls)}
+											>
+												{m.common_delete()}
+											</ix-button>
+										{/if}
+									</div>
 								</td>
 							</tr>
+							{#if editingId === cls.id}
+								<tr>
+									<td colspan="6">
+										<form
+											method="POST"
+											action="?/rename"
+											use:enhance={pending.submit(`rename:${cls.id}`)}
+											novalidate
+										>
+											<input type="hidden" name="classId" value={cls.id} />
+											<fieldset>
+												<legend>{m.names_edit_title({ name: cls.label })}</legend>
+												<LocalizedNameFields
+													label={m.classes_name_label()}
+													idPrefix="edit-{cls.id}-"
+													values={editValues(cls)}
+												/>
+											</fieldset>
+											<div class="actions">
+												<ix-button
+													type="submit"
+													loading={pending.is(`rename:${cls.id}`) || undefined}
+													disabled={pending.busy || undefined}>{m.names_save()}</ix-button
+												>
+												<ix-button
+													variant="secondary"
+													disabled={pending.busy || undefined}
+													onclick={() => (editingId = null)}
+												>
+													{m.common_cancel()}
+												</ix-button>
+											</div>
+										</form>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>
@@ -207,5 +270,9 @@
 	.schedule-heading {
 		margin: var(--space-2) 0 var(--space-2);
 		font-size: var(--theme-font-size-l);
+	}
+	.other-name {
+		display: block;
+		font-size: var(--theme-font-size-default);
 	}
 </style>

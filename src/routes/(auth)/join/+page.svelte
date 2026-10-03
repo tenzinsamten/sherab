@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import * as m from '$lib/paraglide/messages.js';
+	import { localizeName } from '$lib/localized-name';
 	import AuthCard from '$lib/components/AuthCard.svelte';
 	import JoinSteps from '$lib/components/JoinSteps.svelte';
 	import { showToast } from '$lib/ix';
@@ -43,7 +44,7 @@
 			return;
 		}
 
-		resolvedClass = data[0];
+		resolvedClass = localizeName(data[0]);
 		step = 2;
 	}
 

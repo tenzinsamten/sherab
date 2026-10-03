@@ -1,3 +1,4 @@
+import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
@@ -109,9 +110,15 @@ export function pickStudentSyllabus(syllabi: Syllabus[], current: number): Sylla
 
 /** Load for a syllabus list page: the class, its syllabi, and the years that can still be added. */
 export async function loadSyllabusList(supabase: Client, classId: string) {
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', classId).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', classId)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 	const { syllabi, error } = await listSyllabi(supabase, classId);
 	const current = currentSchoolYear();
@@ -129,9 +136,15 @@ export async function loadSyllabusList(supabase: Client, classId: string) {
 
 /** Load for a syllabus detail page. */
 export async function loadSyllabusDetail(supabase: Client, classId: string, syllabusId: string) {
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', classId).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', classId)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 	const syllabus = toSyllabus(
 		rowOr404(

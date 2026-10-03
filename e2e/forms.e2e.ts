@@ -141,7 +141,7 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// Saved: shown formatted, in the Tibetan font under the English interface.
 	const shown = page.locator('.rich-text');
 	await expect(shown).toHaveAttribute('lang', 'bo');
-	await expect(shown).toHaveCSS('font-family', /Noto Serif Tibetan/);
+	await expect(shown).toHaveCSS('font-family', /Atisha/);
 	await expect(shown.locator('p strong')).toHaveText('སློབ་ཚན་དང་པོ།');
 	await expect(shown.locator('p').nth(1)).toHaveText('Week 2: songs');
 
@@ -295,17 +295,81 @@ test('admin team create: the name field is empty again after a create (#66 B8a)'
 
 		const field = page.locator('#name');
 		await field.locator('input').first().fill(name);
+		// #76: the Tibetan name is required too.
+		await page.locator('#name-bo input').first().fill(`${name} bo`);
 		await expect(field).toHaveJSProperty('value', name);
 		await page.getByRole('button', { name: 'Create team' }).click();
 		await expect(page.locator('ix-toast').getByText(`Team "${name}" created.`)).toBeVisible();
-		await expect(page.getByRole('cell', { name, exact: true })).toBeVisible();
+		// #76: the cell shows the name and, under it, the names in the other languages.
+		const cell = page.getByRole('cell', { name: `${name} ${name} bo`, exact: true });
+		await expect(cell).toBeVisible();
+		await expect(cell.locator('[lang="bo"]')).toHaveText(`${name} bo`);
 		await expect(page.locator('#name')).toHaveJSProperty('value', '');
 
 		// A duplicate name fails: the toast shows and the name is kept.
 		await page.locator('#name input').first().fill(name);
+		// #76: the Tibetan name is required too.
+		await page.locator('#name-bo input').first().fill(`${name} bo`);
 		await page.getByRole('button', { name: 'Create team' }).click();
 		await expect(page.locator('ix-toast').getByText(/already/i)).toBeVisible();
 		await expect(page.locator('#name')).toHaveJSProperty('value', name);
+	} finally {
+		await service.from('teams').delete().eq('name', name);
+	}
+});
+
+test('admin team names: edit the names, and each interface language shows its own (#76)', async ({
+	page
+}) => {
+	const name = `E2E76 Team ${fx.tag}`;
+	const tibetan = `སྡེ་ཚན ${fx.tag}`;
+	const german = `E2E76 Gruppe ${fx.tag}`;
+	// An existing team: English name only, as before 0036.
+	const { error: insertError } = await service.from('teams').insert({ name });
+	if (insertError) throw new Error(`create team: ${insertError.message}`);
+	try {
+		await signIn(page, fx.admin);
+		await page.goto('/admin/teams');
+		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await page.waitForLoadState('networkidle');
+
+		const row = page.locator('tr').filter({ hasText: name });
+		await row.getByRole('button', { name: 'Edit names' }).click();
+		const form = page.locator('form[action="?/rename"]');
+		await expect(form.locator('ix-input[name="name"]')).toHaveJSProperty('value', name);
+
+		// Tibetan is required: saving without it fails and keeps the form open.
+		await form.locator('ix-input[name="nameDe"] input').first().fill(german);
+		await form.getByRole('button', { name: 'Save names' }).click();
+		await expect(
+			page.locator('ix-toast').getByText('The Tibetan team name is required.')
+		).toBeVisible();
+		await expect(form.locator('ix-input[name="nameDe"]')).toHaveJSProperty('value', german);
+
+		await form.locator('ix-input[name="nameBo"] input').first().fill(tibetan);
+		await form.getByRole('button', { name: 'Save names' }).click();
+		await expect(page.locator('ix-toast').getByText(`Names of “${name}” saved.`)).toBeVisible();
+		await expect(form).toHaveCount(0);
+
+		// English interface: the English name, the other two under it.
+		const cell = page.locator('td').filter({ hasText: name });
+		await expect(cell.locator('[lang="bo"]')).toHaveText(tibetan);
+		await expect(cell.locator('[lang="de"]')).toHaveText(german);
+
+		// German and Tibetan interfaces lead with their own name.
+		await page.goto('/de/admin/teams');
+		await expect(page.locator('td').filter({ hasText: german }).locator('[lang="en"]')).toHaveText(
+			name
+		);
+		await page.goto('/bo/admin/teams');
+		await expect(page.locator('td').filter({ hasText: tibetan }).locator('[lang="de"]')).toHaveText(
+			german
+		);
+
+		// The leaderboard shows the team under the viewer's language.
+		await page.goto('/de/leaderboard');
+		await expect(page.getByText(german, { exact: true })).toBeVisible();
+		await expect(page.getByText(name, { exact: true })).toHaveCount(0);
 	} finally {
 		await service.from('teams').delete().eq('name', name);
 	}
@@ -420,6 +484,8 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 		// An existing name: the create fails and the name stays.
 		const field = page.locator('#name');
 		await field.locator('input').first().fill(typed);
+		// #76: the Tibetan name is required too.
+		await page.locator('#name-bo input').first().fill(`${typed} bo`);
 		await page.getByRole('button', { name: 'Create class' }).click();
 		await expect(page.locator('ix-toast').getByText(/already exists/)).toBeVisible();
 		await expect(field).toHaveJSProperty('value', typed);

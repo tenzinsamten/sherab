@@ -4842,8 +4842,20 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 
 		const rows = await readLeaderboard(admin.client, [teamHigh, teamLow]);
 		expect(rows).toEqual([
-			{ team_id: teamHigh, team_name: expect.any(String), total_streak: 8 },
-			{ team_id: teamLow, team_name: expect.any(String), total_streak: 3 }
+			{
+				team_id: teamHigh,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 8
+			},
+			{
+				team_id: teamLow,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 3
+			}
 		]);
 		// The higher-total team is genuinely first in the returned order, not
 		// just present with the right total (I/O matrix: "the higher-total
@@ -4857,7 +4869,15 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		const teamEmpty = await createTeam(`Empty Team ${crypto.randomUUID().slice(0, 6)}`);
 
 		const rows = await readLeaderboard(admin.client, [teamEmpty]);
-		expect(rows).toEqual([{ team_id: teamEmpty, team_name: expect.any(String), total_streak: 0 }]);
+		expect(rows).toEqual([
+			{
+				team_id: teamEmpty,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 0
+			}
+		]);
 	});
 
 	it('a team whose only member has never triggered a streak recompute (no student_streaks row) still totals correctly, never null', async () => {
@@ -4871,7 +4891,15 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		// COALESCE(SUM(...), 0) plus the fact that SUM() itself already skips
 		// a NULL row (the never-recomputed student's LEFT JOIN miss) --
 		// total_streak must come back as a real 5, never null or an error.
-		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 5 }]);
+		expect(rows).toEqual([
+			{
+				team_id: team,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 5
+			}
+		]);
 	});
 
 	it('tied totals are ordered deterministically by team name ascending, across repeated loads', async () => {
@@ -4904,7 +4932,15 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		// only wrongly land on by a null-handling bug (e.g. team_id IS NULL
 		// coalescing to some team's id).
 		const rows = await readLeaderboard(admin.client, [team]);
-		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 0 }]);
+		expect(rows).toEqual([
+			{
+				team_id: team,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 0
+			}
+		]);
 	});
 
 	it("a pending (not yet approved) student's streak is excluded from their team's sum", async () => {
@@ -4919,7 +4955,15 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		await setStreak(pending, classId, 10);
 
 		const rows = await readLeaderboard(admin.client, [team]);
-		expect(rows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 0 }]);
+		expect(rows).toEqual([
+			{
+				team_id: team,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 0
+			}
+		]);
 	});
 
 	it('every authenticated role (admin, teacher, student) sees the identical team-level totals -- no individual streak is exposed', async () => {
@@ -4961,7 +5005,15 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		const teacherRows = await readLeaderboard(teacherA.client, [team]);
 		const studentRows = await readLeaderboard(studentClient, [team]);
 
-		expect(adminRows).toEqual([{ team_id: team, team_name: expect.any(String), total_streak: 6 }]);
+		expect(adminRows).toEqual([
+			{
+				team_id: team,
+				team_name: expect.any(String),
+				team_name_bo: null,
+				team_name_de: null,
+				total_streak: 6
+			}
+		]);
 		expect(teacherRows).toEqual(adminRows);
 		expect(studentRows).toEqual(adminRows);
 
@@ -4969,7 +5021,13 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 		// student_id/student-level field could leak through even by accident
 		// (Boundaries: "Do not expose any individual student's streak value
 		// through this feature -- only team-level sums").
-		expect(Object.keys(adminRows[0]).sort()).toEqual(['team_id', 'team_name', 'total_streak']);
+		expect(Object.keys(adminRows[0]).sort()).toEqual([
+			'team_id',
+			'team_name',
+			'team_name_bo',
+			'team_name_de',
+			'total_streak'
+		]);
 	});
 });
 
@@ -8454,7 +8512,7 @@ describe.skipIf(!reachable)('7-3 parent reads (requires local Supabase)', () => 
 		expect(error).toBeNull();
 		expect(data).toHaveLength(1);
 		expect(Object.keys(data![0]).sort()).toEqual(
-			['class_id', 'class_name', 'present', 'session_date'].sort()
+			['class_id', 'class_name', 'class_name_bo', 'class_name_de', 'present', 'session_date'].sort()
 		);
 		expect(data![0]).toMatchObject({
 			session_date: ATTENDANCE_DAY,
@@ -11897,3 +11955,123 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)('#76 localized class and team names (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	const tag = crypto.randomUUID().slice(0, 8);
+	const name = (label: string) => `76 ${label} ${tag}`;
+	const code = () => `L${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+	}, 30000);
+
+	it('a class has a name per language, each unique on its own (case and spaces ignored)', async () => {
+		const first = await admin.client
+			.from('classes')
+			.insert({
+				name: name('Grammar'),
+				name_bo: name('བརྡ་སྤྲོད།'),
+				name_de: name('Grammatik'),
+				code: code()
+			})
+			.select('name, name_bo, name_de')
+			.single();
+		expect(first.error).toBeNull();
+		expect(first.data).toEqual({
+			name: name('Grammar'),
+			name_bo: name('བརྡ་སྤྲོད།'),
+			name_de: name('Grammatik')
+		});
+
+		const sameTibetan = await admin.client
+			.from('classes')
+			.insert({ name: name('Other'), name_bo: ` ${name('བརྡ་སྤྲོད།')} `, code: code() });
+		expect(sameTibetan.error?.code).toBe('23505');
+		expect(sameTibetan.error?.message).toContain('classes_name_bo_unique_idx');
+
+		const sameGerman = await admin.client
+			.from('classes')
+			.insert({ name: name('Other'), name_de: name('grammatik').toUpperCase(), code: code() });
+		expect(sameGerman.error?.code).toBe('23505');
+		expect(sameGerman.error?.message).toContain('classes_name_de_unique_idx');
+	});
+
+	it('classes without a Tibetan or German name do not collide; a blank one is refused', async () => {
+		for (const label of ['Plain A', 'Plain B']) {
+			const { error } = await admin.client
+				.from('classes')
+				.insert({ name: name(label), code: code() });
+			expect(error).toBeNull();
+		}
+		const blank = await admin.client
+			.from('classes')
+			.insert({ name: name('Blank'), name_bo: '  ', code: code() });
+		expect(blank.error?.code).toBe('23514');
+	});
+
+	it('only the admin renames a team; team names are unique per language too', async () => {
+		const { data: team, error } = await admin.client
+			.from('teams')
+			.insert({ name: name('Yaks'), name_bo: name('གཡག') })
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+
+		// RLS (teams_update_admin): a teacher's update changes no row.
+		const byTeacher = await teacher.client
+			.from('teams')
+			.update({ name_de: name('Yaks DE') })
+			.eq('id', team!.id)
+			.select('id');
+		expect(byTeacher.data ?? []).toEqual([]);
+
+		const byAdmin = await admin.client
+			.from('teams')
+			.update({ name_de: name('Yaks DE') })
+			.eq('id', team!.id)
+			.select('name, name_bo, name_de');
+		expect(byAdmin.error).toBeNull();
+		expect(byAdmin.data).toEqual([
+			{ name: name('Yaks'), name_bo: name('གཡག'), name_de: name('Yaks DE') }
+		]);
+
+		const duplicate = await admin.client
+			.from('teams')
+			.insert({ name: name('Other team'), name_bo: name('གཡག') });
+		expect(duplicate.error?.code).toBe('23505');
+		expect(duplicate.error?.message).toContain('teams_name_bo_unique_idx');
+	});
+
+	it('validate_class_code and team_leaderboard return the names in every language', async () => {
+		const classCode = code();
+		const { error } = await admin.client
+			.from('classes')
+			.insert({ name: name('Songs'), name_bo: name('གླུ'), code: classCode });
+		expect(error).toBeNull();
+
+		// The join wizard looks a class up before the visitor has a session.
+		const lookup = await anonClient().rpc('validate_class_code', { p_code: classCode });
+		expect(lookup.error).toBeNull();
+		expect(lookup.data).toEqual([
+			{ id: expect.any(String), name: name('Songs'), name_bo: name('གླུ'), name_de: null }
+		]);
+
+		const { data: team } = await admin.client
+			.from('teams')
+			.insert({ name: name('Snow Lions'), name_bo: name('གངས་སེང') })
+			.select('id')
+			.single();
+		const board = await admin.client.rpc('team_leaderboard');
+		expect(board.error).toBeNull();
+		expect((board.data ?? []).find((row) => row.team_id === team!.id)).toEqual({
+			team_id: team!.id,
+			team_name: name('Snow Lions'),
+			team_name_bo: name('གངས་སེང'),
+			team_name_de: null,
+			total_streak: 0
+		});
+	});
+});

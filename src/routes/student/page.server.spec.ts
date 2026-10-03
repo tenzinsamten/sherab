@@ -244,7 +244,8 @@ describe('student dashboard join actions', () => {
 		action: 'requestJoin' | 'dismissJoin',
 		fields: Record<string, string>,
 		result: RpcResult = { data: 'Dancers', error: null },
-		user: { id: string } | null = { id: 's1' }
+		user: { id: string } | null = { id: 's1' },
+		lookup: unknown[] = [{ id: 'c1', name: 'Dancers', name_bo: null, name_de: 'Tänzer' }]
 	) {
 		const calls: { name: string; args: unknown }[] = [];
 		const body = new FormData();
@@ -256,6 +257,8 @@ describe('student dashboard join actions', () => {
 				supabase: {
 					rpc: async (name: string, args: unknown) => {
 						calls.push({ name, args });
+						// #76: the names in every language, for the confirmation.
+						if (name === 'validate_class_code') return { data: lookup, error: null };
 						return result;
 					}
 				}
@@ -268,7 +271,21 @@ describe('student dashboard join actions', () => {
 	it('sends the trimmed, upper-cased code and returns the class name', async () => {
 		const { calls, result } = call('requestJoin', { code: '  ab3cd9 ' });
 		expect(await result).toEqual({ joinSent: 'Dancers' });
-		expect(calls).toEqual([{ name: 'request_class_join', args: { p_code: 'AB3CD9' } }]);
+		expect(calls).toEqual([
+			{ name: 'request_class_join', args: { p_code: 'AB3CD9' } },
+			{ name: 'validate_class_code', args: { p_code: 'AB3CD9' } }
+		]);
+	});
+
+	it('falls back to the name request_class_join returned when the lookup finds nothing', async () => {
+		const { result } = call(
+			'requestJoin',
+			{ code: 'AB3CD9' },
+			{ data: 'Dancers', error: null },
+			{ id: 's1' },
+			[]
+		);
+		expect(await result).toEqual({ joinSent: 'Dancers' });
 	});
 
 	it('refuses an empty code without calling the database', async () => {

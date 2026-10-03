@@ -7,6 +7,7 @@
  */
 
 import * as m from '$lib/paraglide/messages.js';
+import { pickLocalized } from '$lib/localized-name';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -233,6 +234,8 @@ export type EffectiveSessionRow = {
 	id: string | null;
 	class_id: string | null;
 	class_name: string | null;
+	class_name_bo?: string | null;
+	class_name_de?: string | null;
 	class_day_id: string | null;
 	start_time: string | null;
 	duration_minutes: number | null;
@@ -285,7 +288,7 @@ export function shapeSession(row: EffectiveSessionRow): CalendarSession {
 	return {
 		id: row.id ?? '',
 		classId: row.class_id ?? '',
-		className: row.class_name ?? '',
+		className: pickLocalized(row.class_name ?? '', row.class_name_bo, row.class_name_de),
 		start,
 		end: start && duration ? endTime(start, duration) : null,
 		durationMinutes: duration,

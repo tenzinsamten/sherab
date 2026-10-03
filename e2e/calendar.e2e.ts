@@ -789,6 +789,8 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
 
 			await page.locator('#name input').first().fill(name);
+			// #76: the Tibetan name is required too.
+			await page.locator('#name-bo input').first().fill(`${name} bo`);
 			// <ix-checkbox>: click and wait (see the schedule-edit test).
 			await page.getByRole('checkbox', { name: 'Wed', exact: true }).click();
 			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).toBeChecked();
@@ -798,7 +800,10 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await page.getByRole('button', { name: 'Create class' }).click();
 
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
-			await expect(page.getByRole('cell', { name, exact: true })).toBeVisible();
+			// #76: the cell shows the name and, under it, the names in the other languages.
+			await expect(
+				page.getByRole('cell', { name: `${name} ${name} bo`, exact: true })
+			).toBeVisible();
 			const { data } = await service
 				.from('classes')
 				.select(
@@ -841,6 +846,8 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 			await expect(page.locator('#new-class-duration')).toHaveJSProperty('value', null);
 
 			await page.locator('#name input').first().fill(name);
+			// #76: the Tibetan name is required too.
+			await page.locator('#name-bo input').first().fill(`${name} bo`);
 			await page.getByRole('button', { name: 'Create class' }).click();
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
 

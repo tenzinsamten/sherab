@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import { generateTempPassword } from '$lib/server/temp-password';
 import { diffClassIds } from '$lib/server/teacher-classes';
 import * as m from '$lib/paraglide/messages.js';
+import { localizeName, type LocalizedNames } from '$lib/localized-name';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
@@ -12,13 +13,15 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		{ data: assignments, error: assignmentsError },
 		{ data: approvedParents, error: parentsError }
 	] = await Promise.all([
-		supabase.from('classes').select('id, name, code').order('name'),
+		supabase.from('classes').select('id, name, name_bo, name_de, code'),
 		supabase
 			.from('profiles')
 			.select('id, email, display_name, created_at')
 			.eq('role', 'teacher')
 			.order('created_at', { ascending: false }),
-		supabase.from('class_teachers').select('class_id, teacher_id, classes ( id, name, code )'),
+		supabase
+			.from('class_teachers')
+			.select('class_id, teacher_id, classes ( id, name, name_bo, name_de, code )'),
 		// B14b (#68): teachers who also hold an approved parents row (admin RLS
 		// read) are marked, and Remove makes them parent-only instead.
 		supabase.from('parents').select('id').eq('status', 'approved')
@@ -28,10 +31,10 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 
 	const classesByTeacher = new Map<string, { id: string; name: string; code: string }[]>();
 	for (const row of assignments ?? []) {
-		const cls = row.classes as unknown as { id: string; name: string; code: string } | null;
+		const cls = row.classes as unknown as ({ id: string; code: string } & LocalizedNames) | null;
 		if (!cls) continue;
 		const list = classesByTeacher.get(row.teacher_id) ?? [];
-		list.push(cls);
+		list.push(localizeName(cls));
 		classesByTeacher.set(row.teacher_id, list);
 	}
 
@@ -42,7 +45,9 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	}));
 
 	return {
-		classes: classes ?? [],
+		classes: (classes ?? [])
+			.map((c) => localizeName(c))
+			.sort((a, b) => a.name.localeCompare(b.name)),
 		teachers: teachersWithClasses,
 		loadError: Boolean(classesError || teachersError || assignmentsError || parentsError)
 	};

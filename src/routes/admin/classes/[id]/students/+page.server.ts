@@ -1,3 +1,4 @@
+import { localizeName } from '$lib/localized-name';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import {
 	enrollStudent,
@@ -9,9 +10,15 @@ import type { Actions, PageServerLoad } from './$types';
 
 /** A class's students: add existing students from other classes, or remove them (#42). */
 export const load: PageServerLoad = async ({ params, locals: { supabase } }) => {
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', params.id).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', params.id)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 	const [roster, enrollable] = await Promise.all([
 		loadClassRoster(supabase, params.id),

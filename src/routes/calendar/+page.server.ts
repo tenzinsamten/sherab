@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
+import { localizedName } from '$lib/localized-name';
 import { currentBerlinMonth, todayInBerlin } from '$lib/berlin-date';
 import {
 	monthBounds,
@@ -83,7 +84,7 @@ export const load: PageServerLoad = async ({
 		supabase
 			.from('class_sessions_effective')
 			.select(
-				'id, class_id, class_name, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled, extra'
+				'id, class_id, class_name, class_name_bo, class_name_de, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled, extra'
 			)
 			.gte('day', first)
 			.lte('day', last),
@@ -91,7 +92,7 @@ export const load: PageServerLoad = async ({
 			? supabase
 					.from('classes')
 					.select(
-						'id, name, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks'
+						'id, name, name_bo, name_de, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks'
 					)
 					.order('name')
 			: Promise.resolve({ data: [], error: null })
@@ -137,16 +138,18 @@ export const load: PageServerLoad = async ({
 
 	// RLS scopes this to every class for the admin and the assigned classes
 	// for a teacher: exactly the classes the caller may edit.
-	const classSchedules: ClassSchedule[] = (classesResult.data ?? []).map((c) => ({
-		id: c.id,
-		name: c.name,
-		weekdays: [...(c.schedule_weekdays ?? [])].sort((a, b) => a - b),
-		startTime: c.default_start_time ? toHhMm(c.default_start_time) : null,
-		durationMinutes: c.default_duration_minutes,
-		startsOn: c.schedule_starts_on,
-		endsOn: c.schedule_ends_on,
-		intervalWeeks: c.schedule_interval_weeks
-	}));
+	const classSchedules: ClassSchedule[] = (classesResult.data ?? [])
+		.map((c) => ({
+			id: c.id,
+			name: localizedName(c),
+			weekdays: [...(c.schedule_weekdays ?? [])].sort((a, b) => a - b),
+			startTime: c.default_start_time ? toHhMm(c.default_start_time) : null,
+			durationMinutes: c.default_duration_minutes,
+			startsOn: c.schedule_starts_on,
+			endsOn: c.schedule_ends_on,
+			intervalWeeks: c.schedule_interval_weeks
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name));
 
 	return {
 		role,

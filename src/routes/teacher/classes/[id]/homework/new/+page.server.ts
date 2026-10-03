@@ -1,3 +1,4 @@
+import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import { loadClassRoster } from '$lib/server/enrollments';
@@ -22,9 +23,15 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	}
 
 	// RLS (classes_select_admin_or_assigned_teacher) is the real barrier (AD-2).
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', params.id).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', params.id)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 
 	const roster = await loadClassRoster(supabase, params.id);

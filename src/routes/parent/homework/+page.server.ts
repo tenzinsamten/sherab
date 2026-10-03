@@ -1,3 +1,4 @@
+import { localizedName, type LocalizedNames } from '$lib/localized-name';
 import { redirect } from '@sveltejs/kit';
 import { todayInBerlin } from '$lib/berlin-date';
 import { loadStudentHomework, type StudentHomeworkItem } from '$lib/server/student-homework';
@@ -52,11 +53,11 @@ async function loadChildOpen(
 
 	const [classesResult, open] = await Promise.all([
 		classIds.length > 0
-			? supabase.from('classes').select('id, name').in('id', classIds)
-			: Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+			? supabase.from('classes').select('id, name, name_bo, name_de').in('id', classIds)
+			: Promise.resolve({ data: [] as ({ id: string } & LocalizedNames)[], error: null }),
 		loadStudentHomework(supabase, child.id, { filter: 'todo', page: 1, enrolledClassIds, today })
 	]);
-	const classNames = new Map((classesResult.data ?? []).map((c) => [c.id, c.name]));
+	const classNames = new Map((classesResult.data ?? []).map((c) => [c.id, localizedName(c)]));
 
 	return {
 		items: open.items.map((item) => ({

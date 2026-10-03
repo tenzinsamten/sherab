@@ -11,6 +11,7 @@ import { getCapabilities } from '$lib/server/capabilities';
 import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
+import { localizeName, type LocalizedNames } from '$lib/localized-name';
 import type { Actions, PageServerLoad } from './$types';
 
 const MAX_CREDENTIAL_ATTEMPTS = 5;
@@ -23,7 +24,7 @@ type StudentRow = {
 	status: 'pending' | 'approved' | 'rejected' | null;
 	created_at: string;
 	reviewed_at: string | null;
-	classes: { id: string; name: string; code: string } | null;
+	classes: ({ id: string; code: string } & LocalizedNames) | null;
 };
 
 type ParentRow = {
@@ -140,7 +141,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	// route's actual embedded-relation syntax, so this was silently broken
 	// for every real visit to /requests until browser-verified here.
 	const selectColumns =
-		'id, registration_name, status, created_at, reviewed_at, classes!profiles_class_id_fkey ( id, name, code )';
+		'id, registration_name, status, created_at, reviewed_at, classes!profiles_class_id_fkey ( id, name, name_bo, name_de, code )';
 
 	const [
 		{ data: pendingRows, error: pendingError },
@@ -161,7 +162,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.eq('role', 'student')
 			.in('status', ['approved', 'rejected'])
 			.order('reviewed_at', { ascending: false }),
-		supabase.from('teams').select('id, name').order('name'),
+		supabase.from('teams').select('id, name, name_bo, name_de'),
 		loadSickLeave(supabase),
 		// B12b (#67): class join requests of the caller's classes (every class
 		// for the admin). A failure shows in that section only (joinLoadError).
@@ -215,7 +216,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			status: r.status,
 			createdAt: r.created_at,
 			reviewedAt: r.reviewed_at,
-			class: r.classes as unknown as { id: string; name: string; code: string } | null
+			class: r.classes ? localizeName(r.classes) : null
 		};
 	};
 
@@ -223,7 +224,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		role: profile.role as 'admin' | 'teacher',
 		pending: (pendingRows ?? []).map(toRow),
 		decided: (decidedRows ?? []).map(toRow),
-		teams: teams ?? [],
+		teams: (teams ?? []).map((t) => localizeName(t)).sort((a, b) => a.name.localeCompare(b.name)),
 		parentsPending,
 		parentsDecided,
 		sickPending,

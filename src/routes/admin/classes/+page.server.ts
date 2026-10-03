@@ -12,7 +12,23 @@ import {
 	scheduleFormValues
 } from '$lib/server/calendar';
 import * as m from '$lib/paraglide/messages.js';
+import { localizeName, localizedName } from '$lib/localized-name';
+import {
+	duplicateName,
+	missingName,
+	nameColumns,
+	readNameFields,
+	type NameFields
+} from '$lib/server/localized-names';
 import type { Actions, PageServerLoad } from './$types';
+
+/** #76: English and Tibetan are required, German is optional. */
+function nameRequiredMessage(names: NameFields): string | null {
+	const missing = missingName(names);
+	if (missing === 'en') return m.classes_error_name_required();
+	if (missing === 'bo') return m.classes_error_name_bo_required();
+	return null;
+}
 
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	const [
@@ -23,7 +39,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	] = await Promise.all([
 		supabase
 			.from('classes')
-			.select('id, name, code, created_at')
+			.select('id, name, name_bo, name_de, code, created_at')
 			.order('created_at', { ascending: false }),
 		// Pending = registrations into the class; approved = enrolled
 		// students (#42), who may be in several classes.
@@ -50,6 +66,9 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	return {
 		classes: (classes ?? []).map((cls) => ({
 			...cls,
+			// The name in the viewer's language; the three names stay for the
+			// edit form (#76).
+			label: localizedName(cls),
 			syllabusCount: syllabusCounts.get(cls.id) ?? 0,
 			approvedCount: counts.get(cls.id)?.approved ?? 0,
 			pendingCount: counts.get(cls.id)?.pending ?? 0
@@ -68,18 +87,19 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const name = String(formData.get('name') ?? '').trim();
+		const names = readNameFields(formData);
 		// Story 6-4: the class's schedule is part of the create form; an
 		// invalid one creates nothing.
 		const schedule = scheduleFormValues(formData);
 
-		// Name and schedule are validated together, so every problem shows at once.
+		// Names and schedule are validated together, so every problem shows at once.
+		const nameError = nameRequiredMessage(names);
 		const parsed = parseScheduleInput(schedule);
-		if (!name || !parsed.ok) {
+		if (nameError || !parsed.ok) {
 			return fail(400, {
-				...(name ? {} : { error: m.classes_error_name_required() }),
+				...(nameError ? { error: nameError } : {}),
 				...(parsed.ok ? {} : { scheduleErrors: scheduleErrorMessages(parsed.errors) }),
-				name,
+				...names,
 				schedule
 			});
 		}
@@ -96,7 +116,7 @@ export const actions: Actions = {
 			const result = await supabase
 				.from('classes')
 				.insert({
-					name,
+					...nameColumns(names),
 					code,
 					created_by: user.id,
 					schedule_weekdays: weekdays,
@@ -106,16 +126,20 @@ export const actions: Actions = {
 					default_start_time: startTime,
 					default_duration_minutes: durationMinutes
 				})
-				.select('id, name, code, created_at')
+				.select('id, name, name_bo, name_de, code, created_at')
 				.single();
 			return { data: result.data, error: result.error };
 		});
 
 		if (error) {
-			// Any other unique violation is classes_name_unique_idx (0012): the
+			// Any other unique violation is a name index (0012, 0036): that
 			// name is taken, and the DB is the real guarantee (AD-2).
 			if (error.code === UNIQUE_VIOLATION_CODE && !isClassCodeCollision(error)) {
-				return fail(400, { error: m.classes_error_duplicate_name({ name }), name, schedule });
+				return fail(400, {
+					error: m.classes_error_duplicate_name({ name: duplicateName(error, names) }),
+					...names,
+					schedule
+				});
 			}
 			// insertClassWithUniqueCode exhausts its retries with the last
 			// code-collision error still attached -- that's a code-generation
@@ -124,15 +148,47 @@ export const actions: Actions = {
 			const isCodeGenerationFailure = !error.code || isClassCodeCollision(error);
 			return fail(isCodeGenerationFailure ? 500 : 400, {
 				error: isCodeGenerationFailure ? m.classes_code_generation_failed() : error.message,
-				name,
+				...names,
 				schedule
 			});
 		}
 
-		// `name` is echoed back too (not just `class`) so the create-class
-		// form's re-rendered `value={form?.name ?? ''}` has the same shape to
-		// read from on every branch of this action's return type.
-		return { success: true, class: created, name };
+		// The names are echoed back too (not just `class`) so the create-class
+		// form has the same shape to read from on every branch of this
+		// action's return type.
+		return { success: true, class: created ? localizeName(created) : created, ...names };
+	},
+
+	/** #76: saves a class's names; the same rules as at creation. */
+	rename: async ({ request, locals: { supabase } }) => {
+		const formData = await request.formData();
+		const renameId = String(formData.get('classId') ?? '');
+		const names = readNameFields(formData);
+
+		const nameError = nameRequiredMessage(names);
+		if (nameError) {
+			return fail(400, { error: nameError, renameId, renameValues: names });
+		}
+
+		// RLS's classes_update_admin policy is the real barrier (AD-2).
+		const { data: renamed, error } = await supabase
+			.from('classes')
+			.update(nameColumns(names))
+			.eq('id', renameId)
+			.select('id, name, name_bo, name_de');
+
+		if (error?.code === UNIQUE_VIOLATION_CODE) {
+			return fail(400, {
+				error: m.classes_error_duplicate_name({ name: duplicateName(error, names) }),
+				renameId,
+				renameValues: names
+			});
+		}
+		if (error || !renamed?.length) {
+			return fail(400, { error: m.classes_error_rename_failed(), renameId, renameValues: names });
+		}
+
+		return { renamed: localizedName(renamed[0]) };
 	},
 
 	delete: async ({ request, locals: { supabase } }) => {

@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
+import { pickLocalized } from '$lib/localized-name';
 import type { Database } from '$lib/supabase/database.types';
 import { studentEmailToUsername } from './temp-password';
 
@@ -97,7 +98,7 @@ export async function loadEnrollableStudents(
 		id: s.id,
 		displayName: s.display_name ?? s.id,
 		username: s.email ? studentEmailToUsername(s.email) : null,
-		classNames: s.class_names
+		classNames: pickLocalized(s.class_names, s.class_names_bo, s.class_names_de)
 	}));
 	return { students, error: Boolean(error) };
 }

@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
+import { localizedName } from '$lib/localized-name';
 import {
 	readContent,
 	readContentLanguage,
@@ -209,12 +210,12 @@ export async function loadStudentClasses(
 
 	const [{ data: classRows, error: classesError }, { data: syllabusRows, error: syllabiError }] =
 		await Promise.all([
-			supabase.from('classes').select('id, name').in('id', ids),
+			supabase.from('classes').select('id, name, name_bo, name_de').in('id', ids),
 			supabase.from('class_syllabi').select('class_id').in('class_id', ids)
 		]);
 	const withSyllabus = new Set((syllabusRows ?? []).map((s) => s.class_id));
 	const classes = (classRows ?? [])
-		.map((c) => ({ id: c.id, name: c.name, hasSyllabus: withSyllabus.has(c.id) }))
+		.map((c) => ({ id: c.id, name: localizedName(c), hasSyllabus: withSyllabus.has(c.id) }))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	return { classes, error: Boolean(classesError || syllabiError) };
 }

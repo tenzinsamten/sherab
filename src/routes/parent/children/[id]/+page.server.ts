@@ -1,5 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
+import {
+	localizeName,
+	localizedName,
+	pickLocalized,
+	type LocalizedNames
+} from '$lib/localized-name';
 import { todayInBerlin } from '$lib/berlin-date';
 import { shapeStudentBadges, type StudentBadge } from '$lib/server/badges';
 import { toHhMm } from '$lib/server/calendar';
@@ -163,7 +169,9 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 		const yesterday = addDays(today, -1);
 		const { data: rows, error: sessionsError } = await supabase
 			.from('class_sessions_effective')
-			.select('id, day, class_name, start_time, duration_minutes, starts_at')
+			.select(
+				'id, day, class_name, class_name_bo, class_name_de, start_time, duration_minutes, starts_at'
+			)
 			.in('class_id', classIds)
 			.eq('cancelled', false)
 			.gte('day', yesterday)
@@ -214,7 +222,7 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 						{
 							id: r.id,
 							day: r.day,
-							className: r.class_name ?? '',
+							className: pickLocalized(r.class_name ?? '', r.class_name_bo, r.class_name_de),
 							startTime: r.start_time ? toHhMm(r.start_time) : null,
 							durationMinutes: r.duration_minutes,
 							open: r.starts_at ? Date.parse(r.starts_at) > now : false,
@@ -247,12 +255,12 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 	if (classIds.length > 0) {
 		const { data: rangeRows, error: rangeError } = await supabase
 			.from('classes')
-			.select('id, name')
+			.select('id, name, name_bo, name_de')
 			.in('id', classIds);
 		if (rangeError) rangeLoadError = true;
 		rangeClasses = (rangeRows ?? [])
 			.filter((c) => classIds.includes(c.id))
-			.map((c) => ({ id: c.id, name: c.name }))
+			.map((c) => ({ id: c.id, name: localizedName(c) }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
@@ -303,8 +311,8 @@ async function loadChildDetails(
 		{ data: skillRows, error: skillError }
 	] = await Promise.all([
 		classIds.length > 0
-			? supabase.from('classes').select('id, name').in('id', classIds)
-			: Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+			? supabase.from('classes').select('id, name, name_bo, name_de').in('id', classIds)
+			: Promise.resolve({ data: [] as ({ id: string } & LocalizedNames)[], error: null }),
 		loadStudentHomework(supabase, childId, { filter: 'todo', page: 1, enrolledClassIds, today }),
 		loadStudentHomework(supabase, childId, {
 			filter: 'done',
@@ -338,6 +346,7 @@ async function loadChildDetails(
 
 	const classes = (classesResult.data ?? [])
 		.filter((c) => enrolledClassIds.has(c.id))
+		.map((c) => localizeName(c))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const classNames = new Map(classes.map((c) => [c.id, c.name]));
 	const classNamesError = opts.enrollmentsError || Boolean(classesResult.error);
@@ -393,7 +402,7 @@ async function loadChildDetails(
 	const attendance: ChildAttendance[] = (attendanceRows ?? []).map((r) => ({
 		sessionDate: r.session_date,
 		classId: r.class_id,
-		className: r.class_name,
+		className: pickLocalized(r.class_name, r.class_name_bo, r.class_name_de),
 		present: r.present
 	}));
 
@@ -502,6 +511,8 @@ type LeaveRangeRpcRow = {
 	day: string;
 	class_id: string;
 	class_name: string;
+	class_name_bo?: string | null;
+	class_name_de?: string | null;
 	outcome: LeaveRangeOutcome;
 };
 
@@ -510,7 +521,7 @@ function toRangeRows(rows: LeaveRangeRpcRow[] | null): LeaveRangeRow[] {
 		sessionId: r.session_id,
 		day: r.day,
 		classId: r.class_id,
-		className: r.class_name,
+		className: pickLocalized(r.class_name, r.class_name_bo, r.class_name_de),
 		outcome: r.outcome
 	}));
 }

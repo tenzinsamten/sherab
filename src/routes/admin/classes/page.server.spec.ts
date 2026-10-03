@@ -63,6 +63,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			event(
 				{
 					name: 'Grammar',
+					nameBo: 'བརྡ་སྤྲོད།',
 					startTime: '10:00',
 					durationMinutes: '90',
 					startsOn: '2026-10-10',
@@ -107,6 +108,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 				event(
 					{
 						name: 'Grammar',
+						nameBo: 'བརྡ་སྤྲོད།',
 						weekday: '7',
 						startTime: '10:00',
 						durationMinutes: '90',
@@ -128,6 +130,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			event(
 				{
 					name: 'Grammar',
+					nameBo: 'བརྡ་སྤྲོད།',
 					weekday: '7',
 					startTime: '10:00',
 					durationMinutes: '90',
@@ -140,6 +143,8 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 		expect(fake.inserted).toHaveLength(1);
 		expect(fake.inserted[0]).toMatchObject({
 			name: 'Grammar',
+			name_bo: 'བརྡ་སྤྲོད།',
+			name_de: null,
 			created_by: 'admin-1',
 			schedule_weekdays: [7],
 			schedule_starts_on: today,
@@ -149,13 +154,28 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			default_duration_minutes: 90
 		});
 		expect(fake.rpcCalls).toEqual([]);
-		expect(result).toEqual({ success: true, class: fake.created, name: 'Grammar' });
+		expect(result).toEqual({
+			success: true,
+			class: fake.created,
+			name: 'Grammar',
+			nameBo: 'བརྡ་སྤྲོད།',
+			nameDe: ''
+		});
 	});
 
 	it('repeat every 2 weeks (issue #51): the class insert carries the interval', async () => {
 		const fake = fakeSupabase();
 		await actions.create(
-			event({ name: 'Grammar', weekday: '7', startsOn: today, intervalWeeks: '2' }, fake.client)
+			event(
+				{
+					name: 'Grammar',
+					nameBo: 'བརྡ་སྤྲོད།',
+					weekday: '7',
+					startsOn: today,
+					intervalWeeks: '2'
+				},
+				fake.client
+			)
 		);
 		expect(fake.inserted).toHaveLength(1);
 		expect(fake.inserted[0]).toMatchObject({ schedule_interval_weeks: 2 });
@@ -164,12 +184,147 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 	it('an invalid interval (5): inline error on Repeats, nothing inserted', async () => {
 		const fake = fakeSupabase();
 		const result = await actions.create(
-			event({ name: 'Grammar', weekday: '7', startsOn: today, intervalWeeks: '5' }, fake.client)
+			event(
+				{
+					name: 'Grammar',
+					nameBo: 'བརྡ་སྤྲོད།',
+					weekday: '7',
+					startsOn: today,
+					intervalWeeks: '5'
+				},
+				fake.client
+			)
 		);
 		expect(result).toMatchObject({
 			status: 400,
 			data: { scheduleErrors: { intervalWeeks: m.calendar_error_interval_invalid() } }
 		});
 		expect(fake.inserted).toEqual([]);
+	});
+});
+
+/**
+ * #76: a class has a name per language. English and Tibetan are required,
+ * German is optional; `rename` saves the three names of an existing class.
+ */
+describe('admin classes names (#76)', () => {
+	const today = todayInBerlin();
+	const schedule = { weekday: '7', startsOn: today };
+
+	it('create without a Tibetan name: fail 400, nothing inserted, the names echoed back', async () => {
+		const fake = fakeSupabase();
+		const result = await actions.create(
+			event({ name: 'Grammar', nameDe: 'Grammatik', ...schedule }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: {
+				error: m.classes_error_name_bo_required(),
+				name: 'Grammar',
+				nameBo: '',
+				nameDe: 'Grammatik'
+			}
+		});
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it('create with all three names: the insert carries them', async () => {
+		const fake = fakeSupabase();
+		await actions.create(
+			event(
+				{ name: ' Grammar ', nameBo: ' བརྡ་སྤྲོད། ', nameDe: ' Grammatik ', ...schedule },
+				fake.client
+			)
+		);
+		expect(fake.inserted[0]).toMatchObject({
+			name: 'Grammar',
+			name_bo: 'བརྡ་སྤྲོད།',
+			name_de: 'Grammatik'
+		});
+	});
+
+	type UpdateResult = {
+		data: { id: string; name: string; name_bo: string | null; name_de: string | null }[] | null;
+		error: { code?: string; message: string } | null;
+	};
+
+	function renameEvent(fields: Record<string, string>, result: UpdateResult) {
+		const updates: { values: unknown; id: unknown }[] = [];
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.append(k, v);
+		const supabase = {
+			from: () => ({
+				update: (values: unknown) => ({
+					eq: (_column: string, id: unknown) => ({
+						select: async () => {
+							updates.push({ values, id });
+							return result;
+						}
+					})
+				})
+			})
+		};
+		return {
+			updates,
+			event: {
+				request: new Request('http://localhost/admin/classes', { method: 'POST', body }),
+				locals: { supabase }
+			} as unknown as Parameters<typeof actions.rename>[0]
+		};
+	}
+
+	const names = { name: 'Grammar', nameBo: 'བརྡ་སྤྲོད།', nameDe: '' };
+	const saved = { id: 'c1', name: 'Grammar', name_bo: 'བརྡ་སྤྲོད།', name_de: null };
+
+	it('rename saves the three names (an empty German name as NULL)', async () => {
+		const { updates, event: e } = renameEvent(
+			{ classId: 'c1', ...names },
+			{ data: [saved], error: null }
+		);
+		expect(await actions.rename(e)).toEqual({ renamed: 'Grammar' });
+		expect(updates).toEqual([
+			{ values: { name: 'Grammar', name_bo: 'བརྡ་སྤྲོད།', name_de: null }, id: 'c1' }
+		]);
+	});
+
+	it('rename without a Tibetan name: fail 400, nothing written', async () => {
+		const { updates, event: e } = renameEvent(
+			{ classId: 'c1', name: 'Grammar', nameBo: ' ' },
+			{ data: [saved], error: null }
+		);
+		expect(await actions.rename(e)).toMatchObject({
+			status: 400,
+			data: {
+				error: m.classes_error_name_bo_required(),
+				renameId: 'c1',
+				renameValues: { name: 'Grammar', nameBo: '', nameDe: '' }
+			}
+		});
+		expect(updates).toEqual([]);
+	});
+
+	it('rename to a name another class has in that language: the duplicate is named', async () => {
+		const { event: e } = renameEvent(
+			{ classId: 'c1', ...names },
+			{
+				data: null,
+				error: {
+					code: '23505',
+					message: 'duplicate key value violates unique constraint "classes_name_bo_unique_idx"'
+				}
+			}
+		);
+		expect(await actions.rename(e)).toMatchObject({
+			status: 400,
+			data: { error: m.classes_error_duplicate_name({ name: 'བརྡ་སྤྲོད།' }), renameId: 'c1' }
+		});
+	});
+
+	it('rename that changes no row (RLS, or the class is gone): fail 400', async () => {
+		const { event: e } = renameEvent({ classId: 'c1', ...names }, { data: [], error: null });
+		expect(await actions.rename(e)).toMatchObject({
+			status: 400,
+			data: { error: m.classes_error_rename_failed() }
+		});
 	});
 });

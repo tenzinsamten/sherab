@@ -1,3 +1,4 @@
+import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import * as m from '$lib/paraglide/messages.js';
@@ -54,9 +55,15 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// rows back, which this turns into a 404 rather than an empty-looking
 	// roster (UX-only, matching the "RLS is the real barrier, this check is
 	// UX-only" convention already used by requests/+page.server.ts).
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', classId).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', classId)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 
 	// Roster = the class's enrolled students (#42, class_enrollments), approved

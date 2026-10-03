@@ -1,3 +1,4 @@
+import { localizeName } from '$lib/localized-name';
 import { redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import { listSyllabi, pickStudentSyllabus } from '$lib/server/class-syllabus';
@@ -27,9 +28,15 @@ export const load: PageServerLoad = async ({
 		throw redirect(303, '/login');
 	}
 
-	const cls = rowOr404(
-		await supabase.from('classes').select('id, name, code').eq('id', params.classId).maybeSingle(),
-		CLASS_MESSAGES
+	const cls = localizeName(
+		rowOr404(
+			await supabase
+				.from('classes')
+				.select('id, name, name_bo, name_de, code')
+				.eq('id', params.classId)
+				.maybeSingle(),
+			CLASS_MESSAGES
+		)
 	);
 
 	const filterParam = url.searchParams.get('filter');

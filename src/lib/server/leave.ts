@@ -1,4 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
+import { pickLocalized } from '$lib/localized-name';
 import { toHhMm } from '$lib/server/calendar';
 
 /**
@@ -56,6 +57,8 @@ type SickQueueRow = {
 	student_id: string;
 	student_name: string;
 	class_name: string;
+	class_name_bo?: string | null;
+	class_name_de?: string | null;
 	day: string;
 	start_time: string | null;
 	decision: 'approved' | 'rejected' | null;
@@ -87,7 +90,7 @@ function toSick(r: SickQueueRow): SickRow {
 		sessionId: r.class_session_id,
 		studentId: r.student_id,
 		studentName: r.student_name,
-		className: r.class_name,
+		className: pickLocalized(r.class_name, r.class_name_bo, r.class_name_de),
 		day: r.day,
 		startTime: r.start_time ? toHhMm(r.start_time) : null,
 		decision: r.decision,

@@ -1,3 +1,4 @@
+import { localizeName, type LocalizedNames } from '$lib/localized-name';
 import { enrolledStudentIds } from '$lib/server/enrollments';
 import { fetchAllHistoryRows } from '$lib/server/history-rows';
 import { buildTeacherHomeworkTiles } from '$lib/server/teacher-dashboard';
@@ -23,12 +24,13 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	// explicit .eq below is belt-and-suspenders, not the enforcement.
 	const { data: assignments, error } = await supabase
 		.from('class_teachers')
-		.select('classes ( id, name, code )')
+		.select('classes ( id, name, name_bo, name_de, code )')
 		.eq('teacher_id', user.id);
 
 	const classes = (assignments ?? [])
-		.map((row) => row.classes as unknown as TeacherClass | null)
-		.filter((cls): cls is TeacherClass => cls !== null);
+		.map((row) => row.classes as unknown as (TeacherClass & LocalizedNames) | null)
+		.filter((cls): cls is TeacherClass & LocalizedNames => cls !== null)
+		.map((cls): TeacherClass => localizeName(cls));
 
 	if (error || classes.length === 0) {
 		return { classes, studentsCount: 0, ...EMPTY_TILES, loadError: Boolean(error) };

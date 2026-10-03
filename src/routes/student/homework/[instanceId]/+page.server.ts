@@ -1,3 +1,4 @@
+import { localizedName } from '$lib/localized-name';
 import { redirect } from '@sveltejs/kit';
 import { HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
@@ -35,7 +36,11 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 				.eq('instance_id', instance.id)
 				.eq('student_id', user.id),
 			// Hidden by RLS once the student has left the class (#42).
-			supabase.from('classes').select('name').eq('id', instance.class_id).maybeSingle()
+			supabase
+				.from('classes')
+				.select('name, name_bo, name_de')
+				.eq('id', instance.class_id)
+				.maybeSingle()
 		]);
 	const assignment = rowOr404(assignmentResult, HOMEWORK_MESSAGES);
 
@@ -60,7 +65,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	return {
 		item: toItem(instance, assignment, entry, today),
-		className: cls?.name ?? null,
+		className: cls ? localizedName(cls) : null,
 		archived: instance.archived_at !== null,
 		loadError: Boolean(historyError)
 	};

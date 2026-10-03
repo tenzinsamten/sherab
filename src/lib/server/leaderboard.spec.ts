@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
 import { shapeTeamLeaderboard, type TeamRankRow } from './leaderboard';
 
 describe('shapeTeamLeaderboard', () => {
@@ -22,5 +23,29 @@ describe('shapeTeamLeaderboard', () => {
 			{ teamId: 'team-1', teamName: 'Snow Lions', totalStreak: 8 },
 			{ teamId: 'team-2', teamName: 'Yaks', totalStreak: 0 }
 		]);
+	});
+});
+
+describe("shapeTeamLeaderboard in the viewer's language (#76)", () => {
+	const original = getLocale;
+	afterEach(() => overwriteGetLocale(original));
+
+	const rows: TeamRankRow[] = [
+		{ team_id: 'team-1', team_name: 'Snow Lions', team_name_bo: 'གངས་སེང', total_streak: 8 },
+		{
+			team_id: 'team-2',
+			team_name: 'Yaks',
+			team_name_bo: null,
+			team_name_de: 'Yaks DE',
+			total_streak: 0
+		}
+	];
+
+	it("shows the language's own name, else the English one", () => {
+		overwriteGetLocale(() => 'bo');
+		expect(shapeTeamLeaderboard(rows).map((t) => t.teamName)).toEqual(['གངས་སེང', 'Yaks']);
+
+		overwriteGetLocale(() => 'de');
+		expect(shapeTeamLeaderboard(rows).map((t) => t.teamName)).toEqual(['Snow Lions', 'Yaks DE']);
 	});
 });
