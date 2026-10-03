@@ -2,6 +2,7 @@
 	import '@siemens/ix/dist/siemens-ix/siemens-ix.css';
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { pwaInfo } from 'virtual:pwa-info';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -31,6 +32,10 @@
 
 	onMount(() => {
 		setupIx();
+		// #81: without this nothing registers the service worker the build emits.
+		if (pwaInfo) {
+			import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
+		}
 		return routeIxLinks();
 	});
 
@@ -162,6 +167,9 @@
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 	<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+	{#if pwaInfo}
+		<link rel="manifest" href={pwaInfo.webManifest.href} />
+	{/if}
 </svelte:head>
 
 {#snippet languageItems()}

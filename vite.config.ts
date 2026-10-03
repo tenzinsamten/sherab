@@ -40,6 +40,12 @@ export default defineConfig({
 		// AD-1: SvelteKit serves the frontend as an installable PWA.
 		SvelteKitPWA({
 			registerType: 'autoUpdate',
+			// #81: also serve the manifest and service worker from `vite dev`.
+			devOptions: { enabled: true, suppressWarnings: true },
+			// #81: pages are server-rendered per login, so navigations always go
+			// to the server. The plugin's default falls back to a precached `/`,
+			// which this app doesn't have.
+			workbox: { navigateFallback: null },
 			manifest: {
 				name: 'Sherab',
 				short_name: 'Sherab',
