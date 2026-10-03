@@ -5,10 +5,20 @@
    so both colour schemas work. The previous editorial design
    (DESIGN.md / design-tokens.md) is superseded. */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Tibetan:wght@400;500;600;700&display=swap');
+/* Tibetan face (#77): Atisha by Lobsang Monlam, served by the app itself.
+   One weight only; the browser draws bold from it. Limited to the Tibetan
+   block, so Latin text and digits inside `lang='bo'` keep the fallback. */
+@font-face {
+	font-family: 'Atisha';
+	src: url('./lib/assets/fonts/Atisha.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+0F00-0FFF;
+}
 
 :root {
-	--font-tibetan: 'Noto Serif Tibetan', serif;
+	--font-tibetan: 'Atisha', serif;
 
 	--space-1: 0.25rem;
 	--space-2: 0.5rem;

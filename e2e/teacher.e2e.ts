@@ -799,19 +799,16 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 		await expect(studentPage.locator('html')).toHaveAttribute('lang', 'en');
 		const heading = studentPage.locator('h1 span[lang="bo"]');
 		await expect(heading).toHaveText(title);
-		await expect(heading).toHaveCSS('font-family', /Noto Serif Tibetan/);
+		await expect(heading).toHaveCSS('font-family', /Atisha/);
 
 		const content = studentPage.locator('.rich-text');
 		await expect(content).toHaveAttribute('lang', 'bo');
-		await expect(content).toHaveCSS('font-family', /Noto Serif Tibetan/);
+		await expect(content).toHaveCSS('font-family', /Atisha/);
 		await expect(content.locator('p strong')).toHaveText('གལ་ཆེན།');
 		await expect(content.locator('p').nth(1)).toHaveText(long);
 		await expect(content.locator('ul > li')).toHaveText(['དང་པོ།', 'གཉིས་པ།']);
 		// The page around it keeps the interface's font.
-		await expect(studentPage.locator('.page-subtitle')).not.toHaveCSS(
-			'font-family',
-			/Noto Serif Tibetan/
-		);
+		await expect(studentPage.locator('.page-subtitle')).not.toHaveCSS('font-family', /Atisha/);
 	} finally {
 		await context.close();
 	}
