@@ -9,6 +9,7 @@ import {
 	loadEnrollableStudents,
 	unenrollStudent
 } from '$lib/server/enrollments';
+import { resetStudentPin } from '$lib/server/student-pin';
 import { currentSchoolYear } from '$lib/school-year';
 import { todayInBerlin } from '$lib/berlin-date';
 import { loadAssignmentIndex } from '$lib/server/homework-view';
@@ -232,6 +233,12 @@ export const actions: Actions = {
 	unenroll: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		return unenrollStudent({ request, classId: params.id, supabase, user });
+	},
+
+	/** #88: a new PIN for a student of this class, shown once. */
+	resetPin: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		return resetStudentPin({ request, classId: params.id, supabase, user });
 	},
 
 	setSkillStatus: async ({ request, params, locals: { supabase, safeGetSession } }) => {

@@ -6,6 +6,7 @@ import {
 	loadEnrollableStudents,
 	unenrollStudent
 } from '$lib/server/enrollments';
+import { resetStudentPin } from '$lib/server/student-pin';
 import type { Actions, PageServerLoad } from './$types';
 
 /** A class's students: add existing students from other classes, or remove them (#42). */
@@ -41,5 +42,11 @@ export const actions: Actions = {
 	unenroll: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		return unenrollStudent({ request, classId: params.id, supabase, user });
+	},
+
+	/** #88: the admin's backup for a teacher's "Reset PIN". */
+	resetPin: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		return resetStudentPin({ request, classId: params.id, supabase, user });
 	}
 };

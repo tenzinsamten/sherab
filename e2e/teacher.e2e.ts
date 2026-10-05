@@ -822,3 +822,77 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 		await context.close();
 	}
 });
+
+test('class members: Reset PIN shows the new PIN once; the student signs in with it, not with the old one (#88)', async ({
+	page,
+	browser
+}) => {
+	// A student no other test uses, signed in on their own device.
+	const student = students[STUDENT_COUNT - 1];
+	const username = student.user.email.split('@')[0];
+	const context = await browser.newContext();
+	try {
+		const studentPage = await context.newPage();
+		await signIn(studentPage, student.user);
+
+		const posts = capturePosts(page, 'resetPin');
+		await signIn(page, teacher);
+		await open(page, `/teacher/classes/${classId}`);
+		const row = page.locator('.member-list li').filter({ hasText: student.name });
+
+		// Cancelling the confirmation sends nothing.
+		await row.getByRole('button', { name: 'Reset PIN' }).click();
+		const dialog = page.locator('ix-modal');
+		await expect(dialog).toContainText(`Give ${student.name} a new PIN?`);
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+		await expect(dialog).toHaveCount(0);
+		expect(posts).toHaveLength(0);
+
+		await row.getByRole('button', { name: 'Reset PIN' }).click();
+		await page.locator('ix-modal').getByRole('button', { name: 'Reset PIN' }).click();
+
+		// Shown once, with the username, each with its copy button.
+		const bar = page.locator('ix-message-bar.pin-credential');
+		await expect(bar).toContainText(`New PIN for ${student.name}`);
+		await expect(bar).toBeInViewport();
+		const fields = bar.locator('.copy-field');
+		await expect(fields.nth(0)).toContainText('Username');
+		await expect(fields.nth(0).locator('.credential')).toHaveText(username);
+		await expect(fields.nth(1)).toContainText('PIN');
+		const pin = (await fields.nth(1).locator('.credential').textContent()) ?? '';
+		expect(pin).toMatch(/^\d{6}$/);
+		await expect(bar.getByRole('button', { name: 'Copy PIN' })).toBeVisible();
+		expect(posts).toHaveLength(1);
+		expect(posts[0].get('studentId')).toBe(student.id);
+		expect(page.url()).not.toContain(pin);
+		await expect(page.locator('ix-toast')).toHaveCount(0);
+
+		// Gone after a reload: it is not stored anywhere.
+		await open(page, `/teacher/classes/${classId}`);
+		await expect(page.locator('ix-message-bar.pin-credential')).toHaveCount(0);
+		await expect(page.locator('body')).not.toContainText(pin);
+
+		// The student's open session has ended.
+		await studentPage.goto('/student');
+		await expect(studentPage).toHaveURL(/\/login/);
+
+		// The old PIN no longer works; the new one does.
+		const login = async (password: string) => {
+			await studentPage.goto('/login');
+			await studentPage.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await studentPage.waitForLoadState('networkidle');
+			await studentPage.locator('#email').fill(username);
+			await studentPage.locator('#password').fill(password);
+			await studentPage.getByRole('button', { name: 'Sign in' }).click();
+		};
+		await login(student.user.password);
+		await expect(studentPage.getByText('Invalid email or password.')).toBeVisible();
+		await expect(studentPage).toHaveURL(/\/login/);
+		await login(pin);
+		await expect(studentPage).not.toHaveURL(/\/login/);
+		await studentPage.goto('/account');
+		await expect(studentPage.locator('#username')).toHaveJSProperty('value', username);
+	} finally {
+		await context.close();
+	}
+});

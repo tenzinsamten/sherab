@@ -57,7 +57,8 @@ export const helpGuides: Record<HelpRole, HelpEntry[]> = {
 		{ title: m.help_teacher_6_title, body: m.help_teacher_6_body, image: 'teacher-6' },
 		{ title: m.help_teacher_7_title, body: m.help_teacher_7_body },
 		{ title: m.help_teacher_8_title, body: m.help_teacher_8_body, image: 'teacher-8' },
-		{ title: m.help_teacher_9_title, body: m.help_teacher_9_body, image: 'teacher-9' }
+		{ title: m.help_teacher_9_title, body: m.help_teacher_9_body, image: 'teacher-9' },
+		{ title: m.help_teacher_10_title, body: m.help_teacher_10_body }
 	],
 	student: [
 		{ title: m.help_student_1_title, body: m.help_student_1_body, image: 'student-1' },
