@@ -1298,3 +1298,71 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   `home_poster_eyebrow` translation in `messages/bo.json`. Verified before the commit, after a
   reset: 906 unit tests, `npm run check` and `npm run build` exit 0. No migration. #84 and #87
   remain open.
+
+- 2026-10-05: #87 built on `main`, not committed (user: "start the batch B"). New public page
+  `/help` (`src/routes/help/+page.svelte`, content lists in `src/lib/help.ts` with unit tests):
+  three link-based tabs (`?role=parent|teacher|student`), a numbered guide per role (8 parent,
+  9 teacher, 8 student steps) and 10 shared FAQs as closed `<details>`. A signed-in visitor
+  starts on their own role's guide; an admin or a signed-out visitor on the parents'. Linked
+  from every role's side menu ("Help", `question` icon, last item), and from the start page and
+  the sign-in page ("Need help?"). No admin guide (user's decision). 79 new `help_*` / `nav_help`
+  keys in en and de; `messages/bo.json` holds the English text for all 79 until the user
+  translates. Text only, no screenshots. Verified after a reset: 910 unit tests,
+  `npm run check` and `npm run build` exit 0; Prettier and ESLint pass on the changed files;
+  browser tests `auth-fields` (two new help tests) and `role-switcher` pass, 17/17; seen in
+  screenshots as a teacher on desktop and at phone width under the Tibetan interface. Full
+  browser suite not run. The guide texts were written from the code and messages and are not
+  yet reviewed by the user. No migration.
+
+- 2026-10-05: #88 logged, not fixed (found while writing the help text): a student's PIN cannot
+  be reset in the app. `/account` tells a student "Forgot your PIN? Ask your teacher to reset
+  it." (`account_pin_note`) and forgot-password says the same, but no teacher or admin page has
+  such an action: the only reset is the admin's "Reset password" for teachers
+  (`src/routes/admin/teachers/+page.server.ts`). The help text therefore says "Tell your
+  teacher. The school gives you a new PIN." Open: a "Reset PIN" action on the class roster (and
+  for the admin), showing the new PIN once like the approval does.
+
+- 2026-10-05: #87 extended after the user read it ("information is good", wants screenshots for
+  teachers and parents); built on `main`, not committed. 14 guide steps now show a phone-size
+  screenshot (parent 1, 4-8; teacher 1-6, 8, 9), in the viewer's language: 42 PNGs under
+  `static/help/<en|de|bo>/` (2.6 MB), lazy-loaded and kept out of the PWA precache
+  (`globIgnores` in `vite.config.ts`). They are produced by `npm run help:screenshots`
+  (`e2e/help-screenshots.e2e.ts`, skipped in a normal browser-test run): it seeds a demo class
+  with made-up names on the local database, photographs the real pages and removes the data;
+  run it on a freshly reset database and again whenever those pages change. No screenshots for
+  the student guide, parent steps 2-3 or teacher step 7. One new key `help_screenshot_alt` in
+  all three files; German t6 now says "Lernbereich" as the form does. Verified after a reset:
+  911 unit tests (one checks every screenshot file exists), `npm run check` and
+  `npm run build` exit 0, ESLint and Prettier pass; `auth-fields` browser tests 12/12; the
+  built service worker lists no `help/` file; page seen in a screenshot as a teacher. Full
+  browser suite not run.
+
+- 2026-10-05: #87, user asked for the same screenshots for students; built on `main`, not
+  committed. Seven student steps now show one (1, 3-8; none for step 2, "Wait for your
+  teacher"), from a signed-in demo student: 63 PNGs in all under `static/help/` (3.6 MB). Demo
+  students get readable usernames (`tenzin.dolma`). Verified after a reset: 911 unit tests,
+  `npm run check` and `npm run build` exit 0, ESLint and Prettier pass, `auth-fields` browser
+  tests 12/12; `npm run help:screenshots` passes 4/4. Full browser suite not run.
+
+- 2026-10-05: #87 changed after the user asked for help in iX's "About and legal" overlay in the
+  navigation (https://ix.siemens.io/docs/components/about-and-legal/guide); built on `main`, not
+  committed. Signed in, the side menu's "Help" link item is replaced by `ix-menu-about` in
+  `src/routes/+layout.svelte`: the info button at the foot of the menu, labelled "Help", opens
+  an overlay with four tabs (the three guides, the active role's first, then "Common
+  questions"). The guide and FAQ markup moved into `HelpGuide.svelte` and `HelpFaq.svelte`,
+  shared with the public `/help` page, which stays for signed-out visitors (links on the start
+  and sign-in pages). New `menuAboutPanels` action in `src/lib/ix.ts`: iX's tab panels hide
+  themselves whenever they are connected and the active one sometimes stayed hidden after
+  hydration, leaving the overlay empty; the action keeps the shown panel in step with the
+  selected tab. One new key `help_close` in all three files. Seen in screenshots on desktop and
+  at phone width; scrolling inside the overlay not checked. The overlay's own menu button
+  label is inside iX's shadow DOM, so the #86 label fix does not reach it.
+  Verified after a reset: 911 unit tests, `npm run check` and `npm run build` exit 0, ESLint
+  and Prettier pass; browser tests `auth-fields`, `role-switcher` and `forms` pass, 25/25 (the
+  overlay test also passed three times in a row). Full browser suite not run.
+
+- 2026-10-05: user asked to commit. #87 committed on `main` in one code commit and one docs
+  commit; not pushed. No migration. Open: #84 (production email), #88 (student PIN reset), the
+  Tibetan texts for the `help_*` keys, `nav_help`, `password_show`, `password_hide` and the
+  second sentence of `register_error_exists`, and the two unexplained browser-test failures
+  (`calendar.e2e.ts:130`, `teacher.e2e.ts:246`).
