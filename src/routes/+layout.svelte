@@ -12,6 +12,7 @@
 		avatarLabel,
 		dropdownButtonLabelRoom,
 		headerHomeLink,
+		menuItemLabelRoom,
 		routeIxLinks,
 		setupIx,
 		showToast
@@ -256,6 +257,7 @@
 					icon={item.icon}
 					active={isActive(item) || undefined}
 					notifications={item.notifications}
+					use:menuItemLabelRoom
 				>
 					{item.label}
 				</ix-menu-item>

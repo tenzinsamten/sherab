@@ -8,7 +8,8 @@
 /* Tibetan face (#77): Atisha by Lobsang Monlam, served by the app itself.
    One weight only; the browser draws bold from it. Limited to the Tibetan
    block, so Latin text and digits inside `lang='bo'` keep the fallback.
-   `size-adjust` draws Tibetan 1.5x the size of the Latin text around it (#78). */
+   `size-adjust` draws Tibetan 1.36x the size of the Latin text around it
+   (#78; 1.5x until #85). */
 @font-face {
 	font-family: 'Atisha';
 	src: url('./lib/assets/fonts/Atisha.ttf') format('truetype');
@@ -16,7 +17,7 @@
 	font-style: normal;
 	font-display: swap;
 	unicode-range: U+0F00-0FFF;
-	size-adjust: 150%;
+	size-adjust: 136%;
 }
 /* The same face under iX's family name (#78). iX sets `Siemens Sans, ...` on
    `body` and inside every component's shadow DOM, which no page rule reaches,
@@ -30,7 +31,7 @@
 	font-style: normal;
 	font-display: swap;
 	unicode-range: U+0F00-0FFF;
-	size-adjust: 150%;
+	size-adjust: 136%;
 }
 
 :root {
@@ -155,19 +156,19 @@ a {
 [lang='bo'] h2,
 [lang='bo'] h3 {
 	font-family: var(--font-tibetan);
-	line-height: 2.2;
+	line-height: 2;
 }
 /* `body` sets its own line height, so the Tibetan interface needs it there
-   too: the glyphs are 1.5x the font size (#78). */
+   too: the glyphs are 1.36x the font size (#78, #85). */
 html[lang='bo'] body {
-	line-height: 2.2;
+	line-height: 2;
 }
 /* iX's button clips its label to a single 1.43em line, which cuts the feet
-   of Tibetan letters at 1.5x. Under the Tibetan interface the button is
-   taller and the label's line fills it (#78). */
+   of Tibetan letters at 1.36x. Under the Tibetan interface the button is
+   taller and the label's line fills it (#78, #85). */
 html[lang='bo'] ix-button {
-	height: 2.5rem;
-	line-height: 2.5rem;
+	height: 2.25rem;
+	line-height: 2.25rem;
 }
 /* Homework is shown in the language it was written in, whatever the
    interface language (#74): its title and content carry their own `lang`.

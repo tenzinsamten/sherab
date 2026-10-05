@@ -378,6 +378,15 @@ test('admin team names: edit the names, and each interface language shows its ow
 		// #79: a locale link sets the language and lands on the plain address;
 		// the language then holds across in-app navigation.
 		await expect(page).toHaveURL(/\/admin\/teams$/);
+		// #86: the menu label's one line is 36px, so Tibetan letters are not cut.
+		await expect
+			.poll(() =>
+				page
+					.locator('ix-menu-item')
+					.filter({ hasText: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' })
+					.evaluate((item) => item.shadowRoot?.querySelector('.tab-text')?.clientHeight ?? 0)
+			)
+			.toBe(36);
 		await page.locator('ix-menu-item').filter({ hasText: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' }).click();
 		await expect(page).toHaveURL(/\/leaderboard$/);
 		await expect(page.getByText(tibetan, { exact: true })).toBeVisible();

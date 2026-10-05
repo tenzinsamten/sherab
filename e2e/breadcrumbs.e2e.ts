@@ -272,6 +272,17 @@ test('navigate up: the Homework crumb on a homework page goes to the list withou
 	await expect(crumbs(page).getByRole('link', { name: className })).toBeVisible();
 	await expectNoBackButton(page);
 
+	// #86: the label's one line is as tall as the crumb (36px), not iX's 20px,
+	// so Tibetan letters are not cut; it still fits iX's 40px breadcrumb.
+	const labelHeights = await page
+		.locator('ix-breadcrumb-item')
+		.evaluateAll((items) =>
+			items.map((item) => item.shadowRoot?.querySelector('.content')?.clientHeight ?? 0)
+		);
+	expect(labelHeights.length).toBe(4);
+	for (const height of labelHeights) expect(height).toBe(36);
+	expect((await crumbs(page).boundingBox())?.height).toBe(40);
+
 	await markDocument(page);
 	await crumbs(page).getByRole('link', { name: 'Homework', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`/teacher/classes/${classId}/homework$`));

@@ -54,7 +54,10 @@ describe('register action', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { error: 'An account with this email already exists. Sign in instead.' }
+			data: {
+				error:
+					'An account with this email already exists. Sign in instead. If you are a teacher and also a parent, sign in and use “Request parent access” under My Account.'
+			}
 		});
 		expect(signUp).not.toHaveBeenCalled();
 	});

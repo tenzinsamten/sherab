@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -62,23 +63,21 @@
 			</div>
 			<div class="field">
 				<label for="password">{m.register_password_label()}</label>
-				<input
+				<PasswordInput
 					id="password"
 					name="password"
-					type="password"
 					autocomplete="new-password"
-					minlength="6"
+					minlength={6}
 					required
 				/>
 			</div>
 			<div class="field">
 				<label for="confirm">{m.register_confirm_label()}</label>
-				<input
+				<PasswordInput
 					id="confirm"
 					name="confirm"
-					type="password"
 					autocomplete="new-password"
-					minlength="6"
+					minlength={6}
 					required
 				/>
 			</div>

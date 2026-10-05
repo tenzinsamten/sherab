@@ -4,6 +4,7 @@
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { ixValue } from '$lib/ix-fields';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -89,33 +90,30 @@
 				<input type="hidden" name="username" autocomplete="username" value={data.email ?? ''} />
 				<div class="field">
 					<label for="currentPassword">{m.account_current_password_label()}</label>
-					<input
+					<PasswordInput
 						id="currentPassword"
 						name="currentPassword"
-						type="password"
 						autocomplete="current-password"
 						required
 					/>
 				</div>
 				<div class="field">
 					<label for="password">{m.reset_password_label()}</label>
-					<input
+					<PasswordInput
 						id="password"
 						name="password"
-						type="password"
 						autocomplete="new-password"
-						minlength="6"
+						minlength={6}
 						required
 					/>
 				</div>
 				<div class="field">
 					<label for="confirm">{m.reset_confirm_label()}</label>
-					<input
+					<PasswordInput
 						id="confirm"
 						name="confirm"
-						type="password"
 						autocomplete="new-password"
-						minlength="6"
+						minlength={6}
 						required
 					/>
 				</div>

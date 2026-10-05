@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { showToast } from '$lib/ix';
 	import type { ActionData, PageData } from './$types';
 
@@ -33,10 +34,9 @@
 		</div>
 		<div class="field">
 			<label for="password">{m.login_password_label()}</label>
-			<input
+			<PasswordInput
 				id="password"
 				name="password"
-				type="password"
 				autocomplete="current-password"
 				placeholder={m.login_password_placeholder()}
 				required

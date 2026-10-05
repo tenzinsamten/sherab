@@ -27,6 +27,8 @@ export function setupIx() {
 			iconChevronRight: icons.iconChevronRight,
 			iconCopy: icons.iconCopy,
 			iconDashboard: icons.iconDashboard,
+			iconEye: icons.iconEye,
+			iconEyeCancelled: icons.iconEyeCancelled,
 			iconGlobe: icons.iconGlobe,
 			iconHome: icons.iconHome,
 			iconHourglass: icons.iconHourglass,
@@ -133,7 +135,7 @@ export function headerHomeLink(node: HTMLElement, href: string) {
 /**
  * Svelte action for <ix-dropdown-button>: lets the label's line fill the
  * button. iX clips the label to one 1.43em line inside its shadow DOM, which
- * cuts the feet of Tibetan letters (drawn 1.5x, #78); the inner <ix-button>
+ * cuts the feet of Tibetan letters (drawn 1.36x, #78, #85); the inner <ix-button>
  * is out of reach of page CSS.
  */
 export function dropdownButtonLabelRoom(node: HTMLElement) {
@@ -142,6 +144,26 @@ export function dropdownButtonLabelRoom(node: HTMLElement) {
 
 	(async () => {
 		await customElements.whenDefined('ix-dropdown-button');
+		await (
+			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
+		).componentOnReady?.();
+		const root = node.shadowRoot;
+		if (root) root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+	})();
+}
+
+/**
+ * Svelte action for <ix-menu-item>: gives the label a taller line. iX clips
+ * the label to one line inside its shadow DOM, which shaves the feet off the
+ * deepest Tibetan letters (drawn 1.36x, #85); 2.25rem still fits the item,
+ * nested or not (#86).
+ */
+export function menuItemLabelRoom(node: HTMLElement) {
+	const sheet = new CSSStyleSheet();
+	sheet.replaceSync('.tab-text { line-height: 2.25rem; }');
+
+	(async () => {
+		await customElements.whenDefined('ix-menu-item');
 		await (
 			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
 		).componentOnReady?.();

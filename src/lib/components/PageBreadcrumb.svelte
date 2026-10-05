@@ -118,4 +118,14 @@
 		min-width: 2.5rem;
 		max-width: 100%;
 	}
+
+	/* iX clips each label to a single 1.43em line, which cuts the feet of
+	   Tibetan letters (drawn 1.36x, #85) the way it did on buttons (#78). A
+	   crumb can be Tibetan in any interface language (a class name, a homework
+	   title), so every crumb gets a taller box whose line fills it; it still
+	   fits inside iX's 2.5rem breadcrumb (#86). */
+	.page-breadcrumb ix-breadcrumb-item {
+		height: 2.25rem;
+		line-height: 2.25rem;
+	}
 </style>

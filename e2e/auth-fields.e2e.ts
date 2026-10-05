@@ -245,6 +245,48 @@ test('register: the iX display name is posted with the native email and password
 	expect(posted(await body(), 'displayName', name)).toBe(true);
 });
 
+test('register: each password field has its own show/hide button (#82)', async ({ page }) => {
+	await page.goto('/register');
+	await waitForIx(page);
+	const password = page.locator('#password');
+	const confirm = page.locator('#confirm');
+	await password.fill('secret-123');
+	await confirm.fill('secret-456');
+	await expect(password).toHaveAttribute('type', 'password');
+	await expect(confirm).toHaveAttribute('type', 'password');
+
+	const show = page.getByRole('button', { name: 'Show password' });
+	await expect(show).toHaveCount(2);
+	await expect(show.first()).toHaveAttribute('type', 'button');
+	await expect(show.first()).toHaveAttribute('aria-pressed', 'false');
+	// The button sits inside the field, at its end.
+	const fieldBox = (await password.boundingBox())!;
+	const buttonBox = (await show.first().boundingBox())!;
+	expect(buttonBox.x).toBeGreaterThan(fieldBox.x + fieldBox.width / 2);
+	expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(fieldBox.x + fieldBox.width);
+	expect(buttonBox.y).toBeGreaterThanOrEqual(fieldBox.y);
+	expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(fieldBox.y + fieldBox.height);
+
+	// The first toggle shows only the first field, and does not submit the form.
+	await show.first().focus();
+	await page.keyboard.press('Enter');
+	await expect(password).toHaveAttribute('type', 'text');
+	await expect(password).toHaveValue('secret-123');
+	await expect(confirm).toHaveAttribute('type', 'password');
+	await expect(page).toHaveURL(/\/register$/);
+	const hide = page.getByRole('button', { name: 'Hide password' });
+	await expect(hide).toHaveCount(1);
+	await expect(hide).toHaveAttribute('aria-pressed', 'true');
+	// The field keeps what the form action reads.
+	await expect(password).toHaveAttribute('name', 'password');
+	await expect(password).toHaveAttribute('autocomplete', 'new-password');
+	await expect(password).toHaveAttribute('required', '');
+
+	await hide.click();
+	await expect(password).toHaveAttribute('type', 'password');
+	await expect(show).toHaveCount(2);
+});
+
 test('account: the display name shows the saved one and saves a new one', async ({ page }) => {
 	await signIn(page, fx.teacher);
 	await page.goto('/account');
