@@ -14,4 +14,8 @@
 		<ix-button class="block" href={resolve('/login')} icon="log-in">{m.nav_sign_in()}</ix-button>
 		<ix-button class="block" variant="secondary" href={resolve('/join')}>{m.nav_join()}</ix-button>
 	</div>
+
+	{#snippet footer()}
+		<a href={resolve('/help')}>{m.help_link()}</a>
+	{/snippet}
 </AuthCard>

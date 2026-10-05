@@ -45,7 +45,9 @@ export default defineConfig({
 			// #81: pages are server-rendered per login, so navigations always go
 			// to the server. The plugin's default falls back to a precached `/`,
 			// which this app doesn't have.
-			workbox: { navigateFallback: null },
+			// #87: the /help screenshots are fetched when the page is read, not
+			// downloaded with the app.
+			workbox: { navigateFallback: null, globIgnores: ['**/help/**'] },
 			manifest: {
 				name: 'Sherab',
 				short_name: 'Sherab',

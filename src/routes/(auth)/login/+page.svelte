@@ -48,5 +48,6 @@
 	{#snippet footer()}
 		<a href={resolve('/forgot-password')}>{m.login_forgot_link()}</a>
 		<a href={resolve('/register')}>{m.login_register_parent_link()}</a>
+		<a href={resolve('/help')}>{m.help_link()}</a>
 	{/snippet}
 </AuthCard>

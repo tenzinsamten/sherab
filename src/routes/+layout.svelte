@@ -12,12 +12,16 @@
 		avatarLabel,
 		dropdownButtonLabelRoom,
 		headerHomeLink,
+		menuAboutPanels,
 		menuItemLabelRoom,
 		routeIxLinks,
 		setupIx,
 		showToast
 	} from '$lib/ix';
 	import { initials } from '$lib/initials';
+	import HelpFaq from '$lib/components/HelpFaq.svelte';
+	import HelpGuide from '$lib/components/HelpGuide.svelte';
+	import { HELP_ROLES, helpRoleFor, helpTabLabels } from '$lib/help';
 	import { rememberMenuExpand } from '$lib/menu';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
@@ -158,6 +162,13 @@
 		return [];
 	});
 
+	// #87: the help overlay opens on the active role's guide (the parents'
+	// for an admin), so that tab comes first.
+	let helpRoles = $derived.by(() => {
+		const own = helpRoleFor(null, role);
+		return [own, ...HELP_ROLES.filter((r) => r !== own)];
+	});
+
 	function isActive(item: NavItem) {
 		const path = page.url.pathname;
 		return item.exact ? path === item.href : path === item.href || path.startsWith(item.href + '/');
@@ -250,7 +261,11 @@
 			</ix-avatar>
 		</ix-application-header>
 
-		<ix-menu start-expanded={data.menuExpanded || undefined} use:rememberMenuExpand>
+		<ix-menu
+			start-expanded={data.menuExpanded || undefined}
+			i18n-legal={m.nav_help()}
+			use:rememberMenuExpand
+		>
 			{#each navItems as item (item.href)}
 				<ix-menu-item
 					href={item.href}
@@ -262,6 +277,23 @@
 					{item.label}
 				</ix-menu-item>
 			{/each}
+			<!-- #87: iX's "About and legal" overlay, opened from the button at the
+			     foot of the menu, holds the guides and FAQs as its tabs. -->
+			<!-- svelte-ignore a11y_unknown_aria_attribute (an iX prop, the close button's label) -->
+			<ix-menu-about
+				label={m.help_heading()}
+				aria-label-close-button={m.help_close()}
+				use:menuAboutPanels
+			>
+				{#each helpRoles as helpRole (helpRole)}
+					<ix-menu-about-item tab-key={helpRole} label={helpTabLabels[helpRole]()}>
+						<HelpGuide role={helpRole} />
+					</ix-menu-about-item>
+				{/each}
+				<ix-menu-about-item tab-key="faq" label={m.help_faq_heading()}>
+					<HelpFaq />
+				</ix-menu-about-item>
+			</ix-menu-about>
 		</ix-menu>
 		<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
 		<form bind:this={roleForm} method="POST" action={resolve('/role')} hidden>

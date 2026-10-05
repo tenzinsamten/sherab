@@ -16,6 +16,7 @@
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run",
 		"test:e2e": "playwright test",
+		"help:screenshots": "HELP_SCREENSHOTS=1 playwright test e2e/help-screenshots.e2e.ts",
 		"gen": "wrangler types",
 		"supabase:start": "supabase start",
 		"supabase:stop": "supabase stop",

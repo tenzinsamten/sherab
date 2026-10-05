@@ -344,3 +344,56 @@ test('signed-out header: the Sherab logo is the home link and the name text is h
 	await logoLink.click();
 	await expect(page).toHaveURL(/\/$/);
 });
+
+test('help: open signed out from the sign-in page, one guide per role and the FAQs (#87)', async ({
+	page
+}) => {
+	await page.goto('/login');
+	await page.getByRole('link', { name: 'Need help?' }).click();
+	await expect(page).toHaveURL(/\/help$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Help' })).toBeVisible();
+
+	// Signed out: the parents' guide first.
+	const tabs = page.getByRole('navigation', { name: 'Guides' });
+	await expect(tabs.getByRole('link', { name: 'For parents' })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+
+	await tabs.getByRole('link', { name: 'For students' }).click();
+	await expect(page).toHaveURL(/\/help\?role=student$/);
+	await expect(page.getByRole('heading', { name: 'Join your class' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Create your account' })).toHaveCount(0);
+
+	// An FAQ answer shows once its question is opened.
+	const answer = page.getByText('Look in your spam folder. Then try to sign in');
+	await expect(answer).toBeHidden();
+	await page.getByText('I did not get the confirmation email.').click();
+	await expect(answer).toBeVisible();
+});
+
+test('help: a signed-in teacher opens it from the foot of the menu, on the teachers’ guide (#87)', async ({
+	page
+}) => {
+	await signIn(page, fx.teacher);
+	await page.goto('/teacher');
+	await page.waitForFunction(() => customElements.get('ix-menu-about') !== undefined);
+	const step = page.getByRole('heading', { name: 'Approve new students' });
+	await expect(step).toBeHidden();
+
+	// iX's "About and legal" button, labelled Help.
+	await page.locator('ix-menu #aboutAndLegal').click();
+	await expect(page.locator('ix-menu-about').getByRole('heading', { name: 'Help' })).toBeVisible();
+	await expect(step).toBeVisible();
+	// The other guides and the FAQs are tabs of the same overlay.
+	await page.locator('ix-menu-about').getByRole('tab', { name: 'For parents' }).click();
+	await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+	await expect(step).toBeHidden();
+	await page.locator('ix-menu-about').getByRole('tab', { name: 'Common questions' }).click();
+	await expect(page.getByText('I did not get the confirmation email.')).toBeVisible();
+
+	await page.locator('ix-menu-about').getByRole('button', { name: 'Close help' }).click();
+	await expect(page.getByText('I did not get the confirmation email.')).toBeHidden();
+	await expect(page).toHaveURL(/\/teacher$/);
+});

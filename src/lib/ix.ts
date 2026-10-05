@@ -173,6 +173,49 @@ export function menuItemLabelRoom(node: HTMLElement) {
 }
 
 /**
+ * Svelte action for <ix-menu-about>: keeps the shown tab panel in step with
+ * the selected tab (#87). Each <ix-tab-panel> hides itself whenever it is
+ * connected, and iX only un-hides the active one when its tab set loads or a
+ * tab is clicked; a panel connected after that (Svelte hydrating the items)
+ * stays hidden, leaving the overlay empty.
+ */
+export function menuAboutPanels(node: HTMLElement) {
+	type Panel = HTMLElement & { tabKey?: string };
+
+	function sync() {
+		const tabs = node.shadowRoot?.querySelector<HTMLElement & { activeTabKey?: string }>('ix-tabs');
+		const active = tabs?.activeTabKey;
+		if (!active) return;
+		for (const panel of node.querySelectorAll<Panel>('ix-tab-panel')) {
+			const hidden = panel.tabKey !== active;
+			if (panel.hidden !== hidden) panel.hidden = hidden;
+		}
+	}
+
+	const observer = new MutationObserver(sync);
+	observer.observe(node, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['hidden']
+	});
+
+	(async () => {
+		await customElements.whenDefined('ix-menu-about');
+		await (
+			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
+		).componentOnReady?.();
+		sync();
+	})();
+
+	return {
+		destroy() {
+			observer.disconnect();
+		}
+	};
+}
+
+/**
  * Svelte action for a header <ix-avatar>: gives its menu button an accessible
  * name. iX moves a host `aria-label` onto the avatar image only, and drops it
  * entirely when `initials` are shown, so the button would be announced as
