@@ -233,7 +233,7 @@ Supabase's default emails contain a link that only works **in the same browser o
 device** where the parent filled in the form (Supabase calls this the PKCE flow; source:
 <https://supabase.com/docs/guides/auth/sessions/pkce-flow>). A parent who registers on a laptop
 and opens the email on a phone would land on "link expired". The app already has the other,
-device-independent way built in (`src/routes/auth/confirm/+server.ts:28` and `:40`); the email
+device-independent way built in (`src/routes/auth/confirm/+page.server.ts`); the email
 only has to use it.
 
 Supabase dashboard -> **Authentication -> Emails -> Templates**
@@ -258,8 +258,12 @@ the Site URL must be the address where the app really runs.
 Source: <https://supabase.com/docs/guides/auth/server-side/email-based-auth-with-pkce-flow-for-ssr>
 (the app's own route ignores the `next` part shown there for sign-up, so it is left out).
 
-This link form has unit tests in the repo but has never been clicked in a real email, because
-local development uses the default templates. The test checklist below covers it.
+Opening such a link shows a page with one button ("Confirm my email" or "Continue"), and the
+link is only used when the button is pressed (#89). A link works once, and some mail apps (seen
+with the GMX app) fetch every link in a message before the person taps it; without the button
+that used the link up and the person got "invalid or has expired". A parent whose link is gone
+can ask for a new one at `/resend-confirmation`, linked from the sign-in page and from the page
+shown after registering.
 
 ### 8. Raise the email rate limit
 

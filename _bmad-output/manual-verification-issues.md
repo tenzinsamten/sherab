@@ -1427,3 +1427,94 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   #84 itself stays open: the user is entering SMTP, URLs and the two templates in Supabase
   (domain on Cloudflare and Resend verification reported done); the test checklist has not been
   run. Open for #88: whether a teacher may reset their own child's PIN (allowed today).
+
+- 2026-10-05: #84, user reports "it is tested" after setting SMTP, URLs and the templates for
+  `sherab.app`. Which checklist items were covered (link opened on a second device, forgot
+  password, spam placement) is not yet confirmed; not checked by me.
+
+- 2026-10-05: #89 logged, not fixed: the user found that a parent who has registered and whose
+  confirmation email has expired has no way to ask for a new one. What exists: signing in with
+  the right email and password while unconfirmed re-sends the link
+  (`src/routes/(auth)/login/+page.server.ts`, `email_not_confirmed` -> `auth.resend`, message
+  `login_error_unconfirmed_resent`). Nothing leads the parent there: an expired link lands on
+  `/login?error=confirm` with "That confirmation link is invalid or has expired. If you already
+  confirmed your email, sign in." (`login_error_confirm_link`), which does not say that signing
+  in sends a new link; the "Check your email" receipt after registering
+  (`src/routes/(auth)/register/+page.svelte`) has no resend; registering again answers "account
+  already exists"; a parent who forgot the password has no route at all unless a recovery mail
+  also works for an unconfirmed account (not checked). The link lifetime is Supabase's
+  `otp_expiry` (3600 s locally, `supabase/config.toml`; the hosted value not checked), and the
+  hosted project allows one mail per address per 60 s. Only the help FAQ mentions the sign-in
+  route. Proposed for planning: a "Send a new confirmation link" form that takes only the email
+  (same generic answer whether or not the address exists), offered on the expired-link page and
+  on the register receipt, and a clearer `login_error_confirm_link`.
+
+- 2026-10-05: #89, evidence from the user (phone screenshot of `sherab.app`, link opened from the
+  GMX app): the confirmation link landed on "That confirmation link is invalid or has expired",
+  and signing in right after answered "Confirm your email first. Open the link we sent you,
+  then sign in." That second text is `login_error_unconfirmed`, the branch where
+  `auth.resend` returned an error, so the hidden re-send failed too and the parent was left
+  with no new mail and no hint. The cause of both failures is not established (candidates: a
+  mail sent before the templates were changed, so a PKCE link opened in another browser; an
+  older mail whose link a newer one replaced; a really expired link; for the re-send, the
+  60-second per-address limit or an SMTP error -- the reason is only in the Cloudflare function
+  log, "login: confirmation resend failed"). Also visible: the "link expired" toast stays on
+  screen next to the sign-in error (the address keeps `?error=confirm`), and both cover the
+  card's heading on a phone. To add to the #89 fix: say what to do when the re-send fails
+  ("wait a minute and try again"), and drop the stale toast after a sign-in attempt.
+
+- 2026-10-05: #89, user reports the same failure for the reset-password link on `sherab.app`.
+  Tested locally by me with a temporary browser test (deleted): a real sign-up through
+  `/register`, the mail's hashed token read from Mailpit, then
+  `/auth/confirm?token_hash=<token>&type=email` opened in a browser with no cookies lands on
+  `/parent`; the same for a real forgot-password mail with `type=recovery` lands on
+  `/reset-password`. So the device-independent link format works with this code. Opening the
+  same sign-up link a second time lands on `/login?error=confirm`: a link is good for one
+  request only, so anything that fetches it before the person does (a mail scanner, a preview,
+  a double tap) uses it up; in that case the email would however be confirmed, which the
+  user's screenshot contradicts. Cause on the hosted project still not established: the link
+  as it arrives in the mail and the Supabase Auth log entry are needed. To consider for the
+  fix: `/auth/confirm` verifying on a button press (POST) instead of on the GET, so a
+  pre-fetch cannot use the link up. Also: `main` is level with `origin/main`, so today's
+  commits have been pushed (not by me).
+
+- 2026-10-05: #89, cause found with the user: a fresh reset link copied from GMX webmail into a
+  new tab on a computer worked, while the same kind of link tapped in the GMX phone app was
+  "invalid or has expired". A link is good for one request and the app fetches it first. User
+  asked to build #89; built on `main`, not committed.
+  (1) `/auth/confirm` is now a page (`+page.server.ts`, `+page.svelte`; the old `+server.ts` is
+  removed): a `token_hash` link only shows a button ("Confirm my email" / "Continue") and the
+  token is verified when the form is posted, never by a script. PKCE `code` links are still
+  exchanged on the GET (useless without the asking browser's cookie).
+  (2) New `/resend-confirmation`: takes only the email, calls `auth.resend`, and gives the same
+  answer whatever happens; linked from the register receipt (email prefilled) and from the
+  sign-in page after a failed link or an unconfirmed sign-in.
+  (3) Sign-in page: the failed-link message is shown in the card instead of as a toast, so it
+  no longer stacks on the sign-in error; the three unconfirmed/expired messages and help FAQ 1
+  each gained a sentence pointing to the new link.
+  12 new keys (`confirm_*`, `resend_*`, `register_receipt_no_mail`); in `messages/bo.json` the
+  new keys are English and the four extended texts have an English sentence after the Tibetan.
+  `docs/production-email.md` step 7 updated. Verified after a reset: 933 unit tests,
+  `npm run check` and `npm run build` exit 0, ESLint and Prettier pass; after another reset
+  `auth-fields.e2e.ts` passes 14/14, including a real local sign-up whose mailed token is
+  opened in a cookie-less browser twice (first press confirms, second says expired and offers a
+  new link) and a real reset mail. Seen in screenshots at phone width. Not verified: on
+  `sherab.app` with the GMX app (needs a deploy); whether the GMX app's fetch also explains the
+  sign-up case in the user's screenshot, where the email stayed unconfirmed; why the re-send on
+  sign-in failed that time; a reset mail for an unconfirmed account. Full browser suite not run.
+
+- 2026-10-06: user asked for the Tibetan translation; 107 entries in `messages/bo.json` written
+  by the assistant with the app's existing terms: all `help_*`, `nav_help`, `password_show`,
+  `password_hide`, `pin_reset_*`, `confirm_*`, `resend_*`, `register_receipt_no_mail`, and the
+  English sentences added to `register_error_exists` and the three `login_error_*` texts. A
+  draft, not reviewed by a Tibetan reader. Left as they were: `home_poster_hero`, `credential_pin`
+  and texts that are only placeholders. The user then said "stop the change" while the
+  screenshots were being regenerated: the job was stopped, the three screenshots it had
+  rewritten (`teacher-8.png`) were restored, so the Tibetan screenshots still show the earlier
+  English help link on the sign-in page.
+
+- 2026-10-06: user asked to commit. #89 and the Tibetan texts committed on `main` as one code
+  commit, the guide and this log as one docs commit; not pushed. Verified before the commit,
+  after a reset: 933 unit tests, `npm run check` and `npm run build` exit 0, Prettier passes.
+  Browser tests were last run before the translation (`auth-fields` 14/14); not re-run after
+  it. No migration.
