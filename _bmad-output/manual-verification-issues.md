@@ -1168,3 +1168,133 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 
 - 2026-10-03: user asked to commit. #81 committed on `main` in one code commit and one docs
   commit; not pushed. No migration.
+
+- 2026-10-05: #82 logged, not fixed: while registering parents and teachers the user found no way
+  to see the password being typed. The register form's "password" and "confirm password" fields
+  (`src/routes/(auth)/register/+page.svelte`) are plain `type="password"` inputs with no show/hide
+  control. The same is true of every other password field: login
+  (`src/routes/(auth)/login/+page.svelte`), reset password
+  (`src/routes/(auth)/reset-password/+page.svelte`) and the three fields on the account page
+  (`src/routes/account/+page.svelte`). Open: whether the toggle goes on the register form only or
+  on all four screens. Waiting for the user to finish listing issues, then plan.
+
+- 2026-10-05: #83 logged, not fixed: the user expected one email to be both teacher and parent,
+  but registering got "email already registered". Which form and which order the user tried is
+  not confirmed; the wording matches the parent form `/register`, whose `emailHasLogin` check
+  (`src/routes/(auth)/register/+page.server.ts`) refuses any email that already has a login with
+  `register_error_exists` ("An account with this email already exists. Sign in instead."), by
+  design (Story 7-1). One login with both roles is supported (#68), but only by two other routes:
+  (a) a teacher or admin signs in and uses "Request parent access" on My account
+  (`requestParentAccess` in `src/routes/account/+page.server.ts`), then the admin approves;
+  (b) the admin adds a teacher whose email belongs to an approved parent, which promotes that
+  login (`src/routes/admin/teachers/+page.server.ts`); with the parent still pending it stops
+  with `teachers_error_parent_pending`. So the gap is that `/register` gives no hint of route
+  (a): the message says "sign in instead" and nothing more. Open for planning: a clearer message
+  pointing to My account, or letting `/register` itself raise the parent request for an existing
+  teacher (needs proof of the password, since the form is public); and whether the message may
+  reveal that the email is a teacher (today it deliberately never names the role).
+
+- 2026-10-05: #83 confirmed by the user: it was the parent form `/register` with a teacher's
+  email. The user will retry later through My account ("Request parent access"); not yet tried.
+
+- 2026-10-05: #84 logged, not done: production email is not set up. Parent registration sends a
+  confirmation mail (`supabase.auth.signUp` in `src/routes/(auth)/register/+page.server.ts`) and
+  forgot-password sends one too, so the hosted Supabase project needs custom SMTP; Supabase's
+  built-in sender is rate-limited and, as far as known, only delivers to members of the Supabase
+  organisation. The user asked whether this means a monthly fee and has no domain. Suggested, not
+  yet decided by the user: buy a domain (`.org` or `.com` at Cloudflare Registrar, about
+  $10-12 a year; `.de` from a German registrar), verify it with an email provider's free tier
+  (Resend suggested) and enter that provider's SMTP details in Supabase. Prices and free-tier
+  limits were given from memory, not checked against the providers' pages. Mostly setup outside
+  the repo; open for planning: which domain and provider, whether the app also moves to that
+  domain (then Supabase's site URL and redirect URLs change), and the sender name and address.
+
+- 2026-10-05: #85 logged, not fixed: the user finds Tibetan text too big and asked to "reduce it
+  by 2px for all". Today Tibetan has no size of its own: `size-adjust: 150%` on both Atisha
+  `@font-face` rules in `src/app.css` (#78) draws it at 1.5x the surrounding text, so 21px in
+  normal body text (iX `--theme-font-size-default` 0.875rem = 14px), 18px in small text (12px),
+  24px in large text (16px) and 33px at xl (22px). `size-adjust` is a ratio, so an exact 2px
+  cut everywhere is not possible with it; proposed 136%, which gives 19px in body text (-2px),
+  16.3px small (-1.7px), 21.8px large (-2.2px) and 29.9px xl (-3.1px). To revisit with the
+  change: the Tibetan line height 2.2 and the 2.5rem `ix-button` height, both sized for 1.5x.
+  Waiting for the user to finish listing issues, then plan.
+
+- 2026-10-05: #86 logged, not fixed: under the Tibetan interface the breadcrumb text is cut off
+  vertically. Cause read from the code, not reproduced in a browser: `ix-breadcrumb-item` carries
+  the same sizing as `ix-button` on its own host (`height: 2rem`, `line-height: 1.429em`, and a
+  `.content` label with `overflow: hidden` in iX's `breadcrumb-item.css`), so Tibetan drawn at
+  1.5x is clipped the same way buttons were in #78. The #78 fix in `src/app.css`
+  (`html[lang='bo'] ix-button { height: 2.5rem; line-height: 2.5rem }`) names only `ix-button`,
+  and `src/lib/components/PageBreadcrumb.svelte` sets no height. Likely fix: the same height and
+  line height for `ix-breadcrumb-item` under `html[lang='bo']`. Two things to settle in planning:
+  a Tibetan class or homework title in the breadcrumb under an English or German interface is
+  probably cut the same way (the rule would then need to cover every interface language), and
+  the values depend on the size chosen in #85. Other iX components with a fixed one-line height
+  (tabs, pills, menu items, inputs) not checked.
+
+- 2026-10-05: #87 logged, not built (improvement): the app has no guidance for its users. The
+  user wants a how-to for each kind of user (teachers, parents, children) and some FAQs. Today
+  there is no help, guide or FAQ route under `src/routes`, no help entry in the menu and no such
+  texts in `messages/*.json`. Open for planning: where it lives (a help page in the app, per
+  role, reachable from the menu and from the sign-in pages, versus a document outside the app);
+  whether admins get a guide too; languages (the interface has en, de, bo, and the children's
+  guide most needs Tibetan and simple wording); whether texts sit in `messages/*.json` or in
+  per-language content files; screenshots or text only; and the list of topics and FAQs, which
+  the user has not given yet (candidates from this round: signing up as a parent, the
+  confirmation mail, one login as teacher and parent (#83), installing the app (#81), a
+  forgotten password or PIN).
+
+- 2026-10-05: planned with the user. Batch A: #82 (toggle on all four screens), #83 (longer
+  static message on `/register`), #85 (136%) and #86 together; the user asked to start it with a
+  subagent. Batch B: #87 as a `/help` page. Batch C: #84, setup on the user's side. Decided by the
+  user: new message keys are created in all three language files as usual and the user
+  translates the Tibetan later; admins get no guide. Still open for #87: the FAQ topics.
+
+- 2026-10-05: #82, #83, #85 and #86 built on `main` by a subagent, not committed. #82: new
+  `src/lib/components/PasswordInput.svelte` (native input plus a show/hide button beside it),
+  used for all eight password fields on register, login, reset password and My account; students
+  get it on `/login`, where the PIN goes in the same field. #83: `register_error_exists` extended
+  in en and de, text only. #85: `size-adjust` 136% on both Atisha faces, Tibetan line height
+  2.2 to 2, `ix-button` under Tibetan 2.5rem to 2.25rem. #86: every `ix-breadcrumb-item` gets
+  height and line height 2.25rem in all interface languages (crumbs carry no `lang`), inside
+  iX's 2.5rem breadcrumb. Not done: `messages/bo.json` -- the subagent's edit was refused by the
+  permission system, so `password_show`, `password_hide` and the longer `register_error_exists`
+  are missing there (Paraglide falls back to English for the two new keys; the register message
+  keeps the old short Tibetan text). Verified after a reset: 906 unit tests, `npm run check` and
+  `npm run build` exit 0; Prettier and ESLint pass on the changed files (subagent's run). Browser
+  tests: `auth-fields` 10/10, `breadcrumbs` 7/7 and the Tibetan homework test with the 136%
+  assertion pass; the full run had 40 passed, 3 failed, 31 not run. Of the three, the team-names
+  test passed on a re-run; `calendar.e2e.ts:130` ("today is highlighted") and
+  `teacher.e2e.ts:246` (attendance, newest session first) failed each time. Neither is in code
+  this batch touched, but no baseline run was made, so that they are unrelated is not proven.
+  Measured in Chromium by the subagent: breadcrumb labels were cut 4.5-6.3px before and 0px
+  after, in the Tibetan interface and for a Tibetan title under English. Found, not fixed: the
+  side menu's `ix-menu-item` labels lose up to 2.2px at the bottom of the deepest Tibetan
+  letters (shadow DOM, needs the `dropdownButtonLabelRoom` approach); `ix-radio` labels and
+  `ix-typography` would overlap if a Tibetan line wraps. Not judged by eye by the user yet.
+
+- 2026-10-05: user approved the `messages/bo.json` edit and asked for the side menu fix; built on
+  `main`, not committed. `bo.json`: `password_show` and `password_hide` added with the English
+  text, and the new English sentence appended to the Tibetan `register_error_exists`; all three
+  wait for the user's translation (the two password texts are only the eye button's
+  screen-reader name and tooltip). #86 side menu: new `menuItemLabelRoom` action in
+  `src/lib/ix.ts`, used on every `ix-menu-item` in `src/routes/+layout.svelte`, gives the label a
+  2.25rem line inside the 3rem item; the #76 team-names browser test now checks the 36px label.
+  Verified after a reset: 906 unit tests, `npm run check` and `npm run build` exit 0; Prettier and
+  ESLint pass on the changed files; the team-names browser test passes, and a screenshot of the
+  expanded menu under the Tibetan interface shows complete, centred labels. Full browser suite
+  not re-run; the two failures noted above (`calendar.e2e.ts:130`, `teacher.e2e.ts:246`) are
+  still unexplained. Still open: `ix-radio` and `ix-typography` line height for wrapped Tibetan.
+
+- 2026-10-05: #82 changed after the user saw it: the eye button sat beside the field and the user
+  wants it inside. `PasswordInput.svelte` now places the button inside the field at its end
+  (the input keeps 2.5rem of padding there) and hides Edge's own reveal button. The register
+  browser test also checks that the button's box lies inside the field's. `npm run check` and
+  `npm run build` exit 0, Prettier and ESLint pass, `auth-fields` 10/10; seen in a screenshot of
+  `/register`. Unit tests not re-run for this styling-only change. Not committed.
+
+- 2026-10-05: user checked it and asked to commit. #82, #83, #85 and #86 committed on `main` in
+  one code commit and one docs commit; not pushed. The code commit also carries the user's own
+  `home_poster_eyebrow` translation in `messages/bo.json`. Verified before the commit, after a
+  reset: 906 unit tests, `npm run check` and `npm run build` exit 0. No migration. #84 and #87
+  remain open.
