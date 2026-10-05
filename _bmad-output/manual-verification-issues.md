@@ -1366,3 +1366,64 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Tibetan texts for the `help_*` keys, `nav_help`, `password_show`, `password_hide` and the
   second sentence of `register_error_exists`, and the two unexplained browser-test failures
   (`calendar.e2e.ts:130`, `teacher.e2e.ts:246`).
+
+- 2026-10-05: #84 prepared by a subagent (research and a guide only; nothing bought, no account
+  or dashboard touched), not committed: `docs/production-email.md`, a step-by-step setup with a
+  test checklist. Checked on the providers' pages on 2026-10-05: Supabase's built-in sender is
+  2 mails an hour and only to the organisation's members; custom SMTP is allowed on the free
+  plan (30 mails an hour to start, adjustable); Resend free is 3,000 a month, 100 a day, own
+  verified domain required; Cloudflare does not sell `.de`. Recommended: a `.org` at Cloudflare
+  Registrar (about US$8.50 first year, US$11.20 renewal, from a third-party price tracker) plus
+  Resend, about US$9-11 a year, no monthly fee. Not confirmed: Brevo's free limits, Cloudflare's
+  own price list, some dashboard labels. No code change is required for a custom domain. Found:
+  with Supabase's default email templates the confirmation and reset links only work in the
+  browser that submitted the form (PKCE code exchange), so a parent who registers on a laptop
+  and opens the mail on a phone lands on an error; `/auth/confirm` already accepts the
+  device-independent `token_hash` form, so the fix is to change the two templates in the
+  Supabase dashboard (step 7 of the guide). That path was not exercised with a real mail.
+  Waiting for the user's decisions: domain name and ending, whether the app moves to the
+  domain, provider, sender name and address, template language.
+
+- 2026-10-05: #84, user bought the domain `sherab.app` (where it was bought not yet said). The
+  guide's placeholder `yourschool.org` is replaced by `sherab.app`. Next on the user's side:
+  put the app on the domain, verify it at Resend, enter SMTP and URLs in Supabase, change the
+  two email templates, then run the guide's test checklist.
+
+- 2026-10-05: #84, user reports: `sherab.app` bought at Cloudflare and the app is on the domain
+  (guide step 2 done; not checked by me). Next: Resend domain verification.
+
+- 2026-10-05: #84, user reports the domain is verified at Resend (guide step 3 done). Next: API
+  key, SMTP in Supabase, URLs, templates, rate limit, then the test checklist.
+
+- 2026-10-05: #88 built on `main` by a subagent, not committed. "Reset PIN" per student in the
+  "Class members" card (`EnrollmentPanel.svelte`) on the teacher's class page and on the admin's
+  class students page: confirm dialog, then the username and new PIN shown once with copy
+  buttons. Server: `resetStudentPin` in `src/lib/server/student-pin.ts`, called by a `resetPin`
+  action on both pages. Allowed: the admin, or a teacher assigned to the class of the page; the
+  target must be an approved student enrolled in that class; only then the service-role
+  `updateUserById`. A teacher may reset their own child's PIN (the own-child rule covers
+  decisions, not credentials; the parent is handed the PIN at approval anyway) -- open for the
+  user to confirm. Supabase Auth ends the student's sessions when the password is set (seen
+  locally, not on the hosted project). No record of who reset a PIN and no rate limit. Help:
+  teacher step 10 added, student step 8 and FAQ 3 now say the teacher gives the new PIN; 8 new
+  keys (`pin_reset_*`, `help_teacher_10_*`), English in `messages/bo.json`. Screenshots not
+  regenerated (the member list is below what `teacher-4` and `teacher-5` show). No migration.
+  Verified after a reset (re-run by me): 924 unit tests (13 new, against the local database),
+  `npm run check` and `npm run build` exit 0; after another reset `teacher.e2e.ts` and
+  `auth-fields.e2e.ts` pass, 24/24, including the new test that signs the student in with the
+  new PIN and not the old one. Prettier and ESLint on the changed files: subagent's run. Seen
+  by the subagent in screenshots at desktop and phone width; not seen by me. Full browser suite
+  not run.
+
+- 2026-10-05: the `teacher.e2e.ts:246` failure (attendance, newest session first) explained by
+  the #88 subagent: not a regression. `npm test` leaves real-date `class_days` behind (2026-08-31
+  to 2026-10-12 after one run; from `rls.spec.ts` or `calendar/page.server.spec.ts`, not
+  isolated), and the browser test's class, scheduled on a random weekday, picks one up as its
+  newest session. It passes on a database reset after `npm test`. So: reset between `npm test`
+  and the browser tests. `calendar.e2e.ts:130` not investigated.
+
+- 2026-10-05: user asked to commit #88 and the email guide. #88 committed on `main` as one code
+  commit; `docs/production-email.md` and this log as one docs commit; not pushed. No migration.
+  #84 itself stays open: the user is entering SMTP, URLs and the two templates in Supabase
+  (domain on Cloudflare and Resend verification reported done); the test checklist has not been
+  run. Open for #88: whether a teacher may reset their own child's PIN (allowed today).
