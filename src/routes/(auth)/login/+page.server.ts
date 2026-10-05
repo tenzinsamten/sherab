@@ -42,9 +42,17 @@ export const actions: Actions = {
 			});
 			if (resendError) {
 				console.error('login: confirmation resend failed', resendError.message);
-				return fail(400, { error: m.login_error_unconfirmed(), email: identifier });
+				return fail(400, {
+					error: m.login_error_unconfirmed(),
+					email: identifier,
+					unconfirmed: true
+				});
 			}
-			return fail(400, { error: m.login_error_unconfirmed_resent(), email: identifier });
+			return fail(400, {
+				error: m.login_error_unconfirmed_resent(),
+				email: identifier,
+				unconfirmed: true
+			});
 		}
 
 		if (error) {

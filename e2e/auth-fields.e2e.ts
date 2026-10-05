@@ -397,3 +397,96 @@ test('help: a signed-in teacher opens it from the foot of the menu, on the teach
 	await expect(page.getByText('I did not get the confirmation email.')).toBeHidden();
 	await expect(page).toHaveURL(/\/teacher$/);
 });
+
+/** The hashed token of the newest local mail of `type` to `to` (Mailpit, `supabase start`). */
+async function mailToken(to: string, type: 'signup' | 'recovery'): Promise<string> {
+	const mailpit = 'http://127.0.0.1:54324/api/v1';
+	for (let attempt = 0; attempt < 40; attempt++) {
+		const list = (await (
+			await fetch(`${mailpit}/search?query=${encodeURIComponent(`to:${to}`)}`)
+		).json()) as { messages?: { ID: string }[] };
+		for (const message of list.messages ?? []) {
+			const full = (await (await fetch(`${mailpit}/message/${message.ID}`)).json()) as {
+				HTML?: string;
+				Text?: string;
+			};
+			const link = ((full.HTML || full.Text || '').match(/href="([^"]+)"/) ?? [])[1];
+			const url = link ? new URL(link.replace(/&amp;/g, '&')) : null;
+			if (url?.searchParams.get('type') === type) return url.searchParams.get('token') ?? '';
+		}
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+	throw new Error(`no ${type} mail for ${to}`);
+}
+
+test('email links: opening one only shows a button; pressing it confirms, on any device (#89)', async ({
+	page,
+	browser
+}) => {
+	const email = `e2e-89-${fx.tag}@example.test`;
+	const password = `pw-${crypto.randomUUID()}`;
+	try {
+		await page.goto('/register');
+		await waitForIx(page);
+		await typeInto(page, 'displayName', 'E2E89 Parent');
+		await page.locator('#email').fill(email);
+		await page.locator('#password').fill(password);
+		await page.locator('#confirm').fill(password);
+		await page.getByRole('button', { name: 'Create account' }).click();
+		await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+		// The receipt offers a new link, with the email filled in.
+		await page.getByRole('link', { name: 'Send a new confirmation link' }).click();
+		await expect(page).toHaveURL(/\/resend-confirmation\?email=/);
+		await expect(page.locator('#email')).toHaveValue(email);
+
+		// "Another device": browsers that share no cookies with the one above.
+		const token = await mailToken(email, 'signup');
+		const link = `/auth/confirm?token_hash=${token}&type=email`;
+
+		// A mail app fetching the link first must not use it up.
+		const scanner = await (await browser.newContext()).newPage();
+		await scanner.goto(link);
+		await expect(scanner.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
+
+		const phone = await (await browser.newContext()).newPage();
+		await phone.goto(link);
+		await phone.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await phone.getByRole('button', { name: 'Confirm my email' }).click();
+		await expect(phone).toHaveURL(/\/parent$/);
+
+		// Used now: a second press says so in the card and offers a new link.
+		await scanner.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await scanner.getByRole('button', { name: 'Confirm my email' }).click();
+		await expect(scanner).toHaveURL(/\/login\?error=confirm$/);
+		await expect(scanner.getByRole('alert')).toContainText('invalid or has expired');
+		await expect(scanner.getByRole('link', { name: 'Send a new confirmation link' })).toBeVisible();
+
+		// The same for a reset-password mail.
+		const reset = await (await browser.newContext()).newPage();
+		await reset.goto('/forgot-password');
+		await reset.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await reset.waitForLoadState('networkidle');
+		await reset.locator('#email').fill(email);
+		await reset.getByRole('button', { name: 'Send reset link' }).click();
+		const recoveryToken = await mailToken(email, 'recovery');
+		const other = await (await browser.newContext()).newPage();
+		await other.goto(`/auth/confirm?token_hash=${recoveryToken}&type=recovery`);
+		await other.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await expect(other.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
+		await other.getByRole('button', { name: 'Continue' }).click();
+		await expect(other).toHaveURL(/\/reset-password$/);
+	} finally {
+		const { data } = await service.from('profiles').select('id').eq('email', email);
+		for (const row of data ?? []) await service.auth.admin.deleteUser(row.id);
+	}
+});
+
+test('resend confirmation: the same answer for any address (#89)', async ({ page }) => {
+	await page.goto('/resend-confirmation');
+	await waitForIx(page);
+	await page.locator('#email').fill(`nobody-${fx.tag}@example.test`);
+	await page.getByRole('button', { name: 'Send link' }).click();
+	await expect(page.getByRole('status')).toContainText(
+		'If this email is waiting for confirmation, a new link is on its way.'
+	);
+});

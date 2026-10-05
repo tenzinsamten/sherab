@@ -20,8 +20,13 @@
 {#if receiptEmail}
 	<AuthCard title={m.register_receipt_heading()}>
 		<p>{m.register_receipt_body({ email: receiptEmail })}</p>
+		<p class="muted">{m.register_receipt_no_mail()}</p>
 
 		{#snippet footer()}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve()d; only ?email= is added. -->
+			<a href="{resolve('/resend-confirmation')}?email={encodeURIComponent(receiptEmail)}"
+				>{m.resend_heading()}</a
+			>
 			<a href={resolve('/login')}>{m.forgot_back_to_login()}</a>
 		{/snippet}
 	</AuthCard>
