@@ -87,3 +87,7 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## Deployment
+
+How the app is hosted, how a new version goes live and what it costs: [docs/deployment-and-costs.md](docs/deployment-and-costs.md). Email setup for production: [docs/production-email.md](docs/production-email.md). Homework notifications: [docs/notifications.md](docs/notifications.md).

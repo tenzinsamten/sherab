@@ -1570,3 +1570,46 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   visible. Not exercised in a browser: the sick-leave, deletion-reject, clear-rejected, archive,
   pause / end series, mark-reviewed and student mark-done dialogs (same helper, no test presses
   them). Not verified on `sherab.app`.
+
+- 2026-10-06: #92 logged, planned (`~/.claude/plans/what-info-do-you-federated-nautilus.md`) and
+  built on `main`, not committed: homework push notifications for students and parents.
+  User's decisions: students and parents only; "New" when a teacher creates one-off homework
+  (not for weekly series); "Due soon" on Saturday morning to both; "Overdue" once, the day
+  after, to parents only; a shared phone notifies whoever is signed in; no email.
+  How: migration 0037 (`push_subscriptions`, `push_notification_log`, two RPCs for the
+  browser, `homework_push_targets` with the 0025 Open rule, `trigger_homework_push` via pg_net
+  and Vault, job `send-homework-push` every 5 minutes 07:00-08:55 UTC). `src/lib/server/push.ts`
+  writes the text per browser language and sends with `web-push-neo` (new dependency) in
+  batches of 20, because Cloudflare's free plan allows 50 outgoing calls per request.
+  `/api/push/run` (shared secret) and `/api/push/subscription`; a Notifications card on
+  `/account`; `static/push-sw.js` loaded by the generated service worker; the root layout moves
+  a browser's subscription to the signed-in account and releases it at sign-out. Off and hidden
+  until `VAPID_*` are set (`$env/dynamic/private`). 26 new message keys in en, de and bo
+  (Tibetan is the assistant's draft, not reviewed); one help step each for parents and students.
+  Setup, checklist and limits: `docs/notifications.md`.
+  Changed from the plan: the "New" notice is not sent from the create action but handed to the
+  database (`trigger_homework_push`), which calls the app in a request of its own; the action
+  has already spent its outgoing calls on the per-student inserts.
+  Verified after a reset: 1029 unit tests (82 new: 46 for `push.ts`, 16 for the two endpoints,
+  7 for the account load, 13 database tests), `npm run check` and `npm run build` exit 0;
+  Prettier and ESLint pass on the changed files. Live, locally: the dev server sent through
+  Mozilla's push service to a scripted receiver that decrypted the notices (New to student in
+  Tibetan and parent in German, Overdue to the parent only, nothing on a repeated call, and the
+  database hand-over through local Vault secrets, since removed). The card seen for a parent at
+  390 px. Full browser suite after another reset: 74 passed, 4 skipped, 2 failed, 5 not run
+  because of those. The two failures also fail without these changes: "B14b" (known) and
+  "admin team names" in `forms.e2e.ts` (see #93).
+  Not verified: a notification on a real phone or browser (the automated browser cannot answer
+  the permission question); iPhone Home Screen app; the Saturday reminder against the running
+  app; anything on `sherab.app` (Cloudflare variables, the hosted job, CPU limit per batch).
+  Not pushed, no migration pushed, no dashboard touched.
+  During the local test the assistant stopped the dev server by killing every process on its
+  port, which also stopped Docker Desktop (its network process held a connection on that port).
+  Docker was restarted; other projects' containers came back on their own.
+
+- 2026-10-06: #93 logged, not fixed: `forms.e2e.ts` "admin team names: edit the names, and each
+  interface language shows its own (#76)" fails, also on the code before #92 (checked by
+  setting the #92 changes aside). It times out at the end, on
+  `page.locator('ix-dropdown-item[lang="de"]').click()` after opening the language picker on
+  `/leaderboard`: the item is found but "not visible". Cause not looked into. Waiting for the
+  user to plan or fix.
