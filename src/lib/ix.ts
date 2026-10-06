@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
 import type { ToastType } from '@siemens/ix';
+import * as m from '$lib/paraglide/messages.js';
 
 /**
  * Siemens iX is a set of web components, so everything here is browser-only:
@@ -72,6 +73,14 @@ export async function confirmAction(title: string, message: string, okay: string
 	return new Promise<boolean>((resolve) => {
 		result.once(({ actionId }) => resolve(actionId === 'okay'));
 	});
+}
+
+/**
+ * #91: confirmAction with the usual title and Cancel, for `pending.submit`'s
+ * `confirm` option. `okay` repeats the label of the button that was pressed.
+ */
+export function confirmWith(message: string, okay: string) {
+	return () => confirmAction(m.common_confirm_title(), message, okay, m.common_cancel());
 }
 
 /**

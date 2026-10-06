@@ -499,12 +499,15 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const parentId = String(formData.get('parentId') ?? '');
 		const parentName = String(formData.get('parentName') ?? '');
+		const withoutConfirmation = formData.get('withoutConfirmation') === '1';
 
 		const user = await requireAdmin(supabase, safeGetSession);
 		if (!user) {
 			return fail(403, { error: m.requests_parent_error_admin_only(), parentId, parentName });
 		}
 
+		// RLS-scoped read: proves the caller is the admin and the row is
+		// pending before the service-role call below (which bypasses RLS).
 		const { data: row, error: fetchError } = await supabase
 			.from('parents')
 			.select(PARENT_COLUMNS)
@@ -514,9 +517,23 @@ export const actions: Actions = {
 		if (fetchError || !row) {
 			return fail(400, { error: m.requests_error_not_found(), parentId, parentName });
 		}
-		// Friendly message; parents_update_admin's WITH CHECK refuses it anyway.
 		if (!toParent(row).emailConfirmedAt) {
-			return fail(400, { error: m.requests_parent_error_unconfirmed(), parentId, parentName });
+			// #90: the admin may approve a parent whose confirmation mail never
+			// arrived, but only on purpose (the page asks first and sets the flag).
+			if (!withoutConfirmation) {
+				return fail(400, { error: m.requests_parent_error_unconfirmed(), parentId, parentName });
+			}
+			// Marks the email confirmed: an unconfirmed login can't sign in, and
+			// parents_update_admin's WITH CHECK refuses the approval otherwise.
+			// sync_email_confirmed_at() (0006) mirrors it onto profiles.
+			const { error: confirmError } = await createSupabaseAdminClient().auth.admin.updateUserById(
+				parentId,
+				{ email_confirm: true }
+			);
+			if (confirmError) {
+				console.error('requests approveParent: confirming the email failed', confirmError.message);
+				return fail(400, { error: m.requests_parent_error_approve_failed(), parentId, parentName });
+			}
 		}
 
 		// reviewed_by / reviewed_at are stamped by the parents_stamp_review trigger.
@@ -532,6 +549,49 @@ export const actions: Actions = {
 		}
 
 		return { success: true, action: 'parentApproved' as const, parentId, parentName };
+	},
+
+	/**
+	 * #90: the admin sends a pending parent a new confirmation mail, for a
+	 * parent who says none arrived. Same mail as /resend-confirmation.
+	 */
+	resendParentConfirmation: async ({ request, url, locals: { supabase, safeGetSession } }) => {
+		const formData = await request.formData();
+		const parentId = String(formData.get('parentId') ?? '');
+		const parentName = String(formData.get('parentName') ?? '');
+
+		const user = await requireAdmin(supabase, safeGetSession);
+		if (!user) {
+			return fail(403, { error: m.requests_parent_error_admin_only(), parentId, parentName });
+		}
+
+		const { data: row, error: fetchError } = await supabase
+			.from('parents')
+			.select(PARENT_COLUMNS)
+			.eq('id', parentId)
+			.eq('status', 'pending')
+			.maybeSingle();
+		if (fetchError || !row) {
+			return fail(400, { error: m.requests_error_not_found(), parentId, parentName });
+		}
+		const parent = toParent(row);
+		// GoTrue sends nothing for a confirmed address and still answers OK.
+		if (parent.emailConfirmedAt || !parent.email) {
+			return fail(400, { error: m.requests_parent_error_resend_confirmed(), parentId, parentName });
+		}
+
+		// One mail per address per minute (GoTrue); a second press inside it fails.
+		const { error: resendError } = await supabase.auth.resend({
+			type: 'signup',
+			email: parent.email,
+			options: { emailRedirectTo: `${url.origin}/auth/confirm?flow=signup` }
+		});
+		if (resendError) {
+			console.error('requests resendParentConfirmation: resend failed', resendError.message);
+			return fail(400, { error: m.requests_parent_error_resend_failed(), parentId, parentName });
+		}
+
+		return { success: true, action: 'parentConfirmationResent' as const, parentId, parentName };
 	},
 
 	rejectParent: async ({ request, locals: { supabase, safeGetSession } }) => {

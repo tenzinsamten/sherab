@@ -6,7 +6,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatDay as formatIsoDay, formatInstant, num } from '$lib/format';
-	import { confirmAction, showToast } from '$lib/ix';
+	import { confirmAction, confirmWith, showToast } from '$lib/ix';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { ixFieldError } from '$lib/ix-fields';
@@ -86,6 +86,31 @@
 		joinForm?.requestSubmit();
 	}
 
+	// #90: approving a parent whose email is unconfirmed asks first; the
+	// server only does it with the flag this sets.
+	function submitApproveParent(parent: {
+		id: string;
+		name: string;
+		email: string;
+		emailConfirmedAt: string | null;
+	}): SubmitFunction {
+		const submit = pending.submit(`approveParent:${parent.id}`);
+		return async (input) => {
+			if (!parent.emailConfirmedAt) {
+				if (pending.busy) return input.cancel();
+				const ok = await confirmAction(
+					m.common_confirm_title(),
+					m.requests_parent_approve_unconfirmed_confirm({ name: parent.name, email: parent.email }),
+					m.requests_approve(),
+					m.common_cancel()
+				);
+				if (!ok) return input.cancel();
+				input.formData.set('withoutConfirmation', '1');
+			}
+			return submit(input);
+		};
+	}
+
 	// Story 7-6: Approve erases the child for good, so it asks first.
 	let approveDeletionForm: HTMLFormElement | undefined = $state();
 	let deletionTarget = $state({ id: '', name: '' });
@@ -151,6 +176,8 @@
 				showToast('success', m.requests_parent_outcome_approved({ name }));
 			if (form.action === 'parentRejected')
 				showToast('success', m.requests_parent_outcome_rejected({ name }));
+			if (form.action === 'parentConfirmationResent')
+				showToast('success', m.requests_parent_outcome_resent({ name }));
 			if (form.action === 'parentStaffRejected')
 				showToast('success', m.requests_parent_staff_outcome_rejected({ name }));
 			return;
@@ -285,7 +312,12 @@
 										<form
 											method="POST"
 											action="?/reject"
-											use:enhance={pending.submit(`reject:${student.id}`)}
+											use:enhance={pending.submit(`reject:${student.id}`, {
+												confirm: confirmWith(
+													m.requests_reject_confirm({ name: student.registrationName ?? '' }),
+													m.requests_reject()
+												)
+											})}
 										>
 											<input type="hidden" name="studentId" value={student.id} />
 											<input type="hidden" name="studentName" value={student.registrationName} />
@@ -343,7 +375,14 @@
 										<form
 											method="POST"
 											action="?/clearRejected"
-											use:enhance={pending.submit(`clear:${student.id}`)}
+											use:enhance={pending.submit(`clear:${student.id}`, {
+												confirm: confirmWith(
+													m.requests_clear_rejected_confirm({
+														name: student.registrationName ?? ''
+													}),
+													m.requests_clear_rejected()
+												)
+											})}
 										>
 											<input type="hidden" name="studentId" value={student.id} />
 											<input type="hidden" name="studentName" value={student.registrationName} />
@@ -409,7 +448,20 @@
 												<form
 													method="POST"
 													action="?/decideSick"
-													use:enhance={pending.submit(`sick:${decision}:${key}`)}
+													use:enhance={pending.submit(`sick:${decision}:${key}`, {
+														confirm: confirmWith(
+															decision === 'approved'
+																? m.requests_sick_approve_confirm({
+																		name: row.studentName,
+																		date: formatDay(row.day)
+																	})
+																: m.requests_sick_reject_confirm({
+																		name: row.studentName,
+																		date: formatDay(row.day)
+																	}),
+															decision === 'approved' ? m.requests_approve() : m.requests_reject()
+														)
+													})}
 												>
 													<input type="hidden" name="sessionId" value={row.sessionId} />
 													<input type="hidden" name="studentId" value={row.studentId} />
@@ -584,7 +636,12 @@
 												<form
 													method="POST"
 													action="?/rejectDeletion"
-													use:enhance={pending.submit(`rejectDeletion:${row.id}`)}
+													use:enhance={pending.submit(`rejectDeletion:${row.id}`, {
+														confirm: confirmWith(
+															m.requests_deletion_reject_confirm({ name: row.studentName ?? '' }),
+															m.requests_reject()
+														)
+													})}
 												>
 													<input type="hidden" name="requestId" value={row.id} />
 													<input type="hidden" name="studentName" value={row.studentName ?? ''} />
@@ -686,17 +743,34 @@
 									</td>
 									<td>
 										<div class="actions" style="justify-content:flex-end;">
+											{#if !parent.emailConfirmedAt}
+												<form
+													method="POST"
+													action="?/resendParentConfirmation"
+													use:enhance={pending.submit(`resendParent:${parent.id}`)}
+												>
+													<input type="hidden" name="parentId" value={parent.id} />
+													<input type="hidden" name="parentName" value={parent.name} />
+													<ix-button
+														type="submit"
+														variant="secondary"
+														loading={pending.is(`resendParent:${parent.id}`) || undefined}
+														disabled={pending.busy || undefined}
+														>{m.requests_parent_resend()}</ix-button
+													>
+												</form>
+											{/if}
 											<form
 												method="POST"
 												action="?/approveParent"
-												use:enhance={pending.submit(`approveParent:${parent.id}`)}
+												use:enhance={submitApproveParent(parent)}
 											>
 												<input type="hidden" name="parentId" value={parent.id} />
 												<input type="hidden" name="parentName" value={parent.name} />
 												<ix-button
 													type="submit"
 													loading={pending.is(`approveParent:${parent.id}`) || undefined}
-													disabled={!parent.emailConfirmedAt || pending.busy || undefined}
+													disabled={pending.busy || undefined}
 												>
 													{m.requests_approve()}
 												</ix-button>
@@ -704,7 +778,14 @@
 											<form
 												method="POST"
 												action="?/rejectParent"
-												use:enhance={pending.submit(`rejectParent:${parent.id}`)}
+												use:enhance={pending.submit(`rejectParent:${parent.id}`, {
+													confirm: confirmWith(
+														parent.staffRole
+															? m.requests_parent_staff_reject_confirm({ name: parent.name })
+															: m.requests_parent_reject_confirm({ name: parent.name }),
+														m.requests_reject()
+													)
+												})}
 											>
 												<input type="hidden" name="parentId" value={parent.id} />
 												<input type="hidden" name="parentName" value={parent.name} />
@@ -760,7 +841,12 @@
 											<form
 												method="POST"
 												action="?/rejectParent"
-												use:enhance={pending.submit(`rejectParent:${parent.id}`)}
+												use:enhance={pending.submit(`rejectParent:${parent.id}`, {
+													confirm: confirmWith(
+														m.requests_parent_reject_confirm({ name: parent.name }),
+														m.requests_clear_rejected()
+													)
+												})}
 											>
 												<input type="hidden" name="parentId" value={parent.id} />
 												<input type="hidden" name="parentName" value={parent.name} />

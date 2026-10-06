@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { isoDay } from '$lib/format';
+	import { confirmWith } from '$lib/ix';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ContentLanguage } from '$lib/rich-text';
@@ -77,7 +78,12 @@
 					<form
 						method="POST"
 						action="?/markDone"
-						use:enhance={pending.submit(`done:${item.instanceId}`)}
+						use:enhance={pending.submit(`done:${item.instanceId}`, {
+							confirm: confirmWith(
+								m.student_homework_mark_done_confirm({ title: item.title }),
+								m.student_homework_mark_done()
+							)
+						})}
 					>
 						<input type="hidden" name="instanceId" value={item.instanceId} />
 						<ix-button

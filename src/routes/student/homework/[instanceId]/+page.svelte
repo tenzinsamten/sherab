@@ -8,7 +8,7 @@
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import RichText from '$lib/components/RichText.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
-	import { showToast } from '$lib/ix';
+	import { confirmWith, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import type { ActionData, PageProps } from './$types';
@@ -91,7 +91,16 @@
 			{:else}
 				<ix-pill variant="neutral">{m.student_homework_status_assigned()}</ix-pill>
 				{#if !data.archived}
-					<form method="POST" action="?/markDone" use:enhance={pending.submit('done')}>
+					<form
+						method="POST"
+						action="?/markDone"
+						use:enhance={pending.submit('done', {
+							confirm: confirmWith(
+								m.student_homework_mark_done_confirm({ title: data.item.title }),
+								m.student_homework_mark_done()
+							)
+						})}
+					>
 						<input type="hidden" name="instanceId" value={data.item.instanceId} />
 						<ix-button
 							type="submit"

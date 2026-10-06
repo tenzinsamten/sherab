@@ -248,3 +248,110 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		await fresh.close();
 	}
 });
+
+/** How many local mails `to` has received (Mailpit, `supabase start`). */
+async function mailCount(to: string): Promise<number> {
+	const res = await fetch(
+		`http://127.0.0.1:54324/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`
+	);
+	return ((await res.json()) as { messages?: unknown[] }).messages?.length ?? 0;
+}
+
+test('#90: the admin resends the confirmation mail and approves a parent whose email is unconfirmed', async ({
+	page,
+	browser
+}) => {
+	const email = `e2e-90-parent-${tag}@example.test`;
+	const password = crypto.randomUUID();
+	const { data, error } = await service.auth.admin.createUser({
+		email,
+		password,
+		email_confirm: false,
+		app_metadata: { role: 'parent' },
+		user_metadata: { display_name: `Unconfirmed ${tag}` }
+	});
+	if (error || !data.user) throw new Error(`create parent: ${error?.message}`);
+	userIds.push(data.user.id);
+	const parentId = data.user.id;
+	expect(await mailCount(email)).toBe(0);
+
+	await signIn(page, admin);
+	await page.goto('/requests');
+	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.waitForLoadState('networkidle');
+	const row = page.locator('tr', { hasText: email });
+	await expect(row).toContainText('Email not confirmed');
+
+	await row.getByRole('button', { name: 'Resend confirmation email' }).click();
+	await expect(
+		page.locator('ix-toast').getByText(/A new confirmation email was sent/)
+	).toBeVisible();
+	await expect.poll(() => mailCount(email)).toBe(1);
+
+	// Approve asks first; Cancel changes nothing.
+	const modal = page.locator('ix-modal');
+	await row.getByRole('button', { name: 'Approve' }).click();
+	await expect(modal).toContainText(email);
+	await modal.getByRole('button', { name: 'Cancel' }).click();
+	await expect(modal).toHaveCount(0);
+	const status = async () =>
+		(await service.from('parents').select('status').eq('id', parentId).single()).data?.status;
+	expect(await status()).toBe('pending');
+
+	await row.getByRole('button', { name: 'Approve' }).click();
+	await modal.getByRole('button', { name: 'Approve' }).click();
+	await expect(page.locator('ix-toast').getByText(/was approved as a parent/)).toBeVisible();
+	expect(await status()).toBe('approved');
+	const { data: profile } = await service
+		.from('profiles')
+		.select('email_confirmed_at')
+		.eq('id', parentId)
+		.single();
+	expect(profile?.email_confirmed_at).not.toBeNull();
+
+	// The parent signs in without ever opening a mail and is past both gates.
+	const fresh = await browser.newContext();
+	try {
+		const parentPage = await fresh.newPage();
+		await signIn(parentPage, { id: parentId, email, password });
+		await expect(parentPage).toHaveURL(/\/parent$/);
+		await expect(parentPage.getByText('Open the confirmation link we sent to')).toHaveCount(0);
+	} finally {
+		await fresh.close();
+	}
+});
+
+test('#91: rejecting a parent asks first; Cancel keeps the request', async ({ page }) => {
+	const email = `e2e-91-parent-${tag}@example.test`;
+	const { data, error } = await service.auth.admin.createUser({
+		email,
+		password: crypto.randomUUID(),
+		email_confirm: true,
+		app_metadata: { role: 'parent' },
+		user_metadata: { display_name: `Reject me ${tag}` }
+	});
+	if (error || !data.user) throw new Error(`create parent: ${error?.message}`);
+	const parentId = data.user.id;
+	userIds.push(parentId);
+
+	await signIn(page, admin);
+	await page.goto('/requests');
+	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.waitForLoadState('networkidle');
+	const row = page.locator('tr', { hasText: email });
+	const modal = page.locator('ix-modal');
+
+	await row.getByRole('button', { name: 'Reject' }).click();
+	await expect(modal).toContainText('Their account is deleted');
+	await modal.getByRole('button', { name: 'Cancel' }).click();
+	await expect(modal).toHaveCount(0);
+	const { data: kept } = await service.from('parents').select('status').eq('id', parentId).single();
+	expect(kept?.status).toBe('pending');
+
+	await row.getByRole('button', { name: 'Reject' }).click();
+	await modal.getByRole('button', { name: 'Reject' }).click();
+	await expect(page.locator('ix-toast').getByText(/was rejected/)).toBeVisible();
+	const { data: gone } = await service.auth.admin.getUserById(parentId);
+	expect(gone.user).toBeNull();
+	userIds.splice(userIds.indexOf(parentId), 1);
+});

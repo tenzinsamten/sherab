@@ -682,7 +682,16 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	await contentField.fill('Unsaved content');
 
 	await page.getByText('Student status', { exact: true }).first().click();
-	await page.getByRole('button', { name: `Mark done for ${students[2].name}` }).click();
+	// #91: marking done cannot be undone, so it asks first; Cancel posts nothing.
+	const markDone = page.getByRole('button', { name: `Mark done for ${students[2].name}` });
+	const modal = page.locator('ix-modal');
+	await markDone.click();
+	await expect(modal).toContainText(students[2].name);
+	await modal.getByRole('button', { name: 'Cancel' }).click();
+	await expect(modal).toHaveCount(0);
+	await expect(markDone).toHaveCount(1);
+	await markDone.click();
+	await modal.getByRole('button', { name: 'Mark done' }).click();
 	await expect(page.locator('ix-toast').getByText('Marked done.')).toBeVisible();
 	await expect(page.getByRole('button', { name: `Mark done for ${students[2].name}` })).toHaveCount(
 		0

@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { isoDay, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { confirmWith, showToast } from '$lib/ix';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
@@ -185,7 +185,16 @@
 
 			{#if assignment.isRecurring && !isSeriesInactive(assignment)}
 				<div style="display:flex; gap: var(--space-2); margin-top: var(--space-3);">
-					<form method="POST" action="?/pauseSeries" use:enhance={pending.submit('pause')}>
+					<form
+						method="POST"
+						action="?/pauseSeries"
+						use:enhance={pending.submit('pause', {
+							confirm: confirmWith(
+								m.homework_series_pause_confirm(),
+								m.homework_series_pause_action()
+							)
+						})}
+					>
 						<input type="hidden" name="assignmentId" value={assignment.id} />
 						<ix-button
 							variant="secondary"
@@ -194,7 +203,13 @@
 							disabled={pending.busy || undefined}>{m.homework_series_pause_action()}</ix-button
 						>
 					</form>
-					<form method="POST" action="?/endSeries" use:enhance={pending.submit('end')}>
+					<form
+						method="POST"
+						action="?/endSeries"
+						use:enhance={pending.submit('end', {
+							confirm: confirmWith(m.homework_series_end_confirm(), m.homework_series_end_action())
+						})}
+					>
 						<input type="hidden" name="assignmentId" value={assignment.id} />
 						<ix-button
 							variant="secondary"
@@ -278,7 +293,13 @@
 																	method="POST"
 																	action="?/markDone"
 																	use:enhance={pending.submit(
-																		`done:${instance.id}:${student.studentId}`
+																		`done:${instance.id}:${student.studentId}`,
+																		{
+																			confirm: confirmWith(
+																				m.homework_mark_done_confirm({ name: student.displayName }),
+																				m.homework_mark_done()
+																			)
+																		}
 																	)}
 																>
 																	<input type="hidden" name="instanceId" value={instance.id} />
@@ -301,7 +322,15 @@
 																	method="POST"
 																	action="?/markReviewed"
 																	use:enhance={pending.submit(
-																		`reviewed:${instance.id}:${student.studentId}`
+																		`reviewed:${instance.id}:${student.studentId}`,
+																		{
+																			confirm: confirmWith(
+																				m.homework_mark_reviewed_confirm({
+																					name: student.displayName
+																				}),
+																				m.homework_mark_reviewed()
+																			)
+																		}
 																	)}
 																>
 																	<input type="hidden" name="instanceId" value={instance.id} />
@@ -329,7 +358,12 @@
 										<form
 											method="POST"
 											action="?/archiveInstance"
-											use:enhance={pending.submit(`archive:${instance.id}`)}
+											use:enhance={pending.submit(`archive:${instance.id}`, {
+												confirm: confirmWith(
+													m.homework_archive_confirm({ date: isoDay(instance.dueDate) }),
+													m.homework_archive_action()
+												)
+											})}
 											style="margin-top: var(--space-3);"
 										>
 											<input type="hidden" name="instanceId" value={instance.id} />

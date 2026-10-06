@@ -1518,3 +1518,55 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   after a reset: 933 unit tests, `npm run check` and `npm run build` exit 0, Prettier passes.
   Browser tests were last run before the translation (`auth-fields` 14/14); not re-run after
   it. No migration.
+
+- 2026-10-06: #90, user asked for two admin options on the Requests page for a parent whose
+  confirmation mail is blocked or does not arrive; built on `main`, not committed.
+  (1) "Resend confirmation email" on a pending parent row whose email is unconfirmed (new
+  action `resendParentConfirmation`, admin only): the same sign-up mail as `/resend-confirmation`,
+  sent to the stored address. A failed send (one mail per address per minute) is shown to the
+  admin.
+  (2) Approve is no longer disabled for an unconfirmed email: it asks first, naming the address,
+  and only then approves (`withoutConfirmation` flag on `approveParent`). The action marks the
+  login's email confirmed through the service-role client (`email_confirm: true`) and then
+  approves through the admin's own client. Reason: an unconfirmed login cannot sign in, `/parent`
+  shows "Confirm your email" before anything else, and `parents_update_admin` (0023) refuses the
+  approval otherwise; so no migration, and the database rule is unchanged. Consequence: nobody
+  has proven they own that address; the question says so.
+  5 new keys (`requests_parent_resend`, `requests_parent_outcome_resent`,
+  `requests_parent_error_resend_*`, `requests_parent_approve_unconfirmed_confirm`) and a reworded
+  `requests_parent_error_unconfirmed`, in en, de and bo (Tibetan is the assistant's draft, not
+  reviewed). Verified after a reset: 942 unit tests, `npm run check` and `npm run build` exit 0;
+  Prettier and ESLint pass on the changed files (`npm run lint` fails on 196 other files, as
+  before). New browser test in `parent-access.e2e.ts` passes: a real unconfirmed parent, resend
+  (one mail arrives in Mailpit), cancel leaves it pending, approve, then the parent signs in and
+  lands on `/parent` past the confirmation notice. Not verified: on `sherab.app`; the row's three
+  buttons at phone width; the full browser suite. Found on the way: `parent-access.e2e.ts`
+  "B14b" fails at line 204 ("Temporary password" is visible) also without these changes, after a
+  reset; not looked into.
+
+- 2026-10-06: #91, user asked whether every action that can be pressed by mistake asks first.
+  Audit: 11 dialogs existed (all via `confirmAction`), among them the parent's deletion request,
+  its approval and #90's approve-without-confirmation; these one-press actions that cannot be
+  undone had none. User chose "only actions that can't be undone"; built on `main` on top of
+  #90, not committed. Now ask first, naming the person or item:
+  `/requests`: reject parent (both buttons; a staff request gets its own text), reject student
+  registration, clear rejected registration, approve / reject sick leave, reject deletion
+  request. Teacher homework page: mark done, mark reviewed, archive, pause series, end series.
+  Student homework (list and detail): mark done.
+  How: `createPending().submit()` takes an optional `confirm`; `confirmWith(message, okay)` in
+  `src/lib/ix.ts` supplies it. No server or database change. 13 new `*_confirm` keys in en, de
+  and bo (Tibetan is the assistant's draft, not reviewed).
+  Deliberately without a dialog, because pressing again or editing corrects them: attendance,
+  skill status, cancel / restore one session, schedule and session edits, teacher class
+  assignment, rename and create forms, resend confirmation mail, a student's join request and
+  its dismissal, requesting parent access, student registration approval (needs a team first).
+  That list was classified from the page markup, not by testing each one.
+  Verified after a reset: 947 unit tests (5 new for the `confirm` option), `npm run check` and
+  `npm run build` exit 0; Prettier and ESLint pass on the changed files. Full browser suite after
+  another reset: 78 passed, 4 skipped, 1 failed ("B14b", which also fails without these changes)
+  and 2 not run because of it; those two (#90 and the new #91 reject-parent test: Cancel keeps
+  the request, confirming deletes the login) pass when run on their own. `teacher.e2e.ts` now
+  cancels and then confirms "Mark done". Dialog seen at 390 px width: text wraps, both buttons
+  visible. Not exercised in a browser: the sick-leave, deletion-reject, clear-rejected, archive,
+  pause / end series, mark-reviewed and student mark-done dialogs (same helper, no test presses
+  them). Not verified on `sherab.app`.

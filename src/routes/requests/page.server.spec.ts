@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deleteUser = vi.fn();
+const updateUserById = vi.fn();
+const resend = vi.fn();
 const getCapabilities = vi.fn();
 const updateAuthUserEmailAndPassword = vi.fn();
 vi.mock('$lib/supabase/admin', () => {
 	// The approve action's username scan: no student logins exist yet.
 	const scan = { select: () => scan, ilike: () => Promise.resolve({ data: [], error: null }) };
 	return {
-		createSupabaseAdminClient: () => ({ auth: { admin: { deleteUser } }, from: () => scan }),
+		createSupabaseAdminClient: () => ({
+			auth: { admin: { deleteUser, updateUserById } },
+			from: () => scan
+		}),
 		updateAuthUserEmailAndPassword: (...args: unknown[]) => updateAuthUserEmailAndPassword(...args)
 	};
 });
@@ -29,6 +34,7 @@ function fakeSupabase(queues: Record<string, Result[]>) {
 	const updates: { table: string; values: unknown }[] = [];
 	const cursors: Record<string, number> = {};
 	const supabase = {
+		auth: { resend },
 		from: (table: string) => {
 			const next = () => {
 				const queue = queues[table] ?? [{ data: null, error: null }];
@@ -53,18 +59,20 @@ function fakeSupabase(queues: Record<string, Result[]>) {
 	return { supabase, updates };
 }
 
-function event(queues: Record<string, Result[]>) {
+function event(queues: Record<string, Result[]>, fields: Record<string, string> = {}) {
 	const body = new FormData();
 	body.set('parentId', 'p1');
 	body.set('parentName', 'Dolma');
+	for (const [name, value] of Object.entries(fields)) body.set(name, value);
 	const { supabase, updates } = fakeSupabase(queues);
 	const e = {
 		request: new Request('https://app.test/requests', { method: 'POST', body }),
+		url: new URL('https://app.test/requests'),
 		locals: {
 			supabase,
 			safeGetSession: async () => ({ session: {}, user: { id: 'admin1' } })
 		}
-	} as unknown as Parameters<typeof actions.rejectParent>[0];
+	} as unknown as Parameters<typeof actions.resendParentConfirmation>[0];
 	return { e, updates };
 }
 
@@ -171,24 +179,28 @@ describe('rejectParent', () => {
 	});
 });
 
+const parentRow = (emailConfirmedAt: string | null) =>
+	ok({
+		id: 'p1',
+		status: 'pending',
+		created_at: '2026-01-01T00:00:00Z',
+		reviewed_at: null,
+		profiles: {
+			display_name: 'Dolma',
+			email: 'd@example.com',
+			email_confirmed_at: emailConfirmedAt
+		}
+	});
+
 describe('approveParent', () => {
 	beforeEach(() => {
 		getCapabilities.mockReset();
 		getCapabilities.mockResolvedValue({ role: 'admin', parentStatus: null });
+		updateUserById.mockReset();
+		updateUserById.mockResolvedValue({ data: {}, error: null });
 	});
 
-	const row = (emailConfirmedAt: string | null) =>
-		ok({
-			id: 'p1',
-			status: 'pending',
-			created_at: '2026-01-01T00:00:00Z',
-			reviewed_at: null,
-			profiles: {
-				display_name: 'Dolma',
-				email: 'd@example.com',
-				email_confirmed_at: emailConfirmedAt
-			}
-		});
+	const row = parentRow;
 
 	it('refuses a non-admin with 403', async () => {
 		getCapabilities.mockResolvedValue({ role: 'teacher', parentStatus: null });
@@ -201,6 +213,43 @@ describe('approveParent', () => {
 		const { e, updates } = event({ parents: [row(null)] });
 		expect(await actions.approveParent(e)).toMatchObject({ status: 400 });
 		expect(updates).toEqual([]);
+		expect(updateUserById).not.toHaveBeenCalled();
+	});
+
+	it('#90: approves an unconfirmed parent when asked to, confirming the email first', async () => {
+		const { e, updates } = event(
+			{ parents: [row(null), ok({ id: 'p1' })] },
+			{ withoutConfirmation: '1' }
+		);
+		expect(await actions.approveParent(e)).toMatchObject({
+			success: true,
+			action: 'parentApproved'
+		});
+		expect(updateUserById).toHaveBeenCalledWith('p1', { email_confirm: true });
+		expect(updates).toEqual([{ table: 'parents', values: { status: 'approved' } }]);
+	});
+
+	it('#90: does not approve when confirming the email fails', async () => {
+		updateUserById.mockResolvedValue({ data: null, error: { message: 'boom' } });
+		const { e, updates } = event({ parents: [row(null)] }, { withoutConfirmation: '1' });
+		expect(await actions.approveParent(e)).toMatchObject({ status: 400 });
+		expect(updates).toEqual([]);
+	});
+
+	it('#90: a non-admin cannot confirm an email through the flag', async () => {
+		getCapabilities.mockResolvedValue({ role: 'teacher', parentStatus: null });
+		const { e } = event({ parents: [row(null)] }, { withoutConfirmation: '1' });
+		expect(await actions.approveParent(e)).toMatchObject({ status: 403 });
+		expect(updateUserById).not.toHaveBeenCalled();
+	});
+
+	it('#90: leaves a confirmed email alone', async () => {
+		const { e } = event(
+			{ parents: [row('2026-01-02T00:00:00Z'), ok({ id: 'p1' })] },
+			{ withoutConfirmation: '1' }
+		);
+		expect(await actions.approveParent(e)).toMatchObject({ success: true });
+		expect(updateUserById).not.toHaveBeenCalled();
 	});
 
 	it('approves a confirmed parent', async () => {
@@ -210,6 +259,60 @@ describe('approveParent', () => {
 			action: 'parentApproved'
 		});
 		expect(updates).toEqual([{ table: 'parents', values: { status: 'approved' } }]);
+	});
+});
+
+describe('resendParentConfirmation (#90)', () => {
+	beforeEach(() => {
+		getCapabilities.mockReset();
+		getCapabilities.mockResolvedValue({ role: 'admin', parentStatus: null });
+		resend.mockReset();
+		resend.mockResolvedValue({ data: {}, error: null });
+	});
+
+	it('refuses a non-admin with 403', async () => {
+		getCapabilities.mockResolvedValue({ role: 'teacher', parentStatus: null });
+		const { e } = event({ parents: [parentRow(null)] });
+		expect(await actions.resendParentConfirmation(e)).toMatchObject({ status: 403 });
+		expect(resend).not.toHaveBeenCalled();
+	});
+
+	it('refuses a request that is no longer pending', async () => {
+		const { e } = event({ parents: [ok(null)] });
+		expect(await actions.resendParentConfirmation(e)).toMatchObject({ status: 400 });
+		expect(resend).not.toHaveBeenCalled();
+	});
+
+	it('sends nothing for a confirmed email', async () => {
+		const { e } = event({ parents: [parentRow('2026-01-02T00:00:00Z')] });
+		expect(await actions.resendParentConfirmation(e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_parent_error_resend_confirmed() }
+		});
+		expect(resend).not.toHaveBeenCalled();
+	});
+
+	it("sends the sign-up mail to the parent's stored email", async () => {
+		const { e } = event({ parents: [parentRow(null)] });
+		expect(await actions.resendParentConfirmation(e)).toMatchObject({
+			success: true,
+			action: 'parentConfirmationResent',
+			parentName: 'Dolma'
+		});
+		expect(resend).toHaveBeenCalledWith({
+			type: 'signup',
+			email: 'd@example.com',
+			options: { emailRedirectTo: 'https://app.test/auth/confirm?flow=signup' }
+		});
+	});
+
+	it('reports a failed send', async () => {
+		resend.mockResolvedValue({ data: null, error: { message: 'rate limit' } });
+		const { e } = event({ parents: [parentRow(null)] });
+		expect(await actions.resendParentConfirmation(e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_parent_error_resend_failed() }
+		});
 	});
 });
 
