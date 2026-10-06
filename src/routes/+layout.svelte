@@ -23,6 +23,7 @@
 	import HelpGuide from '$lib/components/HelpGuide.svelte';
 	import { HELP_ROLES, helpRoleFor, helpTabLabels } from '$lib/help';
 	import { rememberMenuExpand } from '$lib/menu';
+	import { releasePush, syncPush } from '$lib/push-client';
 	import { roleHome } from '$lib/role-home';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
 	import logoWhite from '$lib/assets/sherab-logo-white.svg';
@@ -71,6 +72,23 @@
 	// approved parent. Access itself never depends on it.
 	let role = $derived(data.activeRole ?? data.profile?.role);
 	let homeHref = $derived(resolve(roleHome(role) ?? '/'));
+
+	// #92: a browser subscribed to homework notifications belongs to whoever
+	// is signed in. Runs on load and again when another account signs in
+	// without a full page load; a signed-out browser is left alone.
+	let pushOwner = '';
+	$effect(() => {
+		const userId = data.session?.user.id ?? '';
+		if (userId === pushOwner) return;
+		pushOwner = userId;
+		if (userId) void syncPush();
+	});
+
+	// The account stops receiving on this browser, then signs out.
+	async function signOut() {
+		await releasePush();
+		signOutForm?.requestSubmit();
+	}
 
 	let signOutForm: HTMLFormElement | undefined = $state();
 	let roleForm: HTMLFormElement | undefined = $state();
@@ -253,10 +271,7 @@
 					label={m.nav_account()}
 					onclick={() => void goto(resolve('/account'))}
 				></ix-dropdown-item>
-				<ix-dropdown-item
-					icon="log-out"
-					label={m.nav_sign_out()}
-					onclick={() => signOutForm?.requestSubmit()}
+				<ix-dropdown-item icon="log-out" label={m.nav_sign_out()} onclick={() => void signOut()}
 				></ix-dropdown-item>
 			</ix-avatar>
 		</ix-application-header>

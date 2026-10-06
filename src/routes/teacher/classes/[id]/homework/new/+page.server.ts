@@ -9,6 +9,7 @@ import {
 	parseNonNegativeInt,
 	parseReferenceLinks
 } from '$lib/server/homework-details';
+import { announceHomework } from '$lib/server/push';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { SkillArea } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -44,7 +45,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 };
 
 export const actions: Actions = {
-	createAssignment: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+	createAssignment: async ({ request, params, platform, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {
 			return fail(401, { error: m.homework_error_not_signed_in() });
@@ -268,6 +269,13 @@ export const actions: Actions = {
 				action: 'createAssignment' as const
 			});
 		}
+
+		// #92: tell the students and their parents. Sent from a request of its
+		// own (started by the database), so it neither delays nor can fail this
+		// one.
+		const announced = announceHomework(instance.id);
+		if (platform?.ctx) platform.ctx.waitUntil(announced);
+		else await announced;
 
 		const created = targetIds.length - failedStudentIds.length;
 		const failed = failedStudentIds.length > 0 ? `&failed=${failedStudentIds.length}` : '';

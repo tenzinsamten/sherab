@@ -46,7 +46,8 @@ export const helpGuides: Record<HelpRole, HelpEntry[]> = {
 		{ title: m.help_parent_5_title, body: m.help_parent_5_body, image: 'parent-5' },
 		{ title: m.help_parent_6_title, body: m.help_parent_6_body, image: 'parent-6' },
 		{ title: m.help_parent_7_title, body: m.help_parent_7_body, image: 'parent-7' },
-		{ title: m.help_parent_8_title, body: m.help_parent_8_body, image: 'parent-8' }
+		{ title: m.help_parent_8_title, body: m.help_parent_8_body, image: 'parent-8' },
+		{ title: m.help_parent_9_title, body: m.help_parent_9_body }
 	],
 	teacher: [
 		{ title: m.help_teacher_1_title, body: m.help_teacher_1_body, image: 'teacher-1' },
@@ -68,7 +69,8 @@ export const helpGuides: Record<HelpRole, HelpEntry[]> = {
 		{ title: m.help_student_5_title, body: m.help_student_5_body, image: 'student-5' },
 		{ title: m.help_student_6_title, body: m.help_student_6_body, image: 'student-6' },
 		{ title: m.help_student_7_title, body: m.help_student_7_body, image: 'student-7' },
-		{ title: m.help_student_8_title, body: m.help_student_8_body, image: 'student-8' }
+		{ title: m.help_student_8_title, body: m.help_student_8_body, image: 'student-8' },
+		{ title: m.help_student_9_title, body: m.help_student_9_body }
 	]
 };
 

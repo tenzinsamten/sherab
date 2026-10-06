@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
+	import { disablePush, enablePush, pushState, type PushState } from '$lib/push-client';
 	import { ixValue } from '$lib/ix-fields';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import type { ActionData, PageProps } from './$types';
@@ -18,6 +20,35 @@
 		if (form.action === 'changePassword') showToast('success', m.account_password_success());
 		if (form.action === 'requestParentAccess') showToast('success', m.account_parent_requested());
 	});
+
+	// #92: homework notifications. The switch belongs to this browser (its
+	// permission and subscription), so its state is read here, not loaded.
+	let push = $state<PushState | null>(null);
+	let pushBusy = $state(false);
+
+	onMount(async () => {
+		if (data.pushKey) push = await pushState();
+	});
+
+	async function togglePush() {
+		if (!data.pushKey || pushBusy) return;
+		pushBusy = true;
+		try {
+			if (push === 'on') {
+				push = await disablePush();
+				showToast('success', m.account_push_disabled());
+			} else {
+				// 'denied' or still 'off' (the question was dismissed) say so below.
+				push = await enablePush(data.pushKey);
+				if (push === 'on') showToast('success', m.account_push_enabled());
+			}
+		} catch {
+			showToast('error', m.account_push_error());
+			push = await pushState().catch(() => push);
+		} finally {
+			pushBusy = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -123,6 +154,36 @@
 					disabled={pending.busy || undefined}>{m.account_password_submit()}</ix-button
 				>
 			</form>
+		</section>
+	{/if}
+	<!-- #92: students and approved parents, once the feature is set up. -->
+	{#if data.pushKey}
+		<section class="card" aria-labelledby="push-heading">
+			<h2 id="push-heading">{m.account_push_heading()}</h2>
+			<p class="muted">
+				{data.role === 'student' ? m.account_push_intro_student() : m.account_push_intro_parent()}
+			</p>
+			{#if push === 'needs-install'}
+				<p>{m.account_push_needs_install()}</p>
+			{:else if push === 'unsupported'}
+				<p>{m.account_push_unsupported()}</p>
+			{:else if push === 'denied'}
+				<p>{m.account_push_denied()}</p>
+			{:else if push}
+				{#if push === 'on'}
+					<p><ix-pill variant="success">{m.account_push_status_on()}</ix-pill></p>
+				{/if}
+				<ix-button
+					type="button"
+					data-push-toggle={push}
+					variant={push === 'on' ? 'secondary' : undefined}
+					loading={pushBusy || undefined}
+					disabled={pushBusy || pending.busy || undefined}
+					onclick={() => void togglePush()}
+					>{push === 'on' ? m.account_push_disable() : m.account_push_enable()}</ix-button
+				>
+				<p class="muted field-note">{m.account_push_device_note()}</p>
+			{/if}
 		</section>
 	{/if}
 	<!-- B14a (#68): staff only. Parent shows in the role switcher once approved. -->

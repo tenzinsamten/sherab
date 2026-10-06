@@ -47,7 +47,12 @@ export default defineConfig({
 			// which this app doesn't have.
 			// #87: the /help screenshots are fetched when the page is read, not
 			// downloaded with the app.
-			workbox: { navigateFallback: null, globIgnores: ['**/help/**'] },
+			// #92: static/push-sw.js adds the push handlers to the generated worker.
+			workbox: {
+				navigateFallback: null,
+				globIgnores: ['**/help/**'],
+				importScripts: ['push-sw.js']
+			},
 			manifest: {
 				name: 'Sherab',
 				short_name: 'Sherab',

@@ -3,6 +3,10 @@ import * as m from '$lib/paraglide/messages.js';
 import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
 import { actions, load } from './+page.server';
 
+// #92: the key is null while push notifications are not set up.
+const push = vi.hoisted(() => ({ key: null as string | null }));
+vi.mock('$lib/server/push', () => ({ pushPublicKey: () => push.key }));
+
 /**
  * /account (#23, #44, #46). `load` reads the layout's profile via
  * `parent()`; the actions go through a mocked `locals.supabase` chain, one
@@ -94,6 +98,54 @@ describe('account load', () => {
 
 	it('refuses a session without a profile', async () => {
 		await expect(runLoad(null)).rejects.toMatchObject({ status: 403 });
+	});
+
+	describe('push key (#92)', () => {
+		const withKey = async (
+			profile: Record<string, unknown>,
+			parentStatus: string | null = null
+		) => {
+			push.key = 'vapid-public-key';
+			try {
+				return await runLoad(
+					{ id: 'u1', display_name: 'Dolma', email: 'dolma@example.com', ...profile },
+					{ data: parentStatus ? { status: parentStatus } : null, error: null }
+				);
+			} finally {
+				push.key = null;
+			}
+		};
+
+		it('goes to an approved student', async () => {
+			expect(await withKey({ role: 'student', status: 'approved' })).toMatchObject({
+				pushKey: 'vapid-public-key'
+			});
+		});
+
+		it('goes to an approved parent, and to staff who are approved parents', async () => {
+			for (const role of ['parent', 'teacher', 'admin']) {
+				expect(await withKey({ role }, 'approved')).toMatchObject({
+					pushKey: 'vapid-public-key'
+				});
+			}
+		});
+
+		it.each([
+			['a pending student', { role: 'student', status: 'pending' }, null],
+			['a pending parent', { role: 'parent' }, 'pending'],
+			['a teacher who is no parent', { role: 'teacher' }, null],
+			['an admin whose parent access was rejected', { role: 'admin' }, 'rejected']
+		])('does not go to %s', async (_label, profile, parentStatus) => {
+			const result = (await withKey(profile, parentStatus)) as { pushKey?: string };
+			expect(result.pushKey).toBeUndefined();
+		});
+
+		it('goes to nobody while the feature is not set up', async () => {
+			const result = (await runLoad({ id: 'u1', role: 'student', status: 'approved' })) as {
+				pushKey?: string;
+			};
+			expect(result.pushKey).toBeUndefined();
+		});
 	});
 });
 

@@ -752,6 +752,93 @@ export type Database = {
 					}
 				];
 			};
+			push_notification_log: {
+				Row: {
+					instance_id: string;
+					kind: 'added' | 'due_soon' | 'overdue';
+					recipient_id: string;
+					sent_at: string;
+					student_id: string;
+				};
+				Insert: {
+					instance_id: string;
+					kind: 'added' | 'due_soon' | 'overdue';
+					recipient_id: string;
+					sent_at?: string;
+					student_id: string;
+				};
+				Update: {
+					instance_id?: string;
+					kind?: 'added' | 'due_soon' | 'overdue';
+					recipient_id?: string;
+					sent_at?: string;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'push_notification_log_instance_id_fkey';
+						columns: ['instance_id'];
+						isOneToOne: false;
+						referencedRelation: 'homework_instances';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'push_notification_log_recipient_id_fkey';
+						columns: ['recipient_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'push_notification_log_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
+			push_subscriptions: {
+				Row: {
+					auth: string;
+					created_at: string;
+					endpoint: string;
+					id: string;
+					locale: 'en' | 'de' | 'bo';
+					p256dh: string;
+					profile_id: string;
+					updated_at: string;
+				};
+				Insert: {
+					auth: string;
+					created_at?: string;
+					endpoint: string;
+					id?: string;
+					locale: 'en' | 'de' | 'bo';
+					p256dh: string;
+					profile_id: string;
+					updated_at?: string;
+				};
+				Update: {
+					auth?: string;
+					created_at?: string;
+					endpoint?: string;
+					id?: string;
+					locale?: 'en' | 'de' | 'bo';
+					p256dh?: string;
+					profile_id?: string;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'push_subscriptions_profile_id_fkey';
+						columns: ['profile_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			profiles: {
 				Row: {
 					class_id: string | null;
@@ -1196,6 +1283,32 @@ export type Database = {
 			homework_counts: {
 				Args: { p_student_id: string };
 				Returns: { open_count: number; overdue_count: number }[];
+			};
+			save_push_subscription: {
+				Args: { p_endpoint: string; p_p256dh: string; p_auth: string; p_locale: string };
+				Returns: undefined;
+			};
+			delete_push_subscription: {
+				Args: { p_endpoint: string };
+				Returns: undefined;
+			};
+			homework_push_targets: {
+				Args: { p_kind: string; p_instance_id?: string };
+				Returns: {
+					recipient_id: string;
+					student_id: string;
+					student_name: string | null;
+					instance_id: string;
+					title: string;
+					class_name: string;
+					class_name_bo: string | null;
+					class_name_de: string | null;
+					due_date: string;
+				}[];
+			};
+			trigger_homework_push: {
+				Args: { p_kind?: string; p_instance_id?: string; p_depth?: number };
+				Returns: number | null;
 			};
 			session_starts_at: {
 				Args: { p_class_session_id: string };

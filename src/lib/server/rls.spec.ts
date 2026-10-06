@@ -12075,3 +12075,363 @@ describe.skipIf(!reachable)('#76 localized class and team names (requires local 
 		});
 	});
 });
+
+/**
+ * #92: homework push notifications (migration 0037). Subscriptions are
+ * written as the real caller; homework fixtures and the targets function
+ * use the service role, as the app's sender does. The database holds other
+ * tests' homework too, so every targets assertion looks only at this
+ * block's own instances.
+ */
+describe.skipIf(!reachable)('#92 push notifications (requires local Supabase)', () => {
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classId: string;
+	let teamId: string;
+
+	const today = todayInBerlin();
+	const addDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	const name = (label: string) => `92 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	const endpoint = () => `https://fcm.googleapis.com/fcm/send/${crypto.randomUUID()}`;
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		const { data: cls, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: name('Class'),
+				name_de: name('Klasse'),
+				code: `N${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+			})
+			.select('id')
+			.single();
+		if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+		classId = cls.id;
+		await adminClient.from('class_teachers').insert({ class_id: classId, teacher_id: teacher.id });
+
+		const { data: team, error: teamError } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** An approved (and so enrolled) child of `parentEmail`. */
+	async function child(parentEmail: string) {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: name('Kid'),
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId, display_name: name('Kid') })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return signIn(data.user!.email!, password);
+	}
+
+	/** A parent and one child, each signed in. */
+	async function family() {
+		const parent = await createApprovedParent();
+		const studentId = await child(parent.email);
+		return {
+			parentId: parent.id,
+			studentId,
+			parentClient: await signIn(parent.email, parent.password),
+			studentClient: await signInStudent(studentId)
+		};
+	}
+
+	function subscribe(client: ReturnType<typeof anonClient>, url = endpoint(), locale = 'en') {
+		return client.rpc('save_push_subscription', {
+			p_endpoint: url,
+			p_p256dh: 'B'.repeat(87),
+			p_auth: 'a'.repeat(22),
+			p_locale: locale
+		});
+	}
+
+	async function setStatus(instanceId: string, studentIds: string[], status: 'assigned' | 'done') {
+		const { error } = await adminClient.from('homework_status_history').insert(
+			studentIds.map((student_id) => ({
+				instance_id: instanceId,
+				class_id: classId,
+				student_id,
+				status,
+				recorded_by: teacher.id
+			}))
+		);
+		if (error) throw new Error(`Failed to set homework status: ${error.message}`);
+	}
+
+	/** One homework instance due on `dueDate`, assigned to `targets`. */
+	async function homework(dueDate: string, targets: string[], archived = false) {
+		const title = name('Homework');
+		const { data: assignment, error: assignmentError } = await adminClient
+			.from('homework_assignments')
+			.insert({ class_id: classId, title, skill_area: 'language', created_by: teacher.id })
+			.select('id')
+			.single();
+		if (assignmentError || !assignment)
+			throw new Error(`Failed to create assignment: ${assignmentError?.message}`);
+		const { data: instance, error: instanceError } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment.id,
+				class_id: classId,
+				period_start: dueDate,
+				due_date: dueDate,
+				...(archived ? { archived_at: new Date().toISOString() } : {})
+			})
+			.select('id')
+			.single();
+		if (instanceError || !instance)
+			throw new Error(`Failed to create instance: ${instanceError?.message}`);
+		await setStatus(instance.id, targets, 'assigned');
+		return { id: instance.id, title };
+	}
+
+	/** The targets of `kind` among `instanceIds`, as [instance, student, recipient]. */
+	async function targets(kind: string, instanceIds: string[], instanceId?: string) {
+		const { data, error } = await adminClient.rpc('homework_push_targets', {
+			p_kind: kind,
+			p_instance_id: instanceId
+		});
+		if (error) throw new Error(`homework_push_targets failed: ${error.message}`);
+		return (data ?? [])
+			.filter((row) => instanceIds.includes(row.instance_id))
+			.map((row) => [row.instance_id, row.student_id, row.recipient_id].join(' '))
+			.sort();
+	}
+	const row = (...ids: string[]) => ids.join(' ');
+
+	it('a student and an approved parent can save a subscription; a teacher and a signed-out visitor cannot', async () => {
+		const { parentId, studentId, parentClient, studentClient } = await family();
+		const studentUrl = endpoint();
+		const parentUrl = endpoint();
+
+		expect((await subscribe(studentClient, studentUrl, 'bo')).error).toBeNull();
+		expect((await subscribe(parentClient, parentUrl, 'de')).error).toBeNull();
+		expect((await subscribe(teacher.client)).error?.code).toBe('42501');
+		expect((await subscribe(anonClient())).error).not.toBeNull();
+
+		const { data: rows } = await adminClient
+			.from('push_subscriptions')
+			.select('profile_id, endpoint, locale')
+			.in('endpoint', [studentUrl, parentUrl]);
+		expect((rows ?? []).sort((a, b) => a.locale.localeCompare(b.locale))).toEqual([
+			{ profile_id: studentId, endpoint: studentUrl, locale: 'bo' },
+			{ profile_id: parentId, endpoint: parentUrl, locale: 'de' }
+		]);
+	});
+
+	it('refuses an endpoint that is not https and a language the app does not have', async () => {
+		const { studentClient } = await family();
+		expect((await subscribe(studentClient, 'http://fcm.googleapis.com/x')).error?.code).toBe(
+			'23514'
+		);
+		expect((await subscribe(studentClient, endpoint(), 'fr')).error?.code).toBe('23514');
+	});
+
+	it('an endpoint saved again moves to the caller: a shared phone follows who is signed in', async () => {
+		const { parentId, studentId, parentClient, studentClient } = await family();
+		const shared = endpoint();
+		const owner = async () =>
+			(await adminClient.from('push_subscriptions').select('profile_id').eq('endpoint', shared))
+				.data;
+
+		expect((await subscribe(parentClient, shared)).error).toBeNull();
+		expect(await owner()).toEqual([{ profile_id: parentId }]);
+		expect((await subscribe(studentClient, shared)).error).toBeNull();
+		expect(await owner()).toEqual([{ profile_id: studentId }]);
+	});
+
+	it("delete removes the caller's own subscription and leaves another account's alone", async () => {
+		const { parentClient, studentClient } = await family();
+		const url = endpoint();
+		await subscribe(studentClient, url);
+		const count = async () =>
+			(await adminClient.from('push_subscriptions').select('id').eq('endpoint', url)).data?.length;
+
+		expect(
+			(await parentClient.rpc('delete_push_subscription', { p_endpoint: url })).error
+		).toBeNull();
+		expect(await count()).toBe(1);
+		expect(
+			(await studentClient.rpc('delete_push_subscription', { p_endpoint: url })).error
+		).toBeNull();
+		expect(await count()).toBe(0);
+	});
+
+	it('no signed-in user can read the tables or call the sender functions', async () => {
+		const { studentClient, parentClient } = await family();
+		await subscribe(studentClient);
+
+		for (const client of [studentClient, parentClient, teacher.client]) {
+			const subscriptions = await client.from('push_subscriptions').select('id');
+			expect(subscriptions.data ?? []).toEqual([]);
+			expect(subscriptions.error).not.toBeNull();
+			const log = await client.from('push_notification_log').select('kind');
+			expect(log.data ?? []).toEqual([]);
+			expect(log.error).not.toBeNull();
+			expect(
+				(await client.rpc('homework_push_targets', { p_kind: 'due_soon' })).error
+			).not.toBeNull();
+			expect((await client.rpc('trigger_homework_push', {})).error).not.toBeNull();
+		}
+	});
+
+	it('added: the students of that homework and their parents, only those with a subscription', async () => {
+		const a = await family();
+		const b = await family();
+		await subscribe(a.studentClient);
+		await subscribe(a.parentClient);
+		// Family B: only the parent has a subscription.
+		await subscribe(b.parentClient);
+		const hw = await homework(addDays(today, 3), [a.studentId, b.studentId]);
+		const other = await homework(addDays(today, 3), [a.studentId]);
+
+		expect(await targets('added', [hw.id, other.id], hw.id)).toEqual(
+			[
+				row(hw.id, a.studentId, a.studentId),
+				row(hw.id, a.studentId, a.parentId),
+				row(hw.id, b.studentId, b.parentId)
+			].sort()
+		);
+		// Without an instance there is nothing to announce.
+		expect(await targets('added', [hw.id, other.id])).toEqual([]);
+	});
+
+	it('added: the row carries what the notice shows', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		const hw = await homework(addDays(today, 2), [a.studentId]);
+
+		const { data } = await adminClient.rpc('homework_push_targets', {
+			p_kind: 'added',
+			p_instance_id: hw.id
+		});
+		expect(data).toEqual([
+			{
+				recipient_id: a.studentId,
+				student_id: a.studentId,
+				student_name: expect.stringContaining('92 Kid'),
+				instance_id: hw.id,
+				title: hw.title,
+				class_name: expect.stringContaining('92 Class'),
+				class_name_bo: null,
+				class_name_de: expect.stringContaining('92 Klasse'),
+				due_date: addDays(today, 2)
+			}
+		]);
+	});
+
+	it('due soon: open homework due from today to today + 6, to the student and the parent', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		await subscribe(a.parentClient);
+		const dueToday = await homework(today, [a.studentId]);
+		const dueLast = await homework(addDays(today, 6), [a.studentId]);
+		const tooLate = await homework(addDays(today, 7), [a.studentId]);
+		const overdue = await homework(addDays(today, -1), [a.studentId]);
+		const done = await homework(addDays(today, 2), [a.studentId]);
+		await setStatus(done.id, [a.studentId], 'done');
+		const archived = await homework(addDays(today, 2), [a.studentId], true);
+		const all = [dueToday, dueLast, tooLate, overdue, done, archived].map((hw) => hw.id);
+
+		expect(await targets('due_soon', all)).toEqual(
+			[
+				row(dueToday.id, a.studentId, a.studentId),
+				row(dueToday.id, a.studentId, a.parentId),
+				row(dueLast.id, a.studentId, a.studentId),
+				row(dueLast.id, a.studentId, a.parentId)
+			].sort()
+		);
+	});
+
+	it('overdue: open homework due in the last 7 days, to the parent only', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		await subscribe(a.parentClient);
+		const yesterday = await homework(addDays(today, -1), [a.studentId]);
+		const weekAgo = await homework(addDays(today, -7), [a.studentId]);
+		const tooOld = await homework(addDays(today, -8), [a.studentId]);
+		const dueToday = await homework(today, [a.studentId]);
+		const done = await homework(addDays(today, -2), [a.studentId]);
+		await setStatus(done.id, [a.studentId], 'done');
+		const all = [yesterday, weekAgo, tooOld, dueToday, done].map((hw) => hw.id);
+
+		expect(await targets('overdue', all)).toEqual(
+			[row(yesterday.id, a.studentId, a.parentId), row(weekAgo.id, a.studentId, a.parentId)].sort()
+		);
+	});
+
+	it('a student who left the class is owed nothing', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		await subscribe(a.parentClient);
+		const hw = await homework(addDays(today, 1), [a.studentId]);
+		expect(await targets('due_soon', [hw.id])).toHaveLength(2);
+
+		const { error } = await adminClient
+			.from('class_enrollments')
+			.delete()
+			.eq('student_id', a.studentId)
+			.eq('class_id', classId);
+		expect(error).toBeNull();
+		expect(await targets('due_soon', [hw.id])).toEqual([]);
+	});
+
+	it('a logged notice is not owed again, per kind and recipient', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		await subscribe(a.parentClient);
+		const hw = await homework(addDays(today, 1), [a.studentId]);
+
+		const { error } = await adminClient.from('push_notification_log').insert({
+			kind: 'due_soon',
+			instance_id: hw.id,
+			student_id: a.studentId,
+			recipient_id: a.studentId
+		});
+		expect(error).toBeNull();
+
+		// The parent is still owed Due soon, and "added" is a different notice.
+		expect(await targets('due_soon', [hw.id])).toEqual([row(hw.id, a.studentId, a.parentId)]);
+		expect(await targets('added', [hw.id], hw.id)).toHaveLength(2);
+	});
+
+	it('an unknown kind is owed to nobody', async () => {
+		const a = await family();
+		await subscribe(a.studentClient);
+		const hw = await homework(addDays(today, 1), [a.studentId]);
+		expect(await targets('weekly', [hw.id], hw.id)).toEqual([]);
+	});
+
+	it('the job function runs for the service role', async () => {
+		// Without the Vault secrets (the default here) it sends nothing and
+		// returns NULL; with them it returns the request id.
+		const { error } = await adminClient.rpc('trigger_homework_push', {});
+		expect(error).toBeNull();
+	});
+});

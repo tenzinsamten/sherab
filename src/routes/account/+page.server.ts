@@ -2,8 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import * as m from '$lib/paraglide/messages.js';
-import { getCapabilities, type ParentStatus } from '$lib/server/capabilities';
+import { getCapabilities, isApprovedParent, type ParentStatus } from '$lib/server/capabilities';
 import { checkNewPassword } from '$lib/server/password-rules';
+import { pushPublicKey } from '$lib/server/push';
 import { studentEmailToUsername } from '$lib/server/temp-password';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { Database } from '$lib/supabase/database.types';
@@ -43,24 +44,38 @@ export const load: PageServerLoad = async ({ parent, locals: { supabase } }) => 
 			role: profile.role,
 			displayName,
 			email: profile.email ?? session.user.email,
-			parentStatus
+			parentStatus,
+			pushKey: isApprovedParent(capabilities) ? pushKey() : undefined
 		};
 	}
 
 	if (profile.role !== 'student') {
+		const capabilities = await getCapabilities(supabase, session.user.id);
 		return {
 			role: profile.role,
 			displayName,
-			email: profile.email ?? session.user.email
+			email: profile.email ?? session.user.email,
+			pushKey: isApprovedParent(capabilities) ? pushKey() : undefined
 		};
 	}
 
 	return {
 		role: profile.role,
 		displayName,
-		username: profile.email ? studentEmailToUsername(profile.email) : null
+		username: profile.email ? studentEmailToUsername(profile.email) : null,
+		pushKey: profile.status === 'approved' ? pushKey() : undefined
 	};
 };
+
+/**
+ * #92: the key this browser subscribes to homework notifications with. Only
+ * students and approved parents get one (the same rule as
+ * save_push_subscription()); undefined hides the Notifications card, also
+ * while the feature is not set up.
+ */
+function pushKey(): string | undefined {
+	return pushPublicKey() ?? undefined;
+}
 
 type Role = Database['public']['Enums']['user_role'];
 
