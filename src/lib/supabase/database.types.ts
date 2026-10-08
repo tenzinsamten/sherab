@@ -407,6 +407,53 @@ export type Database = {
 					}
 				];
 			};
+			class_syllabus_sections: {
+				Row: {
+					content_doc: unknown | null;
+					content_language: string;
+					created_at: string;
+					created_by: string | null;
+					id: string;
+					links: HomeworkReferenceLink[];
+					position: number;
+					syllabus_id: string;
+					title: string;
+					updated_at: string;
+				};
+				Insert: {
+					content_doc?: unknown | null;
+					content_language?: string;
+					created_at?: string;
+					created_by?: string | null;
+					id?: string;
+					links?: HomeworkReferenceLink[];
+					position: number;
+					syllabus_id: string;
+					title: string;
+					updated_at?: string;
+				};
+				Update: {
+					content_doc?: unknown | null;
+					content_language?: string;
+					created_at?: string;
+					created_by?: string | null;
+					id?: string;
+					links?: HomeworkReferenceLink[];
+					position?: number;
+					syllabus_id?: string;
+					title?: string;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_syllabus_sections_syllabus_id_fkey';
+						columns: ['syllabus_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_syllabi';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			classes: {
 				Row: {
 					code: string;
@@ -1251,6 +1298,16 @@ export type Database = {
 				Args: { p_class_id: string; p_day: string };
 				Returns: string;
 			};
+			move_syllabus_section: {
+				Args: {
+					p_section_id: string;
+					p_syllabus_id: string;
+					p_class_id: string;
+					p_direction: string;
+				};
+				Returns: 'moved' | 'unchanged' | null;
+			};
+			syllabus_sections_backfill: { Args: never; Returns: number };
 			compute_student_streak: {
 				Args: { p_student_id: string; p_class_id: string; p_as_of_week?: string };
 				Returns: { current_streak: number; last_qualifying_week: string | null };

@@ -66,13 +66,18 @@
 				? m.student_syllabus_heading({ year: formatSchoolYear(data.syllabus.schoolYear) })
 				: m.syllabus_heading()}
 		</h2>
-		{#if data.syllabus?.content}
-			<RichText content={data.syllabus.content} lang={data.syllabus.contentLanguage} />
-		{/if}
-		<TextWithLinks
-			links={data.syllabus?.links ?? []}
-			empty={data.syllabus?.content ? '' : m.student_syllabus_empty()}
-		/>
+		<!-- The syllabus's sections in the teacher's order (0038), each in its own language. -->
+		{#each data.syllabus?.sections ?? [] as section (section.id)}
+			<div class="syllabus-section">
+				<h3 lang={section.contentLanguage}>{section.title}</h3>
+				{#if section.content}
+					<RichText content={section.content} lang={section.contentLanguage} />
+				{/if}
+				<TextWithLinks links={section.links} />
+			</div>
+		{:else}
+			<p class="muted" style="margin:0;">{m.student_syllabus_empty()}</p>
+		{/each}
 	</section>
 
 	<section class="card">
@@ -120,6 +125,19 @@
 </div>
 
 <style>
+	.syllabus-section + .syllabus-section {
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--theme-color-soft-bdr);
+	}
+
+	/* Not larger than the card's own heading above it. */
+	.syllabus-section h3 {
+		margin: 0 0 var(--space-2);
+		font-size: var(--theme-font-size-l);
+		overflow-wrap: anywhere;
+	}
+
 	.filter-nav {
 		margin-bottom: var(--space-2);
 	}

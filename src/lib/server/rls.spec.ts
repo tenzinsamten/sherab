@@ -12435,3 +12435,416 @@ describe.skipIf(!reachable)('#92 push notifications (requires local Supabase)', 
 		expect(error).toBeNull();
 	});
 });
+
+describe.skipIf(!reachable)('0038 syllabus sections (requires local Supabase)', () => {
+	type SignedIn = Awaited<ReturnType<typeof createSignedInUser>>;
+	let admin: SignedIn;
+	let teacher: SignedIn;
+	let otherTeacher: SignedIn;
+	let enrolled: ReturnType<typeof anonClient>;
+	let outsider: ReturnType<typeof anonClient>;
+	let classId: string;
+	let otherClassId: string;
+	let syllabusId: string;
+	let otherSyllabusId: string;
+
+	const name = (label: string) => `0038 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	const body = { type: 'doc', content: [{ type: 'paragraph' }] };
+
+	async function makeClass(label: string, teacherId: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `S${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: teacherId });
+		if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+		return data.id;
+	}
+
+	/** A syllabus row as the service role makes it; `school_year` only has to be free. */
+	async function makeSyllabus(
+		forClass: string,
+		schoolYear: number,
+		own: { content_doc?: unknown; content_language?: string; links?: unknown[] } = {}
+	) {
+		const { data, error } = await adminClient
+			.from('class_syllabi')
+			.insert({
+				class_id: forClass,
+				school_year: schoolYear,
+				...(own as Record<string, never>)
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create syllabus: ${error?.message}`);
+		return data.id;
+	}
+
+	/** An approved student enrolled in `forClass`, signed in. */
+	async function student(forClass: string) {
+		const email = `0038-student-${crypto.randomUUID()}@students.internal.invalid`;
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.createUser({
+			email,
+			password,
+			email_confirm: true,
+			app_metadata: { role: 'student' }
+		});
+		if (error || !data.user) throw new Error(`Failed to create student: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({
+				class_id: forClass,
+				status: 'approved',
+				registration_name: name('Student'),
+				display_name: name('Student')
+			})
+			.eq('id', data.user.id);
+		if (approveError) throw new Error(`Failed to approve student: ${approveError.message}`);
+		const { data: rows } = await adminClient
+			.from('class_enrollments')
+			.select('class_id')
+			.eq('student_id', data.user.id)
+			.eq('class_id', forClass);
+		if (!rows?.length) {
+			const { error: enrollError } = await adminClient
+				.from('class_enrollments')
+				.insert({ student_id: data.user.id, class_id: forClass });
+			if (enrollError) throw new Error(`Failed to enrol student: ${enrollError.message}`);
+		}
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+		if (signInError) throw new Error(`Failed to sign in student: ${signInError.message}`);
+		return client;
+	}
+
+	async function addSection(client: ReturnType<typeof anonClient>, title: string, to = syllabusId) {
+		const { data: last } = await adminClient
+			.from('class_syllabus_sections')
+			.select('position')
+			.eq('syllabus_id', to)
+			.order('position', { ascending: false })
+			.limit(1);
+		return client
+			.from('class_syllabus_sections')
+			.insert({ syllabus_id: to, position: (last?.[0]?.position ?? 0) + 1, title })
+			.select('id');
+	}
+
+	async function titles(client: ReturnType<typeof anonClient>, of = syllabusId) {
+		const { data, error } = await client
+			.from('class_syllabus_sections')
+			.select('title')
+			.eq('syllabus_id', of)
+			.order('position');
+		if (error) throw new Error(`Failed to read sections: ${error.message}`);
+		return (data ?? []).map((row) => row.title);
+	}
+
+	const move = (client: ReturnType<typeof anonClient>, sectionId: string, direction: string) =>
+		client.rpc('move_syllabus_section', {
+			p_section_id: sectionId,
+			p_syllabus_id: syllabusId,
+			p_class_id: classId,
+			p_direction: direction
+		});
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		otherTeacher = await createSignedInUser('teacher');
+		classId = await makeClass('Class', teacher.id);
+		otherClassId = await makeClass('Other', otherTeacher.id);
+		syllabusId = await makeSyllabus(classId, 2030);
+		otherSyllabusId = await makeSyllabus(otherClassId, 2030);
+		enrolled = await student(classId);
+		outsider = await student(otherClassId);
+	}, 60000);
+
+	it("the class's teacher adds, edits, reorders and deletes sections; the admin too", async () => {
+		const one = await addSection(teacher.client, 'Song 1');
+		const two = await addSection(teacher.client, 'Song 2');
+		const three = await addSection(admin.client, 'Dance');
+		expect(one.error ?? two.error ?? three.error).toBeNull();
+		const [first, second, third] = [one.data![0].id, two.data![0].id, three.data![0].id];
+		expect(await titles(teacher.client)).toEqual(['Song 1', 'Song 2', 'Dance']);
+
+		const edited = await teacher.client
+			.from('class_syllabus_sections')
+			.update({
+				title: 'Song 1 (new)',
+				content_doc: body,
+				content_language: 'bo',
+				links: [{ url: 'https://a.example', label: 'A' }]
+			})
+			.eq('id', first)
+			.select('title, content_doc, content_language, links');
+		expect(edited.error).toBeNull();
+		expect(edited.data).toEqual([
+			{
+				title: 'Song 1 (new)',
+				content_doc: body,
+				content_language: 'bo',
+				links: [{ url: 'https://a.example', label: 'A' }]
+			}
+		]);
+
+		// First up and last down change nothing.
+		expect((await move(teacher.client, first, 'up')).data).toBe('unchanged');
+		expect((await move(teacher.client, third, 'down')).data).toBe('unchanged');
+		expect(await titles(teacher.client)).toEqual(['Song 1 (new)', 'Song 2', 'Dance']);
+
+		expect((await move(teacher.client, third, 'up')).data).toBe('moved');
+		expect(await titles(teacher.client)).toEqual(['Song 1 (new)', 'Dance', 'Song 2']);
+		expect((await move(admin.client, first, 'down')).data).toBe('moved');
+		expect(await titles(admin.client)).toEqual(['Dance', 'Song 1 (new)', 'Song 2']);
+
+		// Deleting the middle one leaves the others in order.
+		const removed = await teacher.client
+			.from('class_syllabus_sections')
+			.delete()
+			.eq('id', first)
+			.select('id');
+		expect(removed.data).toHaveLength(1);
+		expect(await titles(teacher.client)).toEqual(['Dance', 'Song 2']);
+		expect((await move(teacher.client, second, 'up')).data).toBe('moved');
+		expect(await titles(teacher.client)).toEqual(['Song 2', 'Dance']);
+	});
+
+	it('an enrolled student reads the sections in order but cannot add, change, move or delete', async () => {
+		const before = await titles(teacher.client);
+		expect(before.length).toBeGreaterThan(0);
+		expect(await titles(enrolled)).toEqual(before);
+
+		const { data: rows } = await enrolled
+			.from('class_syllabus_sections')
+			.select('id')
+			.eq('syllabus_id', syllabusId)
+			.order('position');
+		const target = rows![0].id;
+
+		const added = await addSection(enrolled, 'By a student');
+		expect(added.error?.code).toBe('42501');
+		const changed = await enrolled
+			.from('class_syllabus_sections')
+			.update({ title: 'Changed' })
+			.eq('id', target)
+			.select('id');
+		expect(changed.data ?? []).toEqual([]);
+		const moved = await move(enrolled, target, 'down');
+		expect(moved.data).toBeNull();
+		const removed = await enrolled
+			.from('class_syllabus_sections')
+			.delete()
+			.eq('id', target)
+			.select('id');
+		expect(removed.data ?? []).toEqual([]);
+
+		expect(await titles(teacher.client)).toEqual(before);
+	});
+
+	it("another class's teacher, a student who is not enrolled and a signed-out visitor get nothing", async () => {
+		const before = await titles(teacher.client);
+		const { data: rows } = await adminClient
+			.from('class_syllabus_sections')
+			.select('id')
+			.eq('syllabus_id', syllabusId)
+			.order('position');
+		const target = rows![0].id;
+
+		for (const client of [otherTeacher.client, outsider, anonClient()]) {
+			const read = await client
+				.from('class_syllabus_sections')
+				.select('id')
+				.eq('syllabus_id', syllabusId);
+			expect(read.data ?? []).toEqual([]);
+			const added = await addSection(client, 'Not mine');
+			expect(added.error).not.toBeNull();
+			const changed = await client
+				.from('class_syllabus_sections')
+				.update({ title: 'Changed' })
+				.eq('id', target)
+				.select('id');
+			expect(changed.data ?? []).toEqual([]);
+			const moved = await move(client, target, 'down');
+			expect(moved.data ?? null).toBeNull();
+			const removed = await client
+				.from('class_syllabus_sections')
+				.delete()
+				.eq('id', target)
+				.select('id');
+			expect(removed.data ?? []).toEqual([]);
+		}
+		expect(await titles(teacher.client)).toEqual(before);
+
+		// The other teacher works in their own class's syllabus.
+		const own = await addSection(otherTeacher.client, 'Theirs', otherSyllabusId);
+		expect(own.error).toBeNull();
+		expect(await titles(outsider, otherSyllabusId)).toEqual(['Theirs']);
+	});
+
+	it('wrong class or syllabus: a move that names another class or syllabus changes nothing', async () => {
+		const before = await titles(teacher.client);
+		const { data: rows } = await adminClient
+			.from('class_syllabus_sections')
+			.select('id')
+			.eq('syllabus_id', syllabusId)
+			.order('position');
+		const target = rows![0].id;
+		const wrongClass = await admin.client.rpc('move_syllabus_section', {
+			p_section_id: target,
+			p_syllabus_id: syllabusId,
+			p_class_id: otherClassId,
+			p_direction: 'down'
+		});
+		expect(wrongClass.data).toBeNull();
+		const wrongSyllabus = await admin.client.rpc('move_syllabus_section', {
+			p_section_id: target,
+			p_syllabus_id: otherSyllabusId,
+			p_class_id: otherClassId,
+			p_direction: 'down'
+		});
+		expect(wrongSyllabus.data).toBeNull();
+		expect((await move(admin.client, target, 'sideways')).data).toBeNull();
+		expect(await titles(teacher.client)).toEqual(before);
+	});
+
+	it('tied positions: a move swaps neighbours in position, created_at, id order and leaves distinct positions', async () => {
+		const tied = await makeSyllabus(classId, 2032);
+		const { data: rows, error } = await adminClient
+			.from('class_syllabus_sections')
+			.insert([
+				{ syllabus_id: tied, position: 1, title: 'A', created_at: '2026-09-01T00:00:00Z' },
+				// Same position: B was added before C.
+				{ syllabus_id: tied, position: 2, title: 'C', created_at: '2026-09-03T00:00:00Z' },
+				{ syllabus_id: tied, position: 2, title: 'B', created_at: '2026-09-02T00:00:00Z' }
+			])
+			.select('id, title');
+		if (error || !rows) throw new Error(`Failed to create tied sections: ${error?.message}`);
+		const c = rows.find((row) => row.title === 'C')!.id;
+
+		const moved = await teacher.client.rpc('move_syllabus_section', {
+			p_section_id: c,
+			p_syllabus_id: tied,
+			p_class_id: classId,
+			p_direction: 'up'
+		});
+		expect(moved.data).toBe('moved');
+
+		const { data: after } = await adminClient
+			.from('class_syllabus_sections')
+			.select('title, position')
+			.eq('syllabus_id', tied)
+			.order('position');
+		expect(after).toEqual([
+			{ title: 'A', position: 1 },
+			{ title: 'C', position: 2 },
+			{ title: 'B', position: 3 }
+		]);
+	});
+
+	it('a section cannot change syllabus, and its title must be 1 to 200 characters', async () => {
+		const { data: rows } = await adminClient
+			.from('class_syllabus_sections')
+			.select('id')
+			.eq('syllabus_id', syllabusId)
+			.order('position');
+		const target = rows![0].id;
+		const moved = await admin.client
+			.from('class_syllabus_sections')
+			.update({ syllabus_id: otherSyllabusId })
+			.eq('id', target)
+			.select('id');
+		expect(moved.error?.code).toBe('42501');
+
+		for (const title of ['', '   ', 'a'.repeat(201)]) {
+			const { error } = await addSection(teacher.client, title);
+			expect(error?.code).toBe('23514');
+		}
+		const longest = await addSection(teacher.client, 'ཀ'.repeat(200));
+		expect(longest.error).toBeNull();
+		await adminClient.from('class_syllabus_sections').delete().eq('id', longest.data![0].id);
+	});
+
+	it('deleting the syllabus deletes its sections', async () => {
+		const gone = await makeSyllabus(classId, 2031);
+		expect((await addSection(teacher.client, 'Soon gone', gone)).error).toBeNull();
+		const { error } = await teacher.client.from('class_syllabi').delete().eq('id', gone);
+		expect(error).toBeNull();
+		const { data } = await adminClient
+			.from('class_syllabus_sections')
+			.select('id')
+			.eq('syllabus_id', gone);
+		expect(data).toEqual([]);
+	});
+
+	it('migration copy: a syllabus with text or links gets one section, titled in its language, once', async () => {
+		const text = {
+			type: 'doc',
+			content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Woche 1' }] }]
+		};
+		const links = [{ url: 'https://a.example', label: 'Lieder' }];
+		const german = await makeSyllabus(classId, 2040, {
+			content_doc: text,
+			content_language: 'de',
+			links
+		});
+		const tibetanLinksOnly = await makeSyllabus(classId, 2041, { content_language: 'bo', links });
+		const englishTextOnly = await makeSyllabus(classId, 2042, { content_doc: text });
+		const empty = await makeSyllabus(classId, 2043);
+		const ids = [german, tibetanLinksOnly, englishTextOnly, empty];
+
+		const sections = async () => {
+			const { data, error } = await adminClient
+				.from('class_syllabus_sections')
+				.select('syllabus_id, position, title, content_doc, content_language, links')
+				.in('syllabus_id', ids);
+			if (error) throw new Error(`Failed to read sections: ${error.message}`);
+			return new Map((data ?? []).map((row) => [row.syllabus_id, row]));
+		};
+
+		const first = await adminClient.rpc('syllabus_sections_backfill');
+		expect(first.error).toBeNull();
+		expect(first.data).toBeGreaterThanOrEqual(3);
+
+		const copied = await sections();
+		expect(copied.size).toBe(3);
+		expect(copied.get(german)).toMatchObject({
+			position: 1,
+			title: 'Lehrplan',
+			content_doc: text,
+			content_language: 'de',
+			links
+		});
+		expect(copied.get(tibetanLinksOnly)).toMatchObject({
+			title: 'སློབ་ཚན་ཐོ་གཞུང་།',
+			content_doc: null,
+			content_language: 'bo',
+			links
+		});
+		expect(copied.get(englishTextOnly)).toMatchObject({
+			title: 'Syllabus',
+			content_doc: text,
+			content_language: 'en',
+			links: []
+		});
+		expect(copied.has(empty)).toBe(false);
+
+		// Run again: nothing shows twice.
+		const second = await adminClient.rpc('syllabus_sections_backfill');
+		expect(second.data).toBe(0);
+		const { count } = await adminClient
+			.from('class_syllabus_sections')
+			.select('id', { count: 'exact', head: true })
+			.in('syllabus_id', ids);
+		expect(count).toBe(3);
+
+		// Only the service role runs it.
+		const refused = await teacher.client.rpc('syllabus_sections_backfill');
+		expect(refused.error).not.toBeNull();
+	});
+});

@@ -2,6 +2,7 @@ import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
+import { getLocale } from '$lib/paraglide/runtime';
 import {
 	isContentLanguage,
 	parseContent,
@@ -17,42 +18,63 @@ import { UNIQUE_VIOLATION_CODE } from './class-code';
 import { parseReferenceLinks, readReferenceLinks } from './homework-details';
 
 /**
- * Class syllabi, one per school year (#37, 0015_class_syllabi.sql). Shared by
- * the teacher routes (/teacher/classes/[id]/syllabus) and the admin routes
+ * Class syllabi, one per school year (#37, 0015_class_syllabi.sql), each made
+ * of titled sections (0038_syllabus_sections.sql). Shared by the teacher
+ * routes (/teacher/classes/[id]/syllabus) and the admin routes
  * (/admin/classes/[id]/syllabus); RLS decides who may read or change them.
- * The text is rich text in a chosen language, like homework content (#75,
- * 0035_syllabus_content.sql).
+ * A section's description is rich text in a chosen language, like homework
+ * content (#75), and it has its own links.
  */
 
 type Client = SupabaseClient<Database>;
 
-export type SyllabusInput = {
+export const MAX_SECTION_TITLE_LENGTH = 200;
+
+export type SectionInput = {
+	title: string;
 	content: RichTextDoc | null;
 	language: ContentLanguage;
+	links: HomeworkReferenceLink[];
+};
+
+export type SyllabusSection = {
+	id: string;
+	title: string;
+	content: RichTextDoc | null;
+	/** Language the section is written in: selects its font (#75). */
+	contentLanguage: ContentLanguage;
 	links: HomeworkReferenceLink[];
 };
 
 export type Syllabus = {
 	id: string;
 	schoolYear: number;
-	content: RichTextDoc | null;
-	/** Language the syllabus is written in: selects its font (#75). */
-	contentLanguage: ContentLanguage;
-	links: HomeworkReferenceLink[];
-	updatedAt: string;
+	/** In the order shown: by position, then by when they were added. */
+	sections: SyllabusSection[];
 };
 
+/** A section title as posted: trimmed, or null when empty or over 200 characters. */
+export function parseSectionTitle(raw: FormDataEntryValue | null): string | null {
+	const title = typeof raw === 'string' ? raw.trim() : '';
+	// Counted as the database does (characters, not UTF-16 units).
+	const length = [...title].length;
+	return length >= 1 && length <= MAX_SECTION_TITLE_LENGTH ? title : null;
+}
+
 /**
- * Reads the syllabus form: the editor's `content` document, its
+ * Reads the section form: `title`, the editor's `content` document, its
  * `contentLanguage`, and the LinkRows `linkUrl` / `linkLabel` fields. The
- * text is optional (a syllabus may be links only), so an empty editor gives
- * null, which also clears a saved text.
+ * title is required; the text is optional (a section may be links only, or
+ * a title only), so an empty editor gives null, which also clears a saved
+ * text.
  */
-export function parseSyllabusForm(
+export function parseSectionForm(
 	formData: FormData
 ):
-	| { ok: true; value: SyllabusInput }
-	| { ok: false; problem: 'content' | 'size' | 'language' | 'links' } {
+	| { ok: true; value: SectionInput }
+	| { ok: false; problem: 'title' | 'content' | 'size' | 'language' | 'links' } {
+	const title = parseSectionTitle(formData.get('title'));
+	if (title === null) return { ok: false, problem: 'title' };
 	const content = parseContent(formData.get('content'));
 	if (!content.ok && content.reason !== 'required') {
 		return { ok: false, problem: content.reason === 'too_large' ? 'size' : 'content' };
@@ -63,29 +85,48 @@ export function parseSyllabusForm(
 	if (!links.ok) return { ok: false, problem: 'links' };
 	return {
 		ok: true,
-		value: { content: content.ok ? content.value : null, language, links: links.value }
+		value: { title, content: content.ok ? content.value : null, language, links: links.value }
 	};
 }
+
+type SectionRow = {
+	id: string;
+	position: number;
+	title: string;
+	content_doc: unknown | null;
+	content_language: string;
+	links: unknown;
+	created_at: string;
+};
 
 function toSyllabus(row: {
 	id: string;
 	school_year: number;
-	content_doc: unknown | null;
-	content_language: string;
-	links: unknown;
-	updated_at: string;
+	class_syllabus_sections: SectionRow[] | null;
 }): Syllabus {
+	const sections = [...(row.class_syllabus_sections ?? [])].sort(
+		(a, b) =>
+			a.position - b.position ||
+			a.created_at.localeCompare(b.created_at) ||
+			a.id.localeCompare(b.id)
+	);
 	return {
 		id: row.id,
 		schoolYear: row.school_year,
-		content: readContent(row.content_doc),
-		contentLanguage: readContentLanguage(row.content_language),
-		links: readReferenceLinks(row.links),
-		updatedAt: row.updated_at
+		sections: sections.map((section) => ({
+			id: section.id,
+			title: section.title,
+			content: readContent(section.content_doc),
+			contentLanguage: readContentLanguage(section.content_language),
+			links: readReferenceLinks(section.links)
+		}))
 	};
 }
 
-const SYLLABUS_COLUMNS = 'id, school_year, content_doc, content_language, links, updated_at';
+// class_syllabi's own content_doc / content_language / links are no longer
+// read (0038): the sections hold the text and links.
+const SYLLABUS_COLUMNS =
+	'id, school_year, class_syllabus_sections(id, position, title, content_doc, content_language, links, created_at)';
 
 /** A class's syllabi, newest school year first. */
 export async function listSyllabi(
@@ -201,44 +242,7 @@ export async function createSyllabus({
 		});
 	}
 
-	throw redirect(303, `${listPath}/${data.id}?edit=1`);
-}
-
-export async function updateSyllabus({ request, classId, supabase, user }: ActionContext) {
-	if (!user) return fail(401, { error: m.syllabus_error_failed() });
-
-	const formData = await request.formData();
-	const syllabusId = String(formData.get('syllabusId') ?? '');
-	const parsed = parseSyllabusForm(formData);
-	if (!parsed.ok) {
-		const messages = {
-			content: m.homework_error_content_invalid,
-			size: m.syllabus_error_too_large,
-			language: m.syllabus_error_language,
-			links: m.homework_error_links_invalid
-		};
-		return fail(400, { error: messages[parsed.problem]() });
-	}
-
-	// .select() + row check: RLS turns a forbidden update into zero rows, not
-	// an error, which would otherwise look like a successful save.
-	const { data, error } = await supabase
-		.from('class_syllabi')
-		.update({
-			content_doc: parsed.value.content,
-			content_language: parsed.value.language,
-			links: parsed.value.links,
-			updated_at: new Date().toISOString()
-		})
-		.eq('id', syllabusId)
-		.eq('class_id', classId)
-		.select('id');
-
-	if (error || !data || data.length === 0) {
-		return fail(400, { error: m.syllabus_error_failed() });
-	}
-
-	return { success: true, action: 'syllabusSaved' as const };
+	throw redirect(303, `${listPath}/${data.id}`);
 }
 
 export async function deleteSyllabus({
@@ -265,4 +269,182 @@ export async function deleteSyllabus({
 	}
 
 	throw redirect(303, `${listPath}?deleted=${data[0].school_year}`);
+}
+
+type SectionActionContext = {
+	request: Request;
+	classId: string;
+	syllabusId: string;
+	supabase: Client;
+	user: User | null;
+};
+
+/**
+ * True when the syllabus is one of the class's and the caller can read it.
+ * Every section action checks it first: a section is tied to its syllabus by
+ * the query, and the syllabus to the route's class here.
+ */
+async function syllabusInClass(
+	supabase: Client,
+	classId: string,
+	syllabusId: string
+): Promise<boolean> {
+	const { data, error } = await supabase
+		.from('class_syllabi')
+		.select('id')
+		.eq('id', syllabusId)
+		.eq('class_id', classId)
+		.maybeSingle();
+	return !error && Boolean(data);
+}
+
+const sectionFailed = () => fail(400, { error: m.syllabus_error_failed() });
+
+/** A wrong title is shown under its field, not as the toast `error` gives. */
+const titleProblem = (sectionId: string | null) =>
+	fail(400, { titleError: m.syllabus_section_error_title(), sectionId });
+
+/** Adds a section, last in order, from the add form's `title`. */
+export async function createSection({
+	request,
+	classId,
+	syllabusId,
+	supabase,
+	user
+}: SectionActionContext) {
+	if (!user) return fail(401, { error: m.syllabus_error_failed() });
+
+	const formData = await request.formData();
+	const title = parseSectionTitle(formData.get('title'));
+	if (title === null) return titleProblem(null);
+
+	if (!(await syllabusInClass(supabase, classId, syllabusId))) return sectionFailed();
+
+	const { data: last, error: lastError } = await supabase
+		.from('class_syllabus_sections')
+		.select('position')
+		.eq('syllabus_id', syllabusId)
+		.order('position', { ascending: false })
+		.limit(1);
+	if (lastError) return sectionFailed();
+
+	const { data, error } = await supabase
+		.from('class_syllabus_sections')
+		.insert({
+			syllabus_id: syllabusId,
+			position: (last?.[0]?.position ?? 0) + 1,
+			title,
+			// The language the teacher is working in, so the title is drawn in
+			// its font from the start; the edit form can change it.
+			content_language: readContentLanguage(getLocale()),
+			created_by: user.id
+		})
+		.select('id');
+
+	if (error || !data || data.length === 0) return sectionFailed();
+
+	return { success: true, action: 'sectionAdded' as const, sectionId: data[0].id };
+}
+
+export async function updateSection({
+	request,
+	classId,
+	syllabusId,
+	supabase,
+	user
+}: SectionActionContext) {
+	if (!user) return fail(401, { error: m.syllabus_error_failed() });
+
+	const formData = await request.formData();
+	const sectionId = String(formData.get('sectionId') ?? '');
+	const parsed = parseSectionForm(formData);
+	if (!parsed.ok) {
+		if (parsed.problem === 'title') return titleProblem(sectionId);
+		const messages = {
+			content: m.homework_error_content_invalid,
+			size: m.syllabus_error_too_large,
+			language: m.syllabus_error_language,
+			links: m.homework_error_links_invalid
+		};
+		return fail(400, { error: messages[parsed.problem](), sectionId });
+	}
+
+	if (!(await syllabusInClass(supabase, classId, syllabusId))) return sectionFailed();
+
+	// .select() + row check: RLS turns a forbidden update into zero rows, not
+	// an error, which would otherwise look like a successful save.
+	const { data, error } = await supabase
+		.from('class_syllabus_sections')
+		.update({
+			title: parsed.value.title,
+			content_doc: parsed.value.content,
+			content_language: parsed.value.language,
+			links: parsed.value.links,
+			updated_at: new Date().toISOString()
+		})
+		.eq('id', sectionId)
+		.eq('syllabus_id', syllabusId)
+		.select('id');
+
+	if (error || !data || data.length === 0) return sectionFailed();
+
+	return { success: true, action: 'sectionSaved' as const, sectionId };
+}
+
+/**
+ * Moves a section one place up or down (`direction`). The first one moved
+ * up and the last one moved down stay where they are, without an error.
+ */
+export async function moveSection({
+	request,
+	classId,
+	syllabusId,
+	supabase,
+	user
+}: SectionActionContext) {
+	if (!user) return fail(401, { error: m.syllabus_error_failed() });
+
+	const formData = await request.formData();
+	const sectionId = String(formData.get('sectionId') ?? '');
+	const direction = formData.get('direction');
+	if (direction !== 'up' && direction !== 'down') return sectionFailed();
+
+	// The function checks section, syllabus and class together and swaps in
+	// one statement; null means they don't belong together or RLS refused.
+	const { data, error } = await supabase.rpc('move_syllabus_section', {
+		p_section_id: sectionId,
+		p_syllabus_id: syllabusId,
+		p_class_id: classId,
+		p_direction: direction
+	});
+
+	if (error || (data !== 'moved' && data !== 'unchanged')) return sectionFailed();
+
+	return { success: true, action: 'sectionMoved' as const, sectionId };
+}
+
+export async function deleteSection({
+	request,
+	classId,
+	syllabusId,
+	supabase,
+	user
+}: SectionActionContext) {
+	if (!user) return fail(401, { error: m.syllabus_error_failed() });
+
+	const formData = await request.formData();
+	const sectionId = String(formData.get('sectionId') ?? '');
+
+	if (!(await syllabusInClass(supabase, classId, syllabusId))) return sectionFailed();
+
+	const { data, error } = await supabase
+		.from('class_syllabus_sections')
+		.delete()
+		.eq('id', sectionId)
+		.eq('syllabus_id', syllabusId)
+		.select('id');
+
+	if (error || !data || data.length === 0) return sectionFailed();
+
+	return { success: true, action: 'sectionDeleted' as const, sectionId };
 }

@@ -1,23 +1,31 @@
-import { deleteSyllabus, loadSyllabusDetail, updateSyllabus } from '$lib/server/class-syllabus';
-import type { Actions, PageServerLoad } from './$types';
+import {
+	createSection,
+	deleteSection,
+	deleteSyllabus,
+	loadSyllabusDetail,
+	moveSection,
+	updateSection
+} from '$lib/server/class-syllabus';
+import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
-/** One syllabus: view, edit, delete (#37). `?edit=1` (just added) opens the form. */
-export const load: PageServerLoad = async ({ params, url, locals: { supabase } }) => ({
-	...(await loadSyllabusDetail(supabase, params.id, params.syllabusId)),
-	startInEdit: url.searchParams.get('edit') === '1'
-});
+/** One syllabus (#37): its sections (add, edit, move, delete; 0038) and deleting the syllabus. */
+export const load: PageServerLoad = async ({ params, locals: { supabase } }) =>
+	loadSyllabusDetail(supabase, params.id, params.syllabusId);
+
+async function sectionContext({
+	request,
+	params,
+	locals: { supabase, safeGetSession }
+}: RequestEvent) {
+	const { user } = await safeGetSession();
+	return { request, classId: params.id, syllabusId: params.syllabusId, supabase, user };
+}
 
 export const actions: Actions = {
-	update: async ({ request, params, locals: { supabase, safeGetSession } }) => {
-		const { user } = await safeGetSession();
-		return updateSyllabus({
-			request,
-			classId: params.id,
-			listPath: `/admin/classes/${params.id}/syllabus`,
-			supabase,
-			user
-		});
-	},
+	addSection: async (event) => createSection(await sectionContext(event)),
+	updateSection: async (event) => updateSection(await sectionContext(event)),
+	moveSection: async (event) => moveSection(await sectionContext(event)),
+	deleteSection: async (event) => deleteSection(await sectionContext(event)),
 	delete: async ({ request, params, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		return deleteSyllabus({

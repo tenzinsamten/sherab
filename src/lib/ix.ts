@@ -21,6 +21,8 @@ export function setupIx() {
 		]);
 		addIcons({
 			iconAdd: icons.iconAdd,
+			iconArrowDown: icons.iconArrowDown,
+			iconArrowUp: icons.iconArrowUp,
 			iconBook: icons.iconBook,
 			iconCalendar: icons.iconCalendar,
 			iconCancel: icons.iconCancel,

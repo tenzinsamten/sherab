@@ -7,12 +7,11 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
-	import { firstLine, type ContentLanguage, type RichTextDoc } from '$lib/rich-text';
 	import { formatSchoolYear } from '$lib/school-year';
-	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 
 	/**
-	 * A class's syllabi, one per school year (#37), plus the add form (posts
+	 * A class's syllabi, one per school year (#37), each with how many
+	 * sections it has, plus the add form (posts
 	 * `schoolYear` to `?/create`). Used by the teacher and admin syllabus
 	 * pages; `hrefFor` builds each row's already-resolved detail link.
 	 */
@@ -25,9 +24,7 @@
 		syllabi: {
 			id: string;
 			schoolYear: number;
-			content: RichTextDoc | null;
-			contentLanguage: ContentLanguage;
-			links: HomeworkReferenceLink[];
+			sections: unknown[];
 		}[];
 		currentYear: number;
 		addableYears: number[];
@@ -72,12 +69,9 @@
 							{/if}
 						</span>
 						<span class="muted">
-							{s.links.length > 0
-								? m.syllabus_links_count({ count: num(s.links.length) })
-								: m.syllabus_no_links()}
-							{#if s.content && firstLine(s.content)}
-								· <span lang={s.contentLanguage}>{firstLine(s.content)}</span>
-							{/if}
+							{s.sections.length > 0
+								? m.syllabus_section_count({ count: num(s.sections.length) })
+								: m.syllabus_section_none()}
 						</span>
 					</a>
 				</li>

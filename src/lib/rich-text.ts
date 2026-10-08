@@ -154,32 +154,6 @@ export function hasText(doc: RichTextDoc): boolean {
 	return doc.content.some(blockHasText);
 }
 
-function firstLineOfBlocks(blocks: RichTextBlock[]): string {
-	for (const block of blocks) {
-		if (block.type === 'bulletList' || block.type === 'orderedList') {
-			for (const item of block.content) {
-				const line = firstLineOfBlocks(item.content);
-				if (line) return line;
-			}
-			continue;
-		}
-		// A line break inside a paragraph starts a new line.
-		let line = '';
-		for (const node of block.content ?? []) {
-			if (node.type === 'text') line += node.text;
-			else if (line.trim()) break;
-			else line = '';
-		}
-		if (line.trim()) return line.trim();
-	}
-	return '';
-}
-
-/** The first line with text, as plain text (a list row's preview), or ''. */
-export function firstLine(doc: RichTextDoc): string {
-	return firstLineOfBlocks(doc.content);
-}
-
 export type ParsedContent =
 	{ ok: true; value: RichTextDoc } | { ok: false; reason: 'required' | 'too_large' | 'invalid' };
 

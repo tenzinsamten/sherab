@@ -57,6 +57,9 @@ test.afterAll(async () => {
 	await fx?.cleanup();
 });
 
+/** A syllabus's own page: where adding a syllabus lands. */
+const SYLLABUS_PAGE = /\/syllabus\/[0-9a-f-]{36}$/;
+
 /** Waits for hydration and for the iX form components to be defined. */
 async function openForm(page: Page, path: string) {
 	await page.goto(path);
@@ -64,21 +67,28 @@ async function openForm(page: Page, path: string) {
 	await page.waitForLoadState('networkidle');
 }
 
-test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in order', async ({
+test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in order (in a syllabus section)', async ({
 	page
 }) => {
 	const posts: string[] = [];
 	page.on('request', (r) => {
-		if (r.method() === 'POST' && r.url().includes('?/update')) posts.push(r.postData() ?? '');
+		if (r.method() === 'POST' && r.url().includes('?/updateSection')) {
+			posts.push(r.postData() ?? '');
+		}
 	});
 	await signIn(page, fx.admin);
 	await openForm(page, `/admin/classes/${fx.classC.id}/syllabus`);
 	await page.getByRole('button', { name: 'Add syllabus' }).click();
-	await page.waitForURL(/edit=1/);
+	await page.waitForURL(SYLLABUS_PAGE);
 	await page.waitForLoadState('networkidle');
 
-	// The syllabus text is rich text in a chosen language (#75): Tibetan, a
-	// bold first line, then a plain one.
+	// A new syllabus has no sections (0038); adding one opens its form.
+	await expect(page.getByText('No sections yet.')).toBeVisible();
+	await page.locator('#section-title-new input').fill('Songs');
+	await page.getByRole('button', { name: 'Add section' }).click();
+
+	// The section's description is rich text in a chosen language (#75):
+	// Tibetan, a bold first line, then a plain one.
 	const editor = page.locator('.rte-input');
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	const language = page.locator('ix-select[name="contentLanguage"]');
@@ -103,8 +113,8 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	await labels.nth(0).fill('Alphabet');
 	await urls.nth(2).fill('https://c.example');
 	await labels.nth(2).fill('Songs');
-	await page.getByRole('button', { name: 'Save syllabus' }).click();
-	await expect(page.locator('ix-toast').getByText('Syllabus saved.')).toBeVisible();
+	await page.getByRole('button', { name: 'Save section' }).click();
+	await expect(page.locator('ix-toast').getByText('Section saved.')).toBeVisible();
 
 	// Posted in row order, the blank row as empty strings.
 	expect(posts).toHaveLength(1);
@@ -116,25 +126,36 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// The add form preselects the current school year.
 	const { data: saved } = await service
 		.from('class_syllabi')
-		.select('school_year, content_doc, content_language, links')
+		.select(
+			'school_year, content_doc, links, class_syllabus_sections(position, title, content_doc, content_language, links)'
+		)
 		.eq('class_id', fx.classC.id)
 		.single();
 	expect(saved).toEqual({
 		school_year: currentSchoolYear(),
-		content_doc: {
-			type: 'doc',
-			content: [
-				{
-					type: 'paragraph',
-					content: [{ type: 'text', text: 'སློབ་ཚན་དང་པོ།', marks: [{ type: 'bold' }] }]
+		// The syllabus's own text and links are no longer written (0038).
+		content_doc: null,
+		links: [],
+		class_syllabus_sections: [
+			{
+				position: 1,
+				title: 'Songs',
+				content_doc: {
+					type: 'doc',
+					content: [
+						{
+							type: 'paragraph',
+							content: [{ type: 'text', text: 'སློབ་ཚན་དང་པོ།', marks: [{ type: 'bold' }] }]
+						},
+						{ type: 'paragraph', content: [{ type: 'text', text: 'Week 2: songs' }] }
+					]
 				},
-				{ type: 'paragraph', content: [{ type: 'text', text: 'Week 2: songs' }] }
-			]
-		},
-		content_language: 'bo',
-		links: [
-			{ url: 'https://a.example', label: 'Alphabet' },
-			{ url: 'https://c.example', label: 'Songs' }
+				content_language: 'bo',
+				links: [
+					{ url: 'https://a.example', label: 'Alphabet' },
+					{ url: 'https://c.example', label: 'Songs' }
+				]
+			}
 		]
 	});
 
@@ -145,9 +166,10 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	await expect(shown.locator('p strong')).toHaveText('སློབ་ཚན་དང་པོ།');
 	await expect(shown.locator('p').nth(1)).toHaveText('Week 2: songs');
 
-	// Reopened: text, language and both links, in order.
+	// Reopened: title, text, language and both links, in order.
 	await openForm(page, page.url().replace(/\?.*$/, ''));
-	await page.getByRole('button', { name: 'Edit syllabus' }).click();
+	await page.getByRole('button', { name: 'Edit section' }).click();
+	await expect(page.locator('ix-input[name="title"]').first()).toHaveJSProperty('value', 'Songs');
 	await expect(page.locator('.rte-input')).toHaveAttribute('contenteditable', 'true');
 	await expect(page.locator('.rte-input p')).toHaveText(['སློབ་ཚན་དང་པོ།', 'Week 2: songs']);
 	await expect(page.locator('ix-select[name="contentLanguage"]')).toHaveJSProperty('value', 'bo');
@@ -190,7 +212,7 @@ test('syllabus add: with the current year taken, the first addable year is prese
 	await openForm(page, `/admin/classes/${fx.classC.id}/syllabus`);
 	await expect(page.locator('#schoolYear')).toHaveJSProperty('value', String(firstAddable));
 	await page.getByRole('button', { name: 'Add syllabus' }).click();
-	await page.waitForURL(/edit=1/);
+	await page.waitForURL(SYLLABUS_PAGE);
 
 	expect(posts).toHaveLength(1);
 	expect(new URLSearchParams(posts[0]).get('schoolYear')).toBe(String(firstAddable));

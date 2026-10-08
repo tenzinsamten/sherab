@@ -40,10 +40,6 @@
 	</header>
 
 	{#key data.syllabus.id}
-		<SyllabusDetail
-			syllabus={data.syllabus}
-			startInEdit={data.startInEdit}
-			saved={Boolean(form && 'action' in form && form.action === 'syllabusSaved')}
-		/>
+		<SyllabusDetail syllabus={data.syllabus} result={form} />
 	{/key}
 </div>

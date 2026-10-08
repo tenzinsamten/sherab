@@ -4,7 +4,6 @@ import RichText from './components/RichText.svelte';
 import {
 	MAX_CONTENT_BYTES,
 	cleanDoc,
-	firstLine,
 	hasText,
 	isSafeHref,
 	parseContent,
@@ -132,43 +131,6 @@ describe('isSafeHref', () => {
 		expect(isSafeHref('JavaScript:alert(1)')).toBe(false);
 		expect(isSafeHref('https://')).toBe(false);
 		expect(isSafeHref('example.org')).toBe(false);
-	});
-});
-
-describe('firstLine', () => {
-	it('is the first line with text, without its formatting', () => {
-		const formatted = cleanDoc(
-			doc(
-				paragraph(),
-				paragraph(
-					text('  Term '),
-					text('one', [{ type: 'bold' }]),
-					{ type: 'hardBreak' },
-					text('x')
-				),
-				paragraph(text('later'))
-			)
-		)!;
-		expect(firstLine(formatted)).toBe('Term one');
-	});
-
-	it('skips a leading line break and looks inside lists', () => {
-		const broken = cleanDoc(doc(paragraph({ type: 'hardBreak' }, text('after the break'))))!;
-		expect(firstLine(broken)).toBe('after the break');
-		const list = cleanDoc(
-			doc({
-				type: 'bulletList',
-				content: [
-					{ type: 'listItem', content: [paragraph()] },
-					{ type: 'listItem', content: [paragraph(text('ཀ'))] }
-				]
-			})
-		)!;
-		expect(firstLine(list)).toBe('ཀ');
-	});
-
-	it('is empty for a document without text', () => {
-		expect(firstLine(cleanDoc(doc(paragraph(text('  '))))!)).toBe('');
 	});
 });
 
