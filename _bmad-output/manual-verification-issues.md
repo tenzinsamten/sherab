@@ -1613,3 +1613,68 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   `page.locator('ix-dropdown-item[lang="de"]').click()` after opening the language picker on
   `/leaderboard`: the item is found but "not visible". Cause not looked into. Waiting for the
   user to plan or fix.
+
+- 2026-10-08: #94 logged and built on `main` from
+  `_bmad-output/implementation-artifacts/spec-syllabus-sections.md`, not committed; status
+  "built, to verify". Migration `0038_syllabus_sections.sql` is NOT pushed. A class syllabus
+  for a school year now has any number of sections: a title (1-200 characters), an optional
+  rich-text description in a chosen language and up to 10 links (user, 2026-10-08: "I am
+  planning to teach 2 songs, then i want to add two songs with links and all").
+  How: table `class_syllabus_sections` (RLS through the parent syllabus's class: admin and the
+  class's teachers read and change, enrolled students read; column-level update grants, so a
+  section cannot change syllabus). `move_syllabus_section()` swaps a section with its neighbour
+  in one statement. `syllabus_sections_backfill()` (service role only) copies each syllabus's
+  own text and links into one section titled "Syllabus" / "Lehrplan" / "སློབ་ཚན་ཐོ་གཞུང་།" by the
+  syllabus's language; the migration runs it once. `class_syllabi.content_doc`,
+  `content_language` and `links` stay in the database and are no longer read or written.
+  `src/lib/server/class-syllabus.ts` gets `createSection`, `updateSection`, `moveSection`,
+  `deleteSection`; both `syllabus/[syllabusId]` routes get the actions `addSection`,
+  `updateSection`, `moveSection`, `deleteSection` (the old `update` action is gone).
+  `SyllabusDetail.svelte` is the section list with the add form, `SyllabusForm.svelte` the
+  per-section form; the year list shows a section count; the student's class page shows the
+  sections in order. 18 new `syllabus_section_*` keys in en, de and bo (Tibetan is the
+  assistant's draft, not reviewed); 8 `syllabus_*` keys that nothing uses any more are removed.
+  Changed from before: adding a syllabus no longer lands on `?edit=1` (a new syllabus has no
+  sections; the page shows "No sections yet." and the add form).
+  Verified after a reset: 1057 unit tests (28 new: 21 in `class-syllabus.spec.ts`, 7 database
+  tests in `rls.spec.ts`), `npm run check` and `npm run build` exit 0; Prettier and ESLint pass
+  on the changed files. After another reset: `forms.e2e.ts`, the new
+  `syllabus-sections.e2e.ts` and `breadcrumbs.e2e.ts`, 20 passed ("admin team names", #93,
+  passed in both runs of `forms.e2e.ts` today). Teacher page seen at 390 px in English and
+  Tibetan: a long Tibetan title wraps beside the move buttons and is not clipped.
+  Not verified: the migration against a database that already holds syllabi (the local one is
+  empty at reset; the copy is tested through the same function on rows made by the test); the
+  hosted database and `sherab.app`; the pages in a browser with JavaScript really switched off
+  (iX fields are web components and post nothing without it, as on every other form; what is
+  tested is a plain form post to the actions, which saves and comes back with the form open);
+  the full browser suite (only the three files above were run).
+  Deploy the new app right after `db push`: text or links the old deployed app saves after the
+  migration ran go to the old columns and never reach a section. Two queries (also in the
+  migration's header) check for that.
+  Right after the push, syllabi whose old columns hold text or links but that have no section
+  (expected: 0 rows):
+
+  ```sql
+  select s.id, s.class_id, s.school_year
+  from public.class_syllabi s
+  where (s.content_doc is not null or jsonb_array_length(s.links) > 0)
+    and not exists (
+      select 1 from public.class_syllabus_sections c where c.syllabus_id = s.id
+    );
+  ```
+
+  After the deploy, syllabi whose `class_syllabi.updated_at` is later than their section's
+  (edits made in the window, to copy into the section by hand):
+
+  ```sql
+  select s.id, s.class_id, s.school_year, s.updated_at
+  from public.class_syllabi s
+  where exists (
+      select 1 from public.class_syllabus_sections c where c.syllabus_id = s.id
+    )
+    and s.updated_at > (
+      select max(c.updated_at)
+      from public.class_syllabus_sections c
+      where c.syllabus_id = s.id
+    );
+  ```

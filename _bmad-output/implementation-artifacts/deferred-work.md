@@ -267,3 +267,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-68-b14b-parent-to-teacher-promotion.md`
   summary: e2e for the /admin/teachers "Edit classes" flow (Classes updated toast, edit panel closes); only create and (after B14b) remove are exercised in the browser.
   evidence: B14b review (verification-gap): the `$effect` branches for `updated` / `removed` were restructured (untrack) and no e2e runs Edit classes; untested before B14b too.
+- source_spec: none
+  summary: PDF upload per syllabus section (the app's first file storage): PDF only, at most 1 MB per file (user, 2026-10-08), files private to the class's teachers and enrolled students, with "replace an uploaded file with a newer version" as a Should.
+  evidence: Split from "syllabus sections with PDF upload" (user chose Split, sections first, 2026-10-08; brainstorm log `_bmad-output/brainstorming/brainstorm-syllabus-multiple-items-and-pdf-2026-10-08/.memlog.md`). Still open: how many files a section may hold; what happens to a stored file when its section or syllabus is deleted; storage notes in `docs/deployment-and-costs.md` section 4 (backups not confirmed).
+- source_spec: none
+  summary: Parents of a class's enrolled children can read that class's syllabus and its sections (new access rule and a view on the parent's child page).
+  evidence: User decided in the brainstorm that students, parents and teachers of the class see the syllabus, then chose "later, as its own change" (2026-10-08). Parents have no syllabus page and no `class_syllabi` access today.
+- source_spec: none
+  summary: Search across a syllabus's sections, and archive (hide without deleting) old sections.
+  evidence: Ranked Should in the brainstorm's MoSCoW (2026-10-08); left out of the sections spec to keep it to one goal. Deleting a section and ordering sections are in that spec.
+- source_spec: `_bmad-output/implementation-artifacts/spec-syllabus-sections.md`
+  summary: Keep keyboard focus after a form post: a button that submits (for example a section's move arrow) is disabled while the post runs and can stay disabled afterwards, so focus is dropped.
+  evidence: Review of syllabus sections (blind layer): the move arrows disable at the top and bottom. Pre-existing app-wide: every button is disabled through `pending.busy` during a post (72 uses in `src`).
