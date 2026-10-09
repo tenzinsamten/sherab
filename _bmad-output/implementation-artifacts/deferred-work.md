@@ -279,3 +279,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-syllabus-sections.md`
   summary: Keep keyboard focus after a form post: a button that submits (for example a section's move arrow) is disabled while the post runs and can stay disabled afterwards, so focus is dropped.
   evidence: Review of syllabus sections (blind layer): the move arrows disable at the top and bottom. Pre-existing app-wide: every button is disabled through `pending.busy` during a post (72 uses in `src`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-syllabus-section-pdf.md`
+  summary: Sweep the `syllabus-files` bucket for objects whose row is gone (by folder after a section, syllabus or class delete, or as a scheduled or admin job).
+  evidence: Review of section PDF upload (blind and edge layers): cleanup is row-driven, so an object left by a failed cleanup, by an upload racing a section delete, or by a replace whose old object could not be removed is never removed later and stays readable by the class. Needs a storage failure or a same-moment race; the migration header has the query that lists such objects.

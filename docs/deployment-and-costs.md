@@ -1,8 +1,9 @@
 # Deployment and costs for Sherab
 
 Where the app runs, how a new version gets there, what it costs, and what would change the cost.
-This is the record of a discussion on **2026-10-06**. Nothing in it was decided or built; it
-collects what the repository already says and adds the cost questions that came up.
+This is the record of a discussion on **2026-10-06**. Nothing in it was decided or built then;
+it collects what the repository already says and adds the cost questions that came up. Section 4
+was updated on 2026-10-08, when PDF upload for syllabus sections was built.
 
 The source is given next to each figure. Where something could not be confirmed, it says so.
 Nothing here was checked in the Cloudflare or Supabase dashboards.
@@ -127,9 +128,84 @@ What this means for Sherab:
 **Recommendation:** stay on the free plan and set up a regular database dump. Move to Pro when
 losing a day of data, or a pause during the holidays, would be a real problem for the school.
 
-## 4. If file upload is added
+## 4. File upload
 
-The app has no file upload today. This section records what it would mean for the cost.
+Since 2026-10-08 the app has one kind of file upload: **PDF files on a syllabus section**
+(issue #95, migration `0039_syllabus_section_files.sql`). The rest of this section is the cost
+discussion from 2026-10-06, which led to it, and still applies to anything added later.
+
+### What exists
+
+- **Who:** the admin and a class's teachers upload, replace and remove. Enrolled students open
+  and download. Parents, other classes and signed-out visitors get nothing. Students and
+  parents cannot upload.
+- **Limits:** PDF only, at most 1 MB per file, at most 5 files per section. The app's server
+  checks all three (a file must really start like a PDF, whatever it is called). The storage
+  bucket checks size and type again, and the database the count.
+- **Where:** Supabase Storage, private bucket `syllabus-files`, in the same hosted project as
+  the database. No second service. A file is stored as
+  `<class id>/<section id>/<random id>.pdf`; its original name is kept in the table
+  `class_syllabus_section_files` and never used as the path.
+- **Access:** the bucket has no public addresses. The app's route `/files/syllabus/<file id>`
+  reads the file's row with the caller's own sign-in and then sends the browser to a signed
+  storage link that works for 60 seconds. Row-level rules on the table and on
+  `storage.objects` (keyed on the class id in the path) decide who gets a link.
+- **What passes through Cloudflare:** opening or downloading a file does not; the Worker only
+  answers with the link. Every upload and every replace does: the file is posted to the app,
+  held in the Worker's memory (at most about 1 MB; a larger post is refused without being
+  kept) and sent on to Supabase from there.
+- **Downloads:** each time a file is opened or downloaded, its size counts against Supabase's
+  monthly download allowance (5 GB on the free plan, see below). A full 1 MB file opened by
+  30 students is 30 MB.
+- **Deleting:** removing a file, its section, its syllabus or its class removes the stored
+  objects first, through the Storage API. Stored objects cannot be deleted with SQL, so rows
+  deleted in the SQL editor leave their objects behind; the migration's header has a query
+  that lists such objects.
+- **Space:** at most 5 MB per section. 100 sections full to the limit would be 0.5 GB of the
+  free plan's 1 GB.
+
+### What a push to the hosted project needs
+
+- `supabase db push` for migration 0039. It creates the bucket with its limits, the table and
+  all rules; nothing has to be set in the dashboard. **Not checked on the hosted project:**
+  that the `postgres` role there may create rules on `storage.objects` and insert into
+  `storage.buckets` (it is the documented way, and it works locally).
+- Deploy the app after the push. The old app does not know the table and is not affected by it.
+- No new Cloudflare variable and no new secret.
+- Afterwards, in the dashboard under Storage: the bucket `syllabus-files` is listed as
+  private, with a 1 MB limit and `application/pdf` as its only type.
+- Afterwards, and again whenever rows were deleted outside the app: objects whose row is gone
+  (expected: 0 rows). Remove any that are listed in the dashboard under Storage.
+
+  ```sql
+  select o.name
+  from storage.objects o
+  where o.bucket_id = 'syllabus-files'
+    and not exists (
+      select 1 from public.class_syllabus_section_files f
+      where f.object_path = o.name
+    );
+  ```
+
+### Undoing migration 0039
+
+Written down, **not tried**. Deploy an app version without the feature first, then:
+
+1. In the dashboard under Storage, empty the bucket `syllabus-files` and delete it. Objects
+   and buckets cannot be deleted with SQL (`storage.protect_delete`).
+2. In the SQL editor:
+
+   ```sql
+   drop policy "syllabus_files_select" on storage.objects;
+   drop policy "syllabus_files_insert_admin_or_teacher" on storage.objects;
+   drop policy "syllabus_files_delete_admin_or_teacher" on storage.objects;
+   drop table public.class_syllabus_section_files;
+   drop function public.class_syllabus_section_files_limit();
+   drop function public.syllabus_file_path_id(text, integer);
+   ```
+
+3. Remove the row for `0039` from `supabase_migrations.schema_migrations`, or a later
+   `db push` will not apply the file again.
 
 ### What the free plan allows
 
@@ -149,7 +225,8 @@ Assumed: about 100 students and 40 school weeks a year. These are estimates, not
 
 ### Documents only
 
-This is the case discussed. The outcome:
+This is the case discussed, and the one that was built (with tighter limits than the example
+below: 1 MB and PDF only). The outcome:
 
 - **It stays free.** Even 500 documents a year need about 0.25 GB.
 - **Supabase Storage is the simpler place** for them. It can use the same access rules as the
@@ -158,13 +235,14 @@ This is the case discussed. The outcome:
   perhaps Word documents. Without this, a phone will offer camera photos and large scans as
   "files", and the space fills as in the photo rows above.
 
-### Points to settle if it is built
+### Points still open
 
 - **Backups.** Supabase's backups cover the database, not stored files. This is **not
   confirmed**; check it before relying on either answer. For worksheets a teacher still has on
   their own computer, the risk is small.
 - **Deletion requests.** If students upload, a parent's request to delete a child's data must
-  also delete that child's files. If only teachers upload, this mostly does not arise.
+  also delete that child's files. Only teachers and the admin upload today, so this does not
+  arise.
 - **Photos, sound or video later.** Then either make images smaller before upload and delete
   files after a set time, or move to Pro. Cloudflare R2 is an alternative: 10 GB free and no
   charge for downloads (from memory, **not re-checked**). With R2 the access checks would have

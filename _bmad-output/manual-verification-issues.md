@@ -1678,3 +1678,95 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
       where c.syllabus_id = s.id
     );
   ```
+
+- 2026-10-08: #95 logged and built on `main` from
+  `_bmad-output/implementation-artifacts/spec-syllabus-section-pdf.md`, not committed; status
+  "built, to verify". Migration `0039_syllabus_section_files.sql` is NOT pushed. A teacher or
+  the admin can attach PDF files to a syllabus section, replace one and remove it; enrolled
+  students open them from their class page (user, 2026-10-08: "option to upload pdf file of any
+  document that teacher wants as part of sylabus"). This is the app's first file storage.
+  Limits: PDF only, 1 MB per file, 5 files per section.
+  How: private Supabase Storage bucket `syllabus-files` (1 MB, `application/pdf`), created by
+  the migration. Objects are stored as `<class id>/<section id>/<random id>.pdf`; the original
+  name is only in the new table `class_syllabus_section_files` (RLS as sections: admin and the
+  class's teachers read and change, enrolled students read, parents and everyone else nothing;
+  a row's path must lie in its own section's folder; a trigger refuses a sixth file with
+  SQLSTATE `SF001`). `storage.objects` has select / insert / delete rules for the bucket keyed
+  on the class id in the path, and no update rule, so an object is never overwritten.
+  `src/lib/server/syllabus-files.ts` (new) checks a file (size, content starts with `%PDF-`,
+  count), uploads, replaces, removes and makes the signed link; `removeStoredFiles` removes
+  the objects and rows of a section, syllabus or class and is called before each of those is
+  deleted (`class-syllabus.ts`, `admin/classes/+page.server.ts`): stored objects cannot be
+  deleted by SQL, so the cascade alone would leave them. If storage cannot remove them all, the
+  delete is stopped with a message. If the files were removed and the delete of the section,
+  syllabus or class then fails, the message says that the files are gone and the delete did
+  not finish (for a class that still has students: the usual message plus "Its syllabus files
+  were already removed."). Both `syllabus/[syllabusId]` routes get the actions
+  `uploadFile`, `replaceFile`, `deleteFile`. New route `/files/syllabus/[fileId]`: reads the
+  row as the caller and answers 303 to a signed link valid 60 seconds, or 404.
+  `SyllabusFiles.svelte` (new) is the file list, used by `SyllabusDetail.svelte` (with upload,
+  Replace, Remove) and the student's class page (read only). 24 new `syllabus_file_*` keys and
+  `classes_error_delete_has_students_files_removed` in en, de and bo (Tibetan is the
+  assistant's draft, not reviewed). The messages that name a limit take it as a parameter, so
+  they follow the viewer's digits: "up to 1.0 MB" and "at most 5 files" in English, "1,0 MB"
+  in German, Tibetan digits in Tibetan. A size shows as KB below 1,048,576 bytes and as MB
+  from there.
+  Decided while building, not in the spec:
+  - The file name opens the PDF in a new tab; a separate "Download" link saves it under its
+    original name. Supabase can either show a file or name it (a name makes it a download),
+    not both, and the spec rules out passing the file through the app's server. Shown in a
+    tab, the browser's own "save" offers the stored name (a random id), not the original one.
+  - Replacing stores a new object and then removes the old one (the row keeps its id and its
+    place). If removing the old object fails after the row was changed, the replacement still
+    counts as done and the old object is left in the bucket, logged on the server.
+  - A name without `.pdf` gets it added; folders and control characters are dropped; at most
+    200 characters.
+  - A post that says it is over the limit is refused (413) without being read into memory. Any
+    other post, also one without a usable `Content-Length`, is read only up to 1 MB plus the
+    form around it and refused (413) at that point; below it the form is used as usual. The
+    upload form also refuses a file over 1 MB in the browser before sending it.
+  - `createSignedUrl`'s own `download` option encodes the name twice in this version of
+    `@supabase/storage-js` (a Tibetan name was saved as `%E0%BD...`), so the app adds
+    `&download=` to the link itself.
+  Changed after review (same day):
+  - An object that storage does not report as removed counts as gone only when the lookup
+    clearly says "not there"; a lookup that fails keeps the row.
+  - Replace and remove also match the stored path that was read, so of two replaces at once,
+    or a remove during a replace, the later one changes no row and leaves no object without
+    a row.
+  - An object the app could not clean up is named in the server log ("left behind in the
+    bucket").
+  - `removeStoredFiles` now answers `{ ok, removed }`, which is how the callers know that
+    files were removed before a delete failed.
+  - `SyllabusFiles.svelte`: the student's list has a label for screen readers; a "too large"
+    message from the browser no longer hides a later message from the server; choosing the
+    same file again after a refused replacement works.
+  - `docs/deployment-and-costs.md`: uploads and replaces pass through the Worker (about 1 MB
+    in memory at most), downloads count against Supabase's monthly allowance, how to undo
+    0039 (not tried), and the query for objects whose row is gone.
+  Verified at the first build, after a reset: `npm test`, `npm run check` and `npm run build`
+  exit 0, and the whole browser suite with 2 failures, both known and not from this change
+  ("admin team names", #93, and "B14b"); the 5 tests after them in their two files did not
+  run, among them "admin class create ... deleting a class", which was then run on its own
+  and passed. A signed link stops working after its time (tested with a 1-second link).
+  After the review changes only the tests of the changed files were run by the assistant, on
+  a database that was not reset again, and they pass: `syllabus-files.spec.ts`,
+  `class-syllabus.spec.ts`, `admin/classes/page.server.spec.ts`, the "0039" block of
+  `rls.spec.ts` (as teacher, admin, enrolled student, other teacher, other student, parent of
+  an enrolled child and signed out, against the local bucket) and `e2e/syllabus-files.e2e.ts`
+  (every row of the spec's table, the page at 390 px without sideways scrolling, nothing
+  posted for a file refused in the browser, and an empty bucket after deleting a file, a
+  section, a syllabus and a class); `npm run check` exits 0. The full unit suite, the build
+  and the full browser suite were not run again by the assistant after the review changes.
+  Not verified: the migration on the hosted project (that `postgres` there may create rules on
+  `storage.objects` and insert into `storage.buckets`); `sherab.app`; a real phone (the file
+  picker, and how iOS and Android open or save the PDF); the app's own 60-second link running
+  out, by hand; whether Cloudflare passes `Content-Length` on to the Worker (the app no longer
+  depends on it); the pages with JavaScript really switched off (tested are plain form posts to
+  the three actions; "Replace" has no button without JavaScript).
+  Known gaps: rows deleted outside the app (SQL editor, service role, the test fixtures' own
+  cleanup) leave their objects in the bucket; the migration's header has a query that lists
+  them. An upload that arrives while its section is being deleted can leave one object behind.
+  If deleting a section, syllabus or class fails after its files were removed, it stays
+  without its files; the message now says so.
+  No help-page text was added for teachers or students.
