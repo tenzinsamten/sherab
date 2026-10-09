@@ -9,14 +9,18 @@
 	import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 	import RichText from './RichText.svelte';
+	import type { SyllabusFile } from '$lib/syllabus-files';
+	import SyllabusFiles from './SyllabusFiles.svelte';
 	import SyllabusForm from './SyllabusForm.svelte';
 	import TextWithLinks from './TextWithLinks.svelte';
 
 	/**
 	 * One syllabus (#37) as its sections (0038): each with Edit, move up /
-	 * down and Delete, then the "Add a section" form and "Delete syllabus".
-	 * Posts to `?/addSection`, `?/updateSection`, `?/moveSection`,
-	 * `?/deleteSection` and `?/delete`. `result` is the page's latest action
+	 * down and Delete and its PDF files (0039, SyllabusFiles), then the "Add a
+	 * section" form and "Delete syllabus". Posts to `?/addSection`,
+	 * `?/updateSection`, `?/moveSection`, `?/deleteSection` and `?/delete`,
+	 * and through SyllabusFiles to `?/uploadFile`, `?/replaceFile` and
+	 * `?/deleteFile`. `result` is the page's latest action
 	 * result (`form`): it opens a section that was just added or failed to
 	 * save, closes one that was saved, and carries a wrong title's message.
 	 */
@@ -26,11 +30,23 @@
 		content: RichTextDoc | null;
 		contentLanguage: ContentLanguage;
 		links: HomeworkReferenceLink[];
+		files: SyllabusFile[];
 	};
 	type Result = {
-		action?: 'sectionAdded' | 'sectionSaved' | 'sectionMoved' | 'sectionDeleted';
+		action?:
+			| 'sectionAdded'
+			| 'sectionSaved'
+			| 'sectionMoved'
+			| 'sectionDeleted'
+			| 'fileUploaded'
+			| 'fileReplaced'
+			| 'fileDeleted';
 		sectionId?: string | null;
 		titleError?: string;
+		/** A refused file: its message, its section and the file it was to replace (null: an upload). */
+		fileError?: string;
+		fileSectionId?: string;
+		fileId?: string | null;
 		error?: string;
 	} | null;
 
@@ -92,6 +108,9 @@
 				if (r.sectionId) setEditing(r.sectionId, false);
 				showToast('success', m.syllabus_section_deleted());
 			}
+			if (r.action === 'fileUploaded') showToast('success', m.syllabus_file_uploaded());
+			if (r.action === 'fileReplaced') showToast('success', m.syllabus_file_replaced());
+			if (r.action === 'fileDeleted') showToast('success', m.syllabus_file_deleted());
 		});
 	});
 
@@ -165,7 +184,15 @@
 			{/if}
 			<TextWithLinks
 				links={section.links}
-				empty={section.content ? '' : m.syllabus_section_empty()}
+				empty={section.content || section.files.length > 0 ? '' : m.syllabus_section_empty()}
+			/>
+			<SyllabusFiles
+				files={section.files}
+				sectionId={section.id}
+				{pending}
+				error={result?.fileError && result.fileSectionId === section.id
+					? { fileId: result.fileId ?? null, message: result.fileError }
+					: null}
 			/>
 			<div class="actions" style="margin-top: var(--space-4);">
 				<ix-button

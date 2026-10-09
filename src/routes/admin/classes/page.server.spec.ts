@@ -207,6 +207,110 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
  * #76: a class has a name per language. English and Tibetan are required,
  * German is optional; `rename` saves the three names of an existing class.
  */
+/**
+ * `delete` and the class's stored syllabus files (0039): they are removed
+ * through the Storage API before the class is deleted. A fake client that
+ * answers the two student checks with "none", holds one stored file (read
+ * once, then gone) and records what was removed and deleted.
+ */
+describe('admin classes delete: stored syllabus files (0039)', () => {
+	const CLASS = '11111111-1111-4111-8111-111111111111';
+	const PATH = `${CLASS}/33333333-3333-4333-8333-333333333333/55555555-5555-4555-8555-555555555555.pdf`;
+
+	function deleteEvent(options: {
+		storageRemoves: boolean;
+		classDelete?: { data: unknown; error: { code?: string; message: string } | null };
+	}) {
+		const log: string[] = [];
+		let fileRead = false;
+		const supabase = {
+			from(table: string) {
+				let op = 'select';
+				const chain = {
+					select: () => chain,
+					eq: () => chain,
+					in: () => chain,
+					limit: () => chain,
+					delete: () => ((op = 'delete'), chain),
+					then(resolve: (value: unknown) => unknown) {
+						if (op === 'delete') log.push(`${table}:delete`);
+						if (table === 'profiles') return resolve({ data: [], error: null });
+						if (table === 'class_enrollments') return resolve({ count: 0, error: null });
+						if (table === 'class_syllabus_section_files') {
+							if (op === 'delete') return resolve({ data: [{ id: 'f1' }], error: null });
+							const rows = fileRead ? [] : [{ id: 'f1', object_path: PATH }];
+							fileRead = true;
+							return resolve({ data: rows, error: null });
+						}
+						return resolve(options.classDelete ?? { data: [{ id: CLASS }], error: null });
+					}
+				};
+				return chain;
+			},
+			storage: {
+				from: () => ({
+					remove: async (paths: string[]) => {
+						log.push(`storage:remove:${paths.join(',')}`);
+						return options.storageRemoves
+							? { data: paths.map((name) => ({ name })), error: null }
+							: { data: null, error: { message: 'storage is down' } };
+					}
+				})
+			}
+		};
+		const body = new FormData();
+		body.set('classId', CLASS);
+		body.set('className', 'Grammar');
+		return {
+			log,
+			event: {
+				request: new Request('http://localhost/admin/classes', { method: 'POST', body }),
+				locals: { supabase }
+			} as unknown as Parameters<typeof actions.delete>[0]
+		};
+	}
+
+	it('removes the stored files, then the class', async () => {
+		const { log, event: e } = deleteEvent({ storageRemoves: true });
+		expect(await actions.delete(e)).toEqual({ deleted: 'Grammar' });
+		expect(log).toEqual([
+			`storage:remove:${PATH}`,
+			'class_syllabus_section_files:delete',
+			'classes:delete'
+		]);
+	});
+
+	it('storage cannot remove the files: 400 with the storage message, and the class is not deleted', async () => {
+		const { log, event: e } = deleteEvent({ storageRemoves: false });
+		expect(await actions.delete(e)).toMatchObject({
+			status: 400,
+			data: { error: m.syllabus_file_error_storage() }
+		});
+		expect(log).toEqual([`storage:remove:${PATH}`]);
+	});
+
+	it('the files are gone but the class delete fails: the message says so', async () => {
+		for (const classDelete of [
+			{ data: [], error: null },
+			{ data: null, error: { message: 'down' } }
+		]) {
+			const { event: e } = deleteEvent({ storageRemoves: true, classDelete });
+			expect(await actions.delete(e)).toMatchObject({
+				status: 400,
+				data: { error: m.syllabus_file_error_delete_unfinished() }
+			});
+		}
+		const blocked = deleteEvent({
+			storageRemoves: true,
+			classDelete: { data: null, error: { code: '23503', message: 'still has students' } }
+		});
+		expect(await actions.delete(blocked.event)).toMatchObject({
+			status: 400,
+			data: { error: m.classes_error_delete_has_students_files_removed({ name: 'Grammar' }) }
+		});
+	});
+});
+
 describe('admin classes names (#76)', () => {
 	const today = todayInBerlin();
 	const schedule = { weekday: '7', startsOn: today };

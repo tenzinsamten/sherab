@@ -10,7 +10,7 @@
  * CLI)" fallback in the Verification section.
  */
 import { createClient } from '@supabase/supabase-js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { isDuplicateSignup } from './signup-duplicate';
@@ -25,6 +25,12 @@ import {
 } from './temp-password';
 import { updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
 import { todayInBerlin } from '$lib/berlin-date';
+import {
+	FILE_LIMIT_ERROR_CODE,
+	SYLLABUS_FILES_BUCKET,
+	removeStoredFiles,
+	signedFileUrl
+} from './syllabus-files';
 import type { Database } from './../supabase/database.types';
 
 const adminClient = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -12847,4 +12853,572 @@ describe.skipIf(!reachable)('0038 syllabus sections (requires local Supabase)', 
 		const refused = await teacher.client.rpc('syllabus_sections_backfill');
 		expect(refused.error).not.toBeNull();
 	});
+});
+
+/**
+ * 0039: PDF files on a syllabus section. The table's policies and the
+ * storage bucket's, against the local bucket, as each kind of caller; and
+ * the app's own removal and signed-link helpers with real clients.
+ */
+describe.skipIf(!reachable)('0039 syllabus section files (requires local Supabase)', () => {
+	type SignedIn = Awaited<ReturnType<typeof createSignedInUser>>;
+	type Client = ReturnType<typeof anonClient>;
+	let admin: SignedIn;
+	let teacher: SignedIn;
+	let otherTeacher: SignedIn;
+	let enrolled: Client;
+	let outsider: Client;
+	let parent: Client;
+	const signedOut = anonClient();
+	let classId: string;
+	let otherClassId: string;
+	let syllabusId: string;
+	let otherSyllabusId: string;
+	let otherSectionId: string;
+
+	const name = (label: string) => `0039 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	const bucket = (client: Client | typeof adminClient) =>
+		client.storage.from(SYLLABUS_FILES_BUCKET);
+	const pathIn = (cls: string, section: string) => `${cls}/${section}/${crypto.randomUUID()}.pdf`;
+
+	function pdfBytes(size = 2048): ArrayBuffer {
+		const bytes = new Uint8Array(size);
+		bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
+		return bytes.buffer;
+	}
+
+	const put = (
+		client: Client,
+		path: string,
+		body: ArrayBuffer = pdfBytes(),
+		type = 'application/pdf'
+	) => bucket(client).upload(path, body, { contentType: type, upsert: false });
+
+	const record = (
+		client: Client | typeof adminClient,
+		section: string,
+		path: string,
+		fileName = 'Lyrics.pdf'
+	) =>
+		client
+			.from('class_syllabus_section_files')
+			.insert({ section_id: section, object_path: path, file_name: fileName, size_bytes: 2048 })
+			.select('id');
+
+	/** A stored file made by the service role: object and row. */
+	async function stored(cls: string, section: string, fileName = 'Lyrics.pdf') {
+		const path = pathIn(cls, section);
+		const { error } = await bucket(adminClient).upload(path, pdfBytes(), {
+			contentType: 'application/pdf'
+		});
+		if (error) throw new Error(`Failed to store object: ${error.message}`);
+		const { data, error: rowError } = await record(adminClient, section, path, fileName);
+		if (rowError || !data) throw new Error(`Failed to record file: ${rowError?.message}`);
+		return { id: data[0].id, path };
+	}
+
+	const objectExists = async (path: string) =>
+		(await bucket(adminClient).exists(path)).data === true;
+
+	async function makeClass(label: string, teacherId: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `F${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: teacherId });
+		if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+		return data.id;
+	}
+
+	async function makeSyllabus(forClass: string, schoolYear = 2030) {
+		const { data, error } = await adminClient
+			.from('class_syllabi')
+			.insert({ class_id: forClass, school_year: schoolYear })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create syllabus: ${error?.message}`);
+		return data.id;
+	}
+
+	async function makeSection(forSyllabus: string) {
+		const { data, error } = await adminClient
+			.from('class_syllabus_sections')
+			.insert({ syllabus_id: forSyllabus, position: 1, title: name('Section') })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create section: ${error?.message}`);
+		return data.id;
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** An approved student enrolled in `forClass`, signed in; `guardianEmail` links a parent. */
+	async function student(forClass: string, guardianEmail?: string) {
+		const { id, error } = await signUpStudent({
+			classId: forClass,
+			registrationName: name('Student'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register student: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', display_name: name('Student') })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve student: ${approveError.message}`);
+		const { data: rows } = await adminClient
+			.from('class_enrollments')
+			.select('class_id')
+			.eq('student_id', id)
+			.eq('class_id', forClass);
+		if (!rows?.length) throw new Error('The approved student is not enrolled.');
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return signIn(data.user!.email!, password);
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		otherTeacher = await createSignedInUser('teacher');
+		classId = await makeClass('Class', teacher.id);
+		otherClassId = await makeClass('Other', otherTeacher.id);
+		syllabusId = await makeSyllabus(classId);
+		otherSyllabusId = await makeSyllabus(otherClassId);
+		otherSectionId = await makeSection(otherSyllabusId);
+		// The parent of a child enrolled in the class: still no access.
+		const guardian = await createApprovedParent();
+		enrolled = await student(classId, guardian.email);
+		parent = await signIn(guardian.email, guardian.password);
+		outsider = await student(otherClassId);
+	}, 60000);
+
+	afterAll(async () => {
+		// Leave no objects of these classes in the local bucket.
+		for (const cls of [classId, otherClassId]) {
+			const { data: folders } = await bucket(adminClient).list(cls);
+			for (const folder of folders ?? []) {
+				const { data: objects } = await bucket(adminClient).list(`${cls}/${folder.name}`);
+				const paths = (objects ?? []).map((o) => `${cls}/${folder.name}/${o.name}`);
+				if (paths.length) await bucket(adminClient).remove(paths);
+			}
+		}
+	});
+
+	it('the bucket is private, 1 MB, PDF only', async () => {
+		const { data, error } = await adminClient.storage.getBucket(SYLLABUS_FILES_BUCKET);
+		expect(error).toBeNull();
+		expect(data).toMatchObject({
+			public: false,
+			file_size_limit: 1048576,
+			allowed_mime_types: ['application/pdf']
+		});
+	});
+
+	it("the class's teacher and the admin upload and record files; they and an enrolled student read them", async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const teacherPath = pathIn(classId, sectionId);
+		const adminPath = pathIn(classId, sectionId);
+		expect((await put(teacher.client, teacherPath)).error).toBeNull();
+		expect((await put(admin.client, adminPath)).error).toBeNull();
+		const first = await record(teacher.client, sectionId, teacherPath, 'Song 1 lyrics.pdf');
+		const second = await record(admin.client, sectionId, adminPath, 'གཞས་ཚིག.pdf');
+		expect(first.error ?? second.error).toBeNull();
+
+		for (const [who, client] of [
+			['teacher', teacher.client],
+			['admin', admin.client],
+			['enrolled student', enrolled]
+		] as const) {
+			const rows = await client
+				.from('class_syllabus_section_files')
+				.select('file_name')
+				.in('object_path', [teacherPath, adminPath])
+				.order('created_at');
+			expect(rows.data, who).toEqual([
+				{ file_name: 'Song 1 lyrics.pdf' },
+				{ file_name: 'གཞས་ཚིག.pdf' }
+			]);
+
+			const download = await bucket(client).download(teacherPath);
+			expect(download.error, who).toBeNull();
+			expect(await download.data!.slice(0, 5).text(), who).toBe('%PDF-');
+
+			const signed = await bucket(client).createSignedUrl(adminPath, 60);
+			expect(signed.error, who).toBeNull();
+			const response = await fetch(signed.data!.signedUrl);
+			expect(response.status, who).toBe(200);
+			expect(response.headers.get('content-type'), who).toBe('application/pdf');
+			await response.arrayBuffer();
+		}
+	});
+
+	it("another class's teacher, a student of another class, a parent and a signed-out visitor see no row and get no object or link", async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const file = await stored(classId, sectionId);
+		for (const [who, client] of [
+			['other teacher', otherTeacher.client],
+			['other student', outsider],
+			['parent of an enrolled child', parent],
+			['signed out', signedOut]
+		] as const) {
+			const rows = await client
+				.from('class_syllabus_section_files')
+				.select('id')
+				.eq('section_id', sectionId);
+			expect(rows.data ?? [], who).toEqual([]);
+
+			const download = await bucket(client).download(file.path);
+			expect(download.error, who).not.toBeNull();
+			expect(download.data, who).toBeNull();
+
+			const signed = await bucket(client).createSignedUrl(file.path, 60);
+			expect(signed.error, who).not.toBeNull();
+			expect(signed.data?.signedUrl, who).toBeUndefined();
+
+			const listed = await bucket(client).list(`${classId}/${sectionId}`);
+			expect(listed.data ?? [], who).toEqual([]);
+
+			expect(await signedFileUrl(client as never, file.id, false), who).toBeNull();
+		}
+
+		// No public address, and a guessed signed address without a token, work.
+		const base = `${PUBLIC_SUPABASE_URL}/storage/v1/object`;
+		for (const url of [
+			`${base}/public/${SYLLABUS_FILES_BUCKET}/${file.path}`,
+			`${base}/${SYLLABUS_FILES_BUCKET}/${file.path}`,
+			`${base}/sign/${SYLLABUS_FILES_BUCKET}/${file.path}`,
+			`${base}/sign/${SYLLABUS_FILES_BUCKET}/${file.path}?token=guess`
+		]) {
+			const response = await fetch(url);
+			expect(response.status, url).toBeGreaterThanOrEqual(400);
+			expect(await response.text()).not.toContain('%PDF-');
+		}
+	});
+
+	it('students, parents, other teachers and signed-out visitors cannot upload or record a file', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const existing = await stored(classId, sectionId);
+		for (const [who, client] of [
+			['enrolled student', enrolled],
+			['other teacher', otherTeacher.client],
+			['other student', outsider],
+			['parent', parent],
+			['signed out', signedOut]
+		] as const) {
+			const path = pathIn(classId, sectionId);
+			expect((await put(client, path)).error, who).not.toBeNull();
+			expect(await objectExists(path), who).toBe(false);
+
+			const inserted = await record(client, sectionId, pathIn(classId, sectionId));
+			expect(inserted.error, who).not.toBeNull();
+
+			const renamed = await client
+				.from('class_syllabus_section_files')
+				.update({ file_name: 'hijacked.pdf' })
+				.eq('id', existing.id)
+				.select('id');
+			expect(renamed.data ?? [], who).toEqual([]);
+
+			const deleted = await client
+				.from('class_syllabus_section_files')
+				.delete()
+				.eq('id', existing.id)
+				.select('id');
+			expect(deleted.data ?? [], who).toEqual([]);
+
+			// Storage answers a refused removal with "nothing removed".
+			const removed = await bucket(client).remove([existing.path]);
+			expect(removed.data ?? [], who).toEqual([]);
+		}
+		expect(await objectExists(existing.path)).toBe(true);
+		const { data } = await adminClient
+			.from('class_syllabus_section_files')
+			.select('file_name')
+			.eq('id', existing.id);
+		expect(data).toEqual([{ file_name: 'Lyrics.pdf' }]);
+	});
+
+	it('the bucket refuses a file over 1 MB and a file that is not declared a PDF', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const big = pathIn(classId, sectionId);
+		expect((await put(teacher.client, big, pdfBytes(1048577))).error).not.toBeNull();
+		expect(await objectExists(big)).toBe(false);
+
+		const exact = pathIn(classId, sectionId);
+		expect((await put(teacher.client, exact, pdfBytes(1048576))).error).toBeNull();
+		await bucket(adminClient).remove([exact]);
+
+		const image = pathIn(classId, sectionId);
+		expect((await put(teacher.client, image, pdfBytes(), 'image/png')).error).not.toBeNull();
+		expect(await objectExists(image)).toBe(false);
+	});
+
+	it("a teacher uploads only into a section's folder of their own class, under a name the app makes", async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const refused = [
+			// Another class's folder.
+			pathIn(otherClassId, otherSectionId),
+			// A section of another class under the teacher's own class id.
+			pathIn(classId, otherSectionId),
+			// A section that does not exist.
+			pathIn(classId, crypto.randomUUID()),
+			// The file's own name as the path, other types, other depths.
+			`${classId}/${sectionId}/Song 1 lyrics.pdf`,
+			`${classId}/${sectionId}/${crypto.randomUUID()}.docx`,
+			`${classId}/${crypto.randomUUID()}.pdf`,
+			`${classId}/${sectionId}/deeper/${crypto.randomUUID()}.pdf`,
+			`${crypto.randomUUID()}.pdf`
+		];
+		for (const path of refused) {
+			expect((await put(teacher.client, path)).error, path).not.toBeNull();
+			expect(await objectExists(path), path).toBe(false);
+		}
+	});
+
+	it('a stored object is never overwritten or moved', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const file = await stored(classId, sectionId);
+		const again = await bucket(teacher.client).upload(file.path, pdfBytes(4096), {
+			contentType: 'application/pdf',
+			upsert: true
+		});
+		expect(again.error).not.toBeNull();
+		const moved = await bucket(teacher.client).move(file.path, pathIn(classId, sectionId));
+		expect(moved.error).not.toBeNull();
+		const download = await bucket(adminClient).download(file.path);
+		expect(download.data!.size).toBe(2048);
+	});
+
+	it("a row points only into its own section's folder, has a sane name and size, and stays in its section", async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const elsewhere = await stored(otherClassId, otherSectionId);
+		// Another class's object, as a new row or by changing an own row.
+		const stolen = await record(teacher.client, sectionId, pathIn(otherClassId, otherSectionId));
+		expect(stolen.error).not.toBeNull();
+		const own = await stored(classId, sectionId);
+		const repointed = await teacher.client
+			.from('class_syllabus_section_files')
+			.update({ object_path: pathIn(otherClassId, otherSectionId) })
+			.eq('id', own.id)
+			.select('id');
+		expect(repointed.error).not.toBeNull();
+		// The same object twice.
+		expect((await record(teacher.client, sectionId, own.path)).error?.code).toBe('23505');
+		// A path the app does not make.
+		expect(
+			(await record(teacher.client, sectionId, `${classId}/${sectionId}/Song.pdf`)).error
+		).not.toBeNull();
+
+		const base = { section_id: sectionId, file_name: 'a.pdf', size_bytes: 10 };
+		for (const wrong of [
+			{ file_name: '' },
+			{ file_name: ' a.pdf' },
+			{ file_name: 'a'.repeat(256) },
+			{ size_bytes: 0 },
+			{ size_bytes: 1048577 }
+		]) {
+			const { error } = await adminClient
+				.from('class_syllabus_section_files')
+				.insert({ ...base, object_path: pathIn(classId, sectionId), ...wrong });
+			expect(error, JSON.stringify(wrong).slice(0, 40)).not.toBeNull();
+		}
+
+		// Not movable to another section (no column privilege).
+		const moved = await teacher.client
+			.from('class_syllabus_section_files')
+			.update({ section_id: otherSectionId })
+			.eq('id', own.id)
+			.select('id');
+		expect(moved.error).not.toBeNull();
+		expect(elsewhere.id).toBeTruthy();
+	});
+
+	it('a section holds at most 5 files, also when six arrive at once', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const section = await makeSection(syllabusId);
+		for (let i = 0; i < 5; i += 1) {
+			expect((await record(teacher.client, section, pathIn(classId, section))).error).toBeNull();
+		}
+		const sixth = await record(teacher.client, section, pathIn(classId, section));
+		expect(sixth.error?.code).toBe(FILE_LIMIT_ERROR_CODE);
+		// The service role is held to it too.
+		expect((await record(adminClient, section, pathIn(classId, section))).error?.code).toBe(
+			FILE_LIMIT_ERROR_CODE
+		);
+		// Other sections are not affected.
+		expect((await record(teacher.client, sectionId, pathIn(classId, sectionId))).error).toBeNull();
+
+		const racing = await makeSection(syllabusId);
+		const results = await Promise.all(
+			Array.from({ length: 8 }, (_, i) =>
+				record(i % 2 ? teacher.client : admin.client, racing, pathIn(classId, racing))
+			)
+		);
+		expect(results.filter((r) => !r.error)).toHaveLength(5);
+		expect(
+			results.filter((r) => r.error).every((r) => r.error!.code === FILE_LIMIT_ERROR_CODE)
+		).toBe(true);
+		const { count } = await adminClient
+			.from('class_syllabus_section_files')
+			.select('id', { count: 'exact', head: true })
+			.eq('section_id', racing);
+		expect(count).toBe(5);
+	});
+
+	it('removeStoredFiles: a deleted section leaves no object in the bucket; other sections keep theirs', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const section = await makeSection(syllabusId);
+		const kept = await stored(classId, sectionId);
+		const one = await stored(classId, section);
+		const two = await stored(classId, section);
+
+		// A scope whose parents do not match removes nothing.
+		expect(
+			(
+				await removeStoredFiles(teacher.client as never, {
+					classId: otherClassId,
+					syllabusId,
+					sectionId: section
+				})
+			).ok
+		).toBe(true);
+		expect(
+			(
+				await removeStoredFiles(teacher.client as never, {
+					classId,
+					syllabusId: otherSyllabusId,
+					sectionId: section
+				})
+			).ok
+		).toBe(true);
+		// Someone who may not touch the class removes nothing either.
+		expect(
+			(
+				await removeStoredFiles(otherTeacher.client as never, {
+					classId,
+					syllabusId,
+					sectionId: section
+				})
+			).ok
+		).toBe(true);
+		expect(await objectExists(one.path)).toBe(true);
+		expect(await objectExists(two.path)).toBe(true);
+
+		expect(
+			(
+				await removeStoredFiles(teacher.client as never, {
+					classId,
+					syllabusId,
+					sectionId: section
+				})
+			).ok
+		).toBe(true);
+		const deleted = await teacher.client
+			.from('class_syllabus_sections')
+			.delete()
+			.eq('id', section)
+			.select('id');
+		expect(deleted.data).toHaveLength(1);
+
+		expect((await bucket(adminClient).list(`${classId}/${section}`)).data).toEqual([]);
+		expect(await objectExists(kept.path)).toBe(true);
+		const { data: rows } = await adminClient
+			.from('class_syllabus_section_files')
+			.select('id')
+			.in('id', [one.id, two.id]);
+		expect(rows).toEqual([]);
+	});
+
+	it('removeStoredFiles: a syllabus, and a whole class, as the admin', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const cls = await makeClass('Gone', teacher.id);
+		const year1 = await makeSyllabus(cls, 2030);
+		const year2 = await makeSyllabus(cls, 2031);
+		const s1 = await makeSection(year1);
+		const s2 = await makeSection(year2);
+		const a = await stored(cls, s1);
+		const b = await stored(cls, s2);
+		const untouched = await stored(classId, sectionId);
+
+		expect(
+			(await removeStoredFiles(teacher.client as never, { classId: cls, syllabusId: year1 })).ok
+		).toBe(true);
+		expect(await objectExists(a.path)).toBe(false);
+		expect(await objectExists(b.path)).toBe(true);
+
+		const c = await stored(cls, s1);
+		expect((await removeStoredFiles(admin.client as never, { classId: cls })).ok).toBe(true);
+		expect(await objectExists(b.path)).toBe(false);
+		expect(await objectExists(c.path)).toBe(false);
+		const deleted = await admin.client.from('classes').delete().eq('id', cls).select('id');
+		expect(deleted.data).toHaveLength(1);
+		expect((await bucket(adminClient).list(cls)).data).toEqual([]);
+		expect(await objectExists(untouched.path)).toBe(true);
+	});
+
+	it('deleting a section by SQL alone removes the rows but cannot reach the object (why the app removes it first)', async () => {
+		const section = await makeSection(syllabusId);
+		const file = await stored(classId, section);
+		await adminClient.from('class_syllabus_sections').delete().eq('id', section);
+		const { data } = await adminClient
+			.from('class_syllabus_section_files')
+			.select('id')
+			.eq('id', file.id);
+		expect(data).toEqual([]);
+		expect(await objectExists(file.path)).toBe(true);
+		await bucket(adminClient).remove([file.path]);
+	});
+
+	it('signedFileUrl: a link for the class, with the original name for a download, that stops working', async () => {
+		// Its own section: a section holds at most 5 files.
+		const sectionId = await makeSection(syllabusId);
+		const file = await stored(classId, sectionId, 'Song 1 – གཞས་ཚིག.pdf');
+		for (const client of [teacher.client, admin.client, enrolled]) {
+			const url = await signedFileUrl(client as never, file.id, false);
+			expect(url).toContain(`/object/sign/${SYLLABUS_FILES_BUCKET}/${file.path}?token=`);
+			const response = await fetch(url!);
+			expect(response.status).toBe(200);
+			expect(response.headers.get('content-type')).toBe('application/pdf');
+			// Shown in the browser, not saved.
+			expect(response.headers.get('content-disposition') ?? '').not.toContain('attachment');
+			expect(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 5))).toBe('%PDF-');
+		}
+
+		const download = await signedFileUrl(enrolled as never, file.id, true);
+		const saved = await fetch(download!);
+		expect(saved.status).toBe(200);
+		const disposition = saved.headers.get('content-disposition') ?? '';
+		expect(disposition).toContain('attachment');
+		expect(disposition).toContain(encodeURIComponent('Song 1 – གཞས་ཚིག.pdf'));
+		await saved.arrayBuffer();
+
+		expect(await signedFileUrl(enrolled as never, crypto.randomUUID(), false)).toBeNull();
+
+		// A link's time runs out (here 1 second instead of the app's 60).
+		const short = await bucket(enrolled).createSignedUrl(file.path, 1);
+		expect((await fetch(short.data!.signedUrl)).status).toBe(200);
+		await new Promise((resolve) => setTimeout(resolve, 2500));
+		const late = await fetch(short.data!.signedUrl);
+		expect(late.status).toBeGreaterThanOrEqual(400);
+		expect(await late.text()).not.toContain('%PDF-');
+	}, 20000);
 });

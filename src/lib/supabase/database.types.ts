@@ -407,6 +407,47 @@ export type Database = {
 					}
 				];
 			};
+			class_syllabus_section_files: {
+				Row: {
+					created_at: string;
+					created_by: string | null;
+					file_name: string;
+					id: string;
+					object_path: string;
+					section_id: string;
+					size_bytes: number;
+					updated_at: string;
+				};
+				Insert: {
+					created_at?: string;
+					created_by?: string | null;
+					file_name: string;
+					id?: string;
+					object_path: string;
+					section_id: string;
+					size_bytes: number;
+					updated_at?: string;
+				};
+				Update: {
+					created_at?: string;
+					created_by?: string | null;
+					file_name?: string;
+					id?: string;
+					object_path?: string;
+					section_id?: string;
+					size_bytes?: number;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'class_syllabus_section_files_section_id_fkey';
+						columns: ['section_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_syllabus_sections';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_syllabus_sections: {
 				Row: {
 					content_doc: unknown | null;

@@ -4,6 +4,7 @@ import {
 	isClassCodeCollision,
 	UNIQUE_VIOLATION_CODE
 } from '$lib/server/class-code';
+import { removeStoredFiles } from '$lib/server/syllabus-files';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import { todayInBerlin } from '$lib/berlin-date';
 import {
@@ -228,17 +229,28 @@ export const actions: Actions = {
 			}
 		}
 
+		// The class's syllabus files (0039): deleting the class cascades to
+		// their rows but cannot reach the storage bucket.
+		const files = await removeStoredFiles(supabase, { classId });
+		if (!files.ok) return fail(400, { error: m.syllabus_file_error_storage() });
+
 		const { data: deleted, error } = await supabase
 			.from('classes')
 			.delete()
 			.eq('id', classId)
 			.select('id');
 		if (error || !deleted?.length) {
+			// When the class's files were removed above, the message says so.
+			const filesGone = files.removed > 0;
 			return fail(400, {
 				error:
 					error?.code === '23503'
-						? m.classes_error_delete_has_students({ name: className })
-						: m.classes_error_delete_failed()
+						? filesGone
+							? m.classes_error_delete_has_students_files_removed({ name: className })
+							: m.classes_error_delete_has_students({ name: className })
+						: filesGone
+							? m.syllabus_file_error_delete_unfinished()
+							: m.classes_error_delete_failed()
 			});
 		}
 

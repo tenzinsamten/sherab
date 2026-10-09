@@ -7,6 +7,7 @@ import type { Database } from '$lib/supabase/database.types';
 import {
 	createSection,
 	deleteSection,
+	deleteSyllabus,
 	listSyllabi,
 	moveSection,
 	parseSectionForm,
@@ -146,7 +147,7 @@ type Call = {
  * `answers` and records what was asked. An operation without an answer
  * throws, so a test also proves what was never sent.
  */
-function fakeSupabase(answers: Record<string, Result>) {
+function fakeSupabase(answers: Record<string, Result>, storageRemoves = true) {
 	const calls: Call[] = [];
 	const answer = (key: string): Result => {
 		if (!(key in answers)) throw new Error(`unexpected database call: ${key}`);
@@ -162,6 +163,7 @@ function fakeSupabase(answers: Record<string, Result>) {
 				update: (values: unknown) => ((call.op = 'update'), (call.values = values), chain),
 				delete: () => ((call.op = 'delete'), chain),
 				eq: (column: string, value: unknown) => ((call.filters[column] = value), chain),
+				in: (column: string, value: unknown) => ((call.filters[column] = value), chain),
 				order: () => chain,
 				limit: () => chain,
 				maybeSingle: () => chain,
@@ -172,6 +174,19 @@ function fakeSupabase(answers: Record<string, Result>) {
 		rpc(name: string, args: Record<string, unknown>) {
 			calls.push({ table: name, op: 'rpc', filters: args });
 			return Promise.resolve(answer(`rpc:${name}`));
+		},
+		// The syllabus-files bucket (0039): records what was removed.
+		storage: {
+			from: (bucket: string) => ({
+				remove(paths: string[]) {
+					calls.push({ table: `storage:${bucket}`, op: 'delete', values: paths, filters: {} });
+					return Promise.resolve(
+						storageRemoves
+							? { data: paths.map((name) => ({ name })), error: null }
+							: { data: null, error: { message: 'storage is down' } }
+					);
+				}
+			})
 		}
 	};
 	return { supabase: client as unknown as SupabaseClient<Database>, calls };
@@ -182,12 +197,16 @@ const ok = (data: unknown): Result => ({ data, error: null });
 const SYLLABUS_FOUND = ok({ id: 'syl-1' });
 const SYLLABUS_MISSING = ok(null);
 
-function context(answers: Record<string, Result>, fields: Record<string, string> | FormData) {
+function context(
+	answers: Record<string, Result>,
+	fields: Record<string, string> | FormData,
+	storageRemoves = true
+) {
 	const body = fields instanceof FormData ? fields : new FormData();
 	if (!(fields instanceof FormData)) {
 		for (const [key, value] of Object.entries(fields)) body.set(key, value);
 	}
-	const { supabase, calls } = fakeSupabase(answers);
+	const { supabase, calls } = fakeSupabase(answers, storageRemoves);
 	return {
 		calls,
 		ctx: {
@@ -475,6 +494,175 @@ describe('deleteSection', () => {
 	});
 });
 
+describe('stored files go before what holds them (0039)', () => {
+	const CLASS = '11111111-1111-4111-8111-111111111111';
+	const SYLLABUS = '22222222-2222-4222-8222-222222222222';
+	const SECTION = '33333333-3333-4333-8333-333333333333';
+	const FILE = '44444444-4444-4444-8444-444444444444';
+	const PATH = `${CLASS}/${SECTION}/55555555-5555-4555-8555-555555555555.pdf`;
+	const storageFailure = () => ({ status: 400, data: { error: m.syllabus_file_error_storage() } });
+
+	/** A fake whose file rows are gone once they were deleted. */
+	function withFile(
+		fields: Record<string, string>,
+		storageRemoves = true,
+		overrides: Record<string, Result> = {}
+	) {
+		const made = context(
+			{
+				'class_syllabi:select': ok({ id: SYLLABUS }),
+				'class_syllabi:delete': ok([{ school_year: 2026 }]),
+				'class_syllabus_sections:delete': ok([{ id: SECTION }]),
+				'class_syllabus_section_files:select': ok([{ id: FILE, object_path: PATH }]),
+				'class_syllabus_section_files:delete': ok([{ id: FILE }]),
+				...overrides
+			},
+			fields,
+			storageRemoves
+		);
+		const ctx = { ...made.ctx, classId: CLASS, syllabusId: SYLLABUS };
+		const real = ctx.supabase.from.bind(ctx.supabase);
+		let rowsDeleted = false;
+		ctx.supabase.from = ((table: string) => {
+			const chain = real(table as never) as unknown as {
+				delete: () => unknown;
+				then: (resolve: (value: Result) => unknown) => unknown;
+			};
+			if (table !== 'class_syllabus_section_files') return chain;
+			const { delete: del, then } = chain;
+			let deleting = false;
+			chain.delete = () => ((deleting = true), del());
+			chain.then = (resolve) =>
+				then((value) => {
+					if (deleting) rowsDeleted = true;
+					return resolve(!deleting && rowsDeleted ? ok([]) : value);
+				});
+			return chain;
+		}) as never;
+		return { ctx, calls: made.calls };
+	}
+
+	it('deleteSection: the objects, then the file rows, then the section', async () => {
+		const { ctx, calls } = withFile({ sectionId: SECTION });
+		expect(await deleteSection(ctx)).toMatchObject({ success: true, action: 'sectionDeleted' });
+		expect(writes(calls).map((c) => [c.table, c.values ?? c.filters])).toEqual([
+			['storage:syllabus-files', [PATH]],
+			['class_syllabus_section_files', { id: [FILE] }],
+			['class_syllabus_sections', { id: SECTION, syllabus_id: SYLLABUS }]
+		]);
+		// Only this class's, this syllabus's, this section's files were asked for.
+		expect(calls.find((c) => c.table === 'class_syllabus_section_files')?.filters).toEqual({
+			'class_syllabus_sections.class_syllabi.class_id': CLASS,
+			'class_syllabus_sections.syllabus_id': SYLLABUS,
+			section_id: SECTION
+		});
+	});
+
+	it('deleteSection: refused with an error when storage cannot remove, and the section stays', async () => {
+		const { ctx, calls } = withFile({ sectionId: SECTION }, false);
+		expect(await deleteSection(ctx)).toMatchObject(storageFailure());
+		expect(writes(calls).map((c) => c.table)).toEqual(['storage:syllabus-files']);
+	});
+
+	it("deleteSyllabus: every section's objects first; refused when storage cannot remove", async () => {
+		const done = withFile({ syllabusId: SYLLABUS });
+		await expect(
+			deleteSyllabus({ ...done.ctx, listPath: '/teacher/classes/x/syllabus' })
+		).rejects.toMatchObject({ status: 303 });
+		expect(writes(done.calls).map((c) => c.table)).toEqual([
+			'storage:syllabus-files',
+			'class_syllabus_section_files',
+			'class_syllabi'
+		]);
+		expect(done.calls.find((c) => c.table === 'class_syllabus_section_files')?.filters).toEqual({
+			'class_syllabus_sections.class_syllabi.class_id': CLASS,
+			'class_syllabus_sections.syllabus_id': SYLLABUS
+		});
+
+		const refused = withFile({ syllabusId: SYLLABUS }, false);
+		expect(
+			await deleteSyllabus({ ...refused.ctx, listPath: '/teacher/classes/x/syllabus' })
+		).toMatchObject(storageFailure());
+		expect(writes(refused.calls).map((c) => c.table)).toEqual(['storage:syllabus-files']);
+	});
+});
+
+describe('the files are gone but the delete then fails (0039)', () => {
+	const CLASS = '11111111-1111-4111-8111-111111111111';
+	const SYLLABUS = '22222222-2222-4222-8222-222222222222';
+	const SECTION = '33333333-3333-4333-8333-333333333333';
+	const FILE = '44444444-4444-4444-8444-444444444444';
+	const PATH = `${CLASS}/${SECTION}/55555555-5555-4555-8555-555555555555.pdf`;
+	const unfinished = () => ({
+		status: 400,
+		data: { error: m.syllabus_file_error_delete_unfinished() }
+	});
+
+	/** One stored file, read once and then gone; `answers` decide how the delete itself ends. */
+	function afterFiles(fields: Record<string, string>, answers: Record<string, Result>) {
+		let read = false;
+		const made = context(
+			{
+				'class_syllabi:select': ok({ id: SYLLABUS }),
+				'class_syllabus_section_files:delete': ok([{ id: FILE }]),
+				...answers
+			},
+			fields
+		);
+		const ctx = { ...made.ctx, classId: CLASS, syllabusId: SYLLABUS };
+		const real = ctx.supabase.from.bind(ctx.supabase);
+		ctx.supabase.from = ((table: string) => {
+			if (table !== 'class_syllabus_section_files') return real(table as never);
+			const chain = real(table as never) as unknown as {
+				delete: () => unknown;
+				then: (resolve: (value: Result) => unknown) => unknown;
+			};
+			const del = chain.delete;
+			let deleting = false;
+			chain.delete = () => ((deleting = true), del());
+			chain.then = (resolve) => {
+				if (deleting) return resolve(ok([{ id: FILE }]));
+				const rows = read ? [] : [{ id: FILE, object_path: PATH }];
+				read = true;
+				return resolve(ok(rows));
+			};
+			return chain;
+		}) as never;
+		return ctx;
+	}
+
+	it('deleteSection: says the files were removed and the delete did not finish', async () => {
+		for (const answer of [ok([]), { data: null, error: { message: 'down' } }]) {
+			const ctx = afterFiles({ sectionId: SECTION }, { 'class_syllabus_sections:delete': answer });
+			expect(await deleteSection(ctx)).toMatchObject(unfinished());
+		}
+	});
+
+	it('deleteSyllabus: the same', async () => {
+		for (const answer of [ok([]), { data: null, error: { message: 'down' } }]) {
+			const ctx = afterFiles({ syllabusId: SYLLABUS }, { 'class_syllabi:delete': answer });
+			expect(
+				await deleteSyllabus({ ...ctx, listPath: '/teacher/classes/x/syllabus' })
+			).toMatchObject(unfinished());
+		}
+	});
+
+	it('without files the old answers stay', async () => {
+		const section = context(
+			{
+				'class_syllabi:select': ok({ id: SYLLABUS }),
+				'class_syllabus_section_files:select': ok([]),
+				'class_syllabus_sections:delete': ok([])
+			},
+			{ sectionId: SECTION }
+		);
+		expect(
+			await deleteSection({ ...section.ctx, classId: CLASS, syllabusId: SYLLABUS })
+		).toMatchObject(genericFailure());
+		expect(m.syllabus_file_error_storage()).not.toMatch(/nothing was deleted/i);
+	});
+});
+
 describe('listSyllabi', () => {
 	const section = (id: string, position: number, created_at: string) => ({
 		id,
@@ -513,7 +701,43 @@ describe('listSyllabi', () => {
 			title: 'a',
 			content: null,
 			contentLanguage: 'bo',
-			links: [{ url: 'https://a.example', label: null }]
+			links: [{ url: 'https://a.example', label: null }],
+			files: []
 		});
+	});
+
+	it('gives each section its files, oldest first, under their original names (0039)', async () => {
+		const { supabase } = fakeSupabase({
+			'class_syllabi:select': ok([
+				{
+					id: 'syl-1',
+					school_year: 2026,
+					class_syllabus_sections: [
+						{
+							...section('a', 1, '2026-09-01T00:00:00Z'),
+							class_syllabus_section_files: [
+								{
+									id: 'f2',
+									file_name: 'Notes.pdf',
+									size_bytes: 2048,
+									created_at: '2026-09-03T00:00:00Z'
+								},
+								{
+									id: 'f1',
+									file_name: 'Lyrics.pdf',
+									size_bytes: 300000,
+									created_at: '2026-09-02T00:00:00Z'
+								}
+							]
+						}
+					]
+				}
+			])
+		});
+		const { syllabi } = await listSyllabi(supabase, 'class-1');
+		expect(syllabi[0].sections[0].files).toEqual([
+			{ id: 'f1', name: 'Lyrics.pdf', size: 300000 },
+			{ id: 'f2', name: 'Notes.pdf', size: 2048 }
+		]);
 	});
 });

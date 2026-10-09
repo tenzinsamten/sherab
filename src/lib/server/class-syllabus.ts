@@ -16,6 +16,8 @@ import type { Database, HomeworkReferenceLink } from '$lib/supabase/database.typ
 import { CLASS_MESSAGES, SYLLABUS_MESSAGES, rowOr404 } from './class-access';
 import { UNIQUE_VIOLATION_CODE } from './class-code';
 import { parseReferenceLinks, readReferenceLinks } from './homework-details';
+import type { SyllabusFile } from '$lib/syllabus-files';
+import { removeStoredFiles } from './syllabus-files';
 
 /**
  * Class syllabi, one per school year (#37, 0015_class_syllabi.sql), each made
@@ -23,7 +25,8 @@ import { parseReferenceLinks, readReferenceLinks } from './homework-details';
  * routes (/teacher/classes/[id]/syllabus) and the admin routes
  * (/admin/classes/[id]/syllabus); RLS decides who may read or change them.
  * A section's description is rich text in a chosen language, like homework
- * content (#75), and it has its own links.
+ * content (#75), and it has its own links and PDF files (0039, see
+ * syllabus-files.ts).
  */
 
 type Client = SupabaseClient<Database>;
@@ -44,6 +47,8 @@ export type SyllabusSection = {
 	/** Language the section is written in: selects its font (#75). */
 	contentLanguage: ContentLanguage;
 	links: HomeworkReferenceLink[];
+	/** Its PDF files, oldest first (0039). */
+	files: SyllabusFile[];
 };
 
 export type Syllabus = {
@@ -97,7 +102,16 @@ type SectionRow = {
 	content_language: string;
 	links: unknown;
 	created_at: string;
+	class_syllabus_section_files?:
+		{ id: string; file_name: string; size_bytes: number; created_at: string }[] | null;
 };
+
+/** A section's files in the order they were added; a replaced file keeps its place. */
+function toFiles(rows: SectionRow['class_syllabus_section_files']): SyllabusFile[] {
+	return [...(rows ?? [])]
+		.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+		.map((file) => ({ id: file.id, name: file.file_name, size: file.size_bytes }));
+}
 
 function toSyllabus(row: {
 	id: string;
@@ -118,7 +132,8 @@ function toSyllabus(row: {
 			title: section.title,
 			content: readContent(section.content_doc),
 			contentLanguage: readContentLanguage(section.content_language),
-			links: readReferenceLinks(section.links)
+			links: readReferenceLinks(section.links),
+			files: toFiles(section.class_syllabus_section_files)
 		}))
 	};
 }
@@ -126,7 +141,7 @@ function toSyllabus(row: {
 // class_syllabi's own content_doc / content_language / links are no longer
 // read (0038): the sections hold the text and links.
 const SYLLABUS_COLUMNS =
-	'id, school_year, class_syllabus_sections(id, position, title, content_doc, content_language, links, created_at)';
+	'id, school_year, class_syllabus_sections(id, position, title, content_doc, content_language, links, created_at, class_syllabus_section_files(id, file_name, size_bytes, created_at))';
 
 /** A class's syllabi, newest school year first. */
 export async function listSyllabi(
@@ -257,6 +272,11 @@ export async function deleteSyllabus({
 	const formData = await request.formData();
 	const syllabusId = String(formData.get('syllabusId') ?? '');
 
+	// The delete cascades to the file rows but cannot reach the bucket (0039).
+	// Scoped to this class, so a syllabus of another one loses nothing.
+	const files = await removeStoredFiles(supabase, { classId, syllabusId });
+	if (!files.ok) return fail(400, { error: m.syllabus_file_error_storage() });
+
 	const { data, error } = await supabase
 		.from('class_syllabi')
 		.delete()
@@ -265,7 +285,10 @@ export async function deleteSyllabus({
 		.select('school_year');
 
 	if (error || !data || data.length === 0) {
-		return fail(400, { error: m.syllabus_error_failed() });
+		return fail(400, {
+			error:
+				files.removed > 0 ? m.syllabus_file_error_delete_unfinished() : m.syllabus_error_failed()
+		});
 	}
 
 	throw redirect(303, `${listPath}?deleted=${data[0].school_year}`);
@@ -437,6 +460,12 @@ export async function deleteSection({
 
 	if (!(await syllabusInClass(supabase, classId, syllabusId))) return sectionFailed();
 
+	// The section's stored files first (0039): the delete cascades to their
+	// rows but cannot reach the bucket. Scoped to this syllabus and class, so
+	// a section of another one loses nothing.
+	const files = await removeStoredFiles(supabase, { classId, syllabusId, sectionId });
+	if (!files.ok) return fail(400, { error: m.syllabus_file_error_storage() });
+
 	const { data, error } = await supabase
 		.from('class_syllabus_sections')
 		.delete()
@@ -444,7 +473,12 @@ export async function deleteSection({
 		.eq('syllabus_id', syllabusId)
 		.select('id');
 
-	if (error || !data || data.length === 0) return sectionFailed();
+	if (error || !data || data.length === 0) {
+		// The files are already gone: say so, instead of only "could not save".
+		return files.removed > 0
+			? fail(400, { error: m.syllabus_file_error_delete_unfinished() })
+			: sectionFailed();
+	}
 
 	return { success: true, action: 'sectionDeleted' as const, sectionId };
 }

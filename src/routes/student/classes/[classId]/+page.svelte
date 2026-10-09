@@ -6,6 +6,7 @@
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import RichText from '$lib/components/RichText.svelte';
+	import SyllabusFiles from '$lib/components/SyllabusFiles.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { showToast } from '$lib/ix';
@@ -74,6 +75,7 @@
 					<RichText content={section.content} lang={section.contentLanguage} />
 				{/if}
 				<TextWithLinks links={section.links} />
+				<SyllabusFiles files={section.files} sectionId={section.id} />
 			</div>
 		{:else}
 			<p class="muted" style="margin:0;">{m.student_syllabus_empty()}</p>
