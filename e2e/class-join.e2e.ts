@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B12a (#67): on their dashboard an approved student sends another class's
@@ -37,6 +37,7 @@ const classes: Record<'home' | 'target' | 'reject' | 'second', { id: string; cod
 };
 let studentId = '';
 const teacherIds: string[] = [];
+const team = fixtureTeam(tag);
 
 async function createTeacher(key: string): Promise<TestUser> {
 	const email = `e2e-67-${key}-${tag}@example.test`;
@@ -74,6 +75,8 @@ async function cleanup() {
 		if (error) problems.push(`delete student: ${error.message}`);
 		else studentId = '';
 	}
+	const teamProblem = await team.remove();
+	if (teamProblem) problems.push(teamProblem);
 	for (const id of teacherIds.splice(0)) {
 		const { error } = await service.auth.admin.deleteUser(id);
 		if (error) problems.push(`delete teacher: ${error.message}`);
@@ -123,7 +126,8 @@ test.beforeAll(async () => {
 					class_id: classes.home.id,
 					status: 'approved',
 					registration_name: studentName,
-					display_name: studentName
+					display_name: studentName,
+					team_id: await team.id()
 				})
 				.eq('id', studentId),
 			'approve student'

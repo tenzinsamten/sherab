@@ -91,6 +91,26 @@ async function sessionFor(classId: string, day: string): Promise<string> {
 }
 
 /**
+ * #99: the database gives a team to every student approved without one
+ * (0043), fixtures of the service role too, and refuses the approval while
+ * there is no team. A fixture with no team of its own names this one, so its
+ * student lands in no team another test counts.
+ */
+let fixtureTeam: Promise<string> | undefined;
+function fixtureTeamId(): Promise<string> {
+	fixtureTeam ??= (async () => {
+		const { data, error } = await adminClient
+			.from('teams')
+			.insert({ name: `Fixture Team ${crypto.randomUUID().slice(0, 6)}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create the fixture team: ${error?.message}`);
+		return data.id;
+	})();
+	return fixtureTeam;
+}
+
+/**
  * The past day Story 2-1's attendance fixtures use. Far in the past, so the
  * shared calendar's real (recent) class days are left alone.
  */
@@ -587,7 +607,6 @@ describe.skipIf(!reachable)(
 		let teacherA: Awaited<ReturnType<typeof createSignedInUser>>;
 		let teacherB: Awaited<ReturnType<typeof createSignedInUser>>;
 		let classAId: string;
-		let teamId: string;
 
 		beforeAll(async () => {
 			admin = await createSignedInUser('admin');
@@ -611,13 +630,12 @@ describe.skipIf(!reachable)(
 				.insert({ class_id: classAId, teacher_id: teacherA.id });
 			if (assignError) throw new Error(`Failed to assign teacherA: ${assignError.message}`);
 
-			const { data: team, error: teamError } = await admin.client
+			// #99: the database assigns the team at approval (0043) and refuses an
+			// approval while there is no team, so one has to exist.
+			const { error: teamError } = await admin.client
 				.from('teams')
-				.insert({ name: `Story 1-2 Team ${crypto.randomUUID().slice(0, 6)}` })
-				.select('id')
-				.single();
-			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
-			teamId = team.id;
+				.insert({ name: `Story 1-2 Team ${crypto.randomUUID().slice(0, 6)}` });
+			if (teamError) throw new Error(`Failed to create team: ${teamError.message}`);
 		}, 30000);
 
 		it('validate_class_code() finds a known code and returns nothing for an unknown one', async () => {
@@ -724,7 +742,6 @@ describe.skipIf(!reachable)(
 					.from('profiles')
 					.update({
 						status,
-						...(status === 'approved' ? { team_id: teamId } : {}),
 						reviewed_by: teacherA.id,
 						reviewed_at: new Date().toISOString()
 					})
@@ -1061,7 +1078,6 @@ describe.skipIf(!reachable)(
 				.from('profiles')
 				.update({
 					status: 'approved',
-					team_id: teamId,
 					email: studentUsernameToEmail(username),
 					reviewed_by: teacherA.id,
 					reviewed_at: new Date().toISOString()
@@ -1072,7 +1088,14 @@ describe.skipIf(!reachable)(
 
 			expect(error).toBeNull();
 			expect(updated?.status).toBe('approved');
-			expect(updated?.team_id).toBe(teamId);
+			// #99: no team is sent; the database assigned one (which one is the
+			// "#99 team assigned at approval" block's business).
+			const { data: assignedTeam } = await adminClient
+				.from('teams')
+				.select('id')
+				.eq('id', updated?.team_id ?? '')
+				.maybeSingle();
+			expect(assignedTeam).toEqual({ id: updated?.team_id });
 			expect(updated?.reviewed_by).toBe(teacherA.id);
 			expect(updated?.email).toBe(studentUsernameToEmail(username));
 
@@ -1101,16 +1124,20 @@ describe.skipIf(!reachable)(
 			const registrationName = `Team Once Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
 
-			const { error: approveError } = await teacherA.client
+			// #99: the team is the database's choice at approval.
+			const { data: approvedRow, error: approveError } = await teacherA.client
 				.from('profiles')
 				.update({
 					status: 'approved',
-					team_id: teamId,
 					reviewed_by: teacherA.id,
 					reviewed_at: new Date().toISOString()
 				})
-				.eq('id', id!);
+				.eq('id', id!)
+				.select('team_id')
+				.single();
 			expect(approveError).toBeNull();
+			const teamId = approvedRow?.team_id;
+			expect(teamId).toEqual(expect.any(String));
 
 			const { data: secondTeam } = await admin.client
 				.from('teams')
@@ -1170,7 +1197,6 @@ describe.skipIf(!reachable)(
 				.from('profiles')
 				.update({
 					status: 'approved',
-					team_id: teamId,
 					reviewed_by: teacherB.id,
 					reviewed_at: new Date().toISOString()
 				})
@@ -1205,7 +1231,6 @@ describe.skipIf(!reachable)(
 				.from('profiles')
 				.update({
 					status: 'approved',
-					team_id: teamId,
 					reviewed_by: teacherA.id,
 					reviewed_at: new Date().toISOString()
 				})
@@ -1271,7 +1296,6 @@ describe.skipIf(!reachable)(
 				.from('profiles')
 				.update({
 					status: 'approved',
-					team_id: teamId,
 					reviewed_by: admin.id,
 					reviewed_at: new Date().toISOString()
 				})
@@ -1418,7 +1442,6 @@ describe.skipIf(!reachable)(
 					.from('profiles')
 					.update({
 						status: 'approved',
-						team_id: teamId,
 						email: studentUsernameToEmail(username),
 						reviewed_by: teacherA.id,
 						reviewed_at: new Date().toISOString()
@@ -5490,6 +5513,12 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 	 * team-assigned student), this story's own I/O matrix needs pending and
 	 * team-less students too (e.g. "Student with a streak but team_id IS
 	 * NULL -- excluded from every team's sum").
+	 *
+	 * #99: an update to approved without a team now gets one from the
+	 * database (0043). `teamId: null` with status approved therefore builds
+	 * the row the only way left: the pending profile row is replaced by an
+	 * approved copy (the trigger is on update, not on insert). Such rows exist
+	 * from before 0043.
 	 */
 	async function createStudent(params: {
 		classId: string;
@@ -5508,18 +5537,38 @@ describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', (
 			throw new Error(`Failed to create student: ${error?.message}`);
 		}
 
-		const { error: updateError } = await adminClient
+		const status = params.status ?? 'approved';
+		const teamless = status === 'approved' && !params.teamId;
+		const { data: row, error: updateError } = await adminClient
 			.from('profiles')
 			.update({
 				class_id: params.classId,
-				status: params.status ?? 'approved',
+				status: teamless ? 'pending' : status,
 				registration_name: params.name,
 				display_name: params.name,
 				team_id: params.teamId ?? null
 			})
-			.eq('id', data.user.id);
-		if (updateError) {
-			throw new Error(`Failed to set up student: ${updateError.message}`);
+			.eq('id', data.user.id)
+			.select('*')
+			.single();
+		if (updateError || !row) {
+			throw new Error(`Failed to set up student: ${updateError?.message}`);
+		}
+
+		if (teamless) {
+			const { error: deleteError } = await adminClient
+				.from('profiles')
+				.delete()
+				.eq('id', data.user.id);
+			if (deleteError) throw new Error(`Failed to remove the pending row: ${deleteError.message}`);
+			const { data: inserted, error: insertError } = await adminClient
+				.from('profiles')
+				.insert({ ...row, status: 'approved' })
+				.select('status, team_id')
+				.single();
+			if (insertError) throw new Error(`Failed to insert the approved row: ${insertError.message}`);
+			// The fixture is what the test says it is.
+			expect(inserted).toEqual({ status: 'approved', team_id: null });
 		}
 
 		return data.user.id;
@@ -5858,7 +5907,8 @@ describe.skipIf(!reachable)('Story 5-1 admin dashboard (requires local Supabase)
 				class_id: params.classId,
 				status: 'approved',
 				registration_name: params.name,
-				display_name: params.name
+				display_name: params.name,
+				team_id: await fixtureTeamId()
 			})
 			.eq('id', data.user.id);
 		if (updateError) {
@@ -6304,7 +6354,8 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 				class_id: classIds[0],
 				status: 'approved',
 				registration_name: 'Story 6-1 Student',
-				display_name: 'Story 6-1 Student'
+				display_name: 'Story 6-1 Student',
+				team_id: await fixtureTeamId()
 			})
 			.eq('id', data.user.id);
 		if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
@@ -6809,7 +6860,8 @@ describe.skipIf(!reachable)(
 					class_id: classId,
 					status: 'approved',
 					registration_name: 'Story 6-4 Student',
-					display_name: 'Story 6-4 Student'
+					display_name: 'Story 6-4 Student',
+					team_id: await fixtureTeamId()
 				})
 				.eq('id', data.user.id);
 			if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
@@ -7395,7 +7447,8 @@ describe.skipIf(!reachable)(
 					class_id: classId,
 					status: 'approved',
 					registration_name: 'Story 6-2 Student',
-					display_name: 'Story 6-2 Student'
+					display_name: 'Story 6-2 Student',
+					team_id: await fixtureTeamId()
 				})
 				.eq('id', data.user.id);
 			if (updateError) throw new Error(`Failed to approve student: ${updateError.message}`);
@@ -8382,7 +8435,6 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
 	let otherTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
 	let classId: string;
-	let teamId: string;
 
 	beforeAll(async () => {
 		teacher = await createSignedInUser('teacher');
@@ -8400,13 +8452,11 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		classId = data.id;
 		await adminClient.from('class_teachers').insert({ class_id: classId, teacher_id: teacher.id });
 
-		const { data: team, error: teamError } = await adminClient
+		// #99: approval needs a team to exist; the database picks it (0043).
+		const { error: teamError } = await adminClient
 			.from('teams')
-			.insert({ name: `7-2 Team ${crypto.randomUUID().slice(0, 6)}` })
-			.select('id')
-			.single();
-		if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
-		teamId = team.id;
+			.insert({ name: `7-2 Team ${crypto.randomUUID().slice(0, 6)}` });
+		if (teamError) throw new Error(`Failed to create team: ${teamError.message}`);
 	}, 30000);
 
 	const studentName = (label: string) => `7-2 ${label} ${crypto.randomUUID().slice(0, 8)}`;
@@ -8455,7 +8505,6 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 			.from('profiles')
 			.update({
 				status: 'approved',
-				team_id: teamId,
 				email: studentUsernameToEmail(username),
 				reviewed_by: teacher.id,
 				reviewed_at: new Date().toISOString()
@@ -14482,5 +14531,253 @@ describe.skipIf(!reachable)('#97 team students (requires local Supabase)', () =>
 		const { data, error } = await parent.client.rpc('class_people', { p_class_id: classId });
 		expect(error).toBeNull();
 		expect((data ?? []).filter((person) => !person.is_teacher)).toEqual([]);
+	});
+});
+
+/**
+ * #99 (0043): at approval the database puts the student in a team with the
+ * fewest students, at random among the smallest.
+ *
+ * The rule is over every team in the database, and this file's other blocks
+ * leave teams of many sizes behind. So the tests compare against the sizes
+ * of all teams read just before, not against teams of their own alone:
+ *   * one approval: the student's team was one of the smallest then;
+ *   * several approvals: the sizes afterwards are the sizes before with one
+ *     student added to a smallest team, once per approval (`filled`). Which
+ *     of several smallest teams gets a student is random, but the sizes that
+ *     come out are the same whichever it is.
+ * "No team at all" cannot be built here (teams with students cannot be
+ * deleted); the approve action's spec covers how that refusal is shown.
+ */
+describe.skipIf(!reachable)('#99 team assigned at approval (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let classId: string;
+	/** A team with five students: larger than a new team for every test here. */
+	let bigTeam: string;
+
+	const name = (label: string) => `T99 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+	async function createTeam(label: string) {
+		const { data, error } = await adminClient
+			.from('teams')
+			.insert({ name: name(label) })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create team: ${error?.message}`);
+		return data.id;
+	}
+
+	/** The number of students of every team in the database, empty teams included. */
+	async function teamSizes() {
+		const sizes = new Map<string, number>();
+		const { data: teams, error: teamsError } = await adminClient.from('teams').select('id');
+		if (teamsError) throw new Error(`Failed to read teams: ${teamsError.message}`);
+		for (const team of teams ?? []) sizes.set(team.id, 0);
+		const pageSize = 1000;
+		for (let from = 0; ; from += pageSize) {
+			const { data, error } = await adminClient
+				.from('profiles')
+				.select('team_id')
+				.eq('role', 'student')
+				.not('team_id', 'is', null)
+				.order('id')
+				.range(from, from + pageSize - 1);
+			if (error) throw new Error(`Failed to read students: ${error.message}`);
+			for (const row of data ?? []) sizes.set(row.team_id!, (sizes.get(row.team_id!) ?? 0) + 1);
+			if ((data ?? []).length < pageSize) break;
+		}
+		return sizes;
+	}
+
+	const sorted = (sizes: Iterable<number>) => [...sizes].sort((a, b) => a - b);
+
+	/** `sizes` after `count` students each joined a smallest team, sorted. */
+	function filled(sizes: Iterable<number>, count: number) {
+		const result = sorted(sizes);
+		for (let i = 0; i < count; i++) {
+			result[0] += 1;
+			result.sort((a, b) => a - b);
+		}
+		return result;
+	}
+
+	async function pendingStudent(label: string) {
+		const { id, error } = await signUpStudent({ classId, registrationName: name(label) });
+		if (error || !id) throw new Error(`Failed to sign up student: ${error?.message}`);
+		return id;
+	}
+
+	/** The approval as /requests sends it (no team), plus whatever `extra` adds. */
+	function approve(client: Client, studentId: string, extra: { team_id?: string } = {}) {
+		return client
+			.from('profiles')
+			.update({ status: 'approved', reviewed_at: new Date().toISOString(), ...extra })
+			.eq('id', studentId)
+			.select('status, team_id')
+			.single();
+	}
+
+	async function profileOf(studentId: string) {
+		const { data, error } = await adminClient
+			.from('profiles')
+			.select('status, team_id')
+			.eq('id', studentId)
+			.single();
+		if (error) throw new Error(`Failed to read student: ${error.message}`);
+		return data;
+	}
+
+	/** Approves as `client` and checks the student's team was one of the smallest. */
+	async function approveIntoSmallest(
+		client: Client,
+		studentId: string,
+		extra: { team_id?: string } = {}
+	) {
+		const before = await teamSizes();
+		const { data, error } = await approve(client, studentId, extra);
+		expect(error).toBeNull();
+		expect(data?.status).toBe('approved');
+		const teamId = data?.team_id ?? '';
+		expect(before.has(teamId)).toBe(true);
+		expect(before.get(teamId)).toBe(Math.min(...before.values()));
+		return teamId;
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		const { data: cls, error: classError } = await adminClient
+			.from('classes')
+			.insert({ name: name('Class'), code: `N${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (classError || !cls) throw new Error(`Failed to create class: ${classError?.message}`);
+		classId = cls.id;
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: classId, teacher_id: teacher.id });
+		if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+
+		// Service role sets a team: the team it names is kept, whatever its size.
+		bigTeam = await createTeam('Big');
+		for (let i = 0; i < 5; i++) {
+			const id = await pendingStudent(`Big ${i}`);
+			const { data, error } = await approve(adminClient, id, { team_id: bigTeam });
+			if (error) throw new Error(`Failed to fill the big team: ${error.message}`);
+			expect(data).toEqual({ status: 'approved', team_id: bigTeam });
+		}
+	}, 60000);
+
+	it('Service role sets a team: that team is kept, also when it is the largest', async () => {
+		await createTeam('Empty next to big');
+		const before = await teamSizes();
+		expect(before.get(bigTeam)).toBeGreaterThan(Math.min(...before.values()));
+
+		const id = await pendingStudent('Service Named');
+		const { data, error } = await approve(adminClient, id, { team_id: bigTeam });
+		expect(error).toBeNull();
+		expect(data).toEqual({ status: 'approved', team_id: bigTeam });
+	});
+
+	it('Service role without a team: the database chooses one of the smallest', async () => {
+		const id = await pendingStudent('Service Unnamed');
+		const teamId = await approveIntoSmallest(adminClient, id);
+		expect(teamId).not.toBe(bigTeam);
+	});
+
+	it('Seven approvals one after another: each goes to a team that is one of the smallest at that moment, and the sizes end as if each had joined a smallest team', async () => {
+		// Three new empty teams, so several teams are the smallest at the start.
+		await createTeam('Even A');
+		await createTeam('Even B');
+		await createTeam('Even C');
+		const start = await teamSizes();
+
+		for (let i = 0; i < 7; i++) {
+			const id = await pendingStudent(`Even ${i}`);
+			const teamId = await approveIntoSmallest(teacher.client, id);
+			expect(teamId).not.toBe(bigTeam);
+		}
+
+		const end = await teamSizes();
+		expect(sorted(end.values())).toEqual(filled(start.values(), 7));
+	}, 60000);
+
+	it('Next to a big team and a new empty one: each of three approvals goes to a team that is one of the smallest at that moment, never to the big team', async () => {
+		await createTeam('Catch Up');
+		for (let i = 0; i < 3; i++) {
+			const id = await pendingStudent(`Catch Up ${i}`);
+			const teamId = await approveIntoSmallest(teacher.client, id);
+			expect(teamId).not.toBe(bigTeam);
+		}
+	}, 60000);
+
+	it("Client sends a team: a teacher's or the admin's team_id of a larger team is ignored", async () => {
+		await createTeam('Empty next to big');
+		for (const client of [teacher.client, admin.client]) {
+			const bigBefore = (await teamSizes()).get(bigTeam);
+			const id = await pendingStudent('Client Named');
+			const teamId = await approveIntoSmallest(client, id, { team_id: bigTeam });
+			expect(teamId).not.toBe(bigTeam);
+			expect((await profileOf(id)).team_id).toBe(teamId);
+			expect((await teamSizes()).get(bigTeam)).toBe(bigBefore);
+		}
+	}, 60000);
+
+	it('Same moment: eight approvals at once leave the sizes as if they came one after another', async () => {
+		// Two new teams: without the lock, approvals that count at the same
+		// moment pile into the same smallest team.
+		await createTeam('Race A');
+		await createTeam('Race B');
+		const ids: string[] = [];
+		for (let i = 0; i < 8; i++) ids.push(await pendingStudent(`Race ${i}`));
+		const before = await teamSizes();
+
+		const results = await Promise.all(ids.map((id) => approve(teacher.client, id)));
+		for (const { data, error } of results) {
+			expect(error).toBeNull();
+			expect(data?.status).toBe('approved');
+			expect(before.has(data?.team_id ?? '')).toBe(true);
+		}
+
+		const after = await teamSizes();
+		expect(sorted(after.values())).toEqual(filled(before.values(), ids.length));
+	}, 60000);
+
+	it('Rejection: no team is assigned', async () => {
+		const id = await pendingStudent('Rejected');
+		const { data, error } = await teacher.client
+			.from('profiles')
+			.update({ status: 'rejected', reviewed_at: new Date().toISOString() })
+			.eq('id', id)
+			.select('status, team_id')
+			.single();
+		expect(error).toBeNull();
+		expect(data).toEqual({ status: 'rejected', team_id: null });
+	});
+
+	it('Team already set: an approval keeps it, and one that would change it is refused', async () => {
+		// Only the service role can give a pending student a team.
+		const withTeam = async (label: string) => {
+			const id = await pendingStudent(label);
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ team_id: bigTeam })
+				.eq('id', id);
+			if (error) throw new Error(`Failed to set the team: ${error.message}`);
+			return id;
+		};
+		const other = await createTeam('Other');
+
+		const kept = await withTeam('Team Kept');
+		const approved = await approve(teacher.client, kept);
+		expect(approved.error).toBeNull();
+		expect(approved.data).toEqual({ status: 'approved', team_id: bigTeam });
+
+		const refused = await withTeam('Team Refused');
+		const change = await approve(teacher.client, refused, { team_id: other });
+		expect(change.error?.code).toBe('42501');
+		expect(await profileOf(refused)).toEqual({ status: 'pending', team_id: bigTeam });
 	});
 });

@@ -1,7 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Page } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
-import { berlinToday, env, isoWeekday, service, signIn, type TestUser } from './fixtures';
+import {
+	berlinToday,
+	env,
+	fixtureTeam,
+	isoWeekday,
+	service,
+	signIn,
+	type TestUser
+} from './fixtures';
 
 /**
  * Teacher class page and homework forms as iX fields (#66 B8b): the attendance
@@ -31,6 +39,7 @@ const students: { id: string; name: string; user: TestUser }[] = [];
 /** Session ids by day. */
 const sessions: Record<string, string> = {};
 const userIds: string[] = [];
+const team = fixtureTeam(tag);
 let parentId: string | undefined;
 
 function check<T>(result: { data: T; error: { message: string } | null }, what: string): T {
@@ -66,7 +75,8 @@ async function addStudent(index: number) {
 				class_id: classId,
 				status: 'approved',
 				registration_name: name,
-				display_name: name
+				display_name: name,
+				team_id: await team.id()
 			})
 			.eq('id', user.id),
 		`approve student ${index}`
@@ -99,6 +109,8 @@ async function cleanup() {
 		const { error } = await service.auth.admin.deleteUser(id);
 		if (error) problems.push(`delete user ${id}: ${error.message}`);
 	}
+	const teamProblem = await team.remove();
+	if (teamProblem) problems.push(teamProblem);
 	if (classId) {
 		const { error } = await service.from('classes').delete().eq('id', classId);
 		if (error) problems.push(`delete class: ${error.message}`);

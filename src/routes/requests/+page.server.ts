@@ -11,7 +11,7 @@ import { getCapabilities } from '$lib/server/capabilities';
 import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
-import { localizeName, type LocalizedNames } from '$lib/localized-name';
+import { localizeName, localizedName, type LocalizedNames } from '$lib/localized-name';
 import type { Actions, PageServerLoad } from './$types';
 
 const MAX_CREDENTIAL_ATTEMPTS = 5;
@@ -146,7 +146,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	const [
 		{ data: pendingRows, error: pendingError },
 		{ data: decidedRows, error: decidedError },
-		{ data: teams, error: teamsError },
+		{ data: anyTeam, error: teamsError },
 		{ sickPending, sickDecided, sickError },
 		{ joinPending, joinError }
 	] = await Promise.all([
@@ -162,7 +162,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.eq('role', 'student')
 			.in('status', ['approved', 'rejected'])
 			.order('reviewed_at', { ascending: false }),
-		supabase.from('teams').select('id, name, name_bo, name_de'),
+		// #99: the database assigns the team at approval; the page only needs to
+		// know whether there is one (Approve is off without any).
+		supabase.from('teams').select('id').limit(1),
 		loadSickLeave(supabase),
 		// B12b (#67): class join requests of the caller's classes (every class
 		// for the admin). A failure shows in that section only (joinLoadError).
@@ -224,7 +226,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		role: profile.role as 'admin' | 'teacher',
 		pending: (pendingRows ?? []).map(toRow),
 		decided: (decidedRows ?? []).map(toRow),
-		teams: (teams ?? []).map((t) => localizeName(t)).sort((a, b) => a.name.localeCompare(b.name)),
+		hasTeams: (anyTeam ?? []).length > 0,
 		parentsPending,
 		parentsDecided,
 		sickPending,
@@ -248,11 +250,10 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const studentId = String(formData.get('studentId') ?? '');
-		const teamId = String(formData.get('teamId') ?? '');
 		const studentName = String(formData.get('studentName') ?? '');
 
-		if (!studentId || !teamId) {
-			return fail(400, { error: m.requests_error_team_required(), studentId, studentName });
+		if (!studentId) {
+			return fail(400, { error: m.requests_error_not_found(), studentId, studentName });
 		}
 
 		// RLS-gated read first (profiles_select_admin_or_teacher_of_student_
@@ -270,6 +271,21 @@ export const actions: Actions = {
 
 		if (fetchError || !student || !student.registration_name) {
 			return fail(400, { error: m.requests_error_not_found(), studentId, studentName });
+		}
+
+		// #99: the database assigns the team (0043) and refuses the approval when
+		// there is none. Checked here first, so no credentials are minted for an
+		// approval that cannot go through.
+		const { data: anyTeam, error: teamsError } = await supabase
+			.from('teams')
+			.select('id')
+			.limit(1)
+			.maybeSingle();
+		if (teamsError) {
+			return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
+		}
+		if (!anyTeam) {
+			return fail(400, { error: m.requests_no_teams_note(), studentId, studentName });
 		}
 
 		const adminClient = createSupabaseAdminClient();
@@ -327,27 +343,35 @@ export const actions: Actions = {
 			return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
 		}
 
-		// Only now flip status/team -- RLS (profiles_update_registration_review)
-		// and the team_id-set-once trigger are the real enforcement (AD-2/AD-4);
-		// this call is independently checked even though the fetch above
-		// already proved the caller is authorized. `email` is included here
+		// Only now flip the status -- RLS (profiles_update_registration_review)
+		// is the real enforcement (AD-2); this call is independently checked
+		// even though the fetch above already proved the caller is authorized.
+		// #99: no team_id is sent. The database puts the student in a team with
+		// the fewest students (0043) in this same update, and would ignore a
+		// team sent from here; the team comes back with the row. `email` is
+		// included here
 		// too: the Admin API call above only updated auth.users.email -- there
 		// is no trigger syncing that back onto profiles.email on UPDATE (only
 		// handle_new_user() populates it, and only on INSERT), so without this
 		// the profile row would keep showing its stale pending-<uuid>
 		// placeholder forever.
-		const { error: updateProfileError } = await supabase
+		const { data: approved, error: updateProfileError } = await supabase
 			.from('profiles')
 			.update({
 				status: 'approved',
-				team_id: teamId,
 				email: studentUsernameToEmail(username),
 				reviewed_by: user.id,
 				reviewed_at: new Date().toISOString()
 			})
 			.eq('id', studentId)
-			.select('id')
+			.select('id, teams!profiles_team_id_fkey ( name, name_bo, name_de )')
 			.single();
+
+		if (updateProfileError?.hint === 'no_teams') {
+			// The last team was deleted after the check above. The student is
+			// still pending; a later approval mints fresh credentials.
+			return fail(400, { error: m.requests_no_teams_note(), studentId, studentName });
+		}
 
 		if (updateProfileError) {
 			// Credentials are already live on the auth user at this point; the
@@ -365,7 +389,17 @@ export const actions: Actions = {
 			});
 		}
 
-		return { success: true, action: 'approved' as const, studentId, studentName, username, pin };
+		const team = (approved as { teams: LocalizedNames | null } | null)?.teams;
+
+		return {
+			success: true,
+			action: 'approved' as const,
+			studentId,
+			studentName,
+			teamName: team ? localizedName(team) : '',
+			username,
+			pin
+		};
 	},
 
 	reject: async ({ request, locals: { supabase, safeGetSession } }) => {

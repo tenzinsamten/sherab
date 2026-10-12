@@ -46,6 +46,7 @@ function fakeSupabase(queues: Record<string, Result[]>) {
 				select: () => chain,
 				eq: () => chain,
 				in: () => chain,
+				limit: () => chain,
 				update: (values: unknown) => {
 					updates.push({ table, values });
 					return chain;
@@ -322,11 +323,11 @@ describe('approve (student)', () => {
 		updateAuthUserEmailAndPassword.mockResolvedValue({ error: null });
 	});
 
-	function approveEvent(queues: Record<string, Result[]>) {
+	function approveEvent(queues: Record<string, Result[]>, fields: Record<string, string> = {}) {
 		const body = new FormData();
 		body.set('studentId', 's1');
 		body.set('studentName', 'Tenzin');
-		body.set('teamId', 't1');
+		for (const [name, value] of Object.entries(fields)) body.set(name, value);
 		const { supabase, updates } = fakeSupabase(queues);
 		const e = {
 			request: new Request('https://app.test/requests', { method: 'POST', body }),
@@ -338,9 +339,13 @@ describe('approve (student)', () => {
 		return { e, updates };
 	}
 
+	const pendingStudent = ok({ id: 's1', registration_name: 'Tenzin Dolma' });
+	const someTeam = ok({ id: 't1' });
+
 	it('approves a pending student without any guardian email confirmation (Story 7-2)', async () => {
 		const { e, updates } = approveEvent({
-			profiles: [ok({ id: 's1', registration_name: 'Tenzin Dolma' }), ok({ id: 's1' })]
+			profiles: [pendingStudent, ok({ id: 's1', teams: { name: 'Snow Lions' } })],
+			teams: [someTeam]
 		});
 		const result = await actions.approve(e);
 		expect(result).toMatchObject({
@@ -351,14 +356,80 @@ describe('approve (student)', () => {
 		});
 		expect(updateAuthUserEmailAndPassword).toHaveBeenCalledTimes(1);
 		expect(updates).toHaveLength(1);
-		expect(updates[0]).toMatchObject({
-			table: 'profiles',
-			values: { status: 'approved', team_id: 't1' }
+		expect(updates[0]).toMatchObject({ table: 'profiles', values: { status: 'approved' } });
+	});
+
+	it("#99: sends no team (the database assigns it) and returns the assigned team's name", async () => {
+		const { e, updates } = approveEvent({
+			profiles: [
+				pendingStudent,
+				ok({ id: 's1', teams: { name: 'Snow Lions', name_bo: 'གངས་སེང', name_de: null } })
+			],
+			teams: [someTeam]
+		});
+		expect(await actions.approve(e)).toMatchObject({ success: true, teamName: 'Snow Lions' });
+		expect(updates).toHaveLength(1);
+		expect(updates[0].values).not.toHaveProperty('team_id');
+	});
+
+	it('#99: a team sent with the form is not passed on', async () => {
+		const { e, updates } = approveEvent(
+			{
+				profiles: [pendingStudent, ok({ id: 's1', teams: { name: 'Snow Lions' } })],
+				teams: [someTeam]
+			},
+			{ teamId: 't9' }
+		);
+		expect(await actions.approve(e)).toMatchObject({ success: true });
+		expect(JSON.stringify(updates)).not.toContain('t9');
+	});
+
+	it('#99: with no team it refuses with the create-a-team text, minting nothing', async () => {
+		const { e, updates } = approveEvent({ profiles: [pendingStudent], teams: [ok(null)] });
+		expect(await actions.approve(e)).toMatchObject({
+			status: 400,
+			data: { error: m.requests_no_teams_note(), studentId: 's1' }
+		});
+		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
+		expect(updates).toEqual([]);
+	});
+
+	it('#99: a failed team lookup refuses with 500, minting nothing', async () => {
+		const { e, updates } = approveEvent({
+			profiles: [pendingStudent],
+			teams: [{ data: null, error: { message: 'boom' } }]
+		});
+		expect(await actions.approve(e)).toMatchObject({
+			status: 500,
+			data: { error: m.requests_error_approve_failed() }
+		});
+		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
+		expect(updates).toEqual([]);
+	});
+
+	it("#99: the database's no_teams refusal gets the same text, without credentials", async () => {
+		const { e } = approveEvent({
+			profiles: [pendingStudent, { data: null, error: { code: '22023', hint: 'no_teams' } }],
+			teams: [someTeam]
+		});
+		const result = await actions.approve(e);
+		expect(result).toMatchObject({ status: 400, data: { error: m.requests_no_teams_note() } });
+		expect(JSON.stringify(result)).not.toMatch(/"pin"|"username"/);
+	});
+
+	it('any other failed update still shows the minted credentials (partial approval)', async () => {
+		const { e } = approveEvent({
+			profiles: [pendingStudent, { data: null, error: { code: '42501', message: 'x' } }],
+			teams: [someTeam]
+		});
+		expect(await actions.approve(e)).toMatchObject({
+			status: 500,
+			data: { error: m.requests_error_approve_partial(), username: 'tenzindolma' }
 		});
 	});
 
 	it('refuses when the RLS read finds no pending student, minting nothing', async () => {
-		const { e, updates } = approveEvent({ profiles: [ok(null)] });
+		const { e, updates } = approveEvent({ profiles: [ok(null)], teams: [someTeam] });
 		expect(await actions.approve(e)).toMatchObject({ status: 400 });
 		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
 		expect(updates).toEqual([]);
@@ -582,7 +653,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 	 * one -- chosen by the status filter the query applied, never by call
 	 * order. A deletion_requests query with neither filter gets an error.
 	 */
-	function loadWith(role: 'admin' | 'teacher', deletions: Result[]) {
+	function loadWith(role: 'admin' | 'teacher', deletions: Result[], teams: Result = ok([])) {
 		const queried: string[] = [];
 		const calls: { table: string; query: number; method: string; args: unknown[] }[] = [];
 		let queryCount = 0;
@@ -591,7 +662,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 			const query = queryCount++;
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order']) {
+			for (const method of ['select', 'eq', 'in', 'order', 'limit']) {
 				chain[method] = (...args: unknown[]) => {
 					calls.push({ table, query, method, args });
 					own.push([method, ...args]);
@@ -601,6 +672,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 			const has = (expected: unknown[]) =>
 				own.some((c) => JSON.stringify(c) === JSON.stringify(expected));
 			const result = (): Result => {
+				if (table === 'teams') return teams;
 				if (table !== 'deletion_requests') return { data: [], error: null };
 				if (has(['eq', 'status', 'pending'])) return deletions[0];
 				if (has(['in', 'status', ['approved', 'rejected']])) return deletions[1] ?? deletions[0];
@@ -633,6 +705,19 @@ describe('load: deletion requests section (Story 7-6)', () => {
 		student: { display_name: null, registration_name: 'Dawa' },
 		requester: { display_name: 'Dolma', email: 'dolma@example.test' },
 		...overrides
+	});
+
+	it('#99: hasTeams is false without a team and true with one, asking for one row only', async () => {
+		const none = loadWith('teacher', [ok([])], ok([]));
+		expect((await none.run).hasTeams).toBe(false);
+		expect(await none.run).not.toHaveProperty('teams');
+
+		const one = loadWith('teacher', [ok([])], ok([{ id: 't1' }]));
+		expect((await one.run).hasTeams).toBe(true);
+		expect(one.calls.filter((c) => c.table === 'teams')).toEqual([
+			expect.objectContaining({ method: 'select', args: ['id'] }),
+			expect.objectContaining({ method: 'limit', args: [1] })
+		]);
 	});
 
 	it('maps pending rows (own child flagged) and de-identified decided rows', async () => {
@@ -792,7 +877,7 @@ describe('load: class join requests section (B12b, #67)', () => {
 		const rpcCalls: string[] = [];
 		const from = () => {
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order']) chain[method] = () => chain;
+			for (const method of ['select', 'eq', 'in', 'order', 'limit']) chain[method] = () => chain;
 			chain.single = async () => ({ data: { role: 'teacher' }, error: null });
 			chain.then = (resolve: (value: Result) => unknown) => resolve({ data: [], error: null });
 			return chain;
@@ -872,7 +957,7 @@ describe('load: parent queue marks staff requests (B14a, #68)', () => {
 		const from = (table: string) => {
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order', 'neq']) {
+			for (const method of ['select', 'eq', 'in', 'order', 'neq', 'limit']) {
 				chain[method] = (...args: unknown[]) => {
 					own.push([method, ...args]);
 					return chain;

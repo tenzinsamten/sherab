@@ -67,6 +67,46 @@ function check<T>(result: { data: T; error: { message: string } | null }, what: 
 	return result.data;
 }
 
+/**
+ * #99: the database gives a team to every student approved without one
+ * (0043), fixtures too, and refuses the approval while there is no team. A
+ * fixture that approves a student names its own team, so the student lands
+ * in no team a test counts or deletes.
+ */
+export function fixtureTeam(tag: string) {
+	// The promise, not the id: fixtures that add students side by side share one team.
+	let created: Promise<string> | undefined;
+	return {
+		/** The team's id; the team is created on first use. */
+		id(): Promise<string> {
+			created ??= (async () =>
+				check(
+					await service
+						.from('teams')
+						.insert({ name: `E2E Fixture Team ${tag} ${crypto.randomUUID().slice(0, 4)}` })
+						.select('id')
+						.single(),
+					'create fixture team'
+				).id)();
+			return created;
+		},
+		/**
+		 * Deletes the team. After its students are deleted: a team with
+		 * students cannot be deleted. Returns what went wrong, if anything.
+		 */
+		async remove(): Promise<string | null> {
+			if (!created) return null;
+			const teamId = await created.catch(() => null);
+			if (teamId) {
+				const { error } = await service.from('teams').delete().eq('id', teamId);
+				if (error) return `delete fixture team: ${error.message}`;
+			}
+			created = undefined;
+			return null;
+		}
+	};
+}
+
 async function createUser(
 	role: 'admin' | 'teacher' | 'student',
 	tag: string,
@@ -109,6 +149,7 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 
 	const userIds: string[] = [];
 	const classIds: string[] = [];
+	const team = fixtureTeam(tag);
 
 	const cleanup = async () => {
 		const problems: string[] = [];
@@ -117,6 +158,8 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 			const { error } = await service.auth.admin.deleteUser(id);
 			if (error) problems.push(`delete user ${id}: ${error.message}`);
 		}
+		const teamProblem = await team.remove();
+		if (teamProblem) problems.push(teamProblem);
 		if (classIds.length) {
 			const { error } = await service.from('classes').delete().in('id', classIds);
 			if (error) problems.push(`delete classes: ${error.message}`);
@@ -184,7 +227,8 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 					class_id: classA.id,
 					status: 'approved',
 					registration_name: `E2E47 Student ${tag}`,
-					display_name: `E2E47 Student ${tag}`
+					display_name: `E2E47 Student ${tag}`,
+					team_id: await team.id()
 				})
 				.eq('id', student.id),
 			'approve student'

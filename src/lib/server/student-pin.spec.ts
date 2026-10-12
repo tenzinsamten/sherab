@@ -47,6 +47,7 @@ function anonClient() {
 const tag = crypto.randomUUID().slice(0, 8);
 const userIds: string[] = [];
 const classIds: string[] = [];
+let teamId: string | undefined;
 
 type Login = { id: string; email: string; password: string };
 
@@ -87,6 +88,24 @@ async function createClass(name: string): Promise<string> {
 	return data.id;
 }
 
+/**
+ * #99: an approval without a team gets one from the database (0043), which
+ * refuses it while there is no team. The approved students here name their
+ * own team, so they land in no team another spec counts.
+ */
+async function fixtureTeamId(): Promise<string> {
+	if (!teamId) {
+		const { data, error } = await service
+			.from('teams')
+			.insert({ name: `PIN88 Team ${tag}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`create team: ${error?.message}`);
+		teamId = data.id;
+	}
+	return teamId;
+}
+
 /** A student who registered into `classId` and is enrolled in it. */
 async function createStudent(name: string, classId: string, status: 'approved' | 'pending') {
 	const login = await createLogin('student', name);
@@ -97,7 +116,8 @@ async function createStudent(name: string, classId: string, status: 'approved' |
 				class_id: classId,
 				status,
 				registration_name: `PIN88 ${name}`,
-				display_name: `PIN88 ${name}`
+				display_name: `PIN88 ${name}`,
+				...(status === 'approved' ? { team_id: await fixtureTeamId() } : {})
 			})
 			.eq('id', login.id),
 		`set up ${name}`
@@ -211,6 +231,8 @@ describe.skipIf(!reachable)('resetStudentPin (#88, requires local Supabase)', ()
 		const rest = userIds.filter((id) => !students.includes(id));
 		for (const id of [...students, ...rest]) await service.auth.admin.deleteUser(id);
 		if (classIds.length) await service.from('classes').delete().in('id', classIds);
+		// After its students: a team with students cannot be deleted.
+		if (teamId) await service.from('teams').delete().eq('id', teamId);
 	}, 60_000);
 
 	beforeEach(() => {

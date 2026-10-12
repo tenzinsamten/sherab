@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { berlinToday, service, signIn, type TestUser } from './fixtures';
+import { berlinToday, fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B11 (#57): a parent sets a two-week leave period on the child page's
@@ -26,6 +26,7 @@ let otherSessionId: string;
 const sessionIds: string[] = [];
 /** Deletion order: the student first (a class with students cannot be deleted). */
 const userIds: string[] = [];
+const team = fixtureTeam(tag);
 /** Class days this fixture created (deleted again in cleanup). */
 const createdDays: string[] = [];
 
@@ -69,6 +70,8 @@ async function cleanup() {
 		if (error) problems.push(`delete user ${id}: ${error.message}`);
 		else userIds.splice(userIds.indexOf(id), 1);
 	}
+	const teamProblem = await team.remove();
+	if (teamProblem) problems.push(teamProblem);
 	const classIds = [classId, otherClassId].filter(Boolean);
 	if (classIds.length) {
 		const { error } = await service.from('classes').delete().in('id', classIds);
@@ -112,7 +115,8 @@ test.beforeAll(async () => {
 					class_id: classId,
 					status: 'approved',
 					registration_name: studentName,
-					display_name: studentName
+					display_name: studentName,
+					team_id: await team.id()
 				})
 				.eq('id', student.id),
 			'approve student'

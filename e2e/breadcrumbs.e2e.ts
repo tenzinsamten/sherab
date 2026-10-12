@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
-import { service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
 /**
  * iX breadcrumbs on nested pages (#61): the I/O matrix rows "Navigate up",
@@ -34,6 +34,7 @@ let syllabusId: string;
 /** Deletion order: students first (a class with students cannot be deleted), parents last. */
 const userIds: string[] = [];
 const classIds: string[] = [];
+const team = fixtureTeam(tag);
 
 function check<T>(result: { data: T; error: { message: string } | null }, what: string): T {
 	if (result.error) throw new Error(`${what}: ${result.error.message}`);
@@ -65,6 +66,8 @@ async function cleanup() {
 		if (error) problems.push(`delete user ${id}: ${error.message}`);
 		else userIds.splice(userIds.indexOf(id), 1);
 	}
+	const teamProblem = await team.remove();
+	if (teamProblem) problems.push(teamProblem);
 	if (classIds.length) {
 		// Homework and syllabi cascade with the class.
 		const { error } = await service.from('classes').delete().in('id', classIds);
@@ -173,7 +176,8 @@ test.beforeAll(async () => {
 					class_id: classId,
 					status: 'approved',
 					registration_name: studentName,
-					display_name: studentName
+					display_name: studentName,
+					team_id: await team.id()
 				})
 				.eq('id', student.id),
 			'approve student'

@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { currentSchoolYear, selectableSchoolYears } from '../src/lib/school-year';
-import { createCalendarFixture, service, signIn, type CalendarFixture } from './fixtures';
+import {
+	createCalendarFixture,
+	fixtureTeam,
+	service,
+	signIn,
+	type CalendarFixture
+} from './fixtures';
 
 /**
  * Shared iX form components (#66 B7): the I/O matrix rows "Link rows" and
@@ -14,6 +20,7 @@ let fx: CalendarFixture;
 // A second approved student in class A, so the enrol panel still has
 // someone to offer after the fixture student is added to class C.
 let otherStudentId: string | undefined;
+const otherStudentTeam = fixtureTeam('e2e-66');
 
 test.beforeAll(async () => {
 	fx = await createCalendarFixture();
@@ -31,7 +38,8 @@ test.beforeAll(async () => {
 			class_id: fx.classA.id,
 			status: 'approved',
 			registration_name: `E2E66 Other ${fx.tag}`,
-			display_name: `E2E66 Other ${fx.tag}`
+			display_name: `E2E66 Other ${fx.tag}`,
+			team_id: await otherStudentTeam.id()
 		})
 		.eq('id', otherStudentId);
 	if (approveError) throw new Error(`approve other student: ${approveError.message}`);
@@ -49,12 +57,18 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-	// Before the fixture cleanup: a class with students cannot be deleted.
-	if (otherStudentId) {
-		const { error } = await service.auth.admin.deleteUser(otherStudentId);
-		if (error) throw new Error(`delete other student: ${error.message}`);
+	try {
+		// Before the fixture cleanup: a class with students cannot be deleted.
+		if (otherStudentId) {
+			const { error } = await service.auth.admin.deleteUser(otherStudentId);
+			if (error) throw new Error(`delete other student: ${error.message}`);
+		}
+		const teamProblem = await otherStudentTeam.remove();
+		if (teamProblem) throw new Error(teamProblem);
+	} finally {
+		// Also when the steps above fail, so the fixture is not left behind.
+		await fx?.cleanup();
 	}
-	await fx?.cleanup();
 });
 
 /** A syllabus's own page: where adding a syllabus lands. */
@@ -434,14 +448,17 @@ test('admin team names: edit the names, and each interface language shows its ow
 	}
 });
 
-test('requests approve: an empty team sends nothing and marks the select; with a team the student is approved', async ({
+// #99: the database assigns the team at approval (0043). /requests has no
+// team field any more; one click approves and the message names the team.
+test('requests approve: no team field, one click approves and the message names the assigned team', async ({
 	page
 }) => {
-	const teamName = `E2E66 Approve Team ${fx.tag}`;
-	const registrationName = `E2E66 Pending ${fx.tag}`;
+	const teamName = `E2E99 Approve Team ${fx.tag}`;
+	const registrationName = `E2E99 Pending ${fx.tag}`;
 	let teamId: string | undefined;
 	let studentId: string | undefined;
 	try {
+		// At least one team has to exist; the database may pick another one.
 		const { data: team, error: teamError } = await service
 			.from('teams')
 			.insert({ name: teamName })
@@ -464,60 +481,48 @@ test('requests approve: an empty team sends nothing and marks the select; with a
 			.eq('id', studentId);
 		if (pendingError) throw new Error(`make pending: ${pendingError.message}`);
 
-		// An empty submit must never reach the server.
-		let allowApprove = false;
-		const blocked: string[] = [];
 		const approvePosts: string[] = [];
-		await page.route(/\?\/approve/, async (route) => {
-			if (!allowApprove) {
-				blocked.push(route.request().url());
-				return route.abort();
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().includes('?/approve')) {
+				approvePosts.push(r.postData() ?? '');
 			}
-			approvePosts.push(route.request().postData() ?? '');
-			return route.continue();
 		});
 		await signIn(page, fx.admin);
 		await openForm(page, '/requests');
 
-		const select = page.locator(`#team-${studentId}`);
-		const row = page.locator('tr').filter({ has: select });
-		await expect(row).toContainText(registrationName);
-		await row.getByRole('button', { name: 'Approve' }).click();
-		await expect(select).toHaveClass(/\bix-invalid\b/);
-		const error = page.locator(`#team-${studentId}-error`);
-		await expect(error).toHaveText('Choose a team before approving.');
-		const selectInput = select.locator('input').first();
-		await expect(selectInput).toHaveAttribute('aria-invalid', 'true');
-		await expect
-			.poll(() =>
-				selectInput.evaluate((el) =>
-					(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
-				)
-			)
-			.toBe('Choose a team before approving.');
-		expect(blocked).toEqual([]);
+		// The pending row (once approved, the name is listed under "decided").
+		const row = page
+			.locator('tr')
+			.filter({ hasText: registrationName })
+			.filter({ has: page.locator('form[action="?/approve"]') });
+		await expect(row).toHaveCount(1);
+		// No team field: not for this row, not anywhere on the page.
+		await expect(page.locator(`#team-${studentId}`)).toHaveCount(0);
+		await expect(row.locator('ix-select')).toHaveCount(0);
+		await expect(page.locator('[name="teamId"]')).toHaveCount(0);
 
-		// Pick the team and approve.
-		allowApprove = true;
-		await selectInput.click();
-		await select.locator(`ix-select-item[label="${teamName}"]`).click();
-		await expect(select).toHaveJSProperty('value', team.id);
-		await expect(select).not.toHaveClass(/\bix-invalid\b/);
-		await expect(error).toHaveCount(0);
-		await row.getByRole('button', { name: 'Approve' }).click();
+		const approve = row.getByRole('button', { name: 'Approve' });
+		await expect(approve).toBeEnabled();
+		await approve.click();
 		await expect(page.locator('ix-message-bar')).toContainText(`${registrationName} was approved`);
 		expect(approvePosts).toHaveLength(1);
 		const posted = new URLSearchParams(approvePosts[0]);
 		expect(posted.get('studentId')).toBe(studentId);
-		expect(posted.get('teamId')).toBe(team.id);
-		await expect(page.locator(`#team-${studentId}`)).toHaveCount(0);
+		expect(posted.has('teamId')).toBe(false);
+		await expect(row).toHaveCount(0);
 
 		const { data: profile } = await service
 			.from('profiles')
-			.select('status, team_id')
+			.select('status, team_id, teams!profiles_team_id_fkey ( name )')
 			.eq('id', studentId)
 			.single();
-		expect(profile).toEqual({ status: 'approved', team_id: team.id });
+		expect(profile?.status).toBe('approved');
+		expect(profile?.team_id).toEqual(expect.any(String));
+		const assignedName = profile?.teams?.name;
+		expect(assignedName).toEqual(expect.any(String));
+		await expect(page.locator('ix-message-bar')).toContainText(
+			`${registrationName} was approved and is in team “${assignedName}”.`
+		);
 	} finally {
 		// The student first: a team with members cannot be deleted.
 		if (studentId) await service.auth.admin.deleteUser(studentId);
