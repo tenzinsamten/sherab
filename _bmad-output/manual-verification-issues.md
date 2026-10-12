@@ -1793,3 +1793,58 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   is today or earlier (the generator is service-side only; the action would need a trusted way
   to run it for one series); or keep the nightly run and say so on the form and in the success
   message; what the teacher's homework list should show for a series with no copy yet.
+
+- 2026-10-12: #96 built on `main` from
+  `_bmad-output/implementation-artifacts/spec-96-weekly-homework-first-copy.md`, not committed;
+  status "built, to verify". Migration `0040_weekly_homework_first_copy.sql` is NOT pushed.
+  When a teacher creates weekly homework whose start date is today (Munich) or earlier, the
+  students' copies for every week up to today are made in the same request, so the homework is
+  on the students' page at once. Later weeks still come from the nightly job.
+  How: the per-series loop moved out of `generate_recurring_homework_instances()` into
+  `generate_recurring_homework_for_series(series, today)` (no client role may call it), which
+  alone decides whether a series gets copies (weekly, not paused, start date and offset set);
+  the nightly function calls it with `current_date` for every weekly series; the new
+  `create_weekly_homework_first_copies(series)` (signed-in users only, not the service role)
+  checks admin or teacher of the series' class and that it is a weekly series, then calls it
+  with today in Europe/Berlin. `UNIQUE(assignment_id, period_start)` keeps the job from making
+  a second copy of a week.
+  The create action reads the new series' id, calls the function when the start date is today
+  or earlier, and redirects with `?created=weekly&visible=now` (at least one week was
+  created), `visible=<start date>` (future start, nothing asked for) or `visible=tomorrow`
+  (the call returned an error, threw, or created no week: the series is kept, an error is
+  logged on the server, the nightly job catches up). The homework list shows a message for
+  each; any other or missing `visible` shows a plain "Weekly homework created."
+  (`homework_created_weekly`, reworded). The create form shows a note at the start date, as
+  the field's own iX helper text: a general one, then "as soon as you create it" or "from
+  <date>, not before" once a date is picked; it goes back to the general one when the mode is
+  switched. New text in en, de and bo (Tibetan is the assistant's draft, not reviewed):
+  `homework_created_weekly_now`, `_from`, `_tomorrow`, `homework_start_date_note`, `_now`,
+  `_from`. `database.types.ts`: the two functions added by hand. No "New" notification is sent
+  for weekly homework (#92 unchanged): the action never asks for one.
+  Tests: `rls.spec.ts` "Story 3-2" block (start today with the student reading the copy, start
+  in the past compared with the nightly function, future start, no duplicate after the nightly
+  function, class with no students and a late joiner, refusals for another teacher, a student,
+  a signed-out caller and a one-off id, the 104-week limit, paused and ended series, the
+  per-series function given a date ahead of the UTC date),
+  `homework/new/page.server.spec.ts` (the three redirects, 00:30 in Munich, a returned error,
+  a thrown call, a count of 0, no "New" notice) and three tests in `e2e/teacher.e2e.ts`.
+  Run by the assistant after the review changes, each on a reset local database: the
+  "Story 3-2" block, the action's spec, `e2e/teacher.e2e.ts` and `npm run check`, all exit 0.
+  The full unit suite, the build and the full browser suite were not run again after the
+  review changes.
+  Not verified: the hosted project (migration not pushed; whether the cron job exists and runs
+  there is still unchecked, see the entry above); the series the user created before this fix
+  (the nightly job handles it as before, it gets no immediate copy); the form note and messages
+  in German and Tibetan in the browser; `create_weekly_homework_first_copies` at the real
+  "00:30 in Munich" moment (its date expression is the one `homework_push_targets` uses; the
+  test gives the per-series function a date by hand).
+  To know: a start date in the past creates one copy per week since then, at most 104 per
+  call, each with a row per student; old weeks show as overdue, and a start date more than 104
+  weeks back never reaches the current week (deferred-work.md). A start date in the future
+  shows on the students' page after the 03:00 UTC run on that date (04:00 or 05:00 in
+  Munich), not at midnight. The database does not itself hold back a "New" notice for a
+  weekly copy: `homework_push_targets('added', <copy>)` would name its subscribed students if
+  the app asked. On a fresh page load in the dev server the list keeps `?created=…` in the
+  address after the toast (SvelteKit refuses `replaceState` before its router has started,
+  in dev only; so for every `created` toast, not new); after the create page's redirect it is
+  removed.
