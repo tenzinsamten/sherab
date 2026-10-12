@@ -294,3 +294,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-98-one-student-per-parent-and-name.md`
   summary: An automated check that a migration's stop-on-bad-data guard fires (0042's guard was tried once by hand).
   evidence: Review of #98 (verification layer). The repository has no harness that runs a migration over seeded rows.
+- source_spec: `_bmad-output/implementation-artifacts/spec-99-auto-team-assignment.md`
+  summary: Database tests on an empty, isolated database: the `no_teams` refusal of 0043, exact team sizes from empty (3, 2, 2), and that ties are not always filled in the same order.
+  evidence: Review of #99 (blind and verification layers). The shared test database always holds teams with students, so these cases were checked by hand with a script that was not kept. Same missing harness as the #98 entry above.

@@ -2009,3 +2009,92 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   In `deferred-work.md`: sort out duplicates on the hosted database before 0042 goes there;
   count hosted students without a parent link (the rule does not cover them); an automated
   check for a migration's stop.
+- 2026-10-12: #99 logged, not built. Reported (user): "currently the team is assigned by
+  admin. please assign the team randomly but make sure we have same number of student
+  through out".
+  Today: approving a new registration on `/requests` (`approve` in
+  `src/routes/requests/+page.server.ts`) requires the admin or the class teacher to pick a
+  team in a select; `profiles.team_id` is set once and cannot be changed afterwards (0002).
+  To settle in planning: whether the approver can still pick a team by hand; which students
+  count for "same number" (approved only, or pending too); what happens to teams that are
+  already uneven, since a student's team cannot be changed.
+- 2026-10-12: #99 built on `main`. Spec:
+  `_bmad-output/implementation-artifacts/spec-99-auto-team-assignment.md`.
+  What changed: the database chooses the team at approval. Migration
+  `0043_auto_team_assignment.sql` adds the trigger `profiles_assign_team_on_approval`
+  (before update on `profiles`): when a student's status becomes approved, the student goes
+  to a team with the fewest students, at random among the smallest. One transaction-level
+  lock makes approvals take turns. For a signed-in admin or teacher the database always
+  chooses and a team sent with the update is ignored; the service role may name a team,
+  and gets one chosen when it names none. With no team the approval is refused (hint
+  `no_teams`). A student who already has a team keeps it; nobody is moved.
+  `/requests` has no team field any more: Approve is one click, and the message names the
+  team ("… was approved and is in team “…”."). With no team, Approve stays off with the
+  existing note, and the action refuses with that same text before any sign-in details
+  are created. Texts changed in en, de and bo: `requests_outcome_approved` (new `{team}`)
+  and `help_teacher_3_body`; removed: `requests_team_label`, `requests_team_placeholder`,
+  `requests_error_team_required`.
+  A team's size counts every student whose team it is, whatever the status. In the app
+  only approved students have a team, so this is the same as "approved only".
+  Changed in the tests, because of the rule: a fixture that approved a student with the
+  service role and no team now gets a team from the database, or an error on a database
+  without teams. Those fixtures name their own team now (`fixtureTeam` in
+  `e2e/fixtures.ts`, used by the calendar fixture and by `breadcrumbs`, `class-join`,
+  `forms`, `leave-range` and `teacher`; `fixtureTeamId` in `rls.spec.ts`;
+  `student-pin.spec.ts`). The leaderboard test for an approved student without a team
+  builds that row by replacing the pending profile row with an approved copy, because an
+  update can no longer produce it. The approval tests in `rls.spec.ts` that sent the
+  teacher's own team send none now and read the team back.
+  Checked: database reset (43 migrations, 0043 applied), then `npm test` (67 files, 1214
+  tests), `npm run check` and `npm run build`, each with exit 0. `rls.spec.ts` has a new
+  block for #99: a named team of the service role is kept; the service role without a
+  team, a teacher and the admin get one of the smallest teams; a larger team sent by a
+  teacher or the admin is ignored; seven approvals one after another and eight at once
+  leave the sizes as if each had joined a smallest team; a rejection assigns no team; a
+  team already set is kept, and an approval that would change it is refused (42501). The
+  tests compare against the sizes of all teams in the database, because the rule is over
+  all teams and the other blocks leave teams behind. The action's spec covers: no team
+  sent, the team name in the result, a team in the form not passed on, the no-teams
+  refusal and a failed team lookup with nothing minted, and the database's `no_teams`
+  refusal shown with the same text.
+  The eight-at-once test was tried against the function without the lock (changed by
+  hand on the local database, then reset): it failed in both of two runs.
+  Tried once by hand with a script on a freshly reset, empty database (not kept): with no
+  team a teacher's approval and a service-role approval without a team are refused with
+  `no_teams` and the student stays pending; three empty teams and seven approvals give
+  2, 2, 3; the next student avoids the largest team and the one after goes to the only
+  smallest; a new empty team gets three approvals in a row; with 7, 3, 3, 3 three
+  approvals give 7, 4, 4, 4; nine approvals at once end at 7, 7, 7, 8.
+  Browser tests: `npx playwright test` on a freshly reset database: 103 passed, 4 skipped,
+  1 failed, 2 did not run. The failure is `parent-access.e2e.ts:128` (B14b, "Temporary
+  password" still shown); it fails the same way on the commit before this change, with
+  the same counts. The replaced test in `forms.e2e.ts` passes: no team field, one click,
+  no `teamId` posted, the message names the team the database chose.
+  Not checked: the hosted database (nothing pushed); German and Tibetan in the browser
+  (the Tibetan texts are the assistant's draft, not reviewed); a real phone; the no-teams
+  state of `/requests` in the browser.
+  Not done: the help screenshots for "Approve new students" (`teacher-3`, three languages)
+  still show the team field; `npm run help:screenshots` was not run.
+  To know: when the browser tests run after `npm test` without a reset in between,
+  `calendar.e2e.ts:130` and `teacher.e2e.ts:258` fail (seen in two runs with this change). They
+  pass on a freshly reset database. Whether that was so before this change was not tried.
+  If the last team is deleted between the action's check and the update, the approval is
+  refused with the no-teams text, but the student's login already has the new username and
+  PIN that nobody saw; approving again makes new ones.
+  Changed after the review (2026-10-12; 18 findings: 4 fixed, 2 deferred as one item, 12
+  rejected, see the spec's triage log): two database tests now assert at every approval that
+  the chosen team is one of the smallest at that moment (they could pass before with the
+  approvals going to empty teams left by other tests); a load test for `hasTeams` and
+  `.limit(1)` on its query; the 0043 header says what the function counts; the forms browser
+  test cleans up its fixture in a `finally`.
+  Checked again after those changes, by the assistant: database reset, `npm test` (67 files,
+  1215 tests), `npm run check`, `npm run build` and `npx playwright test e2e/forms.e2e.ts`
+  (8 tests), each with exit 0. The full browser suite was not repeated after the review.
+  The exact numbers in the spec's table (3, 2, 2 from three empty teams; a new team catching
+  up) are proven by the automated tests only as the rule behind them (each approval joins a
+  smallest team); the exact sizes, the database's `no_teams` refusal and the random choice
+  among ties were checked by hand on an empty database with a script that was not kept
+  (`deferred-work.md`).
+  Known and not changed (told to the user): balance is across all teams, not per class
+  (teams have no class); the `teacher-3` help screenshots in three languages still show the
+  team field; siblings can land in different teams.
