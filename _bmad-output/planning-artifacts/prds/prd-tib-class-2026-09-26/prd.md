@@ -2,7 +2,7 @@
 title: "PRD: Parent Role — tib-class"
 status: final
 created: 2026-09-26
-updated: 2026-10-03
+updated: 2026-10-10
 ---
 
 # PRD: Parent Role — tib-class
@@ -16,6 +16,8 @@ This PRD adds a Parent role to Sherab, the Munich Tibetan Sunday school class tr
 **Extended on 2026-10-01:** §4.6 (FR-13 to FR-16) adds rich-text Homework Content and Syllabus with a Content Language. These requirements are for Teachers and Students, not the Parent role. They were reported by the product owner during manual verification (issues #72 to #75 in `_bmad-output/manual-verification-issues.md`), decided the same day, and are already built; this PRD records them because it is the project's only PRD. Their spec changes are listed in §5 and were applied to the spec files the same day.
 
 **Extended on 2026-10-03:** §4.7 (FR-17) gives every Class and Team a name per interface language. It is for the Admin and for everyone who sees a Class or Team name, not only the Parent role. It was reported by the product owner (issue #76 in `_bmad-output/manual-verification-issues.md`), decided the same day, and is already built. §4.8 (FR-18), added the same day from issue #77 and also built, sets the font Tibetan text is shown in.
+
+**Extended on 2026-10-10:** §4.9 to §4.14 (FR-19 to FR-27) record what was built from issues #81 to #95 between 2026-10-03 and 2026-10-08: Syllabus Sections and their PDF files, Homework notifications, email confirmation and sign-in help, a Student's PIN reset, the Help page, confirmation before actions that can't be undone, and the installable app. All of it was reported or asked for by the product owner and is already built. Five earlier statements changed with it and are marked where they stand: FR-2 (approval without a confirmed email), FR-16 (the Syllabus is now made of Sections), FR-18 (size of Tibetan text), and two Non-Goals in §6 (notifications, file attachments). The spec changes in §5 for this extension are listed but not yet applied to the spec files.
 
 ## 1. Vision
 
@@ -73,8 +75,11 @@ The same teacher meeting flagged last-minute cancellations. Teachers plan each s
 - **Open Homework**: Homework assigned to the child that isn't Done and isn't archived. "Pending" is used only for account and approval states.
 - **Deletion Request**: The existing request type (CAP-8) to erase a Student's data.
 - **Homework Content**: The formatted text of a Homework that tells the Student what to do. Required. Replaces the earlier optional plain-text description.
-- **Syllabus**: A Class's plan for one school year, written by its Teacher or the Admin: optional formatted text plus optional links. One per Class per school year.
-- **Content Language**: The language a Homework or a Syllabus is written in: Tibetan, English, or German. It selects the font the text is shown in, independent of the viewer's interface language.
+- **Syllabus**: A Class's plan for one school year, written by its Teacher or the Admin as a list of Sections (since 2026-10-08; before that, one optional formatted text plus optional links). One per Class per school year.
+- **Content Language**: The language a Homework or a Syllabus Section is written in: Tibetan, English, or German. It selects the font the text is shown in, independent of the viewer's interface language.
+- **Section**: One titled part of a Syllabus, such as one song: a required title, optional formatted text in its own Content Language, optional links, and optional Section Files. A Syllabus has any number of Sections, in an order the Teacher sets.
+- **Section File**: A PDF a Teacher or the Admin attaches to a Section. At most 5 per Section, at most 1 MB each.
+- **Homework Notification**: A message the app sends to a phone or browser about Homework: New, Due soon, or Overdue.
 - Existing terms (Student, Teacher, Admin, Pending, Class, Homework, Done, Reviewed, Overdue, Session, Streak, Badge, Team) keep their meaning from `specs/spec-class-tracker/SPEC.md`.
 
 ## 4. Features
@@ -98,7 +103,7 @@ A visitor can register as a Parent with an email and password.
 Only the Admin can approve or reject a Pending, email-confirmed Parent.
 
 **Consequences (testable):**
-- Approval is blocked until the Parent confirms their email; rejection is always available.
+- Approval is blocked until the Parent confirms their email; rejection is always available. Changed 2026-10-06 (FR-23): the Admin can approve a Parent whose email isn't confirmed, after a warning.
 - The Admin decides by recognizing the family. No Student exists yet to match against, so there's no automated check.
 - Teachers can't see or act on Parent registrations.
 - A rejected Parent can submit a new registration with the same email.
@@ -278,6 +283,7 @@ A Class's Syllabus is formatted text with a Content Language, like Homework Cont
 - The Syllabus is shown formatted and in its Content Language's font on the Teacher's and Admin's Syllabus pages and on the Student's class page. The one-line preview in the list of Syllabi follows the same font rule.
 - A Syllabus written before this change keeps its text, one paragraph per line, and is Tibetan if that text contains Tibetan script, otherwise English.
 - One Syllabus per Class per school year, as before.
+- Changed 2026-10-08 (FR-19): the formatted text, the Content Language, and the links now belong to each Section of the Syllabus, not to the Syllabus as a whole. The rules above apply to a Section's text unchanged.
 
 ### 4.7 Class & Team Names
 
@@ -309,8 +315,131 @@ The Admin gives a Class or a Team an English, a Tibetan, and (optionally) a Germ
 - Only Tibetan characters use Atisha. English or German words and digits inside Tibetan text keep the font they had before.
 - Atisha has one weight. Bold Tibetan text (headings, bold in Homework Content) is drawn from that weight by the browser.
 - This holds for every part of the page, including menus, buttons, form fields and their labels, and for Tibetan text shown under the English or German interface language (issue #78, 2026-10-03).
-- Tibetan text is drawn 1.5 times the size of the English or German text around it (issue #78, 2026-10-03).
+- Tibetan text is drawn 1.36 times the size of the English or German text around it. It was 1.5 times at first (issue #78, 2026-10-03); the product owner found that too big and it was reduced (issue #85, 2026-10-05).
 - No Tibetan letter is cut off at the top or bottom, in running text or inside buttons, menus and form fields. Lines of Tibetan text are 1.2 to 1.5 times the Tibetan text size apart (issue #78, 2026-10-03).
+- Breadcrumb labels and side menu labels show Tibetan letters in full, under the Tibetan interface and for a Tibetan name under another interface language (issue #86, 2026-10-05).
+
+### 4.9 Syllabus Sections & Files
+
+**Description:** A Syllabus is a list of Sections, and a Section can carry PDF files. Before this, a Syllabus held one text and one list of links, so a Teacher who planned two songs had to put both into that one text and couldn't attach a document. Added 2026-10-08 (issues #94 and #95); not part of the Parent role.
+
+#### FR-19: A Syllabus is made of Sections
+
+The Teacher of a Class or the Admin adds Sections to a Syllabus, each with a title, optional text, and optional links.
+
+**Consequences (testable):**
+- A Section needs a title of 1 to 200 characters. Its text and links are optional and follow FR-14 and FR-16: the same formatting tools, its own Content Language, up to 10 links.
+- A new Section goes last. The Teacher or the Admin can move a Section up or down, edit it, and delete it after a confirmation.
+- A Section's title is shown in the font of the Section's Content Language. A new Section takes the interface language of the person adding it, and keeps the language it was saved with.
+- The Student sees the Sections of the Syllabus in the Teacher's order on the class page, each with its title, text, and links. A Syllabus without Sections shows "no syllabus yet".
+- The Admin and the Teachers of the Class can change Sections. Students enrolled in the Class can read them. Nobody else sees them, including Parents (§10, Open Question 14).
+- A Syllabus written before this change has its text and links in one Section titled "Syllabus" in the Syllabus's Content Language. Nothing was lost and nothing shows twice.
+- The list of a Class's Syllabi shows how many Sections each has.
+
+#### FR-20: PDF files on a Section
+
+The Teacher of a Class or the Admin attaches PDF files to a Section; enrolled Students open them.
+
+**Consequences (testable):**
+- Only PDF files are accepted, at most 1 MB each, and at most 5 per Section. A file that is too large, isn't a PDF, or would be the sixth is refused with a message that names the limit, and nothing is stored.
+- A file counts as a PDF by its content, not its name: a renamed Word document is refused.
+- Each file is listed with its original name and its size. Selecting the name opens the PDF in a new tab; "Download" saves it under its original name.
+- The Teacher or the Admin can replace a file with a newer version, which keeps its place in the list, and remove a file after a confirmation.
+- Files are private. The Admin, the Teachers of the Class, and Students enrolled in it can open a file. Anyone else, signed in or not, gets "not found", also with a link copied from someone who has access. A link to a file stops working after about a minute.
+- Deleting a file, its Section, its Syllabus, or its Class deletes the stored files too. If the stored files can't be removed, the delete is refused. If the delete fails after the files were removed, the message says the files are gone.
+- Students and Parents can't upload anything.
+
+### 4.10 Homework Notifications
+
+**Description:** Students and Parents can get a notification on their phone or browser about Homework. Before this, the app sent nothing, and §6 listed notifications to Parents as a non-goal for this stage. Added 2026-10-06 (issue #92).
+
+#### FR-21: Homework Notifications for Students and Parents
+
+An approved Student or an approved Parent can turn on Homework Notifications for the device they're using.
+
+**Consequences (testable):**
+- **New:** when a Teacher creates a one-off Homework, each Student it's assigned to and that Student's Parent are notified. Weekly Homework sends no New notification.
+- **Due soon:** on Saturday morning, a Student and their Parent are notified about Open Homework due in the next 7 days.
+- **Overdue:** the morning after the due date, the Parent is notified once. The Student isn't.
+- Teachers and the Admin get no notifications.
+- "My Account" has a Notifications card with a switch, for approved Students and approved Parents. The switch belongs to the device: turning it on affects only that phone or browser.
+- On a shared phone, notifications go to whoever is signed in. Signing out stops them for that person on that device.
+- A notification is written in the language of the browser it goes to.
+- The same notification isn't sent twice.
+- No email is sent. Notifications are push only.
+
+### 4.11 Sign-in, Email Confirmation & PIN
+
+**Description:** Small changes that keep a Parent, a Teacher, or a Student from getting stuck at the door. Each came from a problem the product owner hit while registering real accounts. Added 2026-10-05 and 2026-10-06 (issues #82, #83, #88, #89, #90).
+
+#### FR-22: Confirming an email, and asking for a new link
+
+A confirmation link confirms the email only when the person presses a button, and a Parent whose link expired can ask for a new one.
+
+**Consequences (testable):**
+- Opening the confirmation link shows a page with one button ("Confirm my email"). The email is confirmed when the button is pressed, not when the link is opened, so a mail program that opens links by itself doesn't use the link up.
+- A Parent can ask for a new confirmation email by entering their email. The answer is the same whether or not an account exists for that email.
+- The way to ask for a new link is offered after registering ("Check your email"), after a link that failed or expired, and after a sign-in with an unconfirmed email.
+- Registering with an email that already has an account says so and tells a Teacher who is also a Parent to sign in and use "Request parent access" under My Account (issue #83).
+- Every password field has a button inside it that shows or hides what was typed: on register, sign-in, reset password, and My Account. A Student's PIN field on the sign-in page has it too (issue #82).
+
+#### FR-23: Admin helps a Parent whose confirmation email doesn't arrive
+
+The Admin can resend a Parent's confirmation email, or approve the Parent without it.
+
+**Consequences (testable):**
+- A Pending Parent whose email isn't confirmed has a "Resend confirmation email" action on the Requests page. If the email can't be sent, the Admin sees that.
+- The Admin can approve such a Parent. The app asks first, names the email address, and says that nobody has proven they own it. After approval the Parent can sign in without confirming.
+- This changes FR-2, which blocked approval until the email was confirmed.
+
+#### FR-24: Resetting a Student's PIN
+
+A Teacher of the Student's Class or the Admin can give a Student a new PIN.
+
+**Consequences (testable):**
+- "Reset PIN" is offered per Student in the list of class members, on the Teacher's class page and on the Admin's class students page.
+- The app asks first. The username and the new PIN are then shown once, each with a copy button.
+- Only an approved Student enrolled in that Class can be reset, and only by the Admin or a Teacher assigned to that Class.
+- The Student is signed out everywhere and signs in with the new PIN.
+- A Teacher can reset the PIN of their own child (§10, Open Question 16).
+
+### 4.12 Help
+
+**Description:** A public Help page explains the app per role. Before this, the app had no guidance, although §8 asks that parents can use it without instructions. Added 2026-10-05 (issue #87).
+
+#### FR-25: Help page
+
+Anyone can open a Help page with a step-by-step guide for Parents, Teachers, and Students.
+
+**Consequences (testable):**
+- The page has one guide per role, as numbered steps, and a list of common questions shared by all roles.
+- A signed-in person starts on the guide for their own role. The Admin and a signed-out visitor start on the Parents' guide. There is no guide for the Admin.
+- The page is reachable without signing in, from the start page and the sign-in page ("Need help?"), and from every role's menu.
+- The guides are in German, English, and Tibetan, and the Parents' and Students' guides include screenshots.
+
+### 4.13 Confirming Before an Action That Can't Be Undone
+
+**Description:** An action that can't be undone asks before it runs. Before this, several such actions ran on one press. Added 2026-10-06 (issue #91).
+
+#### FR-26: The app asks before an action that can't be undone
+
+**Consequences (testable):**
+- The question names the person or item it's about. Cancelling leaves everything as it was.
+- On the Requests page this covers: rejecting a Parent, rejecting a Student's registration, clearing a rejected registration, approving or rejecting Sick Leave, and rejecting a Deletion Request.
+- For a Teacher's Homework it covers: mark done, mark reviewed, archive, pause a series, and end a series. For a Student it covers mark done.
+- It also covers the actions added since: deleting a Section, removing a Section File, resetting a PIN, and approving a Parent without a confirmed email.
+- Actions that pressing again or editing corrects don't ask: attendance, skill status, cancelling or restoring one Session, schedule edits, and create and rename forms.
+
+### 4.14 Installable App
+
+**Description:** A phone or browser can install Sherab from the website. Before this, the app was meant to be a PWA (§8) but no page offered installation. Added 2026-10-03 (issue #81).
+
+#### FR-27: Sherab can be installed from the browser
+
+**Consequences (testable):**
+- A browser that supports it offers to install Sherab or add it to the home screen, with the app's name and icon.
+- Installing needs no app store.
+- On an iPhone, Homework Notifications (FR-21) work only after Sherab was added to the Home Screen.
 
 ## 5. Changes to the Existing Spec
 
@@ -358,9 +487,28 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 **`SPEC.md`**
 - **Constraints:** a Class and a Team have a name per interface language (English and Tibetan required, German optional); the viewer's interface language decides which is shown, with the English name as the fallback; names are unique per language (FR-17).
 
+**Added 2026-10-10 for §4.9 to §4.14. Not yet applied to the spec files.**
+
+**`SPEC.md`**
+- **CAP-14:** a Syllabus is a list of Sections (title, optional formatted text in its own Content Language, optional links), ordered by the Teacher; a Section can carry up to 5 PDF files of at most 1 MB (FR-19, FR-20). The success line for the Student changes to the Sections and their files.
+- **New capability:** Homework Notifications to Students and Parents: New, Due soon, Overdue (FR-21).
+- **New capability:** a Teacher of the Class or the Admin resets a Student's PIN (FR-24).
+- **CAP-1:** the Admin can approve a Parent without a confirmed email after a warning, and can resend the confirmation email (FR-23); a confirmation link confirms on a button press, and a new link can be requested (FR-22).
+- **Constraints:** the size of Tibetan text is 1.36 times the surrounding text (FR-18). An action that can't be undone asks first (FR-26). Stored files are private to the Class and are deleted with what they belong to (FR-20).
+- **Non-goals:** "file attachments … inside homework content or a syllabus" becomes: no files inside the text, no file types other than PDF, no upload by Students or Parents.
+- **Open Questions:** whether a Parent should see the Syllabus.
+
+**`roles-and-permissions.md`**
+- Teacher and Admin: add Sections and Section Files, and resetting a Student's PIN. Admin: resend a Parent's confirmation email, approve without it.
+- Student: reads the Sections and files of a Class they're enrolled in; can turn on Homework Notifications. Parent: can turn on Homework Notifications; can't see the Syllabus.
+
+**`homework-workflow.md`**
+- Creating a one-off Homework notifies the Students it's assigned to and their Parents; the Saturday reminder and the Overdue notice (FR-21). Mark done, mark reviewed, archive, pause and end a series ask first (FR-26).
+
 ## 6. Non-Goals
 
-- Notifications to Parents (email or push). Planned for a later stage.
+- Notifications by email, and any notification to Teachers or the Admin. Changed 2026-10-06: push notifications about Homework to Students and Parents are built (FR-21); before that, all notifications to Parents were a non-goal.
+- A New notification for weekly Homework, and notifications about anything other than Homework.
 - A second Parent account per family, or more than one Parent per Student.
 - Parents marking Homework Done or acting for the child in any way besides Session Leave and Deletion Requests.
 - In-app messaging between Parents and Teachers.
@@ -368,13 +516,15 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 - Changing the Parent Email, because the email is what links every Linked Child.
 - Teachers approving Parents.
 - Student registration without a Parent account.
-- Images, tables, file attachments, or embedded media in Homework Content or a Syllabus (§4.6).
+- Images, tables, or embedded media in Homework Content or a Section's text (§4.6). Changed 2026-10-08: PDF files can be attached to a Section (FR-20); files inside the text, and files on a Homework, remain a non-goal.
+- File types other than PDF, files over 1 MB, and uploads by Students or Parents.
+- A Parent seeing the Syllabus, searching Sections, and archiving a Section without deleting it. Asked for and deferred (§10, Open Question 14).
 - More than one Content Language per Homework or Syllabus. Mixed text is allowed, but one language is chosen and decides the font.
 - A paid or hosted editor service. The editor runs in the Teacher's browser and the text is stored in the school's own database.
 
 ## 7. MVP Scope
 
-**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan. FR-13 to FR-16 were added on 2026-10-01 and are built; the Tibetan wording of their new labels is still to be supplied (§10, Open Question 7). FR-17 and FR-18 were added on 2026-10-03 and are built; FR-17's new labels are also still English under the Tibetan interface.
+**In scope:** FR-1 to FR-12, with all screens in German, English, and Tibetan. FR-13 to FR-16 were added on 2026-10-01 and are built; the Tibetan wording of their new labels is still to be supplied (§10, Open Question 7). FR-17 and FR-18 were added on 2026-10-03 and are built; FR-17's new labels are also still English under the Tibetan interface. FR-19 to FR-27 were added between 2026-10-03 and 2026-10-08 and are built; their Tibetan texts are drafts that haven't been reviewed (§10, Open Question 7), and FR-19 and FR-20 aren't on the live site until their two database changes are applied (§10, Open Question 13).
 
 **Out of scope:** everything in §6.
 
@@ -383,11 +533,14 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 ## 8. Constraints & Privacy
 
 - The app isn't in use by real families yet, so there are no existing Students or teacher notes to migrate. Test data is reset at release.
-- Same platform as today: a low-cost PWA on family phones, with no app-store install.
-- Must stay simple enough for non-technical parents to use without instructions.
+- Same platform as today: a low-cost PWA on family phones, with no app-store install. It can be installed from the browser (FR-27).
+- Must stay simple enough for non-technical parents to use without instructions. The Help page (FR-25) is there for those who want them.
 - A Parent sees only their own Linked Children, and no other child's data beyond what the leaderboard already shows.
 - The app now stores an adult's name and email per family. GDPR obligations are still open (§10, Open Question 1).
 - No reason or medical detail is collected for Sick Leave.
+- The app runs on the school's own domain, `sherab.app`, and sends its account emails (confirmation, password reset) from it through a mail service (issue #84). The setup is described in `docs/production-email.md`; whether every step is finished isn't recorded.
+- The app stores files for the first time: Teachers' PDFs for a Syllabus Section, in the same hosted service as the database, inside its free allowance (`docs/deployment-and-costs.md`). Whether that service's backups include stored files isn't confirmed.
+- Homework Notifications go through the push services of the browser makers (Apple, Google, Mozilla). No other third party receives them.
 
 ## 9. Success Metrics
 
@@ -404,14 +557,21 @@ This PRD overrides parts of the current contract. When it's finalized, update th
 ## 10. Open Questions
 
 1. **GDPR** for Parent data (an adult's name and email) and for teacher notes shown to Parents: data controller, retention, and legal basis. Go-live precondition: must be decided before real family data is stored. Owner: not yet assigned.
-2. **Parent notifications**, such as a weekly overdue summary. Planned for a later stage; design them then.
+2. **Parent notifications**, such as a weekly overdue summary. Planned for a later stage; design them then. **Decided (product owner, 2026-10-06, issue #92):** push notifications for New, Due soon (Saturday morning), and Overdue (Parents only); see FR-21. Email notifications stay open.
 3. What happens to a Parent account when all its Linked Children are deleted or leave the school?
 4. **Planned Leave edge cases** (deferred): switching On leave → Coming → On leave; Sessions added or moved inside the Leave Notice Period; and whether changing the Leave Notice Period reclassifies earlier leave.
 5. How does a Parent regain access after losing access to their email? Possibly with the Admin's help.
 6. **Should a Parent see the Homework Content?** Today the Parent sees a Homework's title, due date, status, and reference links (FR-7), not the content the Teacher wrote. UJ-2 has Dolma talking to Tenzin about an overdue item, which the content would help with.
-7. **Tibetan wording** for the labels added with §4.6 (Content, the language names, the formatting tools, and the new messages). They currently appear in English under the Tibetan interface. Owner: product owner.
+7. **Tibetan wording** for the labels added with §4.6 (Content, the language names, the formatting tools, and the new messages). They currently appear in English under the Tibetan interface. Owner: product owner. The same holds for what §4.9 to §4.14 added: the texts for Sections, Section Files, notifications, confirmation questions, and the Admin's Parent actions the Help guides, and the password button are in Tibetan, but as drafts written by the assistant (2026-10-06 and later) that no Tibetan speaker has reviewed.
 8. **Title font in two places.** The Homework title is shown in the interface's font, not the Content Language's, in the page breadcrumb and inside the title field while the Teacher types (a limit of the interface components used). Accept, or fix?
 9. **Should the Syllabus text be required**, as Homework Content is? Kept optional for now (FR-16).
 10. **Existing Classes and Teams have no Tibetan or German name** until the Admin adds them with "Edit names" (FR-17); until then the English name is shown. Owner: Admin.
 11. **Licence of the Atisha font** (FR-18). The font's own notice reads "Copyright (c) 2014 by Lobsang monlam. All rights reserved." and names no licence. Confirm with Monlam IT (monlamit.org) that it may be served from a website and kept in the code repository. Go-live precondition. Owner: product owner.
-12. **Size of Tibetan text.** At the same font size Atisha looks slightly smaller than the Latin text beside it. Should it be scaled up? **Decided (product owner, 2026-10-03, issue #78):** yes, 1.5 times the size of English and German text; see FR-18.
+12. **Size of Tibetan text.** At the same font size Atisha looks slightly smaller than the Latin text beside it. Should it be scaled up? **Decided (product owner, 2026-10-03, issue #78):** yes, 1.5 times the size of English and German text; see FR-18. **Changed (product owner, 2026-10-05, issue #85):** 1.36 times.
+13. **Syllabus Sections and files aren't live yet.** The two database changes behind FR-19 and FR-20 are built but not applied to the live database. Apply both, then deploy the app straight after: what a Teacher saves in the old app in between doesn't appear as a Section. It isn't confirmed that the live service lets the second change create the file storage by itself. Owner: product owner.
+14. **Should a Parent see the Syllabus, its Sections, and its files?** The product owner said yes (2026-10-08) and deferred it. Search across Sections and archiving a Section were deferred with it.
+15. **Notifications and installation on real phones.** Not yet checked on a real phone: that a notification arrives, the iPhone Home Screen app, the Saturday reminder against the running app, and the install offer itself (FR-21, FR-27). The same goes for a phone's file picker and how a phone opens a PDF (FR-20).
+16. **May a Teacher reset their own child's PIN?** It's allowed today (FR-24): the rule that keeps a Teacher from deciding about their own child covers decisions, not sign-in details. Confirm, or block it.
+17. **A signed-out visitor who opens a file link gets "not found"** (FR-20). That keeps outsiders from learning anything, but a Student whose sign-in expired sees the same page. Send signed-out visitors to the sign-in page instead?
+18. **Who reset a PIN, and who approved a Parent without a confirmed email, isn't recorded** (FR-23, FR-24). Is a record needed?
+

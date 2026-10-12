@@ -38,3 +38,32 @@
 - **Licence:** not confirmed; see PRD §10, Open Question 11. The font file allows embedding in documents (`fsType` 8) but says nothing about serving it from a website.
 - **Status:** built and committed on `main` on 2026-10-03. Issue #77.
 - **Reach and size (issue #78, 2026-10-03):** as first built, most Tibetan text did not get Atisha: iX sets `Siemens Sans, …` on `body` and inside each component's shadow DOM, which overrides what `[lang='bo']` passes down. The face is now declared a second time under the family name `Siemens Sans` (iX ships no face for that name), still limited to U+0F00–0FFF, so Tibetan characters in any iX font stack use Atisha, in any interface language. Both faces carry `size-adjust: 150%`, which draws Tibetan 1.5 times the surrounding font size without changing Latin text (Chrome 92+, Firefox 92+, Safari 17+; older browsers show Atisha at normal size). The line height is 2.2 on `[lang='bo']` and on `body` under the Tibetan interface, replacing 1.6. Measured in the browser, Atisha's letters at this size reach up to 1.22 times the font size above the baseline and 0.88 below, about 2.1 in all, which is 1.4 times the Tibetan size (the product owner's rule: 1.2 to 1.5). iX's button clips its label to one 1.43em line, which cut the feet of the letters; under the Tibetan interface `ix-button` is 2.5rem high with a 2.5rem line, and the header language picker (`ix-dropdown-button`, whose inner button is in shadow DOM) gets a 2rem line through the `dropdownButtonLabelRoom` action in `src/lib/ix.ts`. Built on `main` on 2026-10-03, not committed.
+
+## Technical notes for §4.9, Syllabus Sections & Files (added 2026-10-10, as built)
+
+- **Sections (issue #94):** `0038_syllabus_sections.sql` adds `class_syllabus_sections` (`syllabus_id`, `position`, `title`, `content_doc`, `content_language`, `links`). Access goes through the parent syllabus's class: the admin and the class's teachers change, enrolled students read. `move_syllabus_section()` swaps a section with its neighbour and renumbers in one statement. The migration copies each syllabus's own text and links into one section; `class_syllabi.content_doc`, `content_language` and `links` stay, unused, until a cleanup migration.
+- **Files (issue #95):** `0039_syllabus_section_files.sql` creates the private storage bucket `syllabus-files` (1 MB, `application/pdf`), the table `class_syllabus_section_files`, policies on `storage.objects` keyed on the class id in the object path, and a trigger that refuses a sixth file. Objects are stored as `<class_id>/<section_id>/<random>.pdf`; the original name is in the row only.
+- **Upload path:** a multipart form post to the app, read with a byte cap and forwarded with the user's own client, so the storage policies apply. The server accepts a file only if it starts with `%PDF-`.
+- **Opening a file:** `/files/syllabus/[fileId]` reads the row under row-level security and answers with a 60-second signed link, or 404. The file doesn't pass through the app on the way out.
+- **Deleting:** stored objects can't be deleted from SQL, so the app removes them through the Storage API before it deletes a file, a section, a syllabus or a class. Rows deleted any other way leave their objects behind; the migration header has the query that lists them. A sweep for such objects is deferred.
+- **Rollout:** push 0038 and 0039, then deploy straight after. Check queries are in both migration headers and in log entries #94 and #95. The copy in 0038 was run locally on rows made for the purpose, not on the hosted data.
+- **Specs and status:** `_bmad-output/implementation-artifacts/spec-syllabus-sections.md` and `spec-syllabus-section-pdf.md`. Committed on `main` on 2026-10-08 and 2026-10-09; neither migration is on the hosted database.
+
+## Technical notes for §4.10, Homework Notifications (added 2026-10-10, as built)
+
+- **Database:** `0037_push_notifications.sql` adds `push_subscriptions` and `push_notification_log`, two functions a browser saves and removes its subscription with, `homework_push_targets` (who is owed which notice) and `trigger_homework_push`, which calls the app through `pg_net` with a secret from Vault. A job runs it every 5 minutes from 07:00 to 08:55 UTC.
+- **Sending:** `src/lib/server/push.ts` sends with `web-push-neo` in batches of 20, because Cloudflare's free plan allows 50 outgoing calls per request. The New notice isn't sent from the create-homework action but handed to the database, which calls the app in a request of its own.
+- **Off until configured:** the feature is hidden until the `VAPID_*` variables are set. Setup, test checklist and limits: `docs/notifications.md`.
+- **Status:** committed on `main` on 2026-10-06 (issue #92). Not verified on a real phone or on `sherab.app`.
+
+## Technical notes for §4.11 to §4.14 (added 2026-10-10, as built)
+
+- **Confirmation link (issue #89):** `/auth/confirm` is a page; a `token_hash` link shows a button and the token is verified when the form is posted. `/resend-confirmation` calls `auth.resend` and gives one answer for every outcome.
+- **Admin approval without confirmation (issue #90):** the action marks the login's email confirmed through the service-role client and then approves through the admin's own client, because the database rule (`parents_update_admin`, 0023) refuses the approval otherwise. No migration.
+- **PIN reset (issue #88):** `resetStudentPin` in `src/lib/server/student-pin.ts`; the new PIN is set with the service-role client only after the caller, the class and the student were checked. No record of who reset a PIN and no rate limit.
+- **Confirmation dialogs (issue #91):** `createPending().submit()` takes an optional `confirm`; `confirmWith()` in `src/lib/ix.ts` supplies it. No server or database change.
+- **Help (issue #87):** `/help`, with its content lists in `src/lib/help.ts`.
+- **Installable app (issue #81):** the root layout links the manifest and registers the service worker; `navigateFallback` is off because the app is server-rendered.
+- **Tibetan size (issues #85, #86):** `size-adjust: 136%` on both Atisha faces, replacing 150%; Tibetan line height 2, replacing 2.2. Breadcrumb items and side menu labels get a 2.25rem line.
+- **Production email (issue #84):** `sherab.app`, mail through Resend; steps in `docs/production-email.md`.
+

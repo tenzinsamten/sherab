@@ -1770,3 +1770,26 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   If deleting a section, syllabus or class fails after its files were removed, it stays
   without its files; the message now says so.
   No help-page text was added for teachers or students.
+
+- 2026-10-12: #96 logged, not fixed. Reported (user): "I created a homework for the student from
+  teachers login as recurrent with Due, days after each week starts 7. but i do not see any home
+  work on students page". Cause, read from the code: by design, creating weekly homework stores
+  only the series; no copy for students is made at that moment
+  (`teacher/classes/[id]/homework/new/+page.server.ts`, weekly branch: "the generator creates the
+  first on its next run, not synchronously"). `generate_recurring_homework_instances()` (0005,
+  0016) makes the students' copies, and only the scheduled job
+  `generate-recurring-homework-instances` calls it, once a day at 03:00 UTC (05:00 in Munich in
+  summer, 04:00 in winter). It creates one copy per week whose start date is today or earlier,
+  for the students enrolled at that moment. So the student sees nothing until the next 03:00 UTC
+  run after the series' start date; with a start date in the future, nothing until that date.
+  The create form says nothing about this, and the teacher gets the same "created" result as for
+  one-off homework. Not checked: the series the user created (its start date, and whether a copy
+  appeared after the following night's run). It is not in the local database (no weekly
+  homework there on 2026-10-12; the local job ran at 03:00 UTC on 10, 11 and 12 October), so it
+  was made against the hosted database, which was not looked at. Also not checked: that the job
+  exists and runs on the hosted project, and that the student is enrolled in that class.
+  Related: weekly homework sends no "New" notification (#92), so nothing tells the student when
+  the copy appears. Open for planning: create the first week's copy at once when the start date
+  is today or earlier (the generator is service-side only; the action would need a trusted way
+  to run it for one series); or keep the nightly run and say so on the form and in the success
+  message; what the teacher's homework list should show for a series with no copy yet.
