@@ -466,6 +466,10 @@
 	],
 	"leaderboard_row_aria_label": "Platz {rank}: {team}, {weeks} kombinierte Serie",
 	"leaderboard_empty": "Noch keine Teams vorhanden.",
+	"team_students_section_label": "Team",
+	"team_students_heading": "Schüler:innen ({count})",
+	"team_students_empty": "Noch keine Schüler:innen in diesem Team.",
+	"team_students_link_label": "Schüler:innen des Teams {team}",
 
 	"join_section_label": "Einer Klasse beitreten",
 	"join_heading": "Einer Klasse beitreten",

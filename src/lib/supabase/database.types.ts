@@ -1526,6 +1526,23 @@ export type Database = {
 				Args: { p_class_id: string; p_student_id: string };
 				Returns: undefined;
 			};
+			can_view_team: {
+				Args: { p_team_id: string };
+				Returns: boolean;
+			};
+			viewable_team_ids: {
+				Args: never;
+				Returns: { team_id: string }[];
+			};
+			team_students: {
+				Args: { p_team_id: string };
+				Returns: {
+					team_name: string;
+					team_name_bo: string | null;
+					team_name_de: string | null;
+					student_name: string | null;
+				}[];
+			};
 			team_leaderboard: {
 				Args: never;
 				Returns: {

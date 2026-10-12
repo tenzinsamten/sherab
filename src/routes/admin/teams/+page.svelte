@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { formatInstant, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { confirmAction, showToast } from '$lib/ix';
@@ -113,7 +114,13 @@
 						{#each data.teams as team (team.id)}
 							<tr>
 								<td>
-									{team.label}
+									<!-- #97: opens the team's students. The link's name stays the
+									     team name (it is the cell's name too); what it opens is
+									     its description. -->
+									<a
+										href={resolve('/teams/[teamId]', { teamId: team.id })}
+										title={m.team_students_link_label({ team: team.label })}>{team.label}</a
+									>
 									{#each otherNames(team) as other (other.lang)}
 										<span class="muted other-name" lang={other.lang}>{other.name}</span>
 									{/each}

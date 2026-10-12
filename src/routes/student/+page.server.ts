@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	const { data: profile } = await supabase
 		.from('profiles')
-		.select('role, team_id')
+		.select('role, team_id, status')
 		.eq('id', user.id)
 		.single();
 
@@ -89,13 +89,18 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		todoByClass.set(item.classId, (todoByClass.get(item.classId) ?? 0) + 1);
 	}
 
+	const team = teamRank(shapeTeamLeaderboard(teamRows), profile.team_id);
+
 	return {
 		tiles: {
 			todo: counts?.open_count ?? 0,
 			overdue: counts?.overdue_count ?? 0,
 			doneThisWeek: homework.doneThisWeek
 		},
-		team: teamRank(shapeTeamLeaderboard(teamRows), profile.team_id),
+		team,
+		// #97: an approved student may open any team (can_view_team, 0041);
+		// the tile then leads to their own team's students.
+		teamId: team && profile.status === 'approved' ? profile.team_id : null,
 		streak: shapeStudentStreak(streakRow),
 		badges: shapeStudentBadges(badgeRows),
 		nextDue: homework.items.slice(0, NEXT_DUE_COUNT),

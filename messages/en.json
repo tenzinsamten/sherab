@@ -466,6 +466,10 @@
 	],
 	"leaderboard_row_aria_label": "Rank {rank}: {team}, {weeks} combined streak",
 	"leaderboard_empty": "No teams yet.",
+	"team_students_section_label": "Team",
+	"team_students_heading": "Students ({count})",
+	"team_students_empty": "No students in this team yet.",
+	"team_students_link_label": "Students of team {team}",
 
 	"join_section_label": "Join a class",
 	"join_heading": "Join a class",

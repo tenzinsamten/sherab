@@ -32,3 +32,20 @@ export function shapeTeamLeaderboard(rows: TeamRankRow[] | null): TeamRank[] {
 		totalStreak: row.total_streak
 	}));
 }
+
+/** A leaderboard row plus whether this viewer may open the team's page (#97). */
+export type TeamRankLink = TeamRank & { canOpen: boolean };
+
+/**
+ * Marks the teams the viewer may open, from a `viewable_team_ids()` read
+ * (0041): every team for the admin, teachers and approved students, a
+ * parent's children's teams only. `rows` is `null` when that read failed;
+ * no team is a link then.
+ */
+export function markOpenableTeams(
+	teams: TeamRank[],
+	rows: { team_id: string }[] | null
+): TeamRankLink[] {
+	const openable = new Set((rows ?? []).map((row) => row.team_id));
+	return teams.map((team) => ({ ...team, canOpen: openable.has(team.teamId) }));
+}

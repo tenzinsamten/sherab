@@ -36,7 +36,7 @@ function makeChain(result: Result) {
 const TODAY = todayInBerlin();
 
 const base: Record<string, Result> = {
-	profiles: { data: { role: 'student', team_id: 't2' }, error: null },
+	profiles: { data: { role: 'student', team_id: 't2', status: 'approved' }, error: null },
 	class_enrollments: { data: [{ class_id: 'c1' }], error: null },
 	classes: { data: [{ id: 'c1', name: 'Yaks' }], error: null },
 	class_syllabi: { data: [], error: null },
@@ -137,11 +137,26 @@ function run(
 let lastRpcCalls: { name: string; args: unknown }[] = [];
 
 describe('student dashboard load', () => {
+	it('#97: the team tile leads to the team only for an approved student with a team', async () => {
+		const pending = await run({
+			...base,
+			profiles: { data: { role: 'student', team_id: 't2', status: 'pending' }, error: null }
+		});
+		expect(pending).toMatchObject({ team: { name: 'Yaks' }, teamId: null });
+
+		const noTeam = await run({
+			...base,
+			profiles: { data: { role: 'student', team_id: null, status: 'approved' }, error: null }
+		});
+		expect(noTeam).toMatchObject({ team: null, teamId: null });
+	});
+
 	it('summarises homework, team rank and classes', async () => {
 		const result = await run(base);
 		expect(result).toMatchObject({
 			tiles: { todo: 1, overdue: 0, doneThisWeek: 0 },
 			team: { name: 'Yaks', rank: 2, total: 2 },
+			teamId: 't2',
 			nextDue: [{ instanceId: 'i1', title: 'Song practice' }],
 			classes: [{ id: 'c1', name: 'Yaks', todo: 1 }],
 			loadError: false

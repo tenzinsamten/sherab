@@ -38,3 +38,8 @@ export const SYLLABUS_MESSAGES = {
 	notFound: 'Syllabus not found.',
 	failed: 'Could not load this syllabus. Please try again.'
 };
+
+export const TEAM_MESSAGES = {
+	notFound: 'Team not found.',
+	failed: 'Could not load this team. Please try again.'
+};

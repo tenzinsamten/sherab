@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
@@ -44,7 +45,17 @@
 							<ix-card-content>
 								<div class="leaderboard-row">
 									<span class="leaderboard-rank" class:top={index === 0}>{num(index + 1)}</span>
-									<span class="leaderboard-team">{team.teamName}</span>
+									<span class="leaderboard-team">
+										{#if team.canOpen}
+											<a
+												href={resolve('/teams/[teamId]', { teamId: team.teamId })}
+												aria-label={m.team_students_link_label({ team: team.teamName })}
+												>{team.teamName}</a
+											>
+										{:else}
+											{team.teamName}
+										{/if}
+									</span>
 									<span class="stat-tile-value"
 										>{num(m.leaderboard_streak_weeks({ count: team.totalStreak }))}</span
 									>
@@ -90,6 +101,8 @@
 	}
 	.leaderboard-team {
 		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
 		font-weight: var(--theme-font-weight-bold);
 	}
 	.leaderboard-row .stat-tile-value {

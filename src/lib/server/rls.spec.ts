@@ -13811,3 +13811,342 @@ describe.skipIf(!reachable)('0039 syllabus section files (requires local Supabas
 		expect(await late.text()).not.toContain('%PDF-');
 	}, 20000);
 });
+
+/**
+ * #97 (0041): who may see a team's students -- team_students(),
+ * can_view_team() and viewable_team_ids(). One test per row of the spec's
+ * I/O matrix.
+ */
+describe.skipIf(!reachable)('#97 team students (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let parent: { id: string; email: string; client: Client };
+	let classId: string;
+	/** Three approved students (one is `parent`'s child), one pending, one rejected. */
+	let teamA: string;
+	/** One approved student; no child of `parent`. */
+	let teamB: string;
+	/** No students. */
+	let teamEmpty: string;
+	let studentInA: Client;
+	let studentInB: Client;
+	let pendingStudent: Client;
+	let rejectedStudent: Client;
+
+	const tag = crypto.randomUUID().slice(0, 8);
+	const name = (label: string) => `97 ${label} ${tag}`;
+	const NAMES_A = [name('anna'), name('Bkra shis'), name('Chodon')];
+	/** Registered under this name, shown as NAMES_A[1]: it would sort last. */
+	const REGISTERED_AS = name('Zzz registered');
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function newParent() {
+		const p = await createApprovedParent();
+		return { id: p.id, email: p.email, client: await signIn(p.email, p.password) };
+	}
+
+	async function createTeam(label: string, extra: Record<string, string> = {}) {
+		const { data, error } = await adminClient
+			.from('teams')
+			.insert({ name: name(label), ...extra })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create team: ${error?.message}`);
+		return data.id;
+	}
+
+	/** A student in `teamId` with the given status, optionally a child of `parentEmail`. */
+	async function student(params: {
+		registrationName: string;
+		teamId: string;
+		status?: 'approved' | 'pending' | 'rejected';
+		parentEmail?: string;
+		/** A display name different from the registration name. */
+		displayName?: string;
+	}) {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: params.registrationName,
+			guardianEmail: params.parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register student: ${error?.message}`);
+		const { error: updateError } = await adminClient
+			.from('profiles')
+			.update({
+				status: params.status ?? 'approved',
+				team_id: params.teamId,
+				...(params.displayName ? { display_name: params.displayName } : {})
+			})
+			.eq('id', id);
+		if (updateError) throw new Error(`Failed to set up student: ${updateError.message}`);
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.updateUserById(id, { password });
+		if (error || !data.user?.email) {
+			throw new Error(`Failed to set a password for student ${id}: ${error?.message}`);
+		}
+		return signIn(data.user.email, password);
+	}
+
+	/** Sets a status with the service role and fails if no row changed. */
+	async function setStatus(table: 'profiles' | 'parents', id: string, status: 'rejected') {
+		const { data, error } = await adminClient
+			.from(table)
+			.update({ status })
+			.eq('id', id)
+			.select('status');
+		if (error || data?.[0]?.status !== status) {
+			throw new Error(`Failed to set ${table} ${id} to ${status}: ${error?.message}`);
+		}
+	}
+
+	const studentsOf = (client: Client, teamId: string) =>
+		client.rpc('team_students', { p_team_id: teamId });
+
+	async function viewable(client: Client) {
+		const { data, error } = await client.rpc('viewable_team_ids');
+		expect(error).toBeNull();
+		return (data ?? []).map((row) => row.team_id);
+	}
+
+	async function expectRefused(client: Client, teamId: string) {
+		const { data, error } = await studentsOf(client, teamId);
+		expect(error?.code).toBe('42501');
+		expect(data).toBeNull();
+		expect((await client.rpc('can_view_team', { p_team_id: teamId })).data).not.toBe(true);
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		const { data: cls, error: classError } = await adminClient
+			.from('classes')
+			.insert({ name: name('Class'), code: `T${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (classError || !cls) throw new Error(`Failed to create class: ${classError?.message}`);
+		classId = cls.id;
+
+		teamA = await createTeam('Team A', { name_bo: 'རུ་ཁག་ཀ', name_de: 'Mannschaft A' });
+		teamB = await createTeam('Team B');
+		teamEmpty = await createTeam('Team Empty');
+		parent = await newParent();
+
+		// Registered out of name order, so the sort is the function's.
+		const chodon = await student({ registrationName: NAMES_A[2], teamId: teamA });
+		await student({
+			registrationName: NAMES_A[0],
+			teamId: teamA,
+			parentEmail: parent.email
+		});
+		await student({
+			registrationName: REGISTERED_AS,
+			displayName: NAMES_A[1],
+			teamId: teamA
+		});
+		const pending = await student({
+			registrationName: name('Pending'),
+			teamId: teamA,
+			status: 'pending'
+		});
+		const rejected = await student({
+			registrationName: name('Rejected'),
+			teamId: teamA,
+			status: 'rejected'
+		});
+		const inB = await student({ registrationName: name('Dawa'), teamId: teamB });
+
+		studentInA = await signInStudent(chodon);
+		studentInB = await signInStudent(inB);
+		pendingStudent = await signInStudent(pending);
+		rejectedStudent = await signInStudent(rejected);
+	}, 60000);
+
+	it("Student opens any team: the team's names and its 3 approved students, sorted by name", async () => {
+		for (const client of [studentInA, studentInB]) {
+			const { data, error } = await studentsOf(client, teamA);
+			expect(error).toBeNull();
+			expect(data).toEqual(
+				NAMES_A.map((student_name) => ({
+					team_name: name('Team A'),
+					team_name_bo: 'རུ་ཁག་ཀ',
+					team_name_de: 'Mannschaft A',
+					student_name
+				}))
+			);
+		}
+		expect(await viewable(studentInB)).toEqual(expect.arrayContaining([teamA, teamB, teamEmpty]));
+	});
+
+	it('The name shown is the display name, else the registration name; sorted by the shown name', async () => {
+		const { data, error } = await studentsOf(admin.client, teamA);
+		expect(error).toBeNull();
+		const names = data?.map((row) => row.student_name) ?? [];
+		// Second by its display name; by its registration name it would be last.
+		expect(names[1]).toBe(NAMES_A[1]);
+		expect(names).not.toContain(REGISTERED_AS);
+		// The others have no display name: their registration name is shown.
+		expect(names[0]).toBe(NAMES_A[0]);
+		expect(names[2]).toBe(NAMES_A[2]);
+	});
+
+	it('Teacher or admin: the same list for any team', async () => {
+		for (const client of [teacher.client, admin.client]) {
+			const { data, error } = await studentsOf(client, teamA);
+			expect(error).toBeNull();
+			expect(data?.map((row) => row.student_name)).toEqual(NAMES_A);
+			const other = await studentsOf(client, teamB);
+			expect(other.data?.map((row) => row.student_name)).toEqual([name('Dawa')]);
+			expect(await viewable(client)).toEqual(expect.arrayContaining([teamA, teamB, teamEmpty]));
+		}
+	});
+
+	it("Parent, child's team: the same list; that team is the only one they may open", async () => {
+		const { data, error } = await studentsOf(parent.client, teamA);
+		expect(error).toBeNull();
+		expect(data?.map((row) => row.student_name)).toEqual(NAMES_A);
+		expect(await viewable(parent.client)).toEqual([teamA]);
+	});
+
+	it('Parent, another team / direct database call: refused with no rows', async () => {
+		await expectRefused(parent.client, teamB);
+		await expectRefused(parent.client, teamEmpty);
+		// The other ways to the same names stay closed to a parent.
+		const { data: profiles } = await parent.client
+			.from('profiles')
+			.select('id')
+			.eq('team_id', teamB);
+		expect(profiles).toEqual([]);
+	});
+
+	it('Parent with two children in two teams: both open, a third does not', async () => {
+		const two = await newParent();
+		const first = await createTeam('Team Kid 1');
+		const second = await createTeam('Team Kid 2');
+		await student({ registrationName: name('Kid 1'), teamId: first, parentEmail: two.email });
+		await student({ registrationName: name('Kid 2'), teamId: second, parentEmail: two.email });
+
+		const one = await studentsOf(two.client, first);
+		expect(one.error).toBeNull();
+		expect(one.data?.map((row) => row.student_name)).toEqual([name('Kid 1')]);
+		const other = await studentsOf(two.client, second);
+		expect(other.error).toBeNull();
+		expect(other.data?.map((row) => row.student_name)).toEqual([name('Kid 2')]);
+		await expectRefused(two.client, teamA);
+		await expectRefused(two.client, teamEmpty);
+		expect((await viewable(two.client)).sort()).toEqual([first, second].sort());
+	});
+
+	it("Parent whose only child in the team is pending or rejected: refused (not 'their own approved child')", async () => {
+		const other = await newParent();
+		const team = await createTeam('Team Pending Child');
+		const kid = await student({
+			registrationName: name('Waiting Kid'),
+			teamId: team,
+			status: 'pending',
+			parentEmail: other.email
+		});
+		await expectRefused(other.client, team);
+		await setStatus('profiles', kid, 'rejected');
+		await expectRefused(other.client, team);
+		expect(await viewable(other.client)).toEqual([]);
+	});
+
+	it('Parent who is no longer approved: refused for the team of their child', async () => {
+		const former = await newParent();
+		const team = await createTeam('Team Former Parent');
+		await student({
+			registrationName: name('Former Kid'),
+			teamId: team,
+			parentEmail: former.email
+		});
+		expect((await studentsOf(former.client, team)).error).toBeNull();
+
+		await setStatus('parents', former.id, 'rejected');
+		await expectRefused(former.client, team);
+		expect(await viewable(former.client)).toEqual([]);
+	});
+
+	it('Pending or rejected student, signed out: refused for every team', async () => {
+		for (const client of [pendingStudent, rejectedStudent, anonClient()]) {
+			await expectRefused(client, teamA);
+			await expectRefused(client, teamB);
+			const { data } = await client.rpc('viewable_team_ids');
+			expect(data ?? []).toEqual([]);
+		}
+	});
+
+	it('Team without students: one row with the team name and no student', async () => {
+		const { data, error } = await studentsOf(studentInA, teamEmpty);
+		expect(error).toBeNull();
+		expect(data).toEqual([
+			{
+				team_name: name('Team Empty'),
+				team_name_bo: null,
+				team_name_de: null,
+				student_name: null
+			}
+		]);
+	});
+
+	it('Pending or rejected student in the team: not listed', async () => {
+		const { data } = await studentsOf(admin.client, teamA);
+		const names = data?.map((row) => row.student_name) ?? [];
+		expect(names).not.toContain(name('Pending'));
+		expect(names).not.toContain(name('Rejected'));
+		// Both are in the team: the function leaves them out, not the fixture.
+		const { count } = await adminClient
+			.from('profiles')
+			.select('id', { count: 'exact', head: true })
+			.eq('team_id', teamA)
+			.in('status', ['pending', 'rejected']);
+		expect(count).toBe(2);
+	});
+
+	it('Unknown team id: no rows for a viewer who may open teams, refused for a parent', async () => {
+		const unknown = crypto.randomUUID();
+		for (const client of [studentInA, teacher.client, admin.client]) {
+			const { data, error } = await studentsOf(client, unknown);
+			expect(error).toBeNull();
+			expect(data).toEqual([]);
+		}
+		await expectRefused(parent.client, unknown);
+	});
+
+	it('Names only: nothing else about a student is returned, and the leaderboard still has totals only', async () => {
+		const { data } = await studentsOf(studentInA, teamA);
+		for (const row of data ?? []) {
+			expect(Object.keys(row).sort()).toEqual([
+				'student_name',
+				'team_name',
+				'team_name_bo',
+				'team_name_de'
+			]);
+		}
+		const { data: board } = await studentInA.rpc('team_leaderboard');
+		expect(Object.keys(board![0]).sort()).toEqual([
+			'team_id',
+			'team_name',
+			'team_name_bo',
+			'team_name_de',
+			'total_streak'
+		]);
+	});
+
+	it('class_people is unchanged: a parent still gets no classmates', async () => {
+		const { data, error } = await parent.client.rpc('class_people', { p_class_id: classId });
+		expect(error).toBeNull();
+		expect((data ?? []).filter((person) => !person.is_teacher)).toEqual([]);
+	});
+});

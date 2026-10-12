@@ -466,6 +466,10 @@
 	],
 	"leaderboard_row_aria_label": "གོ་རིམ་ {rank}། {team}། རྒྱུན་མཐུད་མཉམ་སྡོམ་ {weeks}",
 	"leaderboard_empty": "ད་དུང་རུ་ཁག་མེད།",
+	"team_students_section_label": "རུ་ཁག",
+	"team_students_heading": "སློབ་མ། ({count})",
+	"team_students_empty": "ད་དུང་རུ་ཁག་འདིར་སློབ་མ་མེད།",
+	"team_students_link_label": "རུ་ཁག་ {team} གི་སློབ་མ།",
 
 	"join_section_label": "འཛིན་གྲྭར་ཞུགས།",
 	"join_heading": "འཛིན་གྲྭར་ཞུགས།",

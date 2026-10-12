@@ -314,7 +314,16 @@
 								total: num(data.team.total)
 							})}</strong
 						>
-						<span class="muted">{data.team.name}</span>
+						<!-- #97: the parent may open their own child's team. -->
+						{#if data.teamId}
+							<a
+								href={resolve('/teams/[teamId]', { teamId: data.teamId })}
+								aria-label={m.team_students_link_label({ team: data.team.name })}
+								>{data.team.name}</a
+							>
+						{:else}
+							<span class="muted">{data.team.name}</span>
+						{/if}
 					{:else}
 						<span class="muted">{m.child_team_none()}</span>
 					{/if}

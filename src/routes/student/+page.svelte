@@ -93,7 +93,14 @@
 				</ix-card>
 			</a>
 		{/each}
-		<a href={resolve('/leaderboard')} class="tile-link">
+		<!-- #97: with a team, the tile opens the team's students (that page
+		     leads on to the leaderboard); without one, the leaderboard. -->
+		<a
+			href={data.teamId
+				? resolve('/teams/[teamId]', { teamId: data.teamId })
+				: resolve('/leaderboard')}
+			class="tile-link"
+		>
 			<ix-card variant="outline">
 				<ix-card-content>
 					<p class="section-label">{m.student_tile_team()}</p>
