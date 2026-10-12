@@ -3,6 +3,8 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
+	import { todayInBerlin } from '$lib/berlin-date';
+	import { formatDay } from '$lib/format';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
@@ -28,11 +30,31 @@
 	// <ix-radio-group> emits valueChange but doesn't update its own `value`:
 	// the state here drives it (and which fields show).
 	function pickMode(event: CustomEvent<string>) {
-		if (event.detail === 'once' || event.detail === 'weekly') assignmentMode = event.detail;
+		if (event.detail !== 'once' && event.detail !== 'weekly') return;
+		assignmentMode = event.detail;
+		// The start-date field is recreated empty when the mode changes.
+		startDate = '';
 	}
 	function pickTarget(event: CustomEvent<string>) {
 		if (event.detail === 'all' || event.detail === 'subset') targetMode = event.detail;
 	}
+
+	// #96: when students see a weekly homework depends on its start date --
+	// at once for today or earlier (Munich), else from that date. Shown as
+	// the field's own iX helper text, which iX links to the real input as its
+	// description. (ixFieldError's describedBy can't be used here: this form
+	// is not `novalidate`, so iX's validation would replace the link.)
+	let startDate = $state('');
+	function pickStartDate(event: CustomEvent<string | undefined>) {
+		startDate = event.detail ?? '';
+	}
+	let startDateNote = $derived(
+		!/^\d{4}-\d{2}-\d{2}$/.test(startDate)
+			? m.homework_start_date_note()
+			: startDate > todayInBerlin()
+				? m.homework_start_date_note_from({ date: formatDay(startDate) })
+				: m.homework_start_date_note_now()
+	);
 
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
@@ -150,6 +172,8 @@
 						label={m.homework_start_date_label()}
 						format="yyyy-MM-dd"
 						required
+						helper-text={startDateNote}
+						onvalueChange={pickStartDate}
 					></ix-date-input>
 				</div>
 				<div class="field">

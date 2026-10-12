@@ -3188,6 +3188,395 @@ describe.skipIf(!reachable)(
 			expect(adminAttempt.error).not.toBeNull();
 		});
 
+		// -----------------------------------------------------------------
+		// #96: the first week's copies are made when the series is created
+		// (create_weekly_homework_first_copies, 0040), not by the nightly job.
+		// -----------------------------------------------------------------
+
+		async function firstCopies(client: ReturnType<typeof anonClient>, assignmentId: string) {
+			return client.rpc('create_weekly_homework_first_copies', {
+				p_assignment_id: assignmentId
+			});
+		}
+
+		async function instancesOf(assignmentId: string) {
+			const { data, error } = await adminClient
+				.from('homework_instances')
+				.select('id, period_start, due_date')
+				.eq('assignment_id', assignmentId)
+				.order('period_start');
+			if (error) throw new Error(`Failed to read instances: ${error.message}`);
+			return data ?? [];
+		}
+
+		async function assignedStudents(instanceId: string): Promise<string[]> {
+			const { data, error } = await adminClient
+				.from('homework_status_history')
+				.select('student_id, status')
+				.eq('instance_id', instanceId)
+				.eq('status', 'assigned');
+			if (error) throw new Error(`Failed to read history: ${error.message}`);
+			return (data ?? []).map((r) => r.student_id);
+		}
+
+		it('#96 start today (Munich): the teacher gets one copy at once, due after the offset, for the approved enrolled students -- and the student reads it', async () => {
+			// A student who can sign in, to read the copy as the student page does.
+			const email = `story-96-student-${crypto.randomUUID()}@students.internal.invalid`;
+			const password = crypto.randomUUID();
+			const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+				email,
+				password,
+				email_confirm: true,
+				app_metadata: { role: 'student' }
+			});
+			if (createError || !created.user) throw new Error(`create student: ${createError?.message}`);
+			const studentId = created.user.id;
+			const { error: profileError } = await adminClient
+				.from('profiles')
+				.update({
+					class_id: classAId,
+					status: 'approved',
+					registration_name: 'Ninety-six Student',
+					display_name: 'Ninety-six Student',
+					team_id: teamId
+				})
+				.eq('id', studentId);
+			if (profileError) throw new Error(`set up student: ${profileError.message}`);
+			const studentClient = anonClient();
+			const { error: signInError } = await studentClient.auth.signInWithPassword({
+				email,
+				password
+			});
+			if (signInError) throw new Error(`sign in student: ${signInError.message}`);
+			const pending = await createStudent({
+				classId: classAId,
+				status: 'pending',
+				name: `NinetySix Pending ${crypto.randomUUID().slice(0, 6)}`
+			});
+
+			const today = todayInBerlin();
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 7
+			});
+
+			const { data: count, error } = await firstCopies(teacherA.client, assignmentId);
+			expect(error).toBeNull();
+			expect(count).toBe(1);
+
+			const instances = await instancesOf(assignmentId);
+			expect(instances).toHaveLength(1);
+			expect(instances[0].period_start).toBe(today);
+			expect(instances[0].due_date).toBe(addDays(today, 7));
+
+			const assigned = await assignedStudents(instances[0].id);
+			expect(assigned).toContain(studentId);
+			expect(assigned).not.toContain(pending);
+
+			// Straight after, as the student: the homework with its due date.
+			const { data: seen, error: seenError } = await studentClient
+				.from('homework_instances')
+				.select('id, due_date')
+				.eq('assignment_id', assignmentId);
+			expect(seenError).toBeNull();
+			expect(seen).toEqual([{ id: instances[0].id, due_date: addDays(today, 7) }]);
+		});
+
+		it('#96 nightly run afterwards: no second copy of any week, and no second assigned row', async () => {
+			const student = await createStudent({
+				classId: classAId,
+				status: 'approved',
+				name: `NinetySix Nightly ${crypto.randomUUID().slice(0, 6)}`
+			});
+			const today = todayInBerlin();
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: addDays(today, -7),
+				dueOffsetDays: 7
+			});
+
+			expect((await firstCopies(teacherA.client, assignmentId)).data).toBe(2);
+			const before = await instancesOf(assignmentId);
+
+			await runGenerator();
+			// Called twice by the page (a double submit) creates nothing more.
+			expect((await firstCopies(teacherA.client, assignmentId)).data).toBe(0);
+
+			const after = await instancesOf(assignmentId);
+			expect(after).toEqual(before);
+			expect(after.map((i) => i.period_start)).toEqual([addDays(today, -7), today]);
+			for (const instance of after) {
+				const assigned = await assignedStudents(instance.id);
+				expect(assigned.filter((id) => id === student)).toHaveLength(1);
+			}
+		});
+
+		it('#96 start in the past: one copy per week from then up to today, the same weeks and due dates the nightly function makes', async () => {
+			const today = todayInBerlin();
+			const startDate = addDays(today, -21);
+			const immediateId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 5
+			});
+			const nightlyId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 5
+			});
+
+			const { data: count, error } = await firstCopies(teacherA.client, immediateId);
+			expect(error).toBeNull();
+			expect(count).toBe(4);
+
+			const immediate = await instancesOf(immediateId);
+			expect(immediate.map((i) => [i.period_start, i.due_date])).toEqual(
+				[-21, -14, -7, 0].map((d) => [addDays(today, d), addDays(today, d + 5)])
+			);
+
+			// The series left to the nightly function gets the same weeks,
+			// for the same students. (It runs on the database's UTC date: the
+			// current week is compared only when that is already Munich's today.)
+			await runGenerator();
+			const nightly = await instancesOf(nightlyId);
+			const utcToday = new Date().toISOString().slice(0, 10);
+			const comparable = utcToday === today ? immediate : immediate.slice(0, 3);
+			expect(nightly.map((i) => [i.period_start, i.due_date])).toEqual(
+				comparable.map((i) => [i.period_start, i.due_date])
+			);
+			for (let i = 0; i < nightly.length; i++) {
+				expect((await assignedStudents(nightly[i].id)).sort()).toEqual(
+					(await assignedStudents(immediate[i].id)).sort()
+				);
+			}
+		});
+
+		it('#96 start in the future: nothing is created now', async () => {
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: addDays(todayInBerlin(), 6),
+				dueOffsetDays: 7
+			});
+
+			const { data: count, error } = await firstCopies(teacherA.client, assignmentId);
+			expect(error).toBeNull();
+			expect(count).toBe(0);
+			expect(await instancesOf(assignmentId)).toEqual([]);
+		});
+
+		it("#96 the per-series function generates up to the date it is given, not the database's UTC date: a start date one day ahead gets its copy, and the nightly run adds no second one", async () => {
+			// The date create_weekly_homework_first_copies would pass at 00:30
+			// in Munich, built by hand here: one day ahead of the database's
+			// current_date (UTC). That function itself is not called.
+			const utcToday = new Date().toISOString().slice(0, 10);
+			const munichToday = addDays(utcToday, 1);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: munichToday,
+				dueOffsetDays: 7
+			});
+
+			// The nightly function, on the UTC date, makes nothing yet...
+			await runGenerator();
+			expect(await instancesOf(assignmentId)).toEqual([]);
+
+			// ...the per-series function with Munich's date does.
+			const { data: count, error } = await adminClient.rpc(
+				'generate_recurring_homework_for_series',
+				{ p_assignment_id: assignmentId, p_today: munichToday }
+			);
+			expect(error).toBeNull();
+			expect(count).toBe(1);
+			const instances = await instancesOf(assignmentId);
+			expect(instances.map((i) => [i.period_start, i.due_date])).toEqual([
+				[munichToday, addDays(munichToday, 7)]
+			]);
+
+			// And the nightly run that follows adds no second copy.
+			await runGenerator();
+			expect(await instancesOf(assignmentId)).toEqual(instances);
+		});
+
+		it('#96 class with no students: the copy exists with no students, and a student enrolled later gets it', async () => {
+			const { data: emptyClass, error: classError } = await admin.client
+				.from('classes')
+				.insert({
+					name: `Story 96 Empty ${crypto.randomUUID().slice(0, 6)}`,
+					code: `NS${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				})
+				.select('id')
+				.single();
+			if (classError || !emptyClass) throw new Error(`create class: ${classError?.message}`);
+			const { error: teachError } = await admin.client
+				.from('class_teachers')
+				.insert({ class_id: emptyClass.id, teacher_id: teacherA.id });
+			if (teachError) throw new Error(`assign teacher: ${teachError.message}`);
+
+			const assignmentId = await createRecurringAssignment({
+				classId: emptyClass.id,
+				createdBy: teacherA,
+				startDate: todayInBerlin(),
+				dueOffsetDays: 7
+			});
+			// whole_class is what the late-joiner trigger looks at; the create
+			// page always sets it for a weekly series.
+			await adminClient
+				.from('homework_assignments')
+				.update({ whole_class: true })
+				.eq('id', assignmentId);
+
+			expect((await firstCopies(teacherA.client, assignmentId)).data).toBe(1);
+			const instances = await instancesOf(assignmentId);
+			expect(instances).toHaveLength(1);
+			expect(await assignedStudents(instances[0].id)).toEqual([]);
+
+			const late = await createStudent({
+				classId: emptyClass.id,
+				status: 'approved',
+				name: `NinetySix Late ${crypto.randomUUID().slice(0, 6)}`
+			});
+			expect(await assignedStudents(instances[0].id)).toEqual([late]);
+		});
+
+		it('#96 refused: another teacher, a student and a signed-out caller create nothing; the admin may', async () => {
+			const email = `story-96-outsider-${crypto.randomUUID()}@students.internal.invalid`;
+			const password = crypto.randomUUID();
+			const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+				email,
+				password,
+				email_confirm: true,
+				app_metadata: { role: 'student' }
+			});
+			if (createError || !created.user) throw new Error(`create student: ${createError?.message}`);
+			const { error: profileError } = await adminClient
+				.from('profiles')
+				.update({
+					class_id: classAId,
+					status: 'approved',
+					registration_name: 'Ninety-six Caller',
+					display_name: 'Ninety-six Caller',
+					team_id: teamId
+				})
+				.eq('id', created.user.id);
+			if (profileError) throw new Error(`set up student: ${profileError.message}`);
+			const studentClient = anonClient();
+			const { error: signInError } = await studentClient.auth.signInWithPassword({
+				email,
+				password
+			});
+			if (signInError) throw new Error(`sign in student: ${signInError.message}`);
+
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: todayInBerlin(),
+				dueOffsetDays: 7
+			});
+
+			// teacherB teaches no class of this series.
+			for (const client of [teacherB.client, studentClient, anonClient()]) {
+				const { data, error } = await firstCopies(client, assignmentId);
+				expect(error).not.toBeNull();
+				expect(data).toBeNull();
+			}
+			// An id that does not exist gets the same refusal.
+			expect((await firstCopies(teacherA.client, crypto.randomUUID())).error?.code).toBe('42501');
+			expect((await firstCopies(teacherB.client, assignmentId)).error?.code).toBe('42501');
+			expect(await instancesOf(assignmentId)).toEqual([]);
+
+			// The per-series function itself is not callable by any client role.
+			for (const client of [teacherA.client, admin.client, anonClient()]) {
+				const { error } = await client.rpc('generate_recurring_homework_for_series', {
+					p_assignment_id: assignmentId,
+					p_today: todayInBerlin()
+				});
+				expect(error).not.toBeNull();
+			}
+			expect(await instancesOf(assignmentId)).toEqual([]);
+
+			const adminCall = await firstCopies(admin.client, assignmentId);
+			expect(adminCall.error).toBeNull();
+			expect(adminCall.data).toBe(1);
+		});
+
+		it('#96 refused: a one-off assignment id creates nothing', async () => {
+			const { data: oneOff, error: insertError } = await teacherA.client
+				.from('homework_assignments')
+				.insert({
+					class_id: classAId,
+					title: `One-off ${crypto.randomUUID().slice(0, 6)}`,
+					skill_area: 'language',
+					created_by: teacherA.id
+				})
+				.select('id')
+				.single();
+			if (insertError || !oneOff) throw new Error(`create one-off: ${insertError?.message}`);
+
+			const { data, error } = await firstCopies(teacherA.client, oneOff.id);
+			expect(error?.code).toBe('22023');
+			expect(data).toBeNull();
+			expect(await instancesOf(oneOff.id)).toEqual([]);
+		});
+
+		it('#96 a start date 110 weeks back: one call makes exactly 104 weeks (the per-call cap)', async () => {
+			const today = todayInBerlin();
+			const startDate = addDays(today, -110 * 7);
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 7
+			});
+
+			const { data: count, error } = await firstCopies(teacherA.client, assignmentId);
+			expect(error).toBeNull();
+			expect(count).toBe(104);
+
+			const instances = await instancesOf(assignmentId);
+			expect(instances).toHaveLength(104);
+			expect(instances[0].period_start).toBe(startDate);
+			expect(instances[103].period_start).toBe(addDays(startDate, 103 * 7));
+		}, 30000);
+
+		it('#96 a paused series and a week past ends_on get no copy, as with the nightly function', async () => {
+			const today = todayInBerlin();
+			const pausedId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 7
+			});
+			await adminClient
+				.from('homework_assignments')
+				.update({ paused_at: new Date().toISOString() })
+				.eq('id', pausedId);
+			expect((await firstCopies(teacherA.client, pausedId)).data).toBe(0);
+			expect(await instancesOf(pausedId)).toEqual([]);
+
+			const endedId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: addDays(today, -14),
+				dueOffsetDays: 7
+			});
+			await adminClient
+				.from('homework_assignments')
+				.update({ ends_on: addDays(today, -7) })
+				.eq('id', endedId);
+			expect((await firstCopies(teacherA.client, endedId)).data).toBe(2);
+			expect((await instancesOf(endedId)).map((i) => i.period_start)).toEqual([
+				addDays(today, -14),
+				addDays(today, -7)
+			]);
+		});
+
 		it('column-privilege fix: an authorized teacher cannot UPDATE due_date/period_start on homework_instances, even though they can UPDATE archived_at/archived_by (deferred Story 3-1 gap, now closed)', async () => {
 			const today = new Date().toISOString().slice(0, 10);
 			const assignmentId = await createRecurringAssignment({

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Page } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
-import { env, isoWeekday, service, signIn, type TestUser } from './fixtures';
+import { berlinToday, env, isoWeekday, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Teacher class page and homework forms as iX fields (#66 B8b): the attendance
@@ -443,8 +443,29 @@ test('homework create: one-off for a subset of two students', async ({ page }) =
 	});
 });
 
-test('homework create: weekly via the keyboard, then edit title and offset', async ({ page }) => {
+/** `date` plus `days`, as `YYYY-MM-DD`. */
+function plusDays(date: string, days: number): string {
+	const d = new Date(`${date}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() + days);
+	return d.toISOString().slice(0, 10);
+}
+
+/** A date as the English interface writes it in a sentence (formatDay). */
+function longDate(date: string): string {
+	return new Intl.DateTimeFormat('en', {
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric',
+		timeZone: 'UTC'
+	}).format(new Date(`${date}T00:00:00Z`));
+}
+
+test('homework create: weekly via the keyboard, students see the first week at once (#96), then edit title and offset', async ({
+	page,
+	browser
+}) => {
 	const title = `E2E66T weekly ${tag}`;
+	const today = berlinToday();
 	const posts = capturePosts(page, 'createAssignment');
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
@@ -461,15 +482,24 @@ test('homework create: weekly via the keyboard, then edit title and offset', asy
 	await expect(page.locator('#dueDate')).toHaveCount(0);
 	await expect(page.locator('#dueOffsetDays')).toHaveJSProperty('value', 7);
 
-	await page.locator('#startDate input').first().fill(`${year}-05-03`);
-	await expect(page.locator('#startDate')).toHaveJSProperty('value', `${year}-05-03`);
+	// #96: the note at the start date says when students see the homework.
+	const note = page.locator('#startDate');
+	await expect(note).toContainText(
+		'Students see the homework from the start date. If that is today or earlier, they see it as soon as you create it.'
+	);
+	await page.locator('#startDate input').first().fill(today);
+	await expect(page.locator('#startDate')).toHaveJSProperty('value', today);
+	await expect(note).toContainText('Students will see this homework as soon as you create it.');
 	await page.getByRole('button', { name: 'Create assignment' }).click();
-	await page.waitForURL(/\/homework\?created=weekly/);
+	await page.waitForURL(/\/homework\?created=weekly&visible=now/);
+	await expect(
+		page.locator('ix-toast').getByText('Weekly homework created. Students can see it now.')
+	).toBeVisible();
 
 	expect(posts).toHaveLength(1);
 	const posted = posts[0];
 	expect(posted.get('mode')).toBe('weekly');
-	expect(posted.get('startDate')).toBe(`${year}-05-03`);
+	expect(posted.get('startDate')).toBe(today);
 	expect(posted.get('dueOffsetDays')).toBe('7');
 	expect(posted.has('dueDate')).toBe(false);
 	expect(posted.has('targetMode')).toBe(false);
@@ -480,7 +510,34 @@ test('homework create: weekly via the keyboard, then edit title and offset', asy
 		.eq('class_id', classId)
 		.eq('title', title)
 		.single();
-	expect(created).toMatchObject({ recurrence_start_date: `${year}-05-03`, due_offset_days: 7 });
+	expect(created).toMatchObject({ recurrence_start_date: today, due_offset_days: 7 });
+
+	// #96: this week's copy exists already, for every student of the class.
+	const { data: instances } = await service
+		.from('homework_instances')
+		.select('id, period_start, due_date')
+		.eq('assignment_id', created!.id);
+	expect(instances).toHaveLength(1);
+	expect(instances![0]).toMatchObject({ period_start: today, due_date: plusDays(today, 7) });
+	const { data: assigned } = await service
+		.from('homework_status_history')
+		.select('student_id')
+		.eq('instance_id', instances![0].id)
+		.eq('status', 'assigned');
+	expect((assigned ?? []).map((r) => r.student_id).sort()).toEqual(
+		students.map((s) => s.id).sort()
+	);
+
+	// And it is on a student's page straight away.
+	const context = await browser.newContext();
+	try {
+		const studentPage = await context.newPage();
+		await signIn(studentPage, students[0].user);
+		await studentPage.goto('/student');
+		await expect(studentPage.getByText(title).first()).toBeVisible();
+	} finally {
+		await context.close();
+	}
 
 	// Edit: change title and offset.
 	const edits = capturePosts(page, 'editAssignment');
@@ -509,6 +566,112 @@ test('homework create: weekly via the keyboard, then edit title and offset', asy
 		.eq('id', created!.id)
 		.single();
 	expect(saved).toEqual({ title: newTitle, due_offset_days: 3 });
+});
+
+test('homework create: weekly starting in the future says from when students see it, and creates no copy yet (#96)', async ({
+	page
+}) => {
+	const title = `E2E66T weekly later ${tag}`;
+	const start = plusDays(berlinToday(), 6);
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}/homework/new`);
+
+	await page.locator('#title input').first().fill(title);
+	await (await contentEditor(page, 'content')).fill('Starts next week');
+	const once = page.getByRole('radio', { name: 'One-off' });
+	await once.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(page.getByRole('radio', { name: 'Weekly, recurring' })).toBeChecked();
+
+	await page.locator('#startDate input').first().fill(start);
+	await expect(page.locator('#startDate')).toHaveJSProperty('value', start);
+	await expect(page.locator('#startDate')).toContainText(
+		`Students will see this homework from ${longDate(start)}, not before.`
+	);
+	// The note is the description of the real input (inside the shadow root).
+	expect(
+		await page.locator('#startDate').evaluate(async (host) => {
+			const input = await (
+				host as HTMLElement & { getNativeInputElement: () => Promise<HTMLElement> }
+			).getNativeInputElement();
+			return (input.ariaDescribedByElements ?? []).map((el) => el.textContent?.trim());
+		})
+	).toEqual([`Students will see this homework from ${longDate(start)}, not before.`]);
+
+	// One-off and back: the start date field comes back empty, and so does the note.
+	const weekly = page.getByRole('radio', { name: 'Weekly, recurring' });
+	await weekly.focus();
+	await page.keyboard.press('ArrowUp');
+	await expect(once).toBeChecked();
+	await once.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(weekly).toBeChecked();
+	await expect(page.locator('#startDate')).not.toHaveJSProperty('value', start);
+	await expect(page.locator('#startDate')).toContainText(
+		'Students see the homework from the start date. If that is today or earlier, they see it as soon as you create it.'
+	);
+	await page.locator('#startDate input').first().fill(start);
+	await expect(page.locator('#startDate')).toHaveJSProperty('value', start);
+	await expect(page.locator('#startDate')).toContainText(
+		`Students will see this homework from ${longDate(start)}, not before.`
+	);
+	await page.getByRole('button', { name: 'Create assignment' }).click();
+	await page.waitForURL(new RegExp(`/homework\\?created=weekly&visible=${start}`));
+	await expect(
+		page
+			.locator('ix-toast')
+			.getByText(`Weekly homework created. Students will see it from ${longDate(start)}.`)
+	).toBeVisible();
+
+	const { data: created } = await service
+		.from('homework_assignments')
+		.select('id')
+		.eq('class_id', classId)
+		.eq('title', title)
+		.single();
+	const { data: instances } = await service
+		.from('homework_instances')
+		.select('id')
+		.eq('assignment_id', created!.id);
+	expect(instances).toEqual([]);
+});
+
+test('homework list: the weekly "from tomorrow morning" and neutral messages, and the address loses its parameters (#96)', async ({
+	page
+}) => {
+	const list = `/teacher/classes/${classId}/homework`;
+	await signIn(page, teacher);
+
+	// Arrives as the create page's redirect does: an in-app navigation (a
+	// link added to the page and clicked), not a fresh page load.
+	const arrive = async (query: string) => {
+		await open(page, list);
+		await page.evaluate((href) => {
+			const link = document.createElement('a');
+			link.href = href;
+			link.textContent = 'e2e arrive';
+			document.body.append(link);
+		}, `${list}${query}`);
+		await page.getByRole('link', { name: 'e2e arrive' }).click();
+	};
+
+	// What the create page redirects to when the first copies could not be made.
+	await arrive('?created=weekly&visible=tomorrow');
+	await expect(
+		page
+			.locator('ix-toast')
+			.getByText('Weekly homework created. Students will see it from tomorrow morning.')
+	).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`${list}$`));
+
+	// Without a recognised `visible`: no claim about when.
+	await arrive('?created=weekly');
+	const neutral = page
+		.locator('ix-toast')
+		.filter({ hasText: 'Weekly homework created.' })
+		.filter({ hasNotText: 'Students' });
+	await expect(neutral).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`${list}$`));
 });
 
 test('homework create: an empty subset shows the server error and keeps the typed title', async ({

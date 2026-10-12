@@ -2,7 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { isoDay, num } from '$lib/format';
+	import { formatDay, isoDay, num } from '$lib/format';
 	import { untrack } from 'svelte';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/ix';
@@ -47,15 +47,23 @@
 				: m.homework_empty()
 	);
 
-	// The create page redirects here with ?created=<count|weekly>[&failed=<n>].
+	// The create page redirects here with ?created=<count>[&failed=<n>], or
+	// ?created=weekly&visible=<now|tomorrow|YYYY-MM-DD> (#96: when students
+	// see the first week).
 	// Show the toast once, then drop the params so a refresh doesn't repeat it.
 	$effect(() => {
 		const created = page.url.searchParams.get('created');
 		if (created === null) return;
 		const failed = Number(page.url.searchParams.get('failed') ?? '0');
 		untrack(() => {
-			if (created === 'weekly') showToast('success', m.homework_created_weekly());
-			else if (failed > 0)
+			if (created === 'weekly') {
+				const visible = page.url.searchParams.get('visible') ?? '';
+				if (visible === 'now') showToast('success', m.homework_created_weekly_now());
+				else if (/^\d{4}-\d{2}-\d{2}$/.test(visible))
+					showToast('success', m.homework_created_weekly_from({ date: formatDay(visible) }));
+				else if (visible === 'tomorrow') showToast('success', m.homework_created_weekly_tomorrow());
+				else showToast('success', m.homework_created_weekly());
+			} else if (failed > 0)
 				showToast(
 					'error',
 					m.homework_created_partial_count({ count: num(created), failed: num(failed) })
@@ -66,6 +74,7 @@
 			const url = new URL(page.url);
 			url.searchParams.delete('created');
 			url.searchParams.delete('failed');
+			url.searchParams.delete('visible');
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, only the query changes.
 			replaceState(url, page.state);
 		});

@@ -1,3 +1,4 @@
+import { todayInBerlin } from '$lib/berlin-date';
 import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, rowOr404 } from '$lib/server/class-access';
@@ -87,13 +88,13 @@ export const actions: Actions = {
 			});
 		}
 
-		// Recurring case (Story 3-2): Intent -- "no instance created yet (the
-		// generator creates the first on its next run, not synchronously)".
-		// Always whole-class (Code Map: the generator targets "the
-		// then-current approved roster" fresh at every run, so a
-		// creation-time subset choice would go stale the moment the roster
-		// changes) -- there is deliberately no target-mode field on this
-		// path.
+		// Recurring case (Story 3-2, #96). Only the series is inserted here;
+		// the students' copies are made by the database: at once, below, for
+		// every week up to today when the start date is today or earlier, and
+		// by the nightly job for the weeks after that. Always whole-class: the
+		// copies go to the roster as it is when each week is generated, so
+		// there is deliberately no target-mode field on this path. No "New"
+		// notification for weekly homework (#92).
 		if (mode === 'weekly') {
 			const startDate = String(formData.get('startDate') ?? '');
 			const dueOffsetDaysRaw = String(formData.get('dueOffsetDays') ?? '');
@@ -112,28 +113,67 @@ export const actions: Actions = {
 				});
 			}
 
-			const { error: assignmentError } = await supabase.from('homework_assignments').insert({
-				class_id: classId,
-				title,
-				skill_area: skillArea as SkillArea,
-				content: homework.content,
-				content_language: homework.language,
-				reference_links: referenceLinks.value,
-				whole_class: true,
-				created_by: user.id,
-				recurrence_rule: { frequency: 'weekly' },
-				recurrence_start_date: startDate,
-				due_offset_days: dueOffsetDays
-			});
+			const { data: series, error: assignmentError } = await supabase
+				.from('homework_assignments')
+				.insert({
+					class_id: classId,
+					title,
+					skill_area: skillArea as SkillArea,
+					content: homework.content,
+					content_language: homework.language,
+					reference_links: referenceLinks.value,
+					whole_class: true,
+					created_by: user.id,
+					recurrence_rule: { frequency: 'weekly' },
+					recurrence_start_date: startDate,
+					due_offset_days: dueOffsetDays
+				})
+				.select('id')
+				.single();
 
-			if (assignmentError) {
+			if (assignmentError || !series) {
 				return fail(400, {
 					error: m.homework_error_create_failed(),
 					action: 'createAssignment' as const
 				});
 			}
 
-			throw redirect(303, `/teacher/classes/${classId}/homework?created=weekly`);
+			const list = `/teacher/classes/${classId}/homework?created=weekly`;
+
+			// A start date in the future (Munich): nothing to create yet. The
+			// nightly job makes the first week on that date.
+			if (startDate > todayInBerlin()) {
+				throw redirect(303, `${list}&visible=${startDate}`);
+			}
+
+			// #96: the students' copies for every week up to today, so the
+			// homework is on their page at once. The database checks that the
+			// caller teaches this class (0040). The series is already saved, so
+			// nothing here may fail the request (a retry would save a second
+			// series): a returned error, a thrown call and a call that created
+			// no week (e.g. the database's Munich date is not yet the app's) all
+			// leave the copies to the nightly job, and the teacher is told
+			// "from tomorrow morning".
+			let weeksCreated = 0;
+			let copiesFailure: string | null = null;
+			try {
+				const { data, error: copiesError } = await supabase.rpc(
+					'create_weekly_homework_first_copies',
+					{ p_assignment_id: series.id }
+				);
+				if (copiesError) copiesFailure = copiesError.message;
+				else weeksCreated = typeof data === 'number' ? data : 0;
+			} catch (thrown) {
+				copiesFailure = thrown instanceof Error ? thrown.message : String(thrown);
+			}
+			if (copiesFailure !== null) {
+				console.error(
+					`Weekly homework ${series.id}: creating the first copies failed, left to the nightly job:`,
+					copiesFailure
+				);
+			}
+
+			throw redirect(303, `${list}&visible=${weeksCreated > 0 ? 'now' : 'tomorrow'}`);
 		}
 
 		// One-off case (Story 3-1).
