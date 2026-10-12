@@ -1848,3 +1848,71 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   address after the toast (SvelteKit refuses `replaceState` before its router has started,
   in dev only; so for every `created` toast, not new); after the create page's redirect it is
   removed.
+
+- 2026-10-12: #97 logged, not built. Reported (user): "Currently we cannot see the students in
+  the team . but we need it". Today, read from the code: a student's team is `profiles.team_id`
+  (0002), set once when the registration is approved on `/requests`. `/admin/teams` lists each
+  team with a count of its students (`profiles(count)`), not their names. The leaderboard shows
+  team totals only. A student sees their own team on their dashboard, and a parent sees the
+  child's team on the child's page. No page lists the students of a team, for any role, and the
+  teacher pages do not show a student's team at all. A student's team cannot be changed after
+  approval: the approve action's comment names a "team_id-set-once trigger" as the enforcement
+  (`requests/+page.server.ts:331`; the trigger itself was not read). Open for planning: who
+  needs the list (admin only, teachers too, the team's own students, parents); where it goes
+  (the admin's Teams page, a page per team, a team column in the class members list); what it
+  shows per student (name, class, streak); whether moving a student to another team belongs to
+  the same change; and whether showing team mates to students fits the rule that the
+  leaderboard shows team totals and no individual results.
+  Decided (user, 2026-10-12): everyone can see a team's students; the list is shown when a team
+  is clicked; it shows only the name; moving a student to another team is not needed for now.
+
+- 2026-10-12: #97 built on `main` from
+  `_bmad-output/implementation-artifacts/spec-97-team-students.md`, uncommitted; status
+  "built, to verify". Migration `0041_team_students.sql` is NOT pushed. Clicking a team opens
+  `/teams/<id>`: the team's name in the viewer's language and its approved students' names,
+  sorted by name, with a breadcrumb to the leaderboard; a team without students says "No
+  students in this team yet." Nothing else about a student is shown or sent to the page (the
+  function returns no student id, class or result). Who may open a team is decided in the
+  database (`can_view_team`): the admin, any teacher, any approved student, and an approved
+  parent only for a team one of their own approved children is in. Everyone else is refused
+  (42501), which the page answers with "Team not found." (404), the same as for an unknown
+  address; signed out, the sign-in page. `team_students(team)` returns the names;
+  `viewable_team_ids()` tells the leaderboard which teams this viewer may open; if that read
+  fails, the leaderboard still loads with plain names and the failure is logged on the server.
+  `can_view_team` does not look at the team for the admin, a teacher or an approved student,
+  so it is true for an id that is no team too; `team_students` then returns no row and the
+  page says "Team not found." The name shown is the display name, else the registration name,
+  and the list is sorted by the shown name. Where a team
+  is a link: the leaderboard rows (for a parent only their children's teams; the other names
+  stay plain text), the admin's Teams list, the student's "My team" tile, and the team line on
+  the parent's child page. The leaderboard still shows team totals only, and `class_people`
+  is unchanged (a parent still gets no classmates).
+  PRD §8 ("a Parent sees … no other child's data beyond what the leaderboard already shows")
+  now has this exception: a parent sees the names of the other students in their own child's
+  team. The PRD text itself is not changed here.
+  Changed behaviour to know: the student's "My team" tile used to open the leaderboard; with a
+  team it now opens the team's page (the leaderboard is one step on, through the breadcrumb or
+  the menu). Without a team it still opens the leaderboard.
+  New text: `team_students_section_label`, `team_students_heading`, `team_students_empty`,
+  `team_students_link_label`, in en, de and bo (Tibetan is the assistant's draft, not
+  reviewed). German says "Schüler:innen", like the rest of the file. "Team not found." itself
+  is English in every language, like "Class not found."
+  Checked before the review: database reset, `npm test`, `npm run check` and `npm run build`
+  all ended with exit 0. Changed after the review (2026-10-12): the German texts, the logged
+  `viewable_team_ids` failure, the unused team id removed from the page's data, the
+  migration's comment, and the tests. After those changes only these were run again, and
+  passed: the "#97 team students" block of `rls.spec.ts`, the team page's and the
+  leaderboard's load specs, `e2e/team-students.e2e.ts` (7 tests) and `npm run check`. The
+  full `npm test`, the build and a database reset were not repeated here; the local database
+  still has 0041 with its earlier comment text (the functions are the same).
+  The browser test covers student, teacher, admin, parent (own child's team, another team,
+  the leaderboard links), pending student, signed out, empty team, unknown address, and
+  390 px with a 67-letter name. The database tests cover each row of the spec's matrix, plus
+  the display name against the registration name, a parent whose child in the team is pending
+  or rejected, and a parent who is no longer approved. The page's load spec covers the team
+  name in Tibetan and German and the English fallback.
+  Not checked: German and Tibetan in the browser; a real phone; a rejected student signed in
+  in the browser (covered in the database test only).
+  Seen while testing, not from this change: `e2e/forms.e2e.ts` "admin team names … (#76)"
+  fails at the language picker (`ix-dropdown-item[lang="de"]` is "not visible"), with and
+  without this change. Not investigated.
