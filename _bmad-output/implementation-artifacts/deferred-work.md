@@ -285,3 +285,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-96-weekly-homework-first-copy.md`
   summary: Decide what a weekly homework series with a start date in the past should do: today it creates one copy per elapsed week (many already overdue), these can trigger "Due soon" and "Overdue" notifications the next morning, and a start date more than 104 weeks back never reaches the current week because the loop restarts at the start date and counts weeks that already exist.
   evidence: Review of #96 (blind, edge and verification layers). Pre-existing in the nightly generator (0016) and the notification rules (0037); #96 only makes the copies appear at once. Options: limit how far back a start date may lie, create only the current week on creation, or exempt backfilled weeks from notifications; fix the loop to count created weeks only.
+- source_spec: `_bmad-output/implementation-artifacts/spec-98-one-student-per-parent-and-name.md`
+  summary: Before 0042 goes to the hosted database, list students that share a parent and name there and decide by hand which account each child keeps.
+  evidence: Review of #98 (blind layer). The local database had no students, so the reported second account exists elsewhere. 0042 stops with a count and a hint query while such rows exist, and blocks later migrations until they are sorted out.
+- source_spec: `_bmad-output/implementation-artifacts/spec-98-one-student-per-parent-and-name.md`
+  summary: Check whether the hosted database has students with no parent link; the one-account-per-parent-and-name rule does not cover them.
+  evidence: Review of #98 (blind layer), unverified, would be medium. 0024 left existing students with `parent_id` null. Settled by `select count(*) from profiles where role = 'student' and parent_id is null` on hosted.
+- source_spec: `_bmad-output/implementation-artifacts/spec-98-one-student-per-parent-and-name.md`
+  summary: An automated check that a migration's stop-on-bad-data guard fires (0042's guard was tried once by hand).
+  evidence: Review of #98 (verification layer). The repository has no harness that runs a migration over seeded rows.

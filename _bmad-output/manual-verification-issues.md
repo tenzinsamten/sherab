@@ -1916,3 +1916,96 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Seen while testing, not from this change: `e2e/forms.e2e.ts` "admin team names … (#76)"
   fails at the language picker (`ix-dropdown-item[lang="de"]` is "not visible"), with and
   without this change. Not investigated.
+- 2026-10-12: #98 logged, not fixed. Reported (user): "currently when student registered for
+  new class, it is asking for assigning the team again. why ? because if team is decided once,
+  it cannot be changed. Team is assigned on the student and not combination of student and
+  class".
+  Cause (read from the code, not reproduced in the browser): the team is stored once per
+  student (`profiles.team_id`, set-once trigger from 0002) and the data model already matches
+  what the user says. The team picker on `/requests` belongs only to approving a new
+  registration. The public form `/join` (`src/routes/(auth)/join/+page.server.ts`) always
+  calls `auth.admin.createUser`, so a student who fills it in again with another class's code
+  gets a second account: a new pending profile with no team, no streak and a new username and
+  PIN. `check_registration_available` only refuses the same name in the same class, so the
+  same name in another class passes. Approving that second account then requires a team.
+  The path meant for this case does not ask for a team: a signed-in, approved student uses
+  "Join another class" on `/student` (`request_class_join`, 0031), and `approveJoin` on
+  `/requests` takes only the request id.
+  Open questions for planning: (1) should `/join` refuse or redirect when the name plus
+  guardian email already has an approved student, and how is "the same child" recognised
+  (names are not unique)? (2) parents have no way to ask for another class for a linked
+  child (no `request_class_join` call under `src/routes/parent`); is that needed? (3) are
+  there already duplicate student accounts in the hosted database to merge or remove?
+  Decided (user, 2026-10-12): "name + parent email should be unique". A parent cannot have
+  two student accounts with the same name, whatever the class.
+  What that means in the code (for planning, nothing built): every student is linked to an
+  approved parent at sign-up (`profiles.parent_id`, 0024), so the rule is one student per
+  (`parent_id`, lower-cased trimmed `registration_name`) across pending, approved and
+  rejected rows. Today's rule is per (`class_id`, name) and covers only pending and rejected
+  rows (`profiles_open_student_registration_unique`, `check_registration_available`, 0002).
+  Both and the message `join_error_duplicate` would change; an approved match should tell the
+  family to sign in and use "Join another class" instead.
+  Still open: existing rows that already break the rule (a unique index cannot be created
+  while they exist); whether a parent can ask for another class for a linked child.
+- 2026-10-12: #98 built on `main` (one student account per parent and name). Spec:
+  `_bmad-output/implementation-artifacts/spec-98-one-student-per-parent-and-name.md`.
+  What changed: migration `0042_student_unique_per_parent.sql` drops the per-(class, name)
+  rule (`profiles_open_student_registration_unique`, `check_registration_available`) and adds
+  the unique index `profiles_student_parent_name_unique` on (`parent_id`,
+  `lower(btrim(registration_name))`) for students with a parent, over pending, approved and
+  rejected rows. It also adds `student_registration_state(guardian_email, registration_name)`,
+  which only the service role may call. `/join` now looks up the parent first, then the
+  state: an approved child with this name gives the new text `join_error_already_student`
+  (sign in and use "Join another class"), a pending or rejected one gives
+  `join_error_duplicate` (reworded: name and parent email, no class). After a failed
+  sign-up the action reads the state again, so the loser of a race gets the same text.
+  Changed behaviour to know: two parents may now each register a child with the same name in
+  the same class, also while the first is pending (refused before). A parent who already
+  has a pending, approved or rejected child with a name cannot register that name again in
+  any class. A different spelling (for example two spaces inside the name) is a different
+  child.
+  The migration deletes and changes no rows. With rows that break the rule it stops before
+  anything else with its own message (how many rows, how many parent-and-name pairs) and a
+  hint with the query that lists them.
+  Checked: database reset (42 migrations, 0042 applied, old index and function gone), then
+  `npm test` (67 files, 1189 tests), `npm run check` and `npm run build`, each with exit 0;
+  `npx playwright test e2e/class-join.e2e.ts` (6 tests, one new: `/join` with the approved
+  student's name in capitals with spaces, the parent's email in capitals and another
+  class's code shows the new text and creates nothing). The database tests in `rls.spec.ts`
+  cover: new child, pending (same and other class), approved in another class, rejected
+  until cleared, case and spaces, a different spelling, same name under another parent,
+  sibling, two sign-ups at once, students without a parent, moving a student under a parent
+  who has the name, the lookup refused for anon, a teacher and the admin, and the old
+  function being gone. The action's spec covers both refusals, the order of the lookups,
+  the re-read after a failed sign-up and a failing lookup (500, logged).
+  The stop on existing duplicates was tried once by hand on the local database, in a
+  transaction that was rolled back: with two students under one parent named "Tenzin Dolma"
+  and "  tenzin dolma " the migration raised its message and the old index and function
+  were still there. There is no automated test for this.
+  Not checked: the hosted database (not looked at, nothing pushed; if it has duplicates, 0042
+  will stop there until they are sorted out by hand); German and Tibetan in the browser (the
+  Tibetan texts are the assistant's draft, not reviewed); a real phone; the full browser
+  suite (only `class-join.e2e.ts` was run).
+  Still open, as before: a parent cannot ask for another class for a linked child.
+  Note for the tests: `rls.spec.ts` only passes on a freshly reset database (it creates
+  classes with fixed names such as "Story 1-2 Class A"); that was so before this change.
+  Changed after the review (2026-10-12; 20 findings: 7 fixed, 3 deferred, 10 rejected, see the
+  spec's triage log): `join_error_duplicate` reworded in en, de and bo, because "wait for it
+  to be cleared" was wrong once the rule spans classes: it now says the registration waits
+  for a teacher's decision or was rejected, that there is no need to register again for
+  another class, and that a rejected one is cleared by the teacher of the class it was sent
+  to; curly quotes in the en and bo texts; the migration's stop no longer counts students
+  without a name (the index does not either); tests for the lookup helper, for a failing
+  re-read after a failed sign-up, and for the parent email being kept in the form.
+  Checked again after those changes, by the assistant: database reset, `npm test` (67 files,
+  1200 tests), `npm run check`, `npm run build` and `npx playwright test
+  e2e/class-join.e2e.ts` (6 tests), each with exit 0.
+  Known and not changed (told to the user):
+  the short time `/join` fails between pushing 0042 and deploying the code, whichever goes
+  first; names are compared with case and surrounding spaces ignored only, so a trailing
+  tsheg or another Unicode form is a different child; two pending students with the same
+  name in one class (different parents) look the same on `/requests`; the form tells whoever
+  submits a name with a parent's email whether that parent has such a child.
+  In `deferred-work.md`: sort out duplicates on the hosted database before 0042 goes there;
+  count hosted students without a parent link (the rule does not cover them); an automated
+  check for a migration's stop.
