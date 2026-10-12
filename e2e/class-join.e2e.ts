@@ -9,6 +9,9 @@ import { service, signIn, type TestUser } from './fixtures';
  * nav count, approves it (the class appears in the student's My classes)
  * and rejects another (the dashboard shows Rejected); a teacher of the
  * class who is the student's parent sees the row without buttons.
+ * #98: the public form /join refuses a second account for the approved
+ * student's name and parent email with another class's code, and points to
+ * "Join another class".
  * Its own fixture: a home class the student is in, three classes to ask
  * for, a teacher of target + second, and a teacher of target who is the
  * student's parent.
@@ -405,4 +408,50 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 		{ class_id: classes.target.id, status: 'approved' },
 		{ class_id: classes.second.id, status: 'rejected' }
 	]);
+});
+
+// #98: one student account per parent and name. The student is approved and
+// linked to teacherParent (an approved parent); /join with the same name and
+// that parent's email is refused whatever the class, and nothing is created.
+test('/join with an approved student\'s name, parent email and another class\'s code points to "Join another class"', async ({
+	page
+}) => {
+	const studentsOfParent = async () =>
+		check(
+			await service
+				.from('profiles')
+				.select('id')
+				.eq('role', 'student')
+				.eq('parent_id', teacherParent.id),
+			"read the parent's students"
+		);
+	expect(await studentsOfParent()).toEqual([{ id: studentId }]);
+
+	await page.goto('/join');
+	await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+	await page.waitForLoadState('networkidle');
+
+	// A class the student is not in: the request for it was rejected in the
+	// test above (the file runs serially).
+	await page.locator('#classCode input').first().fill(classes.second.code);
+	await page.getByRole('button', { name: 'Continue' }).click();
+	await expect(page.getByText(`${secondName} · ${classes.second.code}`)).toBeVisible();
+
+	// Another case and extra spaces: still the same child.
+	await page.locator('#registrationName input').first().fill(`  ${studentName.toUpperCase()} `);
+	await page.getByRole('button', { name: 'Continue' }).click();
+
+	await page.locator('#guardianEmail input').first().fill(teacherParent.email.toUpperCase());
+	await page.getByRole('checkbox').click();
+	await page.getByRole('button', { name: 'Submit' }).click();
+
+	await expect(
+		page
+			.locator('ix-toast')
+			.getByText(
+				'This parent already has a student account with this name. Sign in with that account and use “Join another class” to add this class.'
+			)
+	).toBeVisible();
+	await expect(page).toHaveURL(/\/join$/);
+	expect(await studentsOfParent()).toEqual([{ id: studentId }]);
 });

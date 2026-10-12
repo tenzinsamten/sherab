@@ -1270,9 +1270,9 @@ export type Database = {
 			};
 		};
 		Functions: {
-			check_registration_available: {
-				Args: { p_class_id: string; p_registration_name: string };
-				Returns: boolean;
+			student_registration_state: {
+				Args: { p_guardian_email: string; p_registration_name: string };
+				Returns: string;
 			};
 			generate_recurring_homework_instances: { Args: never; Returns: number };
 			generate_recurring_homework_for_series: {

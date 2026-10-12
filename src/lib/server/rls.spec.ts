@@ -679,24 +679,353 @@ describe.skipIf(!reachable)(
 			expect(data).toEqual([]);
 		});
 
-		it('duplicate registration attempt: check_registration_available() and the unique index both block a second open registration for the same (class, name)', async () => {
-			const registrationName = `Duplicate Student ${crypto.randomUUID().slice(0, 8)}`;
-			const first = await signUpStudent({ classId: classAId, registrationName });
-			expect(first.error).toBeNull();
+		describe('#98 one student account per parent and name', () => {
+			let otherClassId: string;
 
-			const client = anonClient();
-			const { data: available } = await client.rpc('check_registration_available', {
-				p_class_id: classAId,
-				p_registration_name: registrationName
+			beforeAll(async () => {
+				const { data: other, error } = await adminClient
+					.from('classes')
+					.insert({
+						name: `Issue 98 Other Class ${crypto.randomUUID().slice(0, 8)}`,
+						code: `N${crypto.randomUUID().slice(0, 5).toUpperCase()}`
+					})
+					.select('id')
+					.single();
+				if (error || !other) throw new Error(`Failed to create the other class: ${error?.message}`);
+				otherClassId = other.id;
 			});
-			expect(available).toBe(false);
 
-			// The pre-check above is what the route relies on for a friendly error;
-			// this proves the DB-level backstop (profiles_open_student_registration_unique)
-			// is real too, not just an app-level convention (mirrors the
-			// classes.code unique-constraint test in the Story 1-1 block above).
-			const second = await signUpStudent({ classId: classAId, registrationName });
-			expect(second.error).not.toBeNull();
+			function childName(label: string) {
+				return `${label} ${crypto.randomUUID().slice(0, 8)}`;
+			}
+
+			async function stateOf(guardianEmail: string, registrationName: string) {
+				const { data, error } = await adminClient.rpc('student_registration_state', {
+					p_guardian_email: guardianEmail,
+					p_registration_name: registrationName
+				});
+				if (error) throw new Error(`student_registration_state: ${error.message}`);
+				return data;
+			}
+
+			async function studentCount(parentId: string) {
+				const { data, error } = await adminClient
+					.from('profiles')
+					.select('id')
+					.eq('role', 'student')
+					.eq('parent_id', parentId);
+				if (error) throw new Error(`count students: ${error.message}`);
+				return (data ?? []).length;
+			}
+
+			/** The teacher's decision on a registration, as on /requests (status only matters here). */
+			async function decide(studentId: string, status: 'approved' | 'rejected') {
+				const { data, error } = await teacherA.client
+					.from('profiles')
+					.update({
+						status,
+						...(status === 'approved' ? { team_id: teamId } : {}),
+						reviewed_by: teacherA.id,
+						reviewed_at: new Date().toISOString()
+					})
+					.eq('id', studentId)
+					.select('status');
+				if (error) throw new Error(`decide ${status}: ${error.message}`);
+				expect(data).toEqual([{ status }]);
+			}
+
+			it('new child: the state is available and the registration is created', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('New Child');
+				expect(await stateOf(parent.email, name)).toBe('available');
+
+				const { error, id } = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(error).toBeNull();
+				expect(id).not.toBeNull();
+				expect(await stateOf(parent.email, name)).toBe('pending');
+			});
+
+			it('pending: the same parent and name is refused in the same class and in another class', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Pending Child');
+				const first = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(first.error).toBeNull();
+				expect(await stateOf(parent.email, name)).toBe('pending');
+
+				// The lookup is what the route relies on for a friendly message;
+				// this proves the DB-level backstop
+				// (profiles_student_parent_name_unique) is real too.
+				for (const classId of [classAId, otherClassId]) {
+					const again = await signUpStudent({
+						classId,
+						registrationName: name,
+						guardianEmail: parent.email
+					});
+					expect(again.error).not.toBeNull();
+					expect(again.id).toBeNull();
+				}
+				expect(await studentCount(parent.id)).toBe(1);
+			});
+
+			it('already approved, other class: refused, and the state says approved', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Approved Child');
+				const first = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(first.error).toBeNull();
+				await decide(first.id!, 'approved');
+				expect(await stateOf(parent.email, name)).toBe('approved');
+
+				const second = await signUpStudent({
+					classId: otherClassId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(second.error).not.toBeNull();
+				expect(second.id).toBeNull();
+				expect(await studentCount(parent.id)).toBe(1);
+			});
+
+			it('rejected: keeps blocking the same parent and name, in any class, until it is cleared', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Rejected Child');
+				const first = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(first.error).toBeNull();
+				await decide(first.id!, 'rejected');
+				expect(await stateOf(parent.email, name)).toBe('rejected');
+
+				const second = await signUpStudent({
+					classId: otherClassId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(second.error).not.toBeNull();
+				expect(await studentCount(parent.id)).toBe(1);
+
+				// CLEAR REJECTED deletes the account; the name is free again.
+				const { error: deleteError } = await adminClient.auth.admin.deleteUser(first.id!);
+				expect(deleteError).toBeNull();
+				expect(await stateOf(parent.email, name)).toBe('available');
+				const third = await signUpStudent({
+					classId: otherClassId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(third.error).toBeNull();
+			});
+
+			it('case and spaces: " tenzin dolma " with P@Example.com is the same child as "Tenzin Dolma"', async () => {
+				const tag = crypto.randomUUID().slice(0, 8);
+				const parent = await createApprovedParent(`issue-98-parent-${tag}@example.test`);
+				const name = `Tenzin Dolma ${tag}`;
+				const first = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parent.email
+				});
+				expect(first.error).toBeNull();
+
+				const otherSpelling = `  ${name.toLowerCase()}  `;
+				const otherEmail = ` ${parent.email.replace('issue-98-parent', 'Issue-98-PARENT')} `;
+				expect(otherEmail.trim()).not.toBe(parent.email);
+				expect(await stateOf(otherEmail, otherSpelling)).toBe('pending');
+
+				const second = await signUpStudent({
+					classId: otherClassId,
+					registrationName: otherSpelling,
+					guardianEmail: otherEmail
+				});
+				expect(second.error).not.toBeNull();
+				expect(await studentCount(parent.id)).toBe(1);
+			});
+
+			it('no fuzzy matching: a different spelling is a different child', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Tenzin Dolma');
+				expect(
+					(
+						await signUpStudent({
+							classId: classAId,
+							registrationName: name,
+							guardianEmail: parent.email
+						})
+					).error
+				).toBeNull();
+
+				const otherSpelling = name.replace('Tenzin Dolma', 'Tenzin  Dolma');
+				expect(await stateOf(parent.email, otherSpelling)).toBe('available');
+				const second = await signUpStudent({
+					classId: classAId,
+					registrationName: otherSpelling,
+					guardianEmail: parent.email
+				});
+				expect(second.error).toBeNull();
+			});
+
+			it('same name, other parent: both are created in the same class, also while the first is pending', async () => {
+				const parentP = await createApprovedParent();
+				const parentQ = await createApprovedParent();
+				const name = childName('Same Name');
+
+				const ofP = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parentP.email
+				});
+				expect(ofP.error).toBeNull();
+				expect(await stateOf(parentQ.email, name)).toBe('available');
+
+				const ofQ = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parentQ.email
+				});
+				expect(ofQ.error).toBeNull();
+
+				const { data: rows } = await adminClient
+					.from('profiles')
+					.select('parent_id, status, class_id')
+					.in('id', [ofP.id!, ofQ.id!]);
+				expect(rows).toHaveLength(2);
+				expect(new Set(rows?.map((r) => r.parent_id))).toEqual(new Set([parentP.id, parentQ.id]));
+				expect(rows?.every((r) => r.status === 'pending' && r.class_id === classAId)).toBe(true);
+			});
+
+			it('sibling: the same parent registers a child with another name', async () => {
+				const parent = await createApprovedParent();
+				const first = await signUpStudent({
+					classId: classAId,
+					registrationName: childName('Tenzin'),
+					guardianEmail: parent.email
+				});
+				expect(first.error).toBeNull();
+
+				const siblingName = childName('Pema');
+				expect(await stateOf(parent.email, siblingName)).toBe('available');
+				const sibling = await signUpStudent({
+					classId: classAId,
+					registrationName: siblingName,
+					guardianEmail: parent.email
+				});
+				expect(sibling.error).toBeNull();
+				expect(await studentCount(parent.id)).toBe(2);
+			});
+
+			it('race: of two registrations for the same parent and name at once, exactly one is created', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Race Child');
+				const results = await Promise.all(
+					[classAId, otherClassId].map((classId) =>
+						signUpStudent({ classId, registrationName: name, guardianEmail: parent.email })
+					)
+				);
+				expect(results.filter((r) => r.error === null)).toHaveLength(1);
+				expect(await studentCount(parent.id)).toBe(1);
+				// What the action re-reads after the failed createUser.
+				expect(await stateOf(parent.email, name)).toBe('pending');
+			});
+
+			it('students without a parent (service-role fixtures) are outside the rule', async () => {
+				const name = childName('No Parent');
+				const ids: string[] = [];
+				for (let i = 0; i < 2; i++) {
+					const { data, error } = await adminClient.auth.admin.createUser({
+						email: `issue-98-noparent-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`,
+						password: crypto.randomUUID(),
+						email_confirm: true,
+						app_metadata: { role: 'student' },
+						user_metadata: { class_id: classAId, registration_name: name }
+					});
+					expect(error).toBeNull();
+					ids.push(data.user!.id);
+				}
+				const { data: rows } = await adminClient
+					.from('profiles')
+					.select('parent_id, registration_name')
+					.in('id', ids);
+				expect(rows).toHaveLength(2);
+				expect(rows?.every((r) => r.parent_id === null && r.registration_name === name)).toBe(true);
+			});
+
+			it('the index also refuses moving a student under a parent who already has that name', async () => {
+				const parentP = await createApprovedParent();
+				const parentQ = await createApprovedParent();
+				const name = childName('Moved Child');
+				const ofP = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parentP.email
+				});
+				const ofQ = await signUpStudent({
+					classId: classAId,
+					registrationName: name,
+					guardianEmail: parentQ.email
+				});
+				expect(ofP.error).toBeNull();
+				expect(ofQ.error).toBeNull();
+
+				const { error } = await adminClient
+					.from('profiles')
+					.update({ parent_id: parentP.id, guardian_email: parentP.email })
+					.eq('id', ofQ.id!);
+				expect(error?.code).toBe('23505');
+				expect(error?.message).toContain('profiles_student_parent_name_unique');
+			});
+
+			it('direct call: anon and a signed-in user may not run student_registration_state()', async () => {
+				const parent = await createApprovedParent();
+				const name = childName('Probe Child');
+				expect(
+					(
+						await signUpStudent({
+							classId: classAId,
+							registrationName: name,
+							guardianEmail: parent.email
+						})
+					).error
+				).toBeNull();
+
+				for (const client of [anonClient(), teacherA.client, admin.client]) {
+					const { data, error } = await client.rpc('student_registration_state', {
+						p_guardian_email: parent.email,
+						p_registration_name: name
+					});
+					expect(data).toBeNull();
+					expect(error?.code).toBe('42501');
+				}
+			});
+
+			it('the old rule is gone: check_registration_available() no longer exists', async () => {
+				const { data, error } = await (
+					anonClient() as unknown as {
+						rpc: (
+							fn: string,
+							args: Record<string, unknown>
+						) => Promise<{ data: unknown; error: { code?: string } | null }>;
+					}
+				).rpc('check_registration_available', {
+					p_class_id: classAId,
+					p_registration_name: 'Anyone'
+				});
+				expect(data).toBeNull();
+				// PostgREST: function not found in the schema cache.
+				expect(error?.code).toBe('PGRST202');
+			});
 		});
 
 		it('teacher approves: teacherA (assigned to the class) can move Pending -> approved with a team, generating real sign-in credentials', async () => {
@@ -954,7 +1283,7 @@ describe.skipIf(!reachable)(
 			expect(data?.status).toBe('approved');
 		});
 
-		it('CLEAR REJECTED: deleting the auth user removes the profile row and re-opens the (class, name) pair for resubmission', async () => {
+		it('CLEAR REJECTED: deleting the auth user removes the profile row and re-opens the (parent, name) pair for resubmission', async () => {
 			const registrationName = `Rejected Student ${crypto.randomUUID().slice(0, 8)}`;
 			const { id } = await signUpStudent({ classId: classAId, registrationName });
 
@@ -986,8 +1315,8 @@ describe.skipIf(!reachable)(
 			expect(goneProfile).toEqual([]);
 
 			// Not silently deleted earlier -- only now, via this explicit action,
-			// does the same (class_id, registration_name) pair become available
-			// again (Story 1-2 AC 3 / Boundaries).
+			// does the same (parent, registration_name) pair become available
+			// again (Story 1-2 AC 3 / Boundaries; per parent since #98).
 			const resubmit = await signUpStudent({ classId: classAId, registrationName });
 			expect(resubmit.error).toBeNull();
 		});
@@ -1107,12 +1436,17 @@ describe.skipIf(!reachable)(
 			const student1 = await signUpStudent({ classId: classAId, registrationName: dupName });
 			expect(student1.error).toBeNull();
 
-			// Approved before student2 registers -- otherwise
-			// profiles_open_student_registration_unique would block a second
-			// Pending row for the identical (class, name) pair (Boundaries).
 			const approval1 = await approveWithUsernameSnapshot(student1.id!, dupName, new Set());
 
-			const student2 = await signUpStudent({ classId: classAId, registrationName: dupName });
+			// #98: one student per parent and name
+			// (profiles_student_parent_name_unique), so the second student with
+			// the identical name has its own parent.
+			const otherParent = await createApprovedParent();
+			const student2 = await signUpStudent({
+				classId: classAId,
+				registrationName: dupName,
+				guardianEmail: otherParent.email
+			});
 			expect(student2.error).toBeNull();
 
 			// Deliberately an EMPTY set, not a fresh query of already-assigned

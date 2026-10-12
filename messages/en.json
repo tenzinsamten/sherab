@@ -496,7 +496,8 @@
 	"join_submit": "Submit",
 	"join_error_missing_fields": "Something's missing — go back and check every step.",
 	"join_error_consent_required": "Guardian consent is required to continue.",
-	"join_error_duplicate": "A registration for this name and class is already pending or was recently rejected. Ask your teacher, or wait for it to be cleared.",
+	"join_error_duplicate": "A registration for this name with this parent email is already waiting for a teacher's decision or was rejected. You don't need to register again for another class: once it is approved, sign in and use “Join another class”. A rejected registration has to be cleared by the teacher of the class it was sent to.",
+	"join_error_already_student": "This parent already has a student account with this name. Sign in with that account and use “Join another class” to add this class.",
 	"join_error_no_parent": "No parent account found. Check the email is correct, or ask your parent to register first.",
 	"join_error_generic": "Something went wrong submitting your registration. Please try again.",
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { STUDENT_EMAIL_DOMAIN } from './temp-password';
-import { approvedParentExists, escapeLikePattern, isValidParentEmail } from './parent-registration';
+import {
+	approvedParentExists,
+	escapeLikePattern,
+	isValidParentEmail,
+	studentRegistrationState
+} from './parent-registration';
 
 describe('escapeLikePattern', () => {
 	it('escapes like wildcards so the email matches literally', () => {
@@ -77,4 +82,55 @@ describe('approvedParentExists', () => {
 		expect(await approvedParentExists(client, '   ')).toBe(false);
 		await expect(approvedParentExists(client, 'x@example.com')).rejects.toThrow('boom');
 	});
+});
+
+describe('studentRegistrationState', () => {
+	type Result = { data: unknown; error: { message: string } | null };
+
+	function fakeClient(result: Result) {
+		const calls: { fn: string; args: unknown }[] = [];
+		const client = {
+			rpc: (fn: string, args: unknown) => {
+				calls.push({ fn, args });
+				return Promise.resolve(result);
+			}
+		};
+		return { client: client as unknown as Parameters<typeof studentRegistrationState>[0], calls };
+	}
+
+	it('sends the email as p_guardian_email and the name as p_registration_name', async () => {
+		const { client, calls } = fakeClient({ data: 'available', error: null });
+		await studentRegistrationState(client, 'Pema@Example.com', 'Tenzin Dolma');
+		expect(calls).toEqual([
+			{
+				fn: 'student_registration_state',
+				args: { p_guardian_email: 'Pema@Example.com', p_registration_name: 'Tenzin Dolma' }
+			}
+		]);
+	});
+
+	it.each(['available', 'pending', 'rejected', 'approved'] as const)(
+		'returns the answer %s',
+		async (answer) => {
+			const { client } = fakeClient({ data: answer, error: null });
+			expect(await studentRegistrationState(client, 'p@example.com', 'Tenzin')).toBe(answer);
+		}
+	);
+
+	it('throws on a read error', async () => {
+		const { client } = fakeClient({ data: null, error: { message: 'boom' } });
+		await expect(studentRegistrationState(client, 'p@example.com', 'Tenzin')).rejects.toThrow(
+			'boom'
+		);
+	});
+
+	it.each([[null], ['cleared'], [true], [undefined]])(
+		'throws on the unknown answer %j',
+		async (answer) => {
+			const { client } = fakeClient({ data: answer, error: null });
+			await expect(studentRegistrationState(client, 'p@example.com', 'Tenzin')).rejects.toThrow(
+				'unexpected answer'
+			);
+		}
+	);
 });

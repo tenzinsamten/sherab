@@ -68,3 +68,36 @@ export async function approvedParentExists(
 	if (parentsError) throw new Error(`approvedParentExists: ${parentsError.message}`);
 	return (parents ?? []).length > 0;
 }
+
+const STUDENT_REGISTRATION_STATES = ['available', 'pending', 'rejected', 'approved'] as const;
+
+export type StudentRegistrationState = (typeof STUDENT_REGISTRATION_STATES)[number];
+
+function isStudentRegistrationState(value: unknown): value is StudentRegistrationState {
+	return (STUDENT_REGISTRATION_STATES as readonly unknown[]).includes(value);
+}
+
+/**
+ * #98: whether the approved parent with `guardianEmail` already has a
+ * student called `name` (both trimmed, case-insensitive, in any class):
+ * `'available'` when not, otherwise that student's status. Service-role call
+ * of student_registration_state() (0042), which only the service role may
+ * run. The unique index profiles_student_parent_name_unique is the
+ * enforcement; this is the friendly lookup for /join. Throws on a read
+ * error or an unknown answer, so the caller never mistakes it for "free".
+ */
+export async function studentRegistrationState(
+	adminClient: SupabaseClient<Database>,
+	guardianEmail: string,
+	name: string
+): Promise<StudentRegistrationState> {
+	const { data, error } = await adminClient.rpc('student_registration_state', {
+		p_guardian_email: guardianEmail,
+		p_registration_name: name
+	});
+	if (error) throw new Error(`studentRegistrationState: ${error.message}`);
+	if (!isStudentRegistrationState(data)) {
+		throw new Error(`studentRegistrationState: unexpected answer ${JSON.stringify(data)}`);
+	}
+	return data;
+}
