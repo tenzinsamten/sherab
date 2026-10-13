@@ -310,6 +310,3 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
   summary: No test asserts that Help's "Show me around this page" closes the side-menu overlay at phone width before the tour starts (#101).
   evidence: `replayTour()` in `src/routes/+layout.svelte` closes the menu below the wide breakpoint; the replay e2e test runs at desktop width only. Checked by hand at 390px during the build.
-- source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
-  summary: Three e2e tests fail on `main` independently of #101: `calendar.e2e.ts:130` (today lacks the "Today" text), `parent-access.e2e.ts:128` ("Temporary password" still shown), `teacher.e2e.ts:258` (session select holds the wrong session after save).
-  evidence: The same three fail on a run with the #101 changes stashed (baseline 925cc95, 2026-10-13). Because the files are serial, 33 further tests do not run after them.

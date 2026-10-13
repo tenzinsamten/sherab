@@ -134,8 +134,15 @@ test.describe('wide screen (1280px)', () => {
 		const highlighted = page.locator('.ec-day-grid .ec-day.ec-highlight');
 		await expect(highlighted).toHaveCount(1);
 		await expect(highlighted.locator('time')).toHaveAttribute('datetime', today);
-		await expect(highlighted.locator('.today-mark')).toBeVisible();
-		await expect(highlighted).toContainText('Today');
+		const mark = highlighted.locator('.today-mark');
+		await expect(mark).toBeVisible();
+		// On a class day the teacher's day number is a button, marked as the
+		// current date; otherwise "Today" is in the cell's text.
+		if (await mark.evaluate((element) => element.tagName === 'BUTTON')) {
+			await expect(mark).toHaveAttribute('aria-current', 'date');
+		} else {
+			await expect(highlighted).toContainText('Today');
+		}
 	});
 
 	test('navigate: next month changes ?month= and shows that month', async ({ page }) => {

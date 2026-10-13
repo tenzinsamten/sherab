@@ -201,7 +201,8 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		const row = adminPage.locator('tr', { hasText: email });
 		await expect(row).toContainText(className);
 		await expect(row).toContainText('Also a parent');
-		await expect(adminPage.getByText('Temporary password')).toHaveCount(0);
+		// Exact: Help's teacher guide, always in the page, says "a temporary password".
+		await expect(adminPage.getByText('Temporary password', { exact: true })).toHaveCount(0);
 		expect(await roleOf()).toBe('teacher');
 	} finally {
 		await context.close();

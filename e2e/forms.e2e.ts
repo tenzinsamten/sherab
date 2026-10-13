@@ -436,7 +436,10 @@ test('admin team names: edit the names, and each interface language shows its ow
 		).toBeVisible();
 		await page.goto('/leaderboard');
 
-		// The language picker switches the name too.
+		// The language picker switches the name too. Opened only once the page
+		// has settled: a list opened while the header is still being set up
+		// closes again.
+		await page.waitForLoadState('networkidle');
 		await page.locator('ix-application-header ix-dropdown-button[icon="globe"]').click();
 		await page.locator('ix-dropdown-item[lang="de"]').click();
 		await expect(page.locator('html')).toHaveAttribute('lang', 'de');

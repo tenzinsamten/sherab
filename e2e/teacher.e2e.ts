@@ -139,7 +139,10 @@ test.beforeAll(async () => {
 					default_start_time: '10:00',
 					default_duration_minutes: 60,
 					schedule_weekdays: [isoWeekday(futureDays[0])],
-					schedule_starts_on: `${year}-01-01`,
+					// Only the fixture's own year: a schedule reaching back to today
+					// would also give the class a session on every other class day
+					// in the database, and the newest of those is selected first.
+					schedule_starts_on: `${futureYear}-01-01`,
 					schedule_ends_on: `${futureYear}-12-31`
 				})
 				.select('id')
