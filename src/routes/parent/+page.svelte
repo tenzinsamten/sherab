@@ -56,16 +56,22 @@
 						{#if child.status === 'pending'}
 							<ix-card variant="outline" passive>
 								<ix-card-content>
-									<p class="child-name"><strong>{child.name}</strong></p>
+									<p class="child-name">
+										<strong>{child.name}</strong>
+									</p>
 									<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
 								</ix-card-content>
 							</ix-card>
 						{:else}
 							<!-- #56: the whole card opens the child's page. -->
-							<a href={resolve('/parent/children/[id]', { id: child.id })} class="tile-link">
+							<a
+								href={resolve('/parent/children/[id]', { id: child.id })}
+								class="tile-link"
+								data-tour="parent-child-card"
+							>
 								<ix-card variant="outline">
 									<ix-card-content>
-										<p class="child-name">
+										<p class="child-name" data-tour="parent-child-name">
 											<strong>{child.name}</strong>
 											<ix-icon name="chevron-right" size="16" aria-hidden="true"></ix-icon>
 										</p>

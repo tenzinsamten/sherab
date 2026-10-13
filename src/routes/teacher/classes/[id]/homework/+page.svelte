@@ -103,6 +103,7 @@
 			<ix-button
 				icon="add"
 				href={resolve('/teacher/classes/[id]/homework/new', { id: data.class.id })}
+				data-tour="homework-create"
 			>
 				{m.homework_create_button()}
 			</ix-button>
@@ -113,6 +114,7 @@
 		class="actions"
 		aria-label={m.homework_filter_label()}
 		style="margin-bottom: var(--space-4);"
+		data-tour="homework-filter"
 	>
 		{#each filters as f (f.value)}
 			<ix-button
@@ -131,7 +133,7 @@
 		{:else}
 			<ul class="homework-list">
 				{#each data.items as item (item.id)}
-					<li>
+					<li data-tour="homework-row">
 						<a
 							class="homework-row"
 							href={resolve('/teacher/classes/[id]/homework/[assignmentId]', {

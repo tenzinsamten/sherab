@@ -280,10 +280,10 @@
 		</div>
 	</header>
 
-	<nav class="tabs" aria-label={m.child_tabs_label()}>
+	<nav class="tabs" aria-label={m.child_tabs_label()} data-tour="child-tabs">
 		<ul>
 			{#each tabs as tab (tab.id)}
-				<li>
+				<li data-tour={tab.id === 'sessions' ? 'child-tab-sessions' : undefined}>
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- tabHref() builds on resolve() and only adds ?tab=. -->
 					<a href={tabHref(tab.id)} aria-current={data.tab === tab.id ? 'page' : undefined}>
 						{tab.label}
@@ -459,7 +459,7 @@
 			</section>
 		{:else if data.rangeClasses.length > 0}
 			<section class="card" aria-labelledby="range-heading">
-				<h2 id="range-heading">{m.leave_range_heading()}</h2>
+				<h2 id="range-heading" data-tour="leave-range">{m.leave_range_heading()}</h2>
 				<p id="range-intro" class="muted">{m.leave_range_intro()}</p>
 				<form
 					method="POST"
@@ -660,7 +660,13 @@
 			{:else}
 				<ul class="sessions" aria-label={m.leave_sessions_label()}>
 					{#each data.sessions as session (session.id)}
-						<li class="session">
+						<!-- #101: the tour's three session steps point at one row, the first that can still be answered. -->
+						<li
+							class="session"
+							data-tour={!session.decision && (session.open || session.sickOpen)
+								? 'session-row'
+								: undefined}
+						>
 							<div class="session-info">
 								<p class="session-when">
 									<strong><time datetime={session.day}>{formatDay(session.day)}</time></strong>
@@ -673,7 +679,12 @@
 								</p>
 								<p class="muted session-class">{session.className}</p>
 							</div>
-							<div class="session-answer">
+							<div
+								class="session-answer"
+								data-tour={!session.decision && (session.open || session.sickOpen)
+									? 'session-answer'
+									: undefined}
+							>
 								<span class="sr-only">{m.leave_answer_label()}:</span>
 								{#if session.answer === 'on_leave'}
 									<ix-pill variant="warning">
@@ -698,7 +709,7 @@
 							{#if session.decision}
 								<!-- Story 7-5: a decided Sick locks the session's answers. -->
 							{:else if session.open || session.sickOpen}
-								<div class="session-controls">
+								<div class="session-controls" data-tour="session-controls">
 									{#if session.open && preview?.sessionId === session.id}
 										<p class="preview" role="status">
 											{preview.classification === 'planned'

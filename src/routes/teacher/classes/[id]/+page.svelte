@@ -216,7 +216,11 @@
 				</ix-card-content>
 			</ix-card>
 		</a>
-		<a href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })} class="tile-link">
+		<a
+			href={resolve('/teacher/classes/[id]/homework', { id: data.class.id })}
+			class="tile-link"
+			data-tour="class-homework"
+		>
 			<ix-card variant="outline">
 				<ix-card-content>
 					<p class="section-label">{m.homework_heading()}</p>
@@ -256,7 +260,10 @@
 			<section class="card">
 				<h2>{m.roster_attendance_heading()}</h2>
 				<form method="POST" action="?/markAttendance" use:enhance>
-					<div class="field form-narrow">
+					<div
+						class="field form-narrow"
+						data-tour={data.markableSessions.length > 0 ? 'class-session' : undefined}
+					>
 						{#if data.markableSessions.length === 0}
 							<span class="field-label">{m.roster_attendance_session_label()}</span>
 							<p class="muted" style="margin: 0;">{m.roster_attendance_no_sessions()}</p>
@@ -296,14 +303,17 @@
 							</div>
 						{/each}
 					</div>
-					<ix-button type="submit" disabled={data.markableSessions.length === 0}
+					<ix-button
+						type="submit"
+						disabled={data.markableSessions.length === 0}
+						data-tour={data.markableSessions.length > 0 ? 'class-attendance-save' : undefined}
 						>{m.roster_attendance_submit()}</ix-button
 					>
 				</form>
 			</section>
 
 			<section class="card" aria-labelledby="skills-heading">
-				<h2 id="skills-heading">{m.roster_skills_heading()}</h2>
+				<h2 id="skills-heading" data-tour="class-skills">{m.roster_skills_heading()}</h2>
 				<ul class="row-list">
 					{#each data.students as student (student.id)}
 						{@const open = expandedStudents.has(student.id)}
@@ -317,6 +327,7 @@
 										? `skills-panel-${student.id}`
 										: undefined}
 									data-student-id={student.id}
+									data-tour="class-skill-student"
 									onclick={() => toggleStudent(student.id)}
 								>
 									<ix-icon class="student-chevron" name="chevron-right" size="16" aria-hidden="true"

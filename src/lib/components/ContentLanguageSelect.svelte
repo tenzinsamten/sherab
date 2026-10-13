@@ -28,7 +28,8 @@
 	}
 </script>
 
-<div class="field">
+<!-- #101: `data-tour` is what the new-homework tour points at. -->
+<div class="field" data-tour="homework-language">
 	<ix-select
 		{id}
 		name="contentLanguage"

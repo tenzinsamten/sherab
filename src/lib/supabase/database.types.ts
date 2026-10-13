@@ -944,6 +944,7 @@ export type Database = {
 					role: Database['public']['Enums']['user_role'];
 					status: Database['public']['Enums']['registration_status'] | null;
 					team_id: string | null;
+					tours_seen: string[];
 				};
 				Insert: {
 					class_id?: string | null;
@@ -961,6 +962,7 @@ export type Database = {
 					role?: Database['public']['Enums']['user_role'];
 					status?: Database['public']['Enums']['registration_status'] | null;
 					team_id?: string | null;
+					tours_seen?: string[];
 				};
 				Update: {
 					class_id?: string | null;
@@ -978,6 +980,7 @@ export type Database = {
 					role?: Database['public']['Enums']['user_role'];
 					status?: Database['public']['Enums']['registration_status'] | null;
 					team_id?: string | null;
+					tours_seen?: string[];
 				};
 				Relationships: [
 					{
@@ -1389,6 +1392,10 @@ export type Database = {
 			homework_counts: {
 				Args: { p_student_id: string };
 				Returns: { open_count: number; overdue_count: number }[];
+			};
+			mark_tour_seen: {
+				Args: { p_tour: string };
+				Returns: undefined;
 			};
 			save_push_subscription: {
 				Args: { p_endpoint: string; p_p256dh: string; p_auth: string; p_locale: string };

@@ -15035,3 +15035,79 @@ describe.skipIf(!reachable)('#99 team assigned at approval (requires local Supab
 		expect(await profileOf(refused)).toEqual({ status: 'pending', team_id: bigTeam });
 	});
 });
+
+// #101 (0044): the account remembers which guided page tours it has seen.
+describe.skipIf(!reachable)('#101 tours seen (requires local Supabase)', () => {
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let other: Awaited<ReturnType<typeof createSignedInUser>>;
+
+	const seenBy = async (id: string) => {
+		const { data, error } = await adminClient
+			.from('profiles')
+			.select('tours_seen')
+			.eq('id', id)
+			.single();
+		if (error) throw new Error(`Failed to read tours_seen: ${error.message}`);
+		return data.tours_seen;
+	};
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		other = await createSignedInUser('teacher');
+	});
+
+	afterAll(async () => {
+		await adminClient.auth.admin.deleteUser(teacher.id);
+		await adminClient.auth.admin.deleteUser(other.id);
+	});
+
+	it('a new account has seen no tour', async () => {
+		expect(await seenBy(teacher.id)).toEqual([]);
+	});
+
+	it("mark_tour_seen adds the id to the caller's own row, once", async () => {
+		expect(
+			(await teacher.client.rpc('mark_tour_seen', { p_tour: 'teacher-class' })).error
+		).toBeNull();
+		expect(
+			(await teacher.client.rpc('mark_tour_seen', { p_tour: 'teacher-home' })).error
+		).toBeNull();
+		expect(
+			(await teacher.client.rpc('mark_tour_seen', { p_tour: 'teacher-class' })).error
+		).toBeNull();
+		expect(await seenBy(teacher.id)).toEqual(['teacher-class', 'teacher-home']);
+		expect(await seenBy(other.id)).toEqual([]);
+
+		// The account reads it with its own profile (the layout's `select('*')`).
+		const { data } = await teacher.client
+			.from('profiles')
+			.select('tours_seen')
+			.eq('id', teacher.id)
+			.single();
+		expect(data?.tours_seen).toEqual(['teacher-class', 'teacher-home']);
+	});
+
+	it('refuses text that cannot be a tour id and a signed-out caller', async () => {
+		for (const bad of ['', 'Teacher-Class', 'a b', '<script>', 'x'.repeat(41)]) {
+			const { error } = await other.client.rpc('mark_tour_seen', { p_tour: bad });
+			expect(error?.code, bad).toBe('22023');
+		}
+		const signedOut = await anonClient().rpc('mark_tour_seen', { p_tour: 'teacher-class' });
+		expect(signedOut.error).not.toBeNull();
+		expect(await seenBy(other.id)).toEqual([]);
+	});
+
+	it('stores at most 64 ids', async () => {
+		for (let i = 0; i < 66; i += 1) {
+			const { error } = await other.client.rpc('mark_tour_seen', { p_tour: `t-${i}` });
+			expect(error).toBeNull();
+		}
+		expect(await seenBy(other.id)).toHaveLength(64);
+	});
+
+	it('an account cannot write tours_seen directly', async () => {
+		const before = await seenBy(teacher.id);
+		await teacher.client.from('profiles').update({ tours_seen: [] }).eq('id', teacher.id);
+		expect(await seenBy(teacher.id)).toEqual(before);
+	});
+});

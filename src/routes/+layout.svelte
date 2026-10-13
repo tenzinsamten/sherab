@@ -21,10 +21,12 @@
 	import { initials } from '$lib/initials';
 	import HelpFaq from '$lib/components/HelpFaq.svelte';
 	import HelpGuide from '$lib/components/HelpGuide.svelte';
+	import PageTour from '$lib/components/PageTour.svelte';
 	import { HELP_ROLES, helpRoleFor, helpTabLabels } from '$lib/help';
-	import { rememberMenuExpand } from '$lib/menu';
+	import { rememberMenuExpand, WIDE_SCREEN_QUERY } from '$lib/menu';
 	import { releasePush, syncPush } from '$lib/push-client';
 	import { roleHome } from '$lib/role-home';
+	import { isTourRole, tourFor, tourWhere } from '$lib/tours';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
 	import logoWhite from '$lib/assets/sherab-logo-white.svg';
 
@@ -194,6 +196,26 @@
 		return [own, ...HELP_ROLES.filter((r) => r !== own)];
 	});
 
+	// #101: the page's guided tour for the active role, if it has one. Help
+	// offers to run it again; PageTour starts it by itself the first time.
+	let tour = $derived(tourFor(role, page.route.id, page.url.searchParams.get('tab')));
+	let pageTour: PageTour | undefined = $state();
+	let menuElement:
+		| (HTMLElement & {
+				toggleAbout(show: boolean): Promise<void>;
+				toggleMenu(show?: boolean): Promise<void>;
+		  })
+		| undefined = $state();
+
+	// Help closes first, and below `lg` the menu it was opened from (an
+	// overlay there): the tour points at the page behind them.
+	async function replayTour() {
+		await menuElement?.toggleAbout(false);
+		if (!window.matchMedia(WIDE_SCREEN_QUERY).matches) await menuElement?.toggleMenu(false);
+		const started = await pageTour?.start();
+		if (!started) showToast('info', m.tour_nothing_here());
+	}
+
 	function isActive(item: NavItem) {
 		const path = page.url.pathname;
 		return item.exact ? path === item.href : path === item.href || path.startsWith(item.href + '/');
@@ -229,6 +251,22 @@
 			</span>
 		</ix-dropdown-item>
 	{/each}
+{/snippet}
+
+<!-- #101: at the top of every Help tab. Only parents and teachers have tours. -->
+{#snippet tourEntry()}
+	{#if isTourRole(role)}
+		<div class="tour-entry">
+			{#if tour}
+				<ix-button variant="secondary" icon="eye" onclick={() => void replayTour()}>
+					{m.tour_replay()}
+				</ix-button>
+				<p class="muted">{m.tour_replay_hint()}</p>
+			{:else}
+				<p class="muted">{tourWhere[role]()}</p>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 {#if data.profile}
@@ -286,6 +324,7 @@
 		</ix-application-header>
 
 		<ix-menu
+			bind:this={menuElement}
 			start-expanded={data.menuExpanded || undefined}
 			i18n-legal={m.nav_help()}
 			use:rememberMenuExpand
@@ -311,10 +350,12 @@
 			>
 				{#each helpRoles as helpRole (helpRole)}
 					<ix-menu-about-item tab-key={helpRole} label={helpTabLabels[helpRole]()}>
+						{@render tourEntry()}
 						<HelpGuide role={helpRole} />
 					</ix-menu-about-item>
 				{/each}
 				<ix-menu-about-item tab-key="faq" label={m.help_faq_heading()}>
+					{@render tourEntry()}
 					<HelpFaq />
 				</ix-menu-about-item>
 			</ix-menu-about>
@@ -327,6 +368,12 @@
 		<ix-content>
 			{@render children()}
 		</ix-content>
+		<PageTour
+			bind:this={pageTour}
+			{role}
+			userId={data.profile.id}
+			seen={data.profile.tours_seen ?? []}
+		/>
 	</ix-application>
 {:else}
 	<!-- Signed out: no side menu, so the header stands alone -- inside
@@ -356,3 +403,20 @@
 		</main>
 	</div>
 {/if}
+
+<style>
+	.tour-entry {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-4);
+		margin-bottom: var(--space-6);
+		padding-bottom: var(--space-4);
+		border-bottom: 1px solid var(--theme-color-soft-bdr);
+	}
+
+	.tour-entry p {
+		margin: 0;
+		max-width: 70ch;
+	}
+</style>

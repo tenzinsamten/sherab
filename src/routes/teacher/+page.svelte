@@ -89,11 +89,17 @@
 		<h2 style="margin: var(--space-6) 0 var(--space-3);">{m.teacher_my_classes_heading()}</h2>
 		<div class="tile-grid">
 			{#each data.classes as cls (cls.id)}
-				<ix-card variant="outline" passive>
+				<ix-card variant="outline" passive data-tour="teacher-class-card">
 					<ix-card-content>
 						<h3 style="margin:0;">{cls.name}</h3>
-						<p class="muted" style="margin:0;">{m.teacher_class_code_label({ code: cls.code })}</p>
-						<ix-button variant="secondary" href={resolve('/teacher/classes/[id]', { id: cls.id })}>
+						<p class="muted" style="margin:0;" data-tour="teacher-class-code">
+							{m.teacher_class_code_label({ code: cls.code })}
+						</p>
+						<ix-button
+							variant="secondary"
+							href={resolve('/teacher/classes/[id]', { id: cls.id })}
+							data-tour="teacher-class-open"
+						>
 							{m.teacher_view_roster()}
 						</ix-button>
 					</ix-card-content>

@@ -120,7 +120,7 @@
 			/>
 			<LinkRows idPrefix="create" />
 
-			<div class="field">
+			<div class="field" data-tour="homework-schedule">
 				<ix-radio-group
 					id="mode"
 					label={m.homework_mode_legend()}
@@ -133,7 +133,7 @@
 			</div>
 
 			{#if assignmentMode === 'once'}
-				<div class="field">
+				<div class="field" data-tour="homework-due">
 					<ix-date-input
 						id="dueDate"
 						name="dueDate"
@@ -143,7 +143,7 @@
 					></ix-date-input>
 				</div>
 
-				<div class="field">
+				<div class="field" data-tour="homework-target">
 					<ix-radio-group
 						id="targetMode"
 						label={m.homework_target_legend()}

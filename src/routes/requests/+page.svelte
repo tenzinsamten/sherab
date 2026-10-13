@@ -243,7 +243,7 @@
 					</thead>
 					<tbody>
 						{#each data.pending as student (student.id)}
-							<tr>
+							<tr data-tour="requests-registrations">
 								<td>
 									<div class="actions">
 										<strong>{student.registrationName}</strong>
@@ -393,7 +393,7 @@
 					<tbody>
 						{#each data.sickPending as row (`${row.sessionId}:${row.studentId}`)}
 							{@const key = `${row.sessionId}:${row.studentId}`}
-							<tr>
+							<tr data-tour="requests-sick">
 								<td>
 									<div class="actions">
 										<strong>{row.studentName}</strong>
@@ -512,7 +512,7 @@
 						</thead>
 						<tbody>
 							{#each data.joinPending as row (row.id)}
-								<tr>
+								<tr data-tour="requests-join">
 									<td>
 										<strong>{row.studentName}</strong>
 										<div style="margin: var(--space-1) 0;">
