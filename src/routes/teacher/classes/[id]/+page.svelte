@@ -87,8 +87,43 @@
 		return m.leave_answer_none();
 	}
 
-	function sessionLabel(session: { day: string; startTime: string | null }): string {
-		return session.startTime ? `${session.day} · ${session.startTime.slice(0, 5)}` : session.day;
+	// #102: the sessions that already have a mark, and the selected session's
+	// current mark per student (the latest one; none = not ticked).
+	const markedSessionIds = $derived(new Set(data.markedSessionIds));
+
+	/** The mark the form shows and posts as loaded: present, absent or none (''). */
+	function loadedMark(studentId: string): 'present' | 'absent' | '' {
+		const mark = data.currentMarks[`${selectedSessionId}:${studentId}`];
+		return mark === undefined ? '' : mark ? 'present' : 'absent';
+	}
+
+	// <ix-checkbox> takes `checked` when it mounts and has no form reset, so
+	// the list is remounted when what it must show changes: another session,
+	// other marks for this one, or a save (which then shows what was saved).
+	// A reload that changes no mark of this session (e.g. a skill save) keeps
+	// the list, and with it the ticks not saved yet.
+	let attendanceSaves = $state(0);
+	const marksKey = $derived(
+		`${selectedSessionId}|${attendanceSaves}|${data.students
+			.map((s) => `${s.id}:${loadedMark(s.id)}`)
+			.join()}`
+	);
+	// The picker shows its labels as loaded, so it is remounted (keeping the
+	// picked session) when a session becomes marked.
+	const markedKey = $derived(
+		data.markableSessions
+			.filter((s) => markedSessionIds.has(s.id))
+			.map((s) => s.id)
+			.join()
+	);
+
+	function sessionLabel(session: { id: string; day: string; startTime: string | null }): string {
+		const label = session.startTime
+			? `${session.day} · ${session.startTime.slice(0, 5)}`
+			: session.day;
+		return markedSessionIds.has(session.id)
+			? m.roster_attendance_session_marked({ session: label })
+			: label;
 	}
 
 	// ── Skill status (#66) ────────────────────────────────────────────────
@@ -170,6 +205,7 @@
 	$effect(() => {
 		if (!form?.success) return;
 		if (form.action === 'attendance') {
+			untrack(() => attendanceSaves++);
 			if (form.failedStudentIds.length > 0) {
 				showToast(
 					'error',
@@ -268,7 +304,7 @@
 							<span class="field-label">{m.roster_attendance_session_label()}</span>
 							<p class="muted" style="margin: 0;">{m.roster_attendance_no_sessions()}</p>
 						{:else}
-							{#key sessionSelectKey}
+							{#key `${sessionSelectKey}|${markedKey}`}
 								<ix-select
 									id="sessionId"
 									name="sessionId"
@@ -286,26 +322,36 @@
 						{/if}
 					</div>
 					<div class="check-list" style="margin-bottom: var(--space-4);">
-						{#each data.students as student (student.id)}
-							<input type="hidden" name="studentIds" value={student.id} />
-							<div class="attendance-row">
-								<ix-checkbox name="present_{student.id}" label={student.displayName}></ix-checkbox>
-								{#if leaveFor(student.id)}
-									{@const answer = leaveFor(student.id)}
-									<ix-pill
-										variant={answer === 'coming' ? 'success' : 'warning'}
-										outline={answer === 'coming' || undefined}
-										aria-label="{m.roster_leave_label()}: {leaveLabel(answer)}"
-									>
-										{leaveLabel(answer)}
-									</ix-pill>
-								{/if}
-							</div>
-						{/each}
+						{#key marksKey}
+							{#each data.students as student (student.id)}
+								{@const loaded = untrack(() => loadedMark(student.id))}
+								<!-- `loaded`: the mark as it was when the list mounted. It ticks
+								     the checkbox and is posted, so the save writes only changes. -->
+								<input type="hidden" name="studentIds" value={student.id} />
+								<input type="hidden" name="loaded_{student.id}" value={loaded} />
+								<div class="attendance-row">
+									<ix-checkbox
+										name="present_{student.id}"
+										label={student.displayName}
+										{@attach ixValue(loaded === 'present', 'checked')}
+									></ix-checkbox>
+									{#if leaveFor(student.id)}
+										{@const answer = leaveFor(student.id)}
+										<ix-pill
+											variant={answer === 'coming' ? 'success' : 'warning'}
+											outline={answer === 'coming' || undefined}
+											aria-label="{m.roster_leave_label()}: {leaveLabel(answer)}"
+										>
+											{leaveLabel(answer)}
+										</ix-pill>
+									{/if}
+								</div>
+							{/each}
+						{/key}
 					</div>
 					<ix-button
 						type="submit"
-						disabled={data.markableSessions.length === 0}
+						disabled={data.markableSessions.length === 0 || data.attendanceError}
 						data-tour={data.markableSessions.length > 0 ? 'class-attendance-save' : undefined}
 						>{m.roster_attendance_submit()}</ix-button
 					>

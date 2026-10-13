@@ -221,6 +221,7 @@
 	"roster_empty": "Noch keine genehmigten Schüler:innen in dieser Klasse.",
 	"roster_attendance_heading": "Anwesenheit erfassen",
 	"roster_attendance_session_label": "Termin",
+	"roster_attendance_session_marked": "{session} · erfasst",
 	"roster_attendance_no_sessions": "Noch kein Termin zum Erfassen. Termine kommen aus dem Kalender: Erfasst werden können nur nicht abgesagte Termine von heute oder früher.",
 	"roster_attendance_submit": "Anwesenheit speichern",
 	"roster_attendance_saved": "Anwesenheit für {date} erfasst.",

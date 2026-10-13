@@ -221,6 +221,7 @@
 	"roster_empty": "No approved students in this class yet.",
 	"roster_attendance_heading": "Mark attendance",
 	"roster_attendance_session_label": "Session",
+	"roster_attendance_session_marked": "{session} · marked",
 	"roster_attendance_no_sessions": "No session to mark yet. Sessions come from the calendar: only non-cancelled sessions from today or earlier can be marked.",
 	"roster_attendance_submit": "Save attendance",
 	"roster_attendance_saved": "Attendance recorded for {date}.",

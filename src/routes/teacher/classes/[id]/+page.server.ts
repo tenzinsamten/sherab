@@ -22,6 +22,7 @@ const SKILL_LEVELS: SkillLevel[] = ['not_started', 'learning', 'confident'];
 
 type StudentRow = { id: string; displayName: string };
 
+/** A student's current mark for one session (#102, attendance_current). */
 type AttendanceRow = {
 	id: string;
 	studentId: string;
@@ -38,7 +39,7 @@ type MarkableSession = { id: string; day: string; startTime: string | null };
 /** How many recent sessions the picker offers. */
 const MARKABLE_SESSION_LIMIT = 60;
 
-/** Leave rows per request: PostgREST max_rows (supabase/config.toml). */
+/** Leave and attendance rows per request: PostgREST max_rows (supabase/config.toml). */
 const LEAVE_PAGE_SIZE = 1000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -125,7 +126,14 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	}
 
 	let skillHistory: SkillHistoryRow[] = [];
+	// #102: the current mark per session and student (attendance_current, the
+	// one definition of "latest"). `attendance` is the history list, one line
+	// per session; `currentMarks` ticks the form, keyed
+	// `${sessionId}:${studentId}`; `markedSessionIds` are the sessions with a
+	// mark of anyone, a student who has left the class too.
 	let attendance: AttendanceRow[] = [];
+	const currentMarks: Record<string, boolean> = {};
+	const markedSessions = new Set<string>();
 	let skillError = false;
 	let attendanceError = false;
 
@@ -136,7 +144,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		// (RLS already scopes which classes this teacher can read at all, but
 		// without this filter a multi-class teacher viewing Class A would also
 		// see that student's Class B rows mixed in).
-		const [skillResult, attendanceResult] = await Promise.all([
+		const [skillResult, attendanceFailed] = await Promise.all([
 			supabase
 				.from('skill_status_history')
 				.select('id, student_id, skill_area, level, notes, recorded_at')
@@ -149,12 +157,45 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 				// this the "current" pick could vary between reads of the same data.
 				.order('recorded_at', { ascending: false })
 				.order('id', { ascending: false }),
-			supabase
-				.from('attendance_records')
-				.select('id, student_id, present, notes, session_date, recorded_at')
-				.eq('class_id', classId)
-				.in('student_id', studentIds)
-				.order('recorded_at', { ascending: false })
+			(async () => {
+				const onRoster = new Set(studentIds);
+				// Pages are separate requests: a mark saved in between shifts the
+				// rows, so one can come twice. The history list is keyed by id.
+				const seen = new Set<string>();
+				// Paged like the leave answers: sessions x students can exceed
+				// max_rows. The order is total, so no row is skipped or repeated
+				// between pages. Not filtered by student: a session marked only for
+				// students who have left since is still a marked session.
+				for (let from = 0; ; from += LEAVE_PAGE_SIZE) {
+					const { data: marks, error: marksError } = await supabase
+						.from('attendance_current')
+						.select('id, class_session_id, student_id, present, notes, session_date, recorded_at')
+						.eq('class_id', classId)
+						.order('session_date', { ascending: false })
+						.order('class_session_id', { ascending: true })
+						.order('student_id', { ascending: true })
+						.range(from, from + LEAVE_PAGE_SIZE - 1);
+					if (marksError) return true;
+					for (const r of marks ?? []) {
+						// A view's columns are typed nullable; a mark has them all.
+						if (!r.id || !r.class_session_id || !r.student_id || !r.session_date) continue;
+						if (seen.has(r.id)) continue;
+						seen.add(r.id);
+						markedSessions.add(r.class_session_id);
+						if (!onRoster.has(r.student_id)) continue;
+						currentMarks[`${r.class_session_id}:${r.student_id}`] = r.present === true;
+						attendance.push({
+							id: r.id,
+							studentId: r.student_id,
+							present: r.present === true,
+							notes: r.notes,
+							sessionDate: r.session_date,
+							recordedAt: r.recorded_at ?? ''
+						});
+					}
+					if ((marks ?? []).length < LEAVE_PAGE_SIZE) return false;
+				}
+			})()
 		]);
 
 		skillHistory = (skillResult.data ?? []).map((r) => ({
@@ -167,15 +208,13 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		}));
 		skillError = Boolean(skillResult.error);
 
-		attendance = (attendanceResult.data ?? []).map((r) => ({
-			id: r.id,
-			studentId: r.student_id,
-			present: r.present,
-			notes: r.notes,
-			sessionDate: r.session_date,
-			recordedAt: r.recorded_at
-		}));
-		attendanceError = Boolean(attendanceResult.error);
+		if (attendanceFailed) {
+			// A partial read would tick some students and not others: show none.
+			attendance = [];
+			for (const key of Object.keys(currentMarks)) delete currentMarks[key];
+			markedSessions.clear();
+		}
+		attendanceError = attendanceFailed;
 	}
 
 	// "Current" = the latest row per (student, skill_area) by recorded_at
@@ -199,6 +238,10 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		enrollable: enrollable.students,
 		skillHistory,
 		attendance,
+		currentMarks,
+		markedSessionIds: [...markedSessions],
+		/** The current marks could not be read: the form is blank and must not be saved. */
+		attendanceError,
 		markableSessions,
 		leaveAnswers,
 		currentSkills,
@@ -323,7 +366,24 @@ export const actions: Actions = {
 		}
 		const sessionDate = session.day;
 
-		// One append-only insert per roster student for the chosen session
+		// #102: a save writes only what the teacher changed. The form posts, per
+		// student, the mark it showed when it opened (`loaded_<id>`: present,
+		// absent or nothing); the tick is compared with that, not with the
+		// database, so a form opened before someone else's correction does not
+		// undo it. A student without a loaded mark counts as unticked. When no
+		// posted student has a loaded mark (an unmarked session), every student
+		// gets a row.
+		const marks = studentIds.map((studentId) => ({
+			studentId,
+			present: formData.get(`present_${studentId}`) === 'on',
+			loaded: String(formData.get(`loaded_${studentId}`) ?? '')
+		}));
+		const unmarked = marks.every((mark) => mark.loaded !== 'present' && mark.loaded !== 'absent');
+		const toWrite = unmarked
+			? marks
+			: marks.filter((mark) => mark.present !== (mark.loaded === 'present'));
+
+		// One append-only insert per changed student for the chosen session
 		// (AD-5) -- re-marking the same session later adds new rows rather than
 		// overwriting, which is also what keeps two teachers marking
 		// concurrently safe. The latest row per (student, session) is current.
@@ -338,12 +398,12 @@ export const actions: Actions = {
 		const failedStudentIds: string[] = [];
 		// Stays true only while every failure is an insert-policy refusal.
 		let allRlsDenied = true;
-		for (const studentId of studentIds) {
+		for (const { studentId, present } of toWrite) {
 			const { error: insertError } = await supabase.from('attendance_records').insert({
 				student_id: studentId,
 				class_id: params.id,
 				class_session_id: sessionId,
-				present: formData.get(`present_${studentId}`) === 'on',
+				present,
 				recorded_by: user.id
 			});
 			if (insertError) {
@@ -355,7 +415,8 @@ export const actions: Actions = {
 			}
 		}
 
-		if (failedStudentIds.length === studentIds.length) {
+		// Nothing to write (an unchanged re-save) is a success.
+		if (toWrite.length > 0 && failedStudentIds.length === toWrite.length) {
 			return fail(400, {
 				error: allRlsDenied
 					? m.roster_error_session_not_markable()

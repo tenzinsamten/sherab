@@ -15111,3 +15111,407 @@ describe.skipIf(!reachable)('#101 tours seen (requires local Supabase)', () => {
 		expect(await seenBy(teacher.id)).toEqual(before);
 	});
 });
+
+// #102 (0045): marks are append-only, and the latest mark per session and
+// student (attendance_current) is the one that counts everywhere.
+describe.skipIf(!reachable)('#102 attendance corrections (requires local Supabase)', () => {
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let otherTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const today = todayInBerlin();
+	const name = (label: string) => `#102 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	/** A day far in the past, so the shared calendar's real class days are left alone. */
+	const pastDay = (n: number) => `1898-03-${String(n).padStart(2, '0')}`;
+
+	/** A fresh class per test: the streak rule looks at every mark of a class. */
+	async function createClass(label: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `K${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: teacher.id });
+		if (assignError) throw new Error(`Failed to assign the teacher: ${assignError.message}`);
+		return data.id;
+	}
+
+	/** An approved (and so enrolled) student of `classId`. */
+	async function createStudent(classId: string, guardianEmail?: string) {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: name('Kid'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register the student: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve the student: ${approveError.message}`);
+		return id;
+	}
+
+	/** One mark, saved by the class's teacher through the insert policy. */
+	async function mark(classId: string, sessionId: string, studentId: string, present: boolean) {
+		const { error } = await teacher.client.from('attendance_records').insert({
+			student_id: studentId,
+			class_id: classId,
+			class_session_id: sessionId,
+			present,
+			recorded_by: teacher.id
+		});
+		if (error) throw new Error(`Failed to mark attendance: ${error.message}`);
+	}
+
+	/** Homework of this week, done by the student: the other half of a qualifying week. */
+	async function homeworkDoneThisWeek(classId: string, studentId: string, periodStart = today) {
+		const { data: assignment, error: assignmentError } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: name('Homework'),
+				skill_area: 'language',
+				created_by: teacher.id
+			})
+			.select('id')
+			.single();
+		if (assignmentError || !assignment)
+			throw new Error(`Failed to create assignment: ${assignmentError?.message}`);
+		const { data: instance, error: instanceError } = await adminClient
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment.id,
+				class_id: classId,
+				period_start: periodStart,
+				due_date: periodStart
+			})
+			.select('id')
+			.single();
+		if (instanceError || !instance)
+			throw new Error(`Failed to create instance: ${instanceError?.message}`);
+		for (const status of ['assigned', 'done'] as const) {
+			const { error } = await adminClient.from('homework_status_history').insert({
+				instance_id: instance.id,
+				class_id: classId,
+				student_id: studentId,
+				status,
+				recorded_by: teacher.id
+			});
+			if (error) throw new Error(`Failed to set homework ${status}: ${error.message}`);
+		}
+	}
+
+	async function streakOf(studentId: string) {
+		const { data, error } = await adminClient
+			.from('student_streaks')
+			.select('current_streak')
+			.eq('student_id', studentId)
+			.maybeSingle();
+		if (error) throw new Error(`Failed to read the streak: ${error.message}`);
+		return data?.current_streak ?? 0;
+	}
+
+	async function attendanceBadgesOf(studentId: string) {
+		const { data, error } = await adminClient
+			.from('badges_earned')
+			.select('milestone')
+			.eq('student_id', studentId)
+			.eq('badge_type', 'attendance')
+			.order('milestone');
+		if (error) throw new Error(`Failed to read the badges: ${error.message}`);
+		return data.map((b) => b.milestone);
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.updateUserById(id, { password });
+		if (error || !data.user?.email) throw new Error(`Failed to set a password: ${error?.message}`);
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({
+			email: data.user.email,
+			password
+		});
+		if (signInError) throw new Error(`Failed to sign in: ${signInError.message}`);
+		return client;
+	}
+
+	beforeAll(async () => {
+		teacher = await createSignedInUser('teacher');
+		otherTeacher = await createSignedInUser('teacher');
+		const { data: team, error } = await adminClient
+			.from('teams')
+			.insert({ name: name('Team') })
+			.select('id')
+			.single();
+		if (error || !team) throw new Error(`Failed to create team: ${error?.message}`);
+		teamId = team.id;
+	}, 30000);
+
+	it('attendance_current has one row per session and student, the latest mark; no earlier row is changed', async () => {
+		const classId = await createClass('Latest');
+		const a = await createStudent(classId);
+		const b = await createStudent(classId);
+		const sessionId = await sessionFor(classId, pastDay(1));
+
+		await mark(classId, sessionId, a, true);
+		await mark(classId, sessionId, b, false);
+		const { data: firstRows } = await adminClient
+			.from('attendance_records')
+			.select('*')
+			.eq('class_session_id', sessionId)
+			.order('id');
+
+		// A corrected to absent, B to present.
+		await mark(classId, sessionId, a, false);
+		await mark(classId, sessionId, b, true);
+
+		const { data: current, error } = await teacher.client
+			.from('attendance_current')
+			.select('student_id, present')
+			.eq('class_id', classId);
+		expect(error).toBeNull();
+		expect(current).toHaveLength(2);
+		expect(current).toEqual(
+			expect.arrayContaining([
+				{ student_id: a, present: false },
+				{ student_id: b, present: true }
+			])
+		);
+
+		// Append-only: four rows, the first two as they were.
+		const { data: allRows } = await adminClient
+			.from('attendance_records')
+			.select('*')
+			.eq('class_session_id', sessionId)
+			.order('id');
+		expect(allRows).toHaveLength(4);
+		expect(firstRows).toHaveLength(2);
+		for (const row of firstRows ?? []) expect(allRows).toContainEqual(row);
+
+		// The current row is the newest raw row of its pair.
+		const { data: currentIds } = await adminClient
+			.from('attendance_current')
+			.select('id, student_id')
+			.eq('class_session_id', sessionId);
+		for (const row of currentIds ?? []) {
+			const newest = (allRows ?? [])
+				.filter((r) => r.student_id === row.student_id)
+				.sort((x, y) => y.recorded_at.localeCompare(x.recorded_at))[0];
+			expect(row.id).toBe(newest.id);
+		}
+	});
+
+	it("attendance_current follows the table's RLS: another teacher, the student and a signed-out caller read nothing, and nobody writes through it", async () => {
+		const classId = await createClass('RLS');
+		const kid = await createStudent(classId);
+		const sessionId = await sessionFor(classId, pastDay(2));
+		await mark(classId, sessionId, kid, true);
+
+		const asTeacher = await teacher.client
+			.from('attendance_current')
+			.select('id')
+			.eq('class_id', classId);
+		expect(asTeacher.error).toBeNull();
+		expect(asTeacher.data).toHaveLength(1);
+
+		const asOther = await otherTeacher.client
+			.from('attendance_current')
+			.select('id')
+			.eq('class_id', classId);
+		expect(asOther.data ?? []).toEqual([]);
+
+		const student = await signInStudent(kid);
+		const asStudent = await student.from('attendance_current').select('id').eq('student_id', kid);
+		expect(asStudent.data ?? []).toEqual([]);
+
+		const signedOut = await anonClient()
+			.from('attendance_current')
+			.select('id')
+			.eq('class_id', classId);
+		expect(signedOut.data ?? []).toEqual([]);
+
+		// The view is read-only, also for the class's own teacher.
+		const write = await teacher.client
+			.from('attendance_current' as 'attendance_records')
+			.update({ present: false })
+			.eq('class_id', classId)
+			.select('id');
+		expect(write.data ?? []).toEqual([]);
+		const { data: raw } = await adminClient
+			.from('attendance_records')
+			.select('present')
+			.eq('class_session_id', sessionId);
+		expect(raw).toEqual([{ present: true }]);
+	});
+
+	it('streak: a week whose only present mark is corrected to absent no longer qualifies; corrected back, it does', async () => {
+		const classId = await createClass('Streak');
+		const kid = await createStudent(classId);
+		const sessionId = await sessionFor(classId, today);
+		await homeworkDoneThisWeek(classId, kid);
+
+		await mark(classId, sessionId, kid, true);
+		expect(await streakOf(kid)).toBe(1);
+
+		await mark(classId, sessionId, kid, false);
+		expect(await streakOf(kid)).toBe(0);
+
+		await mark(classId, sessionId, kid, true);
+		expect(await streakOf(kid)).toBe(1);
+
+		// The pure rule agrees with the stored value.
+		const { data: computed, error } = await adminClient.rpc('compute_student_streak', {
+			p_student_id: kid,
+			p_class_id: classId
+		});
+		expect(error).toBeNull();
+		const row = Array.isArray(computed) ? computed[0] : computed;
+		expect(row?.current_streak).toBe(1);
+	});
+
+	it('streak: a present mark corrected to absent in a week with planned leave makes the week protected (grace 0)', async () => {
+		const plusDays = (isoDate: string, n: number) => {
+			const date = new Date(`${isoDate}T00:00:00Z`);
+			date.setUTCDate(date.getUTCDate() + n);
+			return date.toISOString().slice(0, 10);
+		};
+		const mondayOf = (day: string) =>
+			plusDays(day, 1 - (new Date(`${day}T00:00:00Z`).getUTCDay() || 7));
+		// Three consecutive far-future weeks (class days are unique school-wide),
+		// so the leave is answered with long notice: planned.
+		const d0 = `${3000 + Math.floor(Math.random() * 6000)}-06-0${1 + Math.floor(Math.random() * 9)}`;
+		const days = [plusDays(d0, -7), d0, plusDays(d0, 7)];
+
+		const parent = await createApprovedParent();
+		const classId = await createClass('Planned Leave');
+		const kid = await createStudent(classId, parent.email);
+		const sessions: string[] = [];
+		for (const day of days) sessions.push(await sessionFor(classId, day));
+		/** Future sessions: the insert policy refuses them, so with the service role. */
+		const markFuture = async (sessionId: string, present: boolean) => {
+			const { error } = await adminClient.from('attendance_records').insert({
+				student_id: kid,
+				class_id: classId,
+				class_session_id: sessionId,
+				present,
+				recorded_by: teacher.id
+			});
+			if (error) throw new Error(`Failed to mark: ${error.message}`);
+		};
+		// Present in all three weeks; homework done in weeks 0 and 2 only.
+		for (const sessionId of sessions) await markFuture(sessionId, true);
+		await homeworkDoneThisWeek(classId, kid, mondayOf(days[0]));
+		await homeworkDoneThisWeek(classId, kid, mondayOf(days[2]));
+
+		// The parent's latest answer for the middle session: on leave, planned.
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({
+			email: parent.email,
+			password: parent.password
+		});
+		expect(signInError).toBeNull();
+		const leave = await client
+			.from('session_leave_history')
+			.insert({ class_session_id: sessions[1], student_id: kid, answer: 'on_leave' })
+			.select('classification')
+			.single();
+		expect(leave.error).toBeNull();
+		expect(leave.data?.classification).toBe('planned');
+
+		const streak = async () => {
+			const { data, error } = await adminClient.rpc('compute_student_streak', {
+				p_student_id: kid,
+				p_class_id: classId,
+				p_as_of_week: mondayOf(days[2])
+			});
+			expect(error).toBeNull();
+			return (Array.isArray(data) ? data[0] : data)?.current_streak;
+		};
+
+		const { data: grace } = await adminClient
+			.from('app_settings')
+			.select('value')
+			.eq('key', 'streak_grace_weeks')
+			.single();
+		await adminClient
+			.from('app_settings')
+			.update({ value: { weeks: 0 } })
+			.eq('key', 'streak_grace_weeks');
+		try {
+			// Marked present without homework: the middle week is a gap, and a
+			// week the student attended is never protected.
+			expect(await streak()).toBe(1);
+
+			// Corrected to absent: the student attended no session that week and
+			// the missed one has planned leave, so the week is protected.
+			await markFuture(sessions[1], false);
+			expect(await streak()).toBe(2);
+		} finally {
+			await adminClient
+				.from('app_settings')
+				.update({ value: grace!.value })
+				.eq('key', 'streak_grace_weeks');
+		}
+	});
+
+	it('badges: a day corrected to absent is not counted, a day corrected to present is', async () => {
+		const classId = await createClass('Badge Count');
+		const kid = await createStudent(classId);
+		const sessions: string[] = [];
+		for (let i = 1; i <= 5; i += 1) sessions.push(await sessionFor(classId, pastDay(10 + i)));
+
+		for (const sessionId of sessions.slice(0, 4)) await mark(classId, sessionId, kid, true);
+		// Day 4 was a mistake: four "present" rows on four days, three days current.
+		await mark(classId, sessions[3], kid, false);
+		// A fifth day present: five days have a "present" row, four count.
+		await mark(classId, sessions[4], kid, true);
+		expect(await attendanceBadgesOf(kid)).toEqual([1]);
+
+		// Day 4 corrected back to present: five days count.
+		await mark(classId, sessions[3], kid, true);
+		expect(await attendanceBadgesOf(kid)).toEqual([1, 5]);
+	});
+
+	it('badges: an earned badge stays when the count falls below its milestone', async () => {
+		const classId = await createClass('Badge Stays');
+		const kid = await createStudent(classId);
+		const sessionId = await sessionFor(classId, pastDay(20));
+
+		await mark(classId, sessionId, kid, true);
+		expect(await attendanceBadgesOf(kid)).toEqual([1]);
+
+		await mark(classId, sessionId, kid, false);
+		expect(await attendanceBadgesOf(kid)).toEqual([1]);
+	});
+
+	it('child_attendance returns one row per session, the current mark', async () => {
+		const parent = await createApprovedParent();
+		const classId = await createClass('Parent');
+		const kid = await createStudent(classId, parent.email);
+		const corrected = await sessionFor(classId, pastDay(21));
+		const kept = await sessionFor(classId, pastDay(22));
+
+		await mark(classId, corrected, kid, true);
+		await mark(classId, kept, kid, true);
+		await mark(classId, corrected, kid, false);
+		// Re-saved unchanged: still one line.
+		await mark(classId, kept, kid, true);
+
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({
+			email: parent.email,
+			password: parent.password
+		});
+		expect(signInError).toBeNull();
+		const { data, error } = await client.rpc('child_attendance', { p_student_id: kid });
+		expect(error).toBeNull();
+		expect(data?.map((r) => ({ session_date: r.session_date, present: r.present }))).toEqual([
+			{ session_date: pastDay(22), present: true },
+			{ session_date: pastDay(21), present: false }
+		]);
+	});
+});

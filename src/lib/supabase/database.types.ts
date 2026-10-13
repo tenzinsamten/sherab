@@ -1234,6 +1234,50 @@ export type Database = {
 			};
 		};
 		Views: {
+			// #102 (0045): the latest attendance_records row per session and student.
+			attendance_current: {
+				Row: {
+					class_id: string | null;
+					class_session_id: string | null;
+					id: string | null;
+					notes: string | null;
+					present: boolean | null;
+					recorded_at: string | null;
+					recorded_by: string | null;
+					session_date: string | null;
+					student_id: string | null;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'attendance_records_class_id_fkey';
+						columns: ['class_id'];
+						isOneToOne: false;
+						referencedRelation: 'classes';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'attendance_records_class_session_fkey';
+						columns: ['class_session_id', 'class_id'];
+						isOneToOne: false;
+						referencedRelation: 'class_sessions';
+						referencedColumns: ['id', 'class_id'];
+					},
+					{
+						foreignKeyName: 'attendance_records_recorded_by_fkey';
+						columns: ['recorded_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'attendance_records_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_sessions_effective: {
 				Row: {
 					cancelled: boolean | null;

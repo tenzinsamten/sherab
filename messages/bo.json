@@ -221,6 +221,7 @@
 	"roster_empty": "འཛིན་གྲྭ་འདིར་ད་དུང་ཆོག་མཆན་ཐོབ་པའི་སློབ་མ་མེད།",
 	"roster_attendance_heading": "ཡོང་མེད་ཐོ་འགོད།",
 	"roster_attendance_session_label": "ཚོགས་ཐེངས།",
+	"roster_attendance_session_marked": "{session} · ཐོ་འགོད་བྱས་ཟིན།",
 	"roster_attendance_no_sessions": "ད་དུང་ཐོ་འགོད་ཆེད་ཚོགས་ཐེངས་མེད། ཚོགས་ཐེངས་ཚོ་ལོ་ཐོ་ནས་ཐོན་པ་ཡིན། ད་རེས་སམ་དེའི་སྔོན་གྱི་ཕྱིར་འཐེན་མིན་པའི་ཚོགས་ཐེངས་ཁོ་ན་ཐོ་འགོད་ཐུབ།",
 	"roster_attendance_submit": "ཡོང་མེད་ཉར་ཚགས།",
 	"roster_attendance_saved": "{date} གི་ཡོང་མེད་ཐོ་འགོད་བྱས་ཟིན།",

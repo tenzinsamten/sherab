@@ -27,7 +27,10 @@ test.describe.configure({ mode: 'serial' });
 const STUDENT_COUNT = 40;
 const tag = crypto.randomUUID().slice(0, 8);
 // class_days.day is unique school-wide: random years no one else uses.
-const year = 1100 + Math.floor(Math.random() * 800);
+// 1100-1699 only: src/lib/server/rls.spec.ts leaves marked sessions in
+// 1700-1899, and cleanup() deletes this year's class days, which a session
+// with marks refuses.
+const year = 1100 + Math.floor(Math.random() * 600);
 const futureYear = 3000 + Math.floor(Math.random() * 6000);
 // Two class days a week apart, created in the future and moved to the past.
 const days = [`${year}-03-08`, `${year}-03-15`];
@@ -273,6 +276,9 @@ test('attendance: picking a session updates the leave pills, and the save keeps 
 
 	await pick(page, 'sessionId', sessions[days[0]]);
 	await expect(row.locator('ix-pill')).toHaveText('On leave');
+	// #102: not marked yet, so no note in the picker.
+	const pickedItem = page.locator(`#sessionId ix-select-item[value="${sessions[days[0]]}"]`);
+	await expect(pickedItem).toHaveAttribute('label', `${days[0]} · 10:00`);
 
 	await row.locator('ix-checkbox').click();
 	await page.getByRole('button', { name: 'Save attendance' }).click();
@@ -283,6 +289,10 @@ test('attendance: picking a session updates the leave pills, and the save keeps 
 	expect(posts[0].get('sessionId')).toBe(sessions[days[0]]);
 	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessions[days[0]]);
 	await expect(row.locator('ix-pill')).toHaveText('On leave');
+	// #102: the save happened on this page, and the picker now shows the
+	// session as marked, in its list and as the picked value.
+	await expect(pickedItem).toHaveAttribute('label', `${days[0]} · 10:00 · marked`);
+	await expect(page.locator('#sessionId input').first()).toHaveValue(`${days[0]} · 10:00 · marked`);
 
 	// After the save, picking another session is not reverted to the saved one.
 	await pick(page, 'sessionId', sessions[days[1]]);
@@ -297,6 +307,218 @@ test('attendance: picking a session updates the leave pills, and the save keeps 
 		.eq('class_id', classId)
 		.eq('student_id', students[0].id);
 	expect(data).toEqual([{ student_id: students[0].id, present: true }]);
+});
+
+test('attendance: a marked session opens ticked, a re-save changes no current mark, a correction is one history line', async ({
+	page
+}) => {
+	// #102. The second session; students 2 and 3, which no other test marks.
+	const day = days[1];
+	const sessionId = sessions[day];
+	const [present, absent, unmarked] = [students[2], students[3], students[4]];
+	const box = (student: { name: string }) =>
+		page.locator('.attendance-row').filter({ hasText: student.name }).locator('ix-checkbox');
+	const item = (id: string) => page.locator(`#sessionId ix-select-item[value="${id}"]`);
+	/** The current mark per student of the session (attendance_current). */
+	const currentMarks = async () => {
+		const rows = check(
+			await service
+				.from('attendance_current')
+				.select('student_id, present')
+				.eq('class_session_id', sessionId),
+			'read current marks'
+		);
+		return new Map((rows ?? []).map((r) => [r.student_id, r.present]));
+	};
+	/** Every row of the `present` student for the session, oldest first. */
+	const rawMarks = async () =>
+		(
+			check(
+				await service
+					.from('attendance_records')
+					.select('present')
+					.eq('class_session_id', sessionId)
+					.eq('student_id', present.id)
+					.order('recorded_at'),
+				'read raw marks'
+			) ?? []
+		).map((r) => r.present);
+	const save = async () => {
+		const response = page.waitForResponse(
+			(r) => r.request().method() === 'POST' && r.url().includes('?/markAttendance')
+		);
+		const before = await box(present).elementHandle();
+		await page.getByRole('button', { name: 'Save attendance' }).click();
+		expect((await response).ok()).toBe(true);
+		// A save shows the list again as saved: wait for the new checkboxes.
+		await expect.poll(() => before!.evaluate((el) => el.isConnected)).toBe(false);
+		await expect(box(present)).toHaveClass(/hydrated/);
+	};
+
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}`);
+
+	// Not marked yet: no note in the picker, nothing ticked.
+	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessionId);
+	await expect(item(sessionId)).toHaveAttribute('label', `${day} · 10:00`);
+	await expect(box(present)).toHaveJSProperty('checked', false);
+
+	// Marked earlier, for two students only (the others have no mark).
+	check(
+		await service.from('attendance_records').insert(
+			[present, absent].map((student) => ({
+				student_id: student.id,
+				class_id: classId,
+				class_session_id: sessionId,
+				present: student === present,
+				recorded_by: teacher.id
+			}))
+		),
+		'seed marks'
+	);
+	await open(page, `/teacher/classes/${classId}`);
+	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessionId);
+	await expect(item(sessionId)).toHaveAttribute('label', `${day} · 10:00 · marked`);
+	await expect(box(present)).toHaveJSProperty('checked', true);
+	await expect(box(absent)).toHaveJSProperty('checked', false);
+	await expect(box(unmarked)).toHaveJSProperty('checked', false);
+
+	// Ticks not saved are dropped when another session is picked.
+	await box(unmarked).click();
+	await expect(box(unmarked)).toHaveJSProperty('checked', true);
+	await pick(page, 'sessionId', sessions[days[0]]);
+	await expect(box(present)).toHaveJSProperty('checked', false);
+	await pick(page, 'sessionId', sessionId);
+	await expect(box(present)).toHaveJSProperty('checked', true);
+	await expect(box(unmarked)).toHaveJSProperty('checked', false);
+
+	// Saved again unchanged: no row is written, also not for the students
+	// without a mark.
+	await save();
+	let marks = await currentMarks();
+	expect([...marks]).toHaveLength(2);
+	expect(marks.get(present.id)).toBe(true);
+	expect(marks.get(absent.id)).toBe(false);
+	expect(await rawMarks()).toEqual([true]);
+	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessionId);
+	await expect(box(present)).toHaveJSProperty('checked', true);
+	await expect(box(absent)).toHaveJSProperty('checked', false);
+
+	// A correction: one student unticked, every other mark as it was.
+	await box(present).click();
+	await expect(box(present)).toHaveJSProperty('checked', false);
+	await save();
+	await expect.poll(async () => (await currentMarks()).get(present.id)).toBe(false);
+	marks = await currentMarks();
+	expect([...marks]).toHaveLength(2);
+	expect(marks.get(absent.id)).toBe(false);
+	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessionId);
+	await expect(box(present)).toHaveJSProperty('checked', false);
+
+	// Append-only: the earlier mark is still there, the correction is a new row...
+	expect(await rawMarks()).toEqual([true, false]);
+
+	// ...and the history shows the session once, with the current mark.
+	await page.locator(`button.student-toggle[data-student-id="${present.id}"]`).click();
+	const lines = page
+		.locator(`#skills-panel-${present.id} .history-list li`)
+		.filter({ hasText: day });
+	await expect(lines).toHaveCount(1);
+	await expect(lines).toContainText('Absent');
+});
+
+test('attendance: a tick not saved yet survives a skill save on the same page', async ({
+	page
+}) => {
+	// #102. Students no other test ticks or gives a skill status.
+	const ticked = students[30];
+	const skilled = students[31];
+	const box = page
+		.locator('.attendance-row')
+		.filter({ hasText: ticked.name })
+		.locator('ix-checkbox');
+
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}`);
+	await expect(box).toHaveJSProperty('checked', false);
+	await box.click();
+	await expect(box).toHaveJSProperty('checked', true);
+
+	await page.locator(`button.student-toggle[data-student-id="${skilled.id}"]`).click();
+	const panel = page.locator(`#skills-panel-${skilled.id}`);
+	await pick(page, `level-${skilled.id}-dance`, 'learning');
+	await panel
+		.locator('form[data-skill-area="dance"]')
+		.getByRole('button', { name: 'Save' })
+		.click();
+	await expect(page.locator('ix-toast').getByText('Status saved.')).toBeVisible();
+	// The reload after the save has arrived: the summary shows the new level.
+	await expect(
+		page.locator(`button.student-toggle[data-student-id="${skilled.id}"]`)
+	).toContainText('Dance: Learning');
+
+	await expect(box).toHaveJSProperty('checked', true);
+});
+
+test('attendance: a form opened before another correction changes one other student and does not undo it', async ({
+	page
+}) => {
+	// #102. The second session; students 8 and 9, which no other test marks.
+	const sessionId = sessions[days[1]];
+	const [corrected, changed] = [students[8], students[9]];
+	const box = (student: { name: string }) =>
+		page.locator('.attendance-row').filter({ hasText: student.name }).locator('ix-checkbox');
+	const insert = async (student: { id: string }, present: boolean) =>
+		check(
+			await service.from('attendance_records').insert({
+				student_id: student.id,
+				class_id: classId,
+				class_session_id: sessionId,
+				present,
+				recorded_by: teacher.id
+			}),
+			'insert mark'
+		);
+	const rows = async (student: { id: string }) =>
+		(
+			check(
+				await service
+					.from('attendance_records')
+					.select('present')
+					.eq('class_session_id', sessionId)
+					.eq('student_id', student.id)
+					.order('recorded_at'),
+				'read marks'
+			) ?? []
+		).map((r) => r.present);
+
+	await insert(corrected, true);
+	await insert(changed, false);
+
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}`);
+	await expect(page.locator('#sessionId')).toHaveJSProperty('value', sessionId);
+	await expect(box(corrected)).toHaveJSProperty('checked', true);
+	await expect(box(changed)).toHaveJSProperty('checked', false);
+
+	// Someone else corrects the first student; this page still shows the old mark.
+	await insert(corrected, false);
+
+	await box(changed).click();
+	await expect(box(changed)).toHaveJSProperty('checked', true);
+	const before = await box(changed).elementHandle();
+	const response = page.waitForResponse(
+		(r) => r.request().method() === 'POST' && r.url().includes('?/markAttendance')
+	);
+	await page.getByRole('button', { name: 'Save attendance' }).click();
+	expect((await response).ok()).toBe(true);
+	await expect.poll(() => before!.evaluate((el) => el.isConnected)).toBe(false);
+
+	// Only the changed student got a row; the correction stands and now shows.
+	expect(await rows(changed)).toEqual([false, true]);
+	expect(await rows(corrected)).toEqual([true, false]);
+	await expect(box(corrected)).toHaveJSProperty('checked', false);
+	await expect(box(changed)).toHaveJSProperty('checked', true);
 });
 
 test('skills: ~40 students render as collapsed rows', async ({ page }) => {
