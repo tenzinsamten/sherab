@@ -303,3 +303,13 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-100-credentials-at-registration.md`
   summary: At student registration, email the username and PIN to the parent's address with a link to the login page (CAP-15).
   evidence: Left out of #100 at planning (user 2026-10-13). The app sends no mail of its own; only Supabase Auth does. Needs a sending path (a Resend API key and sender address as Cloudflare secrets, or another route), counts against Resend's 100 mails a day, and must not fail the registration when sending fails.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
+  summary: No browser test signs in a teacher-and-parent login and checks that the parent tours run while acting as parent and the teacher tours stay unseen (#101).
+  evidence: Only `tourFor` is unit-tested with literal roles; `e2e/tours.e2e.ts` creates single-role users. Passing `data.profile.role` instead of the active role to `PageTour` in `src/routes/+layout.svelte` would break it with every test green. Needs a dual-role fixture and the role switch.
+- source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
+  summary: No test asserts that Help's "Show me around this page" closes the side-menu overlay at phone width before the tour starts (#101).
+  evidence: `replayTour()` in `src/routes/+layout.svelte` closes the menu below the wide breakpoint; the replay e2e test runs at desktop width only. Checked by hand at 390px during the build.
+- source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
+  summary: Three e2e tests fail on `main` independently of #101: `calendar.e2e.ts:130` (today lacks the "Today" text), `parent-access.e2e.ts:128` ("Temporary password" still shown), `teacher.e2e.ts:258` (session select holds the wrong session after save).
+  evidence: The same three fail on a run with the #101 changes stashed (baseline 925cc95, 2026-10-13). Because the files are serial, 33 further tests do not run after them.

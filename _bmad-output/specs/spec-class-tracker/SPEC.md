@@ -74,6 +74,10 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **intent:** A student's username and PIN reach the family without asking the admin or a teacher: they are shown on the registration confirmation screen, emailed to the parent's address with a link to the login page, and shown in the parent's own account, where the parent can reset the PIN.
   - **success:** Right after registering, the family can log the student in with what the screen or the email shows; a parent sees the username and current PIN of every linked child, pending ones included; after a parent's reset the old PIN stops working and the parent's account shows the new one. See `roles-and-permissions.md`.
 
+- **CAP-16**
+  - **intent:** A parent or a teacher is shown, on the page itself, where to tap: a short guided tour of two to five steps starts by itself the first time they open each key page, pointing at controls that are on that page and naming in its text the ones that are a step further (inside a row, or on the next page). The account remembers which tours it has seen. Help offers "Show me around this page", which runs the current page's tour again.
+  - **success:** Each tour starts by itself once per person, on any device, and never again after it started, whether it was finished or left; it can be left at any step; it changes nothing on the page; it can be run again from Help at any time. Students and the admin get no tour. See `roles-and-permissions.md`.
+
 ## Constraints
 
 - Teachers are created and verified admin-side only — no teacher self-registration.

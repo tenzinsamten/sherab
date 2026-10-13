@@ -82,4 +82,22 @@ The PIN is the student's login secret; the class code only joins a class.
 - Backup approver for pending student registrations, for any class.
 - Cross-class visibility (the only role with this).
 - Reviews and actions data-deletion requests from students or parents (human approval step before erasure).
-- Possible future addition: a structured onboarding flow with materials for new teachers (not committed for v1).
+- New teachers get no separate onboarding flow: the guided page tours (CAP-16) and the written guides in Help introduce the app.
+
+## Guided page tours (CAP-16)
+
+- Eight tours, each for one role on one page. A step points at one thing that is on that page; what is on another page is named in the step's text:
+  - Parent, Dashboard: an approved child's card; the child's name, with the text that the child signs in with their own username and PIN (the page shows neither).
+  - Parent, a child's Overview: the row of tabs; the Sessions tab.
+  - Parent, a child's Sessions: the first session that can still be answered; its answer buttons; its current answer, with the text on Planned and Short-notice; the "Plan a leave period" heading.
+  - Teacher, Dashboard: a class card; its class code; its "View roster" button.
+  - Teacher, class page: the session picker and "Save attendance" (both only when there is a session to mark); the "Skill status" heading; the first student's row, with the text on level, Save and the note parents see (those fields are inside the row once opened); the Homework card.
+  - Teacher, the class's homework list: "Create homework"; the filter; the first homework in the list, with the text that "Mark reviewed" and "Archive" are on the homework's own page.
+  - Teacher, new homework form, in the form's order: the language of the homework, with the text on Content; once or weekly; the due date; "Assign to".
+  - Teacher, Requests: the first waiting registration; the first waiting Sick answer; the first class join request.
+- A tour runs for the active role only. A login that is both teacher and parent gets each role's tours.
+- Students and the admin get no tour, and there is none on a signed-out page. There is no single welcome tour at first sign-in.
+- Which tours an account has seen is stored with the account, so a tour starts by itself once per person, on any device. It counts as seen when it starts. Accounts that existed before the tours see each one once too.
+- A step whose control is not on the page is left out. A tour with no step left does not start and does not count as seen, so it starts on a later visit.
+- A tour can be left at any step (Skip, Esc, the close button). It never navigates to another page and never fills in or submits anything.
+- Help shows "Show me around this page" on a page that has a tour for the active role; on any other page it says where the tours are.
