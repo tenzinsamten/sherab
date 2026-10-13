@@ -368,7 +368,11 @@
 	"homework_mark_reviewed_confirm": "Mark {name}'s homework as reviewed? This cannot be undone.",
 	"homework_archive_confirm": "Archive the homework due {date}? This cannot be undone.",
 	"homework_series_pause_confirm": "Pause this series? No new homework is created from it, and it cannot be resumed.",
-	"homework_series_end_confirm": "End this series? No new homework is created from it. This cannot be undone.",
+	"homework_series_end_confirm": "End this series? No new homework is created from it. The homework students already have from it stays on their pages. This cannot be undone.",
+	"homework_series_end_archive_label": "When ending, also archive the homework students already have from this series",
+	"homework_series_end_archive_confirm": "End this series and archive its homework? No new homework is created from it, and the homework students already have from it is taken off their pages. This cannot be undone.",
+	"homework_series_ended_archived_success": "Series ended and its homework archived.",
+	"homework_series_error_archive_copies_failed": "The series was ended, but its homework could not be archived. Archive it below.",
 	"homework_series_error_pause_failed": "Could not pause this series. Please try again.",
 	"homework_series_error_end_failed": "Could not end this series. Please try again.",
 

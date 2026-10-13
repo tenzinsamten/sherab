@@ -357,11 +357,11 @@ export const actions: Actions = {
 
 		const today = todayInBerlin();
 
-		// Boundaries: ending only ever changes homework_assignments -- the
-		// generator's own "ended" check (0046, #103: ends_on is today or
-		// earlier, today in Munich on both sides) is what stops every further
-		// copy, weeks not yet made included; already-generated instances are
-		// never touched here.
+		// Ending changes homework_assignments only -- the generator's own
+		// "ended" check (0046, #103: ends_on is today or earlier, today in
+		// Munich on both sides) is what stops every further copy, weeks not
+		// yet made included. Already-generated instances are touched only
+		// when the teacher ticked "also archive" (#103b, below).
 		// .or('ends_on.is.null,ends_on.gt.<today>') (review finding #6) --
 		// without this, a second ?/endSeries submission for an already-ended
 		// series moves ends_on forward, re-opening the window for periods
@@ -386,6 +386,36 @@ export const actions: Actions = {
 			});
 		}
 
-		return { success: true, action: 'endSeries' as const };
+		// #103b: the teacher's choice to take the series' homework off the
+		// students' pages too -- every copy not archived yet, the same update
+		// archiveInstance makes for one. Only after the series is ended. Only
+		// the value the page sends counts as ticked: this cannot be undone.
+		if (formData.get('archiveCopies') !== 'on') {
+			return {
+				success: true,
+				action: 'endSeries' as const,
+				archived: false,
+				archiveFailed: false
+			};
+		}
+
+		const { data: archivedRows, error: archiveError } = await supabase
+			.from('homework_instances')
+			.update({ archived_at: new Date().toISOString(), archived_by: user.id })
+			.eq('assignment_id', assignmentId)
+			.eq('class_id', params.id)
+			.is('archived_at', null)
+			.select('id');
+
+		// The series is ended either way, so this is still a success (the page
+		// reloads and shows "Ended"); archiveFailed makes it say that the
+		// homework is still there, to be archived one by one below. A series
+		// with no open copy is simply ended.
+		return {
+			success: true,
+			action: 'endSeries' as const,
+			archived: !archiveError && (archivedRows?.length ?? 0) > 0,
+			archiveFailed: Boolean(archiveError)
+		};
 	}
 };

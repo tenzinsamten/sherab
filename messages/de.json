@@ -368,7 +368,11 @@
 	"homework_mark_reviewed_confirm": "Hausaufgabe von {name} als geprüft markieren? Das kann nicht rückgängig gemacht werden.",
 	"homework_archive_confirm": "Hausaufgabe mit Fälligkeit {date} archivieren? Das kann nicht rückgängig gemacht werden.",
 	"homework_series_pause_confirm": "Diese Serie pausieren? Es werden keine neuen Hausaufgaben mehr daraus erstellt, und sie kann nicht fortgesetzt werden.",
-	"homework_series_end_confirm": "Diese Serie beenden? Es werden keine neuen Hausaufgaben mehr daraus erstellt. Das kann nicht rückgängig gemacht werden.",
+	"homework_series_end_confirm": "Diese Serie beenden? Es werden keine neuen Hausaufgaben mehr daraus erstellt. Die Hausaufgaben, die die Schüler daraus schon haben, bleiben auf ihren Seiten. Das kann nicht rückgängig gemacht werden.",
+	"homework_series_end_archive_label": "Beim Beenden auch die Hausaufgaben archivieren, die die Schüler aus dieser Serie schon haben",
+	"homework_series_end_archive_confirm": "Diese Serie beenden und ihre Hausaufgaben archivieren? Es werden keine neuen Hausaufgaben mehr daraus erstellt, und die Hausaufgaben, die die Schüler daraus schon haben, verschwinden von ihren Seiten. Das kann nicht rückgängig gemacht werden.",
+	"homework_series_ended_archived_success": "Serie beendet und ihre Hausaufgaben archiviert.",
+	"homework_series_error_archive_copies_failed": "Die Serie wurde beendet, aber ihre Hausaufgaben konnten nicht archiviert werden. Bitte unten archivieren.",
 	"homework_series_error_pause_failed": "Diese Serie konnte nicht pausiert werden. Bitte erneut versuchen.",
 	"homework_series_error_end_failed": "Diese Serie konnte nicht beendet werden. Bitte erneut versuchen.",
 

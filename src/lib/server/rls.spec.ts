@@ -3626,6 +3626,67 @@ describe.skipIf(!reachable)(
 			expect(instances?.map((i) => i.period_start)).toEqual([startDate, today]);
 		});
 
+		it("#103b a teacher of the class archives a series' open copies in one update; an archived copy keeps its date, and another teacher changes none", async () => {
+			const today = todayInBerlin();
+			const startDate = addDays(today, -7); // periods: today-7, today
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 7
+			});
+			const { data: made } = await adminClient.rpc('generate_recurring_homework_for_series', {
+				p_assignment_id: assignmentId,
+				p_today: today
+			});
+			expect(made).toBe(2);
+
+			const copies = async () =>
+				(
+					await adminClient
+						.from('homework_instances')
+						.select('period_start, archived_at, archived_by')
+						.eq('assignment_id', assignmentId)
+						.order('period_start', { ascending: true })
+				).data ?? [];
+
+			// The first week was archived earlier, by the admin.
+			const earlier = '2026-01-15T10:00:00+00:00';
+			await adminClient
+				.from('homework_instances')
+				.update({ archived_at: earlier, archived_by: admin.id })
+				.eq('assignment_id', assignmentId)
+				.eq('period_start', startDate);
+
+			// The update endSeries sends when the teacher ticked "also archive"
+			// (the action's own filters are pinned in its page.server.spec.ts).
+			const archiveOpenCopies = (teacher: typeof teacherA) =>
+				teacher.client
+					.from('homework_instances')
+					.update({ archived_at: new Date().toISOString(), archived_by: teacher.id })
+					.eq('assignment_id', assignmentId)
+					.eq('class_id', classAId)
+					.is('archived_at', null)
+					.select('id');
+
+			const other = await archiveOpenCopies(teacherB);
+			expect(other.error).toBeNull();
+			expect(other.data).toEqual([]);
+			expect((await copies()).map((c) => c.archived_at === null)).toEqual([false, true]);
+
+			const own = await archiveOpenCopies(teacherA);
+			expect(own.error).toBeNull();
+			expect(own.data).toHaveLength(1);
+
+			const after = await copies();
+			expect(new Date(after[0].archived_at as string).toISOString()).toBe(
+				new Date(earlier).toISOString()
+			);
+			expect(after[0].archived_by).toBe(admin.id);
+			expect(after[1].archived_at).not.toBeNull();
+			expect(after[1].archived_by).toBe(teacherA.id);
+		});
+
 		it('a direct client insert into homework_instances for a recurring assignment is still rejected (AD-8, Story 3-1 restriction unchanged)', async () => {
 			const today = new Date().toISOString().slice(0, 10);
 			const assignmentId = await createRecurringAssignment({

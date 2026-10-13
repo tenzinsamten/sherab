@@ -25,6 +25,10 @@
 	// other edit fields, keeps the teacher's pick when the page data reloads.
 	let editLanguage = $state<ContentLanguage>(untrack(() => data.assignment.contentLanguage));
 
+	// #103b: the teacher's choice, when ending a series, to also archive the
+	// homework students already have from it. Off unless ticked.
+	let archiveCopiesOnEnd = $state(false);
+
 	function skillLabel(area: SkillArea): string {
 		if (area === 'language') return m.roster_skill_language();
 		if (area === 'song') return m.roster_skill_song();
@@ -67,7 +71,16 @@
 				showToast('success', m.homework_series_paused_success());
 				break;
 			case 'endSeries':
-				showToast('success', m.homework_series_ended_success());
+				if (form.archiveFailed) {
+					showToast('warning', m.homework_series_error_archive_copies_failed());
+				} else {
+					showToast(
+						'success',
+						form.archived
+							? m.homework_series_ended_archived_success()
+							: m.homework_series_ended_success()
+					);
+				}
 				break;
 		}
 	});
@@ -207,10 +220,20 @@
 						method="POST"
 						action="?/endSeries"
 						use:enhance={pending.submit('end', {
-							confirm: confirmWith(m.homework_series_end_confirm(), m.homework_series_end_action())
+							// #103b: the question says what the tick will do.
+							confirm: () =>
+								confirmWith(
+									archiveCopiesOnEnd
+										? m.homework_series_end_archive_confirm()
+										: m.homework_series_end_confirm(),
+									m.homework_series_end_action()
+								)()
 						})}
 					>
 						<input type="hidden" name="assignmentId" value={assignment.id} />
+						{#if archiveCopiesOnEnd}
+							<input type="hidden" name="archiveCopies" value="on" />
+						{/if}
 						<ix-button
 							variant="secondary"
 							type="submit"
@@ -219,6 +242,13 @@
 						>
 					</form>
 				</div>
+				<ix-checkbox
+					style="margin-top: var(--space-2);"
+					label={m.homework_series_end_archive_label()}
+					checked={archiveCopiesOnEnd || undefined}
+					disabled={pending.busy || undefined}
+					oncheckedChange={(event: CustomEvent<boolean>) => (archiveCopiesOnEnd = event.detail)}
+				></ix-checkbox>
 			{/if}
 		</details>
 
