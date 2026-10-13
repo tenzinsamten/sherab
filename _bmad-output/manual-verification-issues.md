@@ -2098,3 +2098,64 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Known and not changed (told to the user): balance is across all teams, not per class
   (teams have no class); the `teacher-3` help screenshots in three languages still show the
   team field; siblings can land in different teams.
+- 2026-10-13: #100 logged, not built. Reported (user, brainstorm
+  `_bmad-output/brainstorming/brainstorm-student-credentials-delivery-2026-10-13/brainstorm-intent.md`):
+  a new student's username and PIN are seen only by whoever approves the registration, so
+  the family has to go to the admin for them. Wanted: nobody has to.
+  Today: the username and PIN are made at approval and shown once to the approver; after
+  registering, the student sees only that they will be approved.
+  Spec: `_bmad-output/specs/spec-class-tracker/SPEC.md` CAP-15 and the amended CAP-1 and
+  CAP-13. Split at the build scope gate (user 2026-10-13): #100 is credentials at
+  registration (made at registration, shown on the confirmation screen, emailed to the
+  parent with a login link, login while pending showing only the pending message). The
+  parent's view of the username and PIN and the parent's PIN reset are in
+  `deferred-work.md`.
+  To settle in planning: whether the approver still sees the username and PIN at approval;
+  whether a rejected student can log in; whether the email waits for production email
+  sending.
+- 2026-10-13: #100 built, not committed, not yet reviewed
+  (`_bmad-output/implementation-artifacts/spec-100-credentials-at-registration.md`).
+  Built: the username and PIN are made at registration and shown once on `/join/pending`
+  with copy buttons and a button to the login page; the receipt cookie carries them (httpOnly,
+  10 minutes, path `/join/pending`). A student can sign in at once; until approval (pending
+  or rejected) the hook `handleUnapprovedStudent` sends every request but `/student/pending`
+  and `/logout` to `/student/pending` (GET and POST), the menu and "My Account" are hidden,
+  and the page shows the waiting text or the not-accepted text with sign-out. Approval of
+  such a student flips the status only; the approver sees the username and the note that the
+  family has the PIN. A registration still on a `pending-` address gets username and PIN at
+  approval as before. New and corrected texts in en, de, bo (three help texts,
+  `join_pending_explanation`, `join_pending_cannot_yet`).
+  Differs from the spec's Code Map and task text: `handle_new_user()` (0024) refuses a
+  student sign-up whose address is not `pending-<uuid>@students.internal.invalid`, so the
+  account cannot be created on the username address without a migration, which the spec
+  forbids. Registration therefore creates the account on the placeholder address as before
+  and sets the username address and PIN right after (the Admin API call approval used), then
+  writes the address to `profiles.email` with the service role. Consequences: the
+  five-tries retry is on that second step, and after five taken usernames the new account is
+  deleted and the generic error shown; if the second step fails for any other reason the
+  registration still succeeds, the screen shows the generic text, and approval makes the
+  username and PIN as for an older registration.
+  Checked by the assistant: database reset, `npm test` (70 files, 1257 tests),
+  `npm run check`, `npm run build`, each exit 0; `npx playwright test e2e/credentials.e2e.ts`
+  (4 tests) exit 0. The other browser files were run too; all pass except three tests that
+  fail the same way without this change (checked with the change stashed):
+  `calendar.e2e.ts` "today (Berlin) is highlighted in the current month",
+  `parent-access.e2e.ts` "B14b: the admin creates a teacher with a parent-only email…",
+  `teacher.e2e.ts` "attendance: picking a session updates the leave pills…".
+  `team-students.e2e.ts`: the pending student now ends on the pending page instead of the
+  team page's "not found"; the test was changed to say so.
+  Not checked by hand in a browser by a person; the Tibetan texts were written by the
+  assistant and need a reader's check.
+  Known stale or open: no help screenshot shows the confirmation screen or the pending
+  page, and none was regenerated (`teacher-3` was already stale since #99); the FAQ and
+  `account_pin_note` still send a student to the teacher for a lost PIN, which stays true.
+  A guardian email correction moves a student to another parent while the former parent
+  still knows the PIN (SPEC open question, not part of #100).
+  After review (same day, not committed): the gate redirects only when the own profile row
+  was read and is not approved (a failed read or a missing row passes through); the status
+  page shows the load-failed text instead of a status when the profile cannot be read; the
+  confirmation screen without credentials no longer promises a sign-in; when the usernames
+  run out and the account cannot be removed, the registration stands without credentials;
+  a successful sign-in deletes the receipt cookie and the confirmation page is sent
+  `no-store`; `help_teacher_3_body` says to hand over a username and PIN shown at approval.
+  Only the tests of the edited files were re-run by the assistant.

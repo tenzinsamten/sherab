@@ -297,3 +297,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-99-auto-team-assignment.md`
   summary: Database tests on an empty, isolated database: the `no_teams` refusal of 0043, exact team sizes from empty (3, 2, 2), and that ties are not always filled in the same order.
   evidence: Review of #99 (blind and verification layers). The shared test database always holds teams with students, so these cases were checked by hand with a script that was not kept. Same missing harness as the #98 entry above.
+- source_spec: none
+  summary: A parent sees each linked child's username and PIN in their own account, pending children included, and can reset the PIN (CAP-15 and the amended CAP-13 in `_bmad-output/specs/spec-class-tracker/SPEC.md`).
+  evidence: Split from #100 at the build scope gate (user 2026-10-13): it can be reviewed and merged on its own, and it depends on the open question whether a PIN may be stored so that it can be displayed again.
+- source_spec: `_bmad-output/implementation-artifacts/spec-100-credentials-at-registration.md`
+  summary: At student registration, email the username and PIN to the parent's address with a link to the login page (CAP-15).
+  evidence: Left out of #100 at planning (user 2026-10-13). The app sends no mail of its own; only Supabase Auth does. Needs a sending path (a Resend API key and sender address as Cloudflare secrets, or another route), counts against Resend's 100 mails a day, and must not fail the registration when sending fails.

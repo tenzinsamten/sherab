@@ -1,6 +1,6 @@
 # Roles & Permissions
 
-Detail behind CAP-1, CAP-2, CAP-7, CAP-12, CAP-13. The kernel states the intents; this holds the full matrix.
+Detail behind CAP-1, CAP-2, CAP-7, CAP-12, CAP-13, CAP-15. The kernel states the intents; this holds the full matrix.
 
 ## Roles
 
@@ -9,7 +9,7 @@ Detail behind CAP-1, CAP-2, CAP-7, CAP-12, CAP-13. The kernel states the intents
 | Admin / head organizer | Runs the school | Full visibility across all classes and teachers |
 | Teacher | Volunteer, usually one per class/age group | Update their assigned classes' students, assign & review homework |
 | Student | Kids attending | Register, see own streak/badges/team leaderboard, mark homework done |
-| Parent | One adult per family | See each child's homework and record; set leave; request deletion |
+| Parent | One adult per family | See each child's homework and record; keep the child's username and PIN; set leave; request deletion |
 
 One login may hold a teacher or admin role and the parent role. The parent role needs its own admin approval; the user switches roles in the app.
 
@@ -33,19 +33,38 @@ One login may hold a teacher or admin role and the parent role. The parent role 
 
 0. The parent registers and is approved first (see Parent accounts).
 1. Student self-registers with name + class code.
-2. Account starts **Pending**: not active, not visible on any roster or leaderboard, cannot log progress. It appears in the teacher/admin approval queue immediately, flagged "unverified" until step 3 completes.
+2. Account starts **Pending**: not visible on any roster or leaderboard, cannot log progress. The student gets a username and PIN at once (see Student credentials) and can log in, but sees only a pending-approval message. It appears in the teacher/admin approval queue immediately, flagged "unverified" until step 3 completes.
 3. Registration includes a consent step (parental/guardian consent for a minor's data being processed) and a guardian email address, which must belong to an approved parent. If not, registration stops: "No parent account found. Check the email is correct, or ask your parent to register first." A pending or unconfirmed parent counts as not found. No confirmation email is sent, since the parent's email is already confirmed. Siblings may share the email, even while several are pending.
 4. Any teacher assigned to that class can approve/reject the pending registration. Teacher approval remains the guard against a false registration using a known parent email. The "no parent account found" message reveals whether an email belongs to a parent; accepted risk for an internal school app.
-5. Admin can also approve/reject for any class, as backup (teacher unavailable, or registration looks suspicious).
-6. Rejected/unrecognized entries should be easy to clear out.
+5. Admin can also approve/reject for any class, as backup (teacher unavailable, or registration looks suspicious). Approval opens the portal for the student and sends the family nothing.
+6. Rejected/unrecognized entries should be easy to clear out. Until cleared, a rejected student can log in and sees only the not-accepted page.
 7. Once approved, the student picks a nickname/avatar for day-to-day use.
 8. A student can request a guardian email correction; the admin approves it. The new email must belong to an approved parent, and the student moves to that parent.
 
+## Student credentials (CAP-15)
+
+The PIN is the student's login secret; the class code only joins a class.
+
+| Moment | Where the family gets username and PIN |
+|---|---|
+| Registration | Confirmation screen, and an email to the parent's address with a link to the login page |
+| Pending | Parent's account |
+| Approval | Nothing is sent; the pending message is gone at the student's next visit and the parent's child card no longer shows "Waiting for approval" |
+| Any time later | Parent's account, the only always-current source |
+
+- A parent can reset a linked child's PIN without the admin or a teacher. The old PIN stops working at once and the student is signed out everywhere.
+- After any reset, the confirmation screen and the registration email are stale.
+- The link in the email opens the login page; it does not log anyone in.
+- A teacher's or the admin's PIN reset for approved students stays as it is. At approval the approver sees the username and a note that the family already has the PIN; a registration that got no credentials gets them at approval, shown once to the approver.
+- A rejected student can log in and sees only that the registration was not accepted, with sign-out.
+- Built so far (#100): credentials at registration, the confirmation screen, login while pending. Not built yet: the email to the parent, the parent's view and the parent's PIN reset. Until then, a family that loses the PIN before approval gets a new one only after approval, by Reset PIN.
+
 ## Parent view (CAP-13)
 
-- Landing page: one summary card per linked child with name, every enrolled class, open homework count, and overdue count (overdue highlighted). A pending child shows "Waiting for approval" and no details. Open homework = not Done and not archived.
+- Landing page: one summary card per linked child with name, every enrolled class, open homework count, and overdue count (overdue highlighted). A pending child shows "Waiting for approval", the username and PIN, and no other details. Open homework = not Done and not archived.
 - Child details: homework (open, overdue, Done, Reviewed) with due dates and reference links; attendance history; skill status per area with history; teacher notes; streak and badges; team and leaderboard as the child sees them; upcoming sessions with actual times and the child's leave answers; the class's teachers.
-- Read-only, with two exceptions: setting attendance intent (see `calendar.md`) and submitting a deletion request (CAP-8, into the admin queue; the parent account remains after deletion).
+- Every child card gives the child's username and current PIN and lets the parent reset the PIN (CAP-15).
+- Read-only, with three exceptions: setting attendance intent (see `calendar.md`), resetting a linked child's PIN, and submitting a deletion request (CAP-8, into the admin queue; the parent account remains after deletion).
 - Teacher notes are written for the parent: the teacher-side notes field reads "Visible to the student's parent", and teachers should not name other children.
 - A parent sees no other student's personal data beyond what the leaderboard shows the child.
 

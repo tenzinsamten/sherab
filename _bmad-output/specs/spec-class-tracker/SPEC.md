@@ -1,7 +1,7 @@
 ---
 id: SPEC-class-tracker
 companions: [roles-and-permissions.md, homework-workflow.md, gamification.md, calendar.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/addendum.md]
-sources: [../../../../class-tracker-requirements.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/prd.md]
+sources: [../../../../class-tracker-requirements.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/prd.md, ../../brainstorming/brainstorm-student-credentials-delivery-2026-10-13/brainstorm-intent.md]
 ---
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete, preservation-validated contract for what to build, test, and validate. Source documents listed in frontmatter are for traceability — consult them only if you need narrative rationale or prose color this contract intentionally omits.
@@ -15,8 +15,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 ## Capabilities
 
 - **CAP-1**
-  - **intent:** Admin creates and verifies teacher accounts and assigns them to classes (many-to-many); students self-register with name + class code, give guardian consent, and provide a guardian email that must belong to an approved parent (CAP-12) before a class teacher or the admin can approve them out of their Pending-gated state. A student can request a guardian email correction, which the admin approves.
-  - **success:** A student whose guardian email matches no approved parent cannot register; an unapproved student is invisible on every roster and leaderboard and cannot log any progress; once approved, they appear everywhere and can act. See `roles-and-permissions.md`.
+  - **intent:** Admin creates and verifies teacher accounts and assigns them to classes (many-to-many); students self-register with name + class code, give guardian consent, and provide a guardian email that must belong to an approved parent (CAP-12) before a class teacher or the admin can approve them out of their Pending-gated state. A pending student can log in at once and sees only a pending-approval message; a rejected one sees only that the registration was not accepted. A student can request a guardian email correction, which the admin approves.
+  - **success:** A student whose guardian email matches no approved parent cannot register; an unapproved student is invisible on every roster and leaderboard and cannot log any progress; a pending student who logs in sees the pending-approval message and nothing else; once approved, they appear everywhere and can act, and approval sends the family nothing. See `roles-and-permissions.md`.
 
 - **CAP-2**
   - **intent:** Any teacher assigned to a class can view and edit that class's roster, mark attendance per scheduled session (CAP-10), and set a per-student per-skill-area (language/song/dance) status of Not started/Learning/Confident, with full history retained and optional free-text notes written for the student's parent.
@@ -63,18 +63,25 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **success:** A pending or unconfirmed parent sees no student data; an approved parent sees exactly the students registered with their email, pending ones marked "Waiting for approval". See `roles-and-permissions.md`.
 
 - **CAP-13**
-  - **intent:** An approved parent picks a linked child from per-child summary cards (open and overdue homework counts) and sees that child's homework, attendance history, skill status with history, teacher notes, streak, badges, team and leaderboard, sessions and leave answers, and teachers. The parent also has a My Profile page like the teacher's.
+  - **intent:** An approved parent picks a linked child from per-child summary cards (open and overdue homework counts) and sees that child's homework, attendance history, skill status with history, teacher notes, streak, badges, team and leaderboard, sessions and leave answers, and teachers. The parent also sees each linked child's username and PIN (CAP-15), and has a My Profile page like the teacher's.
   - **success:** The parent can change nothing about homework, attendance, skills, or notes, and sees no other student's personal data beyond what the leaderboard shows the child. See `roles-and-permissions.md`.
 
 - **CAP-14**
   - **intent:** Any teacher assigned to a class, or the admin, writes that class's syllabus, one per school year (September to August): optional formatted text in a chosen content language, plus optional links. Students enrolled in the class see it on their class page.
   - **success:** A student sees the current school year's syllabus of a class they are enrolled in, or the newest one when this year has none, with its formatting and in the font of its language; a teacher not assigned to the class can neither see nor change it; a syllabus may consist of links only.
 
+- **CAP-15**
+  - **intent:** A student's username and PIN reach the family without asking the admin or a teacher: they are shown on the registration confirmation screen, emailed to the parent's address with a link to the login page, and shown in the parent's own account, where the parent can reset the PIN.
+  - **success:** Right after registering, the family can log the student in with what the screen or the email shows; a parent sees the username and current PIN of every linked child, pending ones included; after a parent's reset the old PIN stops working and the parent's account shows the new one. See `roles-and-permissions.md`.
+
 ## Constraints
 
 - Teachers are created and verified admin-side only — no teacher self-registration.
 - Student registration requires guardian consent, the email of an approved parent account, and Pending-state gating before any visibility or activity, to guard against dummy/duplicate sign-ups. Parents register and are approved first; the parent's already-confirmed email replaces the separate guardian-email confirmation.
-- Parent access is read-only except setting attendance intent and submitting deletion requests: parents guide the student, never complete work for them.
+- Parent access is read-only except setting attendance intent, resetting a linked child's PIN, and submitting deletion requests: parents guide the student, never complete work for them.
+- Approval delivers nothing to the family: no credentials and no email. The family learns of it in the app only.
+- The parent's account is the only always-current source of a child's PIN; the confirmation screen and the registration email are copies that go stale after a reset.
+- A PIN is never stored readable. At approval the approver sees the username and that the family already has the PIN; a registration that got no credentials gets them at approval, shown once to the approver. Reset PIN by a teacher or the admin stays as it is.
 - No reason or medical detail is collected for Sick leave, and Sick is never shown to classmates or team.
 - Visibility is class-scoped, not teacher-owned: every teacher assigned to a class shares full view/edit of that class; a teacher sees nothing for classes they're not assigned to.
 - Skill-status changes retain full history, not just the current value, so a substitute teacher has continuity.
@@ -99,7 +106,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 
 ## Non-goals
 
-- Parent notifications (email or push) — a later stage.
+- Parent notifications (email or push) about class activity or approval — a later stage. The credentials email at student registration is an account email, like the email confirmation, and is in scope.
 - More than one parent account per family, in-app parent-teacher messaging, parents editing the child's profile, changing the parent email, and teachers approving parents.
 - A structured Duolingo-style curriculum engine (lesson sequencing, spaced repetition, adaptive difficulty, speech recognition) — only plain outbound reference links are in scope for v1.
 - Embedded in-app media player/preview for reference links — v1 links open externally as plain "Open reference" actions.
@@ -111,7 +118,7 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
 
 ## Success signal
 
-V1 ships directly to the school's own teachers — no separate requirements-gathering round first — and is validated by one real Sunday-session run end-to-end: the admin onboards a teacher, a teacher approves a pending student, marks attendance, assigns a one-off and a recurring homework item with a reference link, the student marks it done, the teacher reviews it, and the student's streak, badges, and team-leaderboard position update correctly. Iteration afterward is driven by real teacher feedback, not further speculation. For the parent role: the share of homework marked Done by its due date rises compared with the term before parent accounts, without a growing gap between Done and Reviewed.
+V1 ships directly to the school's own teachers — no separate requirements-gathering round first — and is validated by one real Sunday-session run end-to-end: the admin onboards a teacher, a teacher approves a pending student, marks attendance, assigns a one-off and a recurring homework item with a reference link, the student marks it done, the teacher reviews it, and the student's streak, badges, and team-leaderboard position update correctly. Iteration afterward is driven by real teacher feedback, not further speculation. For the parent role: the share of homework marked Done by its due date rises compared with the term before parent accounts, without a growing gap between Done and Reviewed. For credentials: a family registers a student and logs them in without contacting the admin or a teacher.
 
 ## Assumptions
 
@@ -121,6 +128,8 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 - Streaks stay weekly: if a class meets on more than one day in a week, attending any session that week qualifies.
 - An unanswered session is shown as "not answered" and treated as expected; no reason is collected for leave.
 - Removing a class day cancels every class session on that day.
+- Student registration succeeds even when the credentials email cannot be sent; the confirmation screen and the parent's account still carry the credentials.
+- A parent's PIN reset behaves like the teacher's: the old PIN stops working at once and the student is signed out everywhere. No email is sent on a reset.
 
 ## Open Questions
 
@@ -136,3 +145,6 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 - How does a parent regain access after losing access to their email?
 - Should a parent see a homework's content? Today the parent sees its title, due date, status, and reference links, not the content the teacher wrote.
 - Should the syllabus text be required, as homework content is? It is optional for now.
+- Today a PIN is shown once and cannot be displayed again. A parent seeing the current PIN at any time needs a PIN the app can display again. Accept storing it readable, or show the parent the username only and let Reset PIN reveal a new one? Open for the parent's view only; the approver's side is settled.
+- A guardian email correction moves a student to another parent, but the former parent still holds the PIN from the registration email. Should the move reset the PIN?
+- The credentials email needs production email sending, which is deferred to a release task. Is that task a precondition for CAP-15?
