@@ -2204,3 +2204,36 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   the migration's data steps are tested only on an empty table.
   Not checked by hand in a browser by a person; the Tibetan text "ཐོ་འགོད་བྱས་ཟིན།" was written by
   the assistant and needs a reader's check.
+
+- 2026-10-13: #103 logged, not built. Reported (user): "why my student are getting two
+  homework?" — students of Senior Dance class see the weekly song homework
+  "གཉམ་གཞས་ཉོན་རོགས།" twice, due 2026-10-18 and due 2026-10-19.
+  Found in the hosted database (read only): two weekly series with that title in the class.
+  The first (`87204993…`, start 2026-10-12) was created on 2026-10-12 at 07:00 Munich,
+  before #96 was live, so no copy appeared; it was ended the same day (`ends_on`
+  2026-10-12). The second (`fae55974…`, start 2026-10-11) was created at 08:08 and got its
+  copy at once (due 10-18). The nightly job of 2026-10-13 03:00 UTC then made the ended
+  series' copy for the week starting 2026-10-12 (due 10-19).
+  Cause: `endSeries` sets `ends_on` to today
+  (`src/routes/teacher/classes/[id]/homework/[assignmentId]/+page.server.ts`), and
+  `generate_recurring_homework_for_series()` (0040) still makes every week whose start is on
+  or before `ends_on` (`period <= ends_on`), including weeks not yet made when the series
+  was ended. `endSeries` also takes today from UTC (`toISOString()`), not Munich.
+  Open for planning: whether ending means "no new copies from now on" (weeks not yet made
+  are never made, catch-up included) or keeps weeks that started before the end; whether
+  the teacher's end dialog should say what happens to this week's copy.
+  Hosted data not changed: the stray copy (due 10-19) is still on the students' pages.
+
+- 2026-10-13: #103 built on `main`. Spec:
+  `implementation-artifacts/spec-103-ended-series-no-new-copies.md`.
+  Decided (user, 2026-10-13): ending means "no new copies from the moment it is ended"
+  (option 1).
+  Built: migration `0046_ended_series_no_new_copies.sql` -- a series whose `ends_on` is today
+  or earlier makes no copy at all, from the nightly job or on creation, weeks not yet made
+  included; existing copies are untouched. `endSeries` and the series page take today from
+  Munich. Tests, check and build pass on a reset local database.
+  Not pushed to the hosted database. The stray copy there (due 2026-10-19, Senior Dance
+  class) is still on the students' pages: archive it in the app or delete the ended series.
+  Known limits (in `deferred-work.md`): ending leaves the copies students already have, and
+  the end dialog does not say so; other homework pages still take today from UTC; nothing
+  tests the action's date. Not checked by hand in a browser by a person.

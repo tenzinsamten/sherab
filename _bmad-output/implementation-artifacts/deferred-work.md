@@ -313,3 +313,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-102-attendance-corrections.md`
   summary: The one-time streak recompute in 0045 and its two proofs (no mark changed; stored streak equals `compute_student_streak`) are tested only on an empty table: `supabase db reset` applies the migration before any mark exists.
   evidence: #102 review G4. The data steps were replayed by hand in a rolled-back transaction on a local database with 12 re-marked (session, student) pairs and passed; no automated test applies a migration to existing data.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103-ended-series-no-new-copies.md`
+  summary: Ending a weekly series leaves the copies students already have, so a teacher who creates a wrong series, ends it and creates a replacement still gives students two homeworks; the end dialog (`homework_series_end_confirm`) does not say so.
+  evidence: #103 review. Since #96 a series gets its copy at creation, and ending never touches existing copies (decided in 3-2, kept in #103). The teacher has to archive the copy by hand. Options: say it in the dialog, or offer to archive this week's copy when ending.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103-ended-series-no-new-copies.md`
+  summary: Homework pages other than the series page still take "today" from UTC, so between 00:00 and 02:00 in Munich a series ended just then shows "Ended" on its own page but still counts as open in the teacher's list and dashboard.
+  evidence: #103 review. `new Date().toISOString().slice(0, 10)` in `src/routes/teacher/+page.server.ts:58`, `teacher/classes/[id]/+page.server.ts:228`, `teacher/classes/[id]/homework/+page.server.ts:51` and the four student homework/class loaders; `isOpen` compares `endsOn <= today`. Pre-existing for due dates too. Fix: `todayInBerlin()` in all of them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103-ended-series-no-new-copies.md`
+  summary: Teachers can still write `homework_assignments.ends_on` directly through the API (0005 column grant): setting it back to null on an ended series makes the next nightly run catch up every week skipped meanwhile, although the dialog says ending cannot be undone.
+  evidence: #103 review. Pre-existing (a null `ends_on` resumed a series before #103 too); the app has no such action. Fix: a trigger that lets `ends_on` be set once, to today or earlier.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103-ended-series-no-new-copies.md`
+  summary: No test covers the `endSeries` action or the series page's load (the route has no `page.server.spec.ts`), so nothing pins that the end date is Munich's.
+  evidence: #103 review. The database rule is tested in `rls.spec.ts`; the action's date is a one-line `todayInBerlin()` call checked by reading.
