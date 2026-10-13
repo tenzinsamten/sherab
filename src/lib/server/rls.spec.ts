@@ -3507,8 +3507,8 @@ describe.skipIf(!reachable)(
 			expect(afterEndInstances).toEqual(preEndSnapshot);
 		});
 
-		it('ending a series before its first generator run stops periods after ends_on, while periods at/before it still generate', async () => {
-			const today = new Date().toISOString().slice(0, 10);
+		it('#103 a series ended before its first generator run gets no copy, not even for weeks at or before ends_on', async () => {
+			const today = todayInBerlin();
 			const startDate = addDays(today, -8); // periods: today-8, today-1
 			const assignmentId = await createRecurringAssignment({
 				classId: classAId,
@@ -3517,10 +3517,8 @@ describe.skipIf(!reachable)(
 				dueOffsetDays: 0
 			});
 
-			// ends_on = today-8: excludes the today-1 period (> ends_on),
-			// keeps the today-8 period (<= ends_on) -- proves the boundary is
-			// evaluated per-period, not "skip the whole series if any period
-			// is past ends_on".
+			// ends_on = today-8: the today-8 period is not after ends_on, and
+			// it is still not made -- an ended series makes nothing.
 			const { error: endError } = await teacherA.client
 				.from('homework_assignments')
 				.update({ ends_on: startDate })
@@ -3533,8 +3531,99 @@ describe.skipIf(!reachable)(
 				.from('homework_instances')
 				.select('period_start')
 				.eq('assignment_id', assignmentId);
-			expect(instances).toHaveLength(1);
-			expect(instances?.[0].period_start).toBe(startDate);
+			expect(instances).toEqual([]);
+		});
+
+		it('#103 a series created and ended on the same day gets no copy from the nightly function', async () => {
+			const today = todayInBerlin();
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate: today,
+				dueOffsetDays: 7
+			});
+			const { error: endError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ ends_on: today })
+				.eq('id', assignmentId);
+			expect(endError).toBeNull();
+
+			await runGenerator();
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('period_start')
+				.eq('assignment_id', assignmentId);
+			expect(instances).toEqual([]);
+		});
+
+		it('#103 a series with a copy and a missed week gets no catch-up week once it is ended, and its copy is untouched', async () => {
+			const today = todayInBerlin();
+			const startDate = addDays(today, -7); // periods: today-7, today
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 7
+			});
+			const generateUpTo = (day: string) =>
+				adminClient.rpc('generate_recurring_homework_for_series', {
+					p_assignment_id: assignmentId,
+					p_today: day
+				});
+			const copies = async () =>
+				(
+					await adminClient
+						.from('homework_instances')
+						.select('id, period_start, due_date, created_at')
+						.eq('assignment_id', assignmentId)
+						.order('period_start', { ascending: true })
+				).data;
+
+			// Only the first week is made; this week's copy is still missing.
+			expect((await generateUpTo(startDate)).data).toBe(1);
+			const before = await copies();
+			expect(before?.map((i) => i.period_start)).toEqual([startDate]);
+
+			const { error: endError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ ends_on: today })
+				.eq('id', assignmentId);
+			expect(endError).toBeNull();
+
+			expect((await generateUpTo(today)).data).toBe(0);
+			await runGenerator();
+			expect(await copies()).toEqual(before);
+		});
+
+		it('#103 a series whose ends_on is still ahead keeps getting its weeks', async () => {
+			const today = todayInBerlin();
+			const startDate = addDays(today, -7); // periods: today-7, today
+			const assignmentId = await createRecurringAssignment({
+				classId: classAId,
+				createdBy: teacherA,
+				startDate,
+				dueOffsetDays: 0
+			});
+			const { error: endError } = await teacherA.client
+				.from('homework_assignments')
+				.update({ ends_on: addDays(today, 1) })
+				.eq('id', assignmentId);
+			expect(endError).toBeNull();
+
+			const { data: count, error } = await adminClient.rpc(
+				'generate_recurring_homework_for_series',
+				{ p_assignment_id: assignmentId, p_today: today }
+			);
+			expect(error).toBeNull();
+			expect(count).toBe(2);
+
+			const { data: instances } = await adminClient
+				.from('homework_instances')
+				.select('period_start')
+				.eq('assignment_id', assignmentId)
+				.order('period_start', { ascending: true });
+			expect(instances?.map((i) => i.period_start)).toEqual([startDate, today]);
 		});
 
 		it('a direct client insert into homework_instances for a recurring assignment is still rejected (AD-8, Story 3-1 restriction unchanged)', async () => {
@@ -3926,7 +4015,7 @@ describe.skipIf(!reachable)(
 			expect(instances[103].period_start).toBe(addDays(startDate, 103 * 7));
 		}, 30000);
 
-		it('#96 a paused series and a week past ends_on get no copy, as with the nightly function', async () => {
+		it('#96, #103 a paused series and an ended series get no copy, as with the nightly function', async () => {
 			const today = todayInBerlin();
 			const pausedId = await createRecurringAssignment({
 				classId: classAId,
@@ -3951,11 +4040,9 @@ describe.skipIf(!reachable)(
 				.from('homework_assignments')
 				.update({ ends_on: addDays(today, -7) })
 				.eq('id', endedId);
-			expect((await firstCopies(teacherA.client, endedId)).data).toBe(2);
-			expect((await instancesOf(endedId)).map((i) => i.period_start)).toEqual([
-				addDays(today, -14),
-				addDays(today, -7)
-			]);
+			// #103: ended a week ago with two weeks never made -- none is made.
+			expect((await firstCopies(teacherA.client, endedId)).data).toBe(0);
+			expect(await instancesOf(endedId)).toEqual([]);
 		});
 
 		it('column-privilege fix: an authorized teacher cannot UPDATE due_date/period_start on homework_instances, even though they can UPDATE archived_at/archived_by (deferred Story 3-1 gap, now closed)', async () => {

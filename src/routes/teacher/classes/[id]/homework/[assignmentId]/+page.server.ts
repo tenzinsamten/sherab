@@ -1,3 +1,4 @@
+import { todayInBerlin } from '$lib/berlin-date';
 import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
 import { CLASS_MESSAGES, HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
@@ -69,7 +70,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			if (!studentNameById.has(id)) studentNameById.set(id, m.homework_former_student());
 		}
 	}
-	const today = new Date().toISOString().slice(0, 10);
+	const today = todayInBerlin();
 	const [assignment] = buildAssignmentViews(
 		[assignmentRow as AssignmentRow],
 		details.instances,
@@ -354,12 +355,13 @@ export const actions: Actions = {
 			});
 		}
 
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayInBerlin();
 
 		// Boundaries: ending only ever changes homework_assignments -- the
-		// generator's own "not past ends_on" check (migration) is what
-		// actually stops future instance creation; already-generated
-		// instances are never touched here.
+		// generator's own "ended" check (0046, #103: ends_on is today or
+		// earlier, today in Munich on both sides) is what stops every further
+		// copy, weeks not yet made included; already-generated instances are
+		// never touched here.
 		// .or('ends_on.is.null,ends_on.gt.<today>') (review finding #6) --
 		// without this, a second ?/endSeries submission for an already-ended
 		// series moves ends_on forward, re-opening the window for periods
