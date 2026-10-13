@@ -505,6 +505,12 @@ test('requests approve: no team field, one click approves and the message names 
 		await expect(approve).toBeEnabled();
 		await approve.click();
 		await expect(page.locator('ix-message-bar')).toContainText(`${registrationName} was approved`);
+		// #100: a registration still on a `pending-` address gets its username
+		// and one-time PIN at approval, as before.
+		await expect(page.locator('ix-message-bar')).toContainText('One-time sign-in');
+		const minted = page.locator('ix-message-bar .credential');
+		await expect(minted).toHaveCount(2);
+		await expect(minted.nth(1)).toHaveText(/^\d{6}$/);
 		expect(approvePosts).toHaveLength(1);
 		const posted = new URLSearchParams(approvePosts[0]);
 		expect(posted.get('studentId')).toBe(studentId);

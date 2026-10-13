@@ -124,7 +124,14 @@
 		notifications?: number;
 	};
 
+	// #100: a student who is not approved (pending or rejected) has only the
+	// status page, so no menu entries and no account page.
+	let unapprovedStudent = $derived(
+		data.profile?.role === 'student' && data.profile.status !== 'approved'
+	);
+
 	let navItems = $derived.by((): NavItem[] => {
+		if (unapprovedStudent) return [];
 		const requests = {
 			href: resolve('/requests'),
 			label: m.nav_requests(),
@@ -266,11 +273,13 @@
 					{/each}
 					<ix-divider></ix-divider>
 				{/if}
-				<ix-dropdown-item
-					icon="user"
-					label={m.nav_account()}
-					onclick={() => void goto(resolve('/account'))}
-				></ix-dropdown-item>
+				{#if !unapprovedStudent}
+					<ix-dropdown-item
+						icon="user"
+						label={m.nav_account()}
+						onclick={() => void goto(resolve('/account'))}
+					></ix-dropdown-item>
+				{/if}
 				<ix-dropdown-item icon="log-out" label={m.nav_sign_out()} onclick={() => void signOut()}
 				></ix-dropdown-item>
 			</ix-avatar>

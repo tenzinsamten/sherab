@@ -295,7 +295,7 @@ test("a parent opens their child's team from the child's page, and no other team
 	await expectNotFound(page, teamEmpty);
 });
 
-test('a pending student gets "not found"; signed out, the sign-in page', async ({
+test('a pending student is sent to the pending page (#100); signed out, the sign-in page', async ({
 	page,
 	browser
 }) => {
@@ -309,14 +309,21 @@ test('a pending student gets "not found"; signed out, the sign-in page', async (
 		await context.close();
 	}
 
-	// A pending student can sign in, but may not open any team.
+	// A pending student can sign in, but may not open any team: since #100
+	// every page but the pending page sends them there. (The database's own
+	// refusal of team_students() for a pending student is in rls.spec.ts.)
 	await page.goto('/login');
 	await ready(page);
 	await page.locator('#email').fill(pendingStudent.email);
 	await page.locator('#password').fill(pendingStudent.password);
 	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).not.toHaveURL(/\/login/);
+	await expect(page).toHaveURL(/\/student\/pending$/);
 
-	await expectNotFound(page, teamA);
-	await expectNotFound(page, teamEmpty);
+	for (const teamId of [teamA, teamEmpty]) {
+		await page.goto(`/teams/${teamId}`);
+		await expect(page).toHaveURL(/\/student\/pending$/);
+		for (const name of [...NAMES_A, NAME_B]) {
+			await expect(page.getByText(name)).toHaveCount(0);
+		}
+	}
 });

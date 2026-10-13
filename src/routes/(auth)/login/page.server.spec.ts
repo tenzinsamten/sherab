@@ -7,12 +7,14 @@ function loginEvent(signInError: unknown, resendError: unknown = null) {
 	body.set('password', 'secret123');
 	const signInWithPassword = vi.fn().mockResolvedValue({ error: signInError });
 	const resend = vi.fn().mockResolvedValue({ error: resendError });
+	const cookies = { delete: vi.fn() };
 	const event = {
 		request: new Request('https://app.test/login', { method: 'POST', body }),
 		url: new URL('https://app.test/login'),
+		cookies,
 		locals: { supabase: { auth: { signInWithPassword, resend } } }
 	} as unknown as Parameters<typeof actions.default>[0];
-	return { event, signInWithPassword, resend };
+	return { event, signInWithPassword, resend, cookies };
 }
 
 describe('login load', () => {
@@ -48,10 +50,20 @@ describe('login action', () => {
 		});
 	});
 
-	it('does not resend on a wrong password', async () => {
-		const { event, resend } = loginEvent({ code: 'invalid_credentials', message: 'x' });
+	it('does not resend on a wrong password, and keeps the join receipt cookie', async () => {
+		const { event, resend, cookies } = loginEvent({ code: 'invalid_credentials', message: 'x' });
 		const result = await actions.default(event);
 		expect(resend).not.toHaveBeenCalled();
 		expect(result).toMatchObject({ status: 400 });
+		expect(cookies.delete).not.toHaveBeenCalled();
+	});
+
+	it('#100: a successful sign-in deletes the join receipt cookie and goes to /', async () => {
+		const { event, cookies } = loginEvent(null);
+		await expect(actions.default(event)).rejects.toMatchObject({ status: 303, location: '/' });
+		expect(cookies.delete).toHaveBeenCalledTimes(1);
+		expect(cookies.delete).toHaveBeenCalledWith('join_pending_receipt', {
+			path: '/join/pending'
+		});
 	});
 });

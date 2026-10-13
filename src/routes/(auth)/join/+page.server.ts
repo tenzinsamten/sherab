@@ -5,8 +5,19 @@ import {
 	studentRegistrationState,
 	type StudentRegistrationState
 } from '$lib/server/parent-registration';
-import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
-import { createSupabaseAdminClient } from '$lib/supabase/admin';
+import {
+	MAX_CREDENTIAL_ATTEMPTS,
+	PENDING_EMAIL_PREFIX,
+	isDuplicateEmailError,
+	takenStudentUsernames
+} from '$lib/server/student-credentials';
+import {
+	STUDENT_EMAIL_DOMAIN,
+	generateStudentPin,
+	generateUniqueStudentUsername,
+	studentUsernameToEmail
+} from '$lib/server/temp-password';
+import { createSupabaseAdminClient, updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,9 +32,73 @@ function duplicateMessage(state: StudentRegistrationState): string | null {
 	return null;
 }
 
-/** The registration-time auth address (Story 7-2); approval replaces it. */
+/**
+ * The registration-time auth address (Story 7-2): the only shape
+ * handle_new_user() accepts for a student sign-up. #100 replaces it with the
+ * username address right after the account exists.
+ */
 function pendingStudentEmail(): string {
-	return `pending-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`;
+	return `${PENDING_EMAIL_PREFIX}${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`;
+}
+
+/**
+ * #100: gives a just-created student the username address and a PIN, the
+ * way approval did before. Auth's unique email is the guarantee for the
+ * username: on a taken address the next one is tried, with a new PIN.
+ *
+ * Returns the credentials; `null` when they could not be set or recorded
+ * (the account stays on its placeholder address in the profile, so approval
+ * makes them); `'exhausted'` when every try met a taken username.
+ *
+ * The PIN is the Auth password. It is returned for the confirmation cookie
+ * and is never stored or logged here.
+ */
+async function assignCredentials(
+	adminClient: ReturnType<typeof createSupabaseAdminClient>,
+	studentId: string,
+	registrationName: string
+): Promise<{ username: string; pin: string } | null | 'exhausted'> {
+	try {
+		const taken = await takenStudentUsernames(adminClient);
+		for (let attempt = 0; attempt < MAX_CREDENTIAL_ATTEMPTS; attempt++) {
+			const username = generateUniqueStudentUsername(registrationName, taken);
+			const pin = generateStudentPin();
+			const email = studentUsernameToEmail(username);
+			const { error } = await updateAuthUserEmailAndPassword(studentId, { email, password: pin });
+			if (error) {
+				if (isDuplicateEmailError(error)) {
+					taken.add(username);
+					continue;
+				}
+				console.error('(auth)/join register: setting the username failed', error.message);
+				return null;
+			}
+
+			// The Admin API call changed auth.users only; nothing copies an
+			// updated address to the profile. Approval tells by the profile
+			// address whether a student has credentials, so without this row
+			// the credentials are not handed out: approval then makes new ones.
+			const { data: saved, error: profileError } = await adminClient
+				.from('profiles')
+				.update({ email })
+				.eq('id', studentId)
+				.select('id')
+				.maybeSingle();
+			if (profileError || !saved) {
+				console.error(
+					'(auth)/join register: recording the username failed',
+					profileError?.message ?? 'no profile row'
+				);
+				return null;
+			}
+			return { username, pin };
+		}
+		console.error('(auth)/join register: no free username after retries');
+		return 'exhausted';
+	} catch (unexpected) {
+		console.error('(auth)/join register: credentials failed', unexpected);
+		return null;
+	}
 }
 
 export const load: PageServerLoad = async ({ locals: { safeGetSession } }) => {
@@ -86,12 +161,11 @@ export const actions: Actions = {
 			return fail(400, { error: refusal, guardianEmail });
 		}
 
-		// The auth user gets a synthetic, pre-confirmed address and a random
-		// password nobody ever sees: no mail is sent, and siblings never
-		// collide on Auth's unique email. Real credentials are minted at
-		// teacher approval (requests/+page.server.ts), which rewrites this
-		// address -- the `pending-` prefix is skipped by its username scan.
-		const { error: createError } = await adminClient.auth.admin.createUser({
+		// The auth user is created on a synthetic, pre-confirmed `pending-<uuid>`
+		// address with a random password: no mail is sent, and it is the only
+		// address handle_new_user() (0024) accepts for a student sign-up. The
+		// username and PIN follow right below (#100).
+		const { data: created, error: createError } = await adminClient.auth.admin.createUser({
 			email: pendingStudentEmail(),
 			password: crypto.randomUUID(),
 			email_confirm: true,
@@ -135,9 +209,38 @@ export const actions: Actions = {
 			return fail(400, { error: m.join_error_generic(), guardianEmail });
 		}
 
+		// #100: the student gets the username and PIN now, not at approval.
+		// From here on the registration has succeeded whatever happens: without
+		// credentials the page shows its generic text, and approval makes them
+		// as it does for a registration from before #100. The one exception is
+		// five taken usernames in a row, which ends the registration and removes
+		// the account.
+		const studentId = created.user?.id;
+		let credentials: { username: string; pin: string } | null = null;
+		if (studentId) {
+			const outcome = await assignCredentials(adminClient, studentId, registrationName);
+			if (outcome === 'exhausted') {
+				const { error: deleteError } = await adminClient.auth.admin.deleteUser(studentId);
+				if (!deleteError) {
+					return fail(400, { error: m.join_error_generic(), guardianEmail });
+				}
+				// The account could not be removed and would block registering
+				// again (#98), so the registration stands, without credentials:
+				// approval makes them.
+				console.error('(auth)/join register: cleanup failed', deleteError.message);
+			} else {
+				credentials = outcome;
+			}
+		}
+
 		cookies.set(
 			JOIN_RECEIPT_COOKIE,
-			JSON.stringify({ name: registrationName, className, classCode } satisfies JoinReceipt),
+			JSON.stringify({
+				name: registrationName,
+				className,
+				classCode,
+				...(credentials ?? {})
+			} satisfies JoinReceipt),
 			{
 				path: '/join/pending',
 				maxAge: 60 * 10,

@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { isDuplicateSignup } from './signup-duplicate';
+import { isDuplicateEmailError } from './student-credentials';
 import { approvedParentExists, emailHasLogin } from './parent-registration';
 import { buildHomeworkProgress, type HomeworkHistoryRow } from './homework-status';
 import {
@@ -566,11 +567,17 @@ function defaultParent() {
  * `pending-<uuid>` address and user_metadata role 'student' plus the
  * guardian email. handle_new_user() links the approved parent with that
  * email, or refuses the whole sign-up. Defaults to a shared approved parent.
+ *
+ * #100: with `credentials` the action's second step follows -- the username
+ * address and the PIN on the auth user, and the address on the profile.
+ * `credentialsError` is that step's refusal (a taken username). Without
+ * `credentials` it is a registration from before #100.
  */
 async function signUpStudent(params: {
 	classId: string;
 	registrationName: string;
 	guardianEmail?: string;
+	credentials?: { username: string; pin: string };
 }) {
 	const guardianEmail = params.guardianEmail ?? (await defaultParent()).email;
 	const { data, error } = await adminClient.auth.admin.createUser({
@@ -585,7 +592,24 @@ async function signUpStudent(params: {
 			guardian_email: guardianEmail
 		}
 	});
-	return { data, error, id: data.user?.id ?? null };
+	const id = data.user?.id ?? null;
+	let credentialsError: { code?: string; message: string } | null = null;
+	if (id && params.credentials) {
+		const email = studentUsernameToEmail(params.credentials.username);
+		credentialsError = (
+			await updateAuthUserEmailAndPassword(id, { email, password: params.credentials.pin })
+		).error;
+		if (!credentialsError) {
+			const { error: profileError } = await adminClient
+				.from('profiles')
+				.update({ email })
+				.eq('id', id)
+				.select('id')
+				.single();
+			if (profileError) throw new Error(`Failed to record the username: ${profileError.message}`);
+		}
+	}
+	return { data, error, id, credentialsError };
 }
 
 /**
@@ -8516,18 +8540,31 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		return { username, pin };
 	}
 
-	it('Register: an approved parent email in any case links a pending student with a synthetic email', async () => {
+	/** #100: a username and PIN as the `register` action makes them. */
+	function newCredentials(registrationName: string) {
+		return {
+			username: generateUniqueStudentUsername(
+				`${registrationName} ${crypto.randomUUID().slice(0, 6)}`,
+				new Set()
+			),
+			pin: generateStudentPin()
+		};
+	}
+
+	it('Register: an approved parent email in any case links a pending student whose address is the username (#100)', async () => {
 		const parent = await createApprovedParent();
 		const typed = `  ${parent.email.toUpperCase()} `;
 		expect(await approvedParentExists(adminClient, typed)).toBe(true);
 
 		const registrationName = studentName('Register');
-		const { error, id } = await signUpStudent({
+		const credentials = newCredentials(registrationName);
+		const { error, credentialsError, id } = await signUpStudent({
 			classId,
 			registrationName,
-			guardianEmail: typed
+			guardianEmail: typed,
+			credentials
 		});
-		expect(error).toBeNull();
+		expect(error ?? credentialsError).toBeNull();
 
 		const { data: profile } = await adminClient
 			.from('profiles')
@@ -8537,7 +8574,224 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		expect(profile?.status).toBe('pending');
 		expect(profile?.parent_id).toBe(parent.id);
 		expect(profile?.guardian_email).toBe(typed.trim());
+		// The second step replaced the placeholder address with the username's.
+		expect(profile?.email).toBe(studentUsernameToEmail(credentials.username));
+	});
+
+	it('Register (#100): a taken username is refused as a duplicate and the account keeps its placeholder address', async () => {
+		const first = studentName('Taken A');
+		const credentials = newCredentials(first);
+		const one = await signUpStudent({ classId, registrationName: first, credentials });
+		expect(one.error ?? one.credentialsError).toBeNull();
+
+		const second = studentName('Taken B');
+		const two = await signUpStudent({
+			classId,
+			registrationName: second,
+			credentials: { username: credentials.username, pin: generateStudentPin() }
+		});
+		expect(two.error).toBeNull();
+		expect(two.credentialsError).not.toBeNull();
+		expect(isDuplicateEmailError(two.credentialsError!)).toBe(true);
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('email, status')
+			.eq('id', two.id!)
+			.single();
+		expect(profile?.status).toBe('pending');
 		expect(profile?.email).toMatch(/^pending-[0-9a-f-]+@students\.internal\.invalid$/);
+		// The first student's PIN still signs in.
+		await signIn(studentUsernameToEmail(credentials.username), credentials.pin);
+	});
+
+	it.each(['pending', 'rejected'] as const)(
+		'#100: a %s student signs in with the username and PIN and reads the own profile and nothing of a class',
+		async (status) => {
+			const registrationName = studentName(`Gate ${status}`);
+			const credentials = newCredentials(registrationName);
+			const { error, credentialsError, id } = await signUpStudent({
+				classId,
+				registrationName,
+				credentials
+			});
+			expect(error ?? credentialsError).toBeNull();
+
+			if (status === 'rejected') {
+				const { error: rejectError } = await teacher.client
+					.from('profiles')
+					.update({
+						status: 'rejected',
+						reviewed_by: teacher.id,
+						reviewed_at: new Date().toISOString()
+					})
+					.eq('id', id!)
+					.select('id')
+					.single();
+				expect(rejectError).toBeNull();
+			}
+
+			// The login page's own path: the bare username and the PIN.
+			const student = await signIn(
+				resolveLoginIdentifierToEmail(credentials.username),
+				credentials.pin
+			);
+
+			// Every profile the student can read is the own one.
+			const { data: profiles, error: profilesError } = await student
+				.from('profiles')
+				.select('id, status, role');
+			expect(profilesError).toBeNull();
+			expect(profiles).toEqual([{ id: id!, status, role: 'student' }]);
+
+			for (const table of [
+				'classes',
+				'class_enrollments',
+				'homework_assignments',
+				'homework_instances',
+				'homework_status_history',
+				'class_sessions',
+				'attendance_records'
+			] as const) {
+				const { data, error: readError } = await student.from(table).select('*');
+				expect(readError, table).toBeNull();
+				expect(data, table).toEqual([]);
+			}
+
+			// And the student cannot approve itself.
+			await student.from('profiles').update({ status: 'approved' }).eq('id', id!);
+			expect((await profileOf(id!))?.status).toBe(status);
+		},
+		30000
+	);
+
+	it.each(['pending', 'rejected'] as const)(
+		'#100: a signed-in %s student can write nothing: no join request, push subscription, deletion request or change to the own profile',
+		async (status) => {
+			const registrationName = studentName(`Writes ${status}`);
+			const credentials = newCredentials(registrationName);
+			const { error, credentialsError, id } = await signUpStudent({
+				classId,
+				registrationName,
+				credentials
+			});
+			expect(error ?? credentialsError).toBeNull();
+			if (status === 'rejected') {
+				const { error: rejectError } = await teacher.client
+					.from('profiles')
+					.update({
+						status: 'rejected',
+						reviewed_by: teacher.id,
+						reviewed_at: new Date().toISOString()
+					})
+					.eq('id', id!)
+					.select('id')
+					.single();
+				expect(rejectError).toBeNull();
+			}
+			const student = await signIn(studentUsernameToEmail(credentials.username), credentials.pin);
+
+			// Another class to ask for, a team and a parent to move to.
+			const otherCode = `W${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+			const { data: otherClass, error: classError } = await adminClient
+				.from('classes')
+				.insert({ name: `7-2 Other ${crypto.randomUUID().slice(0, 6)}`, code: otherCode })
+				.select('id')
+				.single();
+			expect(classError).toBeNull();
+			const otherParent = await createApprovedParent();
+			const teamId = await fixtureTeamId();
+
+			const join = await student.rpc('request_class_join', { p_code: otherCode });
+			expect(join.error, 'request_class_join').not.toBeNull();
+			const { data: joinRows } = await adminClient
+				.from('class_join_requests')
+				.select('id')
+				.eq('student_id', id!);
+			expect(joinRows).toEqual([]);
+
+			const endpoint = `https://push.example.test/${crypto.randomUUID()}`;
+			const push = await student.rpc('save_push_subscription', {
+				p_endpoint: endpoint,
+				p_p256dh: 'p256dh',
+				p_auth: 'auth',
+				p_locale: 'en'
+			});
+			expect(push.error, 'save_push_subscription').not.toBeNull();
+			const { data: pushRows } = await adminClient
+				.from('push_subscriptions')
+				.select('endpoint')
+				.eq('endpoint', endpoint);
+			expect(pushRows).toEqual([]);
+
+			const deletion = await student
+				.from('deletion_requests')
+				.insert({ student_id: id!, requested_by: id! });
+			expect(deletion.error, 'deletion_requests insert').not.toBeNull();
+			const { data: deletionRows } = await adminClient
+				.from('deletion_requests')
+				.select('id')
+				.eq('student_id', id!);
+			expect(deletionRows).toEqual([]);
+
+			const ownProfile = async () =>
+				(
+					await adminClient
+						.from('profiles')
+						.select('email, class_id, team_id, parent_id, status')
+						.eq('id', id!)
+						.single()
+				).data;
+			const before = await ownProfile();
+			expect(before?.status).toBe(status);
+			const attempts: Database['public']['Tables']['profiles']['Update'][] = [
+				{ email: `hijack-${crypto.randomUUID().slice(0, 8)}@${STUDENT_EMAIL_DOMAIN}` },
+				{ class_id: otherClass!.id },
+				{ team_id: teamId },
+				{ parent_id: otherParent.id }
+			];
+			if (status === 'rejected') attempts.push({ status: 'pending' });
+			for (const values of attempts) {
+				await student.from('profiles').update(values).eq('id', id!);
+				expect(await ownProfile(), JSON.stringify(values)).toEqual(before);
+			}
+		},
+		30000
+	);
+
+	it('#100: approval flips the status only; the same username and PIN keep working and the class opens', async () => {
+		const registrationName = studentName('Keep PIN');
+		const credentials = newCredentials(registrationName);
+		const { id } = await signUpStudent({ classId, registrationName, credentials });
+		const email = studentUsernameToEmail(credentials.username);
+		const student = await signIn(email, credentials.pin);
+		expect((await student.from('classes').select('id')).data).toEqual([]);
+
+		// The approve action for such a student: no Admin API call, no email.
+		const { error } = await teacher.client
+			.from('profiles')
+			.update({
+				status: 'approved',
+				reviewed_by: teacher.id,
+				reviewed_at: new Date().toISOString()
+			})
+			.eq('id', id!)
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+
+		const { data: profile } = await adminClient
+			.from('profiles')
+			.select('status, email, team_id')
+			.eq('id', id!)
+			.single();
+		expect(profile).toMatchObject({ status: 'approved', email });
+		expect(profile?.team_id).not.toBeNull();
+
+		// The session from before approval now reads the class, and the PIN
+		// from registration still signs in.
+		expect((await student.from('classes').select('id')).data).toEqual([{ id: classId }]);
+		await signIn(email, credentials.pin);
 	});
 
 	it('No parent: an unknown email is not found and the sign-up creates nothing', async () => {

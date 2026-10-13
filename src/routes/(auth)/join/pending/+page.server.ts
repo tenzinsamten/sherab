@@ -8,7 +8,9 @@ import type { PageServerLoad } from './$types';
  * still renders a true, if less specific, "pending" status rather than
  * bouncing the visitor elsewhere (see +page.svelte's generic fallback).
  */
-export const load: PageServerLoad = async ({ cookies }) => {
+export const load: PageServerLoad = async ({ cookies, setHeaders }) => {
+	// #100: the page may show a username and PIN; no cache keeps a copy.
+	setHeaders({ 'cache-control': 'no-store' });
 	const raw = cookies.get(JOIN_RECEIPT_COOKIE);
 	if (!raw) {
 		return { receipt: null };

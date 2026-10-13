@@ -6,6 +6,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatDay as formatIsoDay, formatInstant, num } from '$lib/format';
 	import { confirmAction, confirmWith, showToast } from '$lib/ix';
+	import CopyField from '$lib/components/CopyField.svelte';
 	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ActionData, PageProps } from './$types';
@@ -14,27 +15,32 @@
 
 	const pending = createPending();
 
-	// Approval shows the student's one-time username/PIN, so it stays on
-	// screen; rejected/cleared are short confirmations, so they're toasts.
-	// A partial approval (credentials live, record not saved) shows them too,
-	// as a warning -- its error toast no longer carries them (#41).
-	let credential = $derived(
-		form && 'username' in form && form.username && form.pin
-			? {
-					partial: !form.success,
-					message: form.success
-						? m.requests_outcome_approved({
-								name: form.studentName || '',
-								team: ('teamName' in form && form.teamName) || ''
-							})
-						: m.requests_error_approve_partial(),
-					fields: [
-						{ label: m.credential_username(), value: form.username },
-						{ label: m.credential_pin(), value: form.pin }
-					]
-				}
-			: null
-	);
+	// Approval shows the student's username, so it stays on screen;
+	// rejected/cleared are short confirmations, so they're toasts.
+	// #100: a student registered with a username and PIN keeps both, and the
+	// approver sees the username and a note that the family has the PIN. Only
+	// an older registration gets a one-time PIN here. A partial approval of
+	// such a one (credentials live, record not saved) shows them too, as a
+	// warning -- its error toast no longer carries them (#41).
+	let credential = $derived.by(() => {
+		if (!form || !('username' in form) || !form.username) return null;
+		const pin = 'pin' in form && form.pin ? form.pin : null;
+		if (!form.success && !pin) return null;
+		const names = {
+			name: form.studentName || '',
+			team: ('teamName' in form && form.teamName) || ''
+		};
+		const username = { label: m.credential_username(), value: form.username };
+		return {
+			partial: !form.success,
+			message: !form.success
+				? m.requests_error_approve_partial()
+				: pin
+					? m.requests_outcome_approved(names)
+					: m.requests_outcome_approved_has_pin(names),
+			fields: pin ? [username, { label: m.credential_pin(), value: pin }] : [username]
+		};
+	});
 
 	// Story 7-5: only the rows the viewer may decide count (never their own child).
 	let sickActionable = $derived(data.sickPending.filter((r) => !r.ownChild).length);
@@ -211,7 +217,11 @@
 			style="display:block; margin-bottom: var(--space-4);"
 		>
 			<span>{credential.message}</span>
-			<CredentialFields fields={credential.fields} />
+			{#if credential.fields.length > 1}
+				<CredentialFields fields={credential.fields} />
+			{:else}
+				<CopyField label={credential.fields[0].label} value={credential.fields[0].value} />
+			{/if}
 		</ix-message-bar>
 	{/if}
 

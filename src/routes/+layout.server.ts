@@ -40,6 +40,13 @@ export const load: LayoutServerLoad = async ({
 		.eq('id', user.id)
 		.single();
 
+	// #100: a student who is not approved yet has no menu. Reading the path
+	// makes this load run again on every navigation while that lasts, so the
+	// menu appears with the first page after approval, without a reload.
+	if (profile?.role === 'student' && profile.status !== 'approved') {
+		void url.pathname;
+	}
+
 	// B13 (#68): a login whose profile role isn't `parent` (in practice a
 	// teacher or admin) may also hold an approved parents row; getCapabilities
 	// is the single source for that. A parent-only login holds just `parent`,

@@ -1,20 +1,23 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { createSupabaseAdminClient, updateAuthUserEmailAndPassword } from '$lib/supabase/admin';
 import {
-	STUDENT_EMAIL_DOMAIN,
 	generateStudentPin,
 	generateUniqueStudentUsername,
 	studentEmailToUsername,
 	studentUsernameToEmail
 } from '$lib/server/temp-password';
+import {
+	MAX_CREDENTIAL_ATTEMPTS,
+	PENDING_EMAIL_PREFIX,
+	isDuplicateEmailError,
+	takenStudentUsernames
+} from '$lib/server/student-credentials';
 import { getCapabilities } from '$lib/server/capabilities';
 import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
 import { localizeName, localizedName, type LocalizedNames } from '$lib/localized-name';
 import type { Actions, PageServerLoad } from './$types';
-
-const MAX_CREDENTIAL_ATTEMPTS = 5;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -260,10 +263,11 @@ export const actions: Actions = {
 		// class): proves the caller is admin, or the teacher assigned to this
 		// student's class, and that the row is still Pending, before the
 		// privileged Admin API calls below (which bypass RLS entirely) run at
-		// all. This also gets us registration_name for username generation.
+		// all. This also gets us registration_name for username generation,
+		// and the address that tells whether the student has a username (#100).
 		const { data: student, error: fetchError } = await supabase
 			.from('profiles')
-			.select('id, registration_name')
+			.select('id, registration_name, email')
 			.eq('id', studentId)
 			.eq('role', 'student')
 			.eq('status', 'pending')
@@ -288,59 +292,51 @@ export const actions: Actions = {
 			return fail(400, { error: m.requests_no_teams_note(), studentId, studentName });
 		}
 
-		const adminClient = createSupabaseAdminClient();
+		// #100: a student registered since then already has a username and a
+		// PIN, which the family got at registration. Approval leaves both
+		// untouched and shows the approver the username only. Only an older
+		// registration, still on its `pending-<uuid>` placeholder address, gets
+		// its username and PIN here, as before.
+		const currentUsername = studentEmailToUsername(student.email ?? '');
+		const needsCredentials =
+			currentUsername === null || currentUsername.startsWith(PENDING_EMAIL_PREFIX);
 
-		// Existing usernames = local part of every already-assigned synthesized
-		// student email (the `pending-<uuid>` placeholder shape never collides
-		// with a slugified-name username -- see generatePendingRegistrationEmail).
-		const { data: existingProfiles } = await adminClient
-			.from('profiles')
-			.select('email')
-			.ilike('email', `%@${STUDENT_EMAIL_DOMAIN}`);
-		const existingUsernames = new Set(
-			(existingProfiles ?? [])
-				.map((p) => studentEmailToUsername(p.email))
-				.filter((u): u is string => u !== null && !u.startsWith('pending-'))
-		);
+		let username = currentUsername ?? '';
+		let pin: string | null = null;
 
-		let username = generateUniqueStudentUsername(student.registration_name, existingUsernames);
-		let pin = generateStudentPin();
-		let credentialsAssigned = false;
+		if (needsCredentials) {
+			const existingUsernames = await takenStudentUsernames(createSupabaseAdminClient());
+			let credentialsAssigned = false;
 
-		for (let attempt = 0; attempt < MAX_CREDENTIAL_ATTEMPTS; attempt++) {
-			// Goes through updateAuthUserEmailAndPassword (a direct Admin REST
-			// call), not adminClient.auth.admin.updateUserById() -- the SDK
-			// wraps every 500-status failure from this endpoint into a generic
-			// AuthRetryableFetchError with no `code` and a fixed "Error updating
-			// user" message, discarding the real Postgres error (`code:
-			// "23505"`) a duplicate-email collision actually returns. Without
-			// that code there is no way to tell "this email is already taken,
-			// try the next candidate" apart from any other failure.
-			const { error: updateAuthError } = await updateAuthUserEmailAndPassword(studentId, {
-				email: studentUsernameToEmail(username),
-				password: pin
-			});
+			for (let attempt = 0; attempt < MAX_CREDENTIAL_ATTEMPTS; attempt++) {
+				username = generateUniqueStudentUsername(student.registration_name, existingUsernames);
+				pin = generateStudentPin();
+				// Goes through updateAuthUserEmailAndPassword (a direct Admin REST
+				// call), not adminClient.auth.admin.updateUserById() -- the SDK
+				// wraps every 500-status failure from this endpoint into a generic
+				// AuthRetryableFetchError with no `code` and a fixed "Error updating
+				// user" message, discarding the real Postgres error (`code:
+				// "23505"`) a duplicate-email collision actually returns. Without
+				// that code there is no way to tell "this email is already taken,
+				// try the next candidate" apart from any other failure.
+				const { error: updateAuthError } = await updateAuthUserEmailAndPassword(studentId, {
+					email: studentUsernameToEmail(username),
+					password: pin
+				});
 
-			if (!updateAuthError) {
-				credentialsAssigned = true;
-				break;
+				if (!updateAuthError) {
+					credentialsAssigned = true;
+					break;
+				}
+				if (!isDuplicateEmailError(updateAuthError)) {
+					return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
+				}
+				existingUsernames.add(username);
 			}
 
-			const isDuplicate =
-				updateAuthError.code === '23505' ||
-				updateAuthError.code === 'email_exists' ||
-				/already.*registered|exists|duplicate/i.test(updateAuthError.message ?? '');
-			if (!isDuplicate) {
+			if (!credentialsAssigned) {
 				return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
 			}
-
-			existingUsernames.add(username);
-			username = generateUniqueStudentUsername(student.registration_name, existingUsernames);
-			pin = generateStudentPin();
-		}
-
-		if (!credentialsAssigned) {
-			return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
 		}
 
 		// Only now flip the status -- RLS (profiles_update_registration_review)
@@ -349,17 +345,16 @@ export const actions: Actions = {
 		// #99: no team_id is sent. The database puts the student in a team with
 		// the fewest students (0043) in this same update, and would ignore a
 		// team sent from here; the team comes back with the row. `email` is
-		// included here
-		// too: the Admin API call above only updated auth.users.email -- there
-		// is no trigger syncing that back onto profiles.email on UPDATE (only
-		// handle_new_user() populates it, and only on INSERT), so without this
-		// the profile row would keep showing its stale pending-<uuid>
-		// placeholder forever.
+		// included when credentials were minted above: the Admin API call only
+		// updated auth.users.email -- there is no trigger syncing that back
+		// onto profiles.email on UPDATE (only handle_new_user() populates it,
+		// and only on INSERT), so without this the profile row would keep
+		// showing its stale pending-<uuid> placeholder forever.
 		const { data: approved, error: updateProfileError } = await supabase
 			.from('profiles')
 			.update({
 				status: 'approved',
-				email: studentUsernameToEmail(username),
+				...(needsCredentials ? { email: studentUsernameToEmail(username) } : {}),
 				reviewed_by: user.id,
 				reviewed_at: new Date().toISOString()
 			})
@@ -371,6 +366,12 @@ export const actions: Actions = {
 			// The last team was deleted after the check above. The student is
 			// still pending; a later approval mints fresh credentials.
 			return fail(400, { error: m.requests_no_teams_note(), studentId, studentName });
+		}
+
+		if (updateProfileError && pin === null) {
+			// #100: nothing was minted, so there is nothing to show. The student
+			// is still pending and keeps the username and PIN from registration.
+			return fail(500, { error: m.requests_error_approve_failed(), studentId, studentName });
 		}
 
 		if (updateProfileError) {
@@ -398,7 +399,8 @@ export const actions: Actions = {
 			studentName,
 			teamName: team ? localizedName(team) : '',
 			username,
-			pin
+			// #100: no `pin` for a student who got it at registration.
+			...(pin === null ? {} : { pin })
 		};
 	},
 

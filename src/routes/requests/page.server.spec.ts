@@ -339,7 +339,18 @@ describe('approve (student)', () => {
 		return { e, updates };
 	}
 
-	const pendingStudent = ok({ id: 's1', registration_name: 'Tenzin Dolma' });
+	// An older registration: still on its placeholder address.
+	const pendingStudent = ok({
+		id: 's1',
+		registration_name: 'Tenzin Dolma',
+		email: 'pending-0b0e1c1e-0000-4000-8000-000000000000@students.internal.invalid'
+	});
+	// #100: registered with a username and PIN.
+	const registeredStudent = ok({
+		id: 's1',
+		registration_name: 'Tenzin Dolma',
+		email: 'tenzindolma2@students.internal.invalid'
+	});
 	const someTeam = ok({ id: 't1' });
 
 	it('approves a pending student without any guardian email confirmation (Story 7-2)', async () => {
@@ -426,6 +437,59 @@ describe('approve (student)', () => {
 			status: 500,
 			data: { error: m.requests_error_approve_partial(), username: 'tenzindolma' }
 		});
+	});
+
+	it('older registration: mints the username and PIN and writes the address to the profile', async () => {
+		const { e, updates } = approveEvent({
+			profiles: [pendingStudent, ok({ id: 's1', teams: { name: 'Snow Lions' } })],
+			teams: [someTeam]
+		});
+		const result = (await actions.approve(e)) as { username: string; pin: string };
+		expect(result).toMatchObject({ success: true, username: 'tenzindolma' });
+		expect(result.pin).toMatch(/^[0-9]{6}$/);
+		expect(updateAuthUserEmailAndPassword).toHaveBeenCalledWith('s1', {
+			email: 'tenzindolma@students.internal.invalid',
+			password: result.pin
+		});
+		expect(updates[0].values).toMatchObject({
+			status: 'approved',
+			email: 'tenzindolma@students.internal.invalid'
+		});
+	});
+
+	it('#100: a student registered with a username keeps username and PIN; only the status changes', async () => {
+		const { e, updates } = approveEvent({
+			profiles: [registeredStudent, ok({ id: 's1', teams: { name: 'Snow Lions' } })],
+			teams: [someTeam]
+		});
+		const result = await actions.approve(e);
+		expect(result).toMatchObject({
+			success: true,
+			action: 'approved',
+			studentId: 's1',
+			teamName: 'Snow Lions',
+			username: 'tenzindolma2'
+		});
+		expect(result).not.toHaveProperty('pin');
+		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
+		expect(updates).toHaveLength(1);
+		expect(updates[0].values).toMatchObject({ status: 'approved', reviewed_by: 'teacher1' });
+		expect(updates[0].values).not.toHaveProperty('email');
+		expect(updates[0].values).not.toHaveProperty('team_id');
+	});
+
+	it('#100: a failed update for such a student reports the plain failure, with no credentials', async () => {
+		const { e } = approveEvent({
+			profiles: [registeredStudent, { data: null, error: { code: '42501', message: 'x' } }],
+			teams: [someTeam]
+		});
+		const result = await actions.approve(e);
+		expect(result).toMatchObject({
+			status: 500,
+			data: { error: m.requests_error_approve_failed() }
+		});
+		expect(JSON.stringify(result)).not.toMatch(/"pin"|"username"/);
+		expect(updateAuthUserEmailAndPassword).not.toHaveBeenCalled();
 	});
 
 	it('refuses when the RLS read finds no pending student, minting nothing', async () => {

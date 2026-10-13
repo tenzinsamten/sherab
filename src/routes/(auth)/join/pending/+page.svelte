@@ -2,17 +2,35 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard from '$lib/components/AuthCard.svelte';
+	import CredentialFields from '$lib/components/CredentialFields.svelte';
 	import JoinSteps from '$lib/components/JoinSteps.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// #100: the username and PIN made at registration, while the receipt
+	// cookie lives. Without it the page keeps its generic text.
+	let credentials = $derived(
+		data.receipt?.username && data.receipt.pin
+			? [
+					{ label: m.credential_username(), value: data.receipt.username },
+					{ label: m.credential_pin(), value: data.receipt.pin }
+				]
+			: null
+	);
 </script>
 
 <svelte:head>
 	<title>{m.join_pending_heading()} — Sherab</title>
 </svelte:head>
 
-<AuthCard title={m.join_pending_heading()} subtitle={m.join_pending_explanation()}>
+<!-- Without credentials on screen the text does not promise a sign-in. -->
+<AuthCard
+	title={m.join_pending_heading()}
+	subtitle={credentials
+		? m.join_pending_explanation()
+		: m.join_pending_explanation_no_credentials()}
+>
 	<JoinSteps current={4} />
 	<p style="text-align:center; margin: 0 0 var(--space-4);">
 		<ix-pill variant="warning">{m.join_pending_status_badge()}</ix-pill>
@@ -31,6 +49,12 @@
 				</tr>
 			</tbody>
 		</table>
+		{#if credentials}
+			<div class="credentials" data-testid="join-credentials">
+				<CredentialFields fields={credentials} />
+				<p><strong>{m.join_pending_credentials_once()}</strong></p>
+			</div>
+		{/if}
 		<p>{m.join_pending_teacher_approves()}</p>
 	{/if}
 
@@ -38,5 +62,12 @@
 
 	{#snippet footer()}
 		<ix-button variant="secondary" href={resolve('/join')}>{m.join_pending_start_over()}</ix-button>
+		<ix-button href={resolve('/login')}>{m.join_pending_sign_in()}</ix-button>
 	{/snippet}
 </AuthCard>
+
+<style>
+	.credentials {
+		margin: var(--space-4) 0;
+	}
+</style>

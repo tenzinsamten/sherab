@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { JOIN_RECEIPT_COOKIE } from '$lib/server/join-receipt';
 import { resolveLoginIdentifierToEmail } from '$lib/server/temp-password';
 import * as m from '$lib/paraglide/messages.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -13,7 +14,7 @@ export const load: PageServerLoad = async ({ url, locals: { safeGetSession } }) 
 };
 
 export const actions: Actions = {
-	default: async ({ request, url, locals: { supabase } }) => {
+	default: async ({ request, url, cookies, locals: { supabase } }) => {
 		const formData = await request.formData();
 		// One shared form for every role (Design Notes) -- an admin/teacher
 		// types their real email, a student types the bare username they were
@@ -61,6 +62,10 @@ export const actions: Actions = {
 			// account/session leak").
 			return fail(400, { error: m.login_error_invalid(), email: identifier });
 		}
+
+		// #100: once someone has signed in, the confirmation screen of a
+		// registration made in this browser no longer shows a username and PIN.
+		cookies.delete(JOIN_RECEIPT_COOKIE, { path: '/join/pending' });
 
 		throw redirect(303, '/');
 	}
