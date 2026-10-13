@@ -132,9 +132,6 @@
   summary: classes_select_own_student (0014, via is_enrolled_in_class since 0016) has no dedicated RLS tests; nothing checks that a pending student with profiles.class_id set sees no classes, or that a student enrolled in two classes sees both but never an unenrolled class.
   evidence: The only student `classes` read in rls.spec.ts is the Story 5-1 regression assertion (single approved enrollment). The gap dates from 0014/0016, which added the policy without tests.
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
-  summary: The attendance session picker doesn't preselect the students' current marks or show which sessions are already marked, so correcting an earlier session re-marks every unticked student absent.
-  evidence: 6-2 review. The form was always blank (pre-6-2 date input too); now that sessions are explicit, loading the latest mark per student for the chosen session is cheap.
-- source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
   summary: The epic's attendance UX (a `<button aria-pressed>` per student, 48px targets, one-handed) isn't built; the roster form still uses ix-checkbox.
   evidence: epic-6-context.md UX section; unchanged by 6-2.
 - source_spec: `_bmad-output/specs/spec-class-tracker/stories/6-2-attendance-per-session-calendar-holidays.md`
@@ -204,9 +201,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-3-parent-child-detail-page.md`
   summary: Playwright check of the parent child page: leave and deletion posts return to their tab without JS, homework reference anchors carry target=_blank rel="noopener noreferrer", and the active tab has aria-current.
   evidence: Only route data is unit-tested; the repo has one calendar e2e and no parent fixtures (detail-page review triage #10).
-- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-parent-child-detail-page.md`
-  summary: `child_attendance` (0025) returns every append-only attendance mark, so a re-marked session appears twice for the parent; it should return the current mark per session.
-  evidence: attendance_records has no uniqueness and marks are append-only (AD-5); the page only de-duplicates render keys (detail-page review triage #2). Needs a migration.
 - source_spec: `_bmad-output/implementation-artifacts/spec-mv-62-64-header-avatar.md`
   summary: Playwright header check: no role text in the header; the avatar menu shows My Account then Sign out; My Account opens /account; Sign out ends the session; a signed-out page has the language picker and no avatar; the avatar button's accessible name.
   evidence: Sign out and My account now exist only in the avatar menu; vitest is node-only and the one e2e is calendar (B2 review triage #5).
@@ -310,3 +304,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-101-guided-page-tours.md`
   summary: No test asserts that Help's "Show me around this page" closes the side-menu overlay at phone width before the tour starts (#101).
   evidence: `replayTour()` in `src/routes/+layout.svelte` closes the menu below the wide breakpoint; the replay e2e test runs at desktop width only. Checked by hand at 390px during the build.
+- source_spec: `_bmad-output/implementation-artifacts/spec-102-attendance-corrections.md`
+  summary: `attendance_records.recorded_at` has only a default and no stamping trigger (AD-5), so a caller can set it; the latest-mark rule (`attendance_current`, 0045) depends on it, and an exact tie falls to the random uuid `id`.
+  evidence: #102 review B7/E6. 0003 gives the column `default now()` only. Pre-existing; only the class's teachers and the admin can insert. Fix: a BEFORE INSERT trigger that stamps `recorded_at`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-102-attendance-corrections.md`
+  summary: No index supports `attendance_current`'s sort (`class_id, class_session_id, student_id, recorded_at desc, id desc`); every read of the view sorts the class's (or the student's) marks.
+  evidence: #102 review B10. Existing indexes: `(student_id, recorded_at desc)`, `(class_id)`, `(class_session_id)`. Fine at school scale; add the index when the teacher's class page or the streak recompute gets slow.
+- source_spec: `_bmad-output/implementation-artifacts/spec-102-attendance-corrections.md`
+  summary: The one-time streak recompute in 0045 and its two proofs (no mark changed; stored streak equals `compute_student_streak`) are tested only on an empty table: `supabase db reset` applies the migration before any mark exists.
+  evidence: #102 review G4. The data steps were replayed by hand in a rolled-back transaction on a local database with 12 re-marked (session, student) pairs and passed; no automated test applies a migration to existing data.

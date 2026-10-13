@@ -2159,3 +2159,48 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   a successful sign-in deletes the receipt cookie and the confirmation page is sent
   `no-store`; `help_teacher_3_body` says to hand over a username and PIN shown at approval.
   Only the tests of the edited files were re-run by the assistant.
+
+- 2026-10-13: #102 logged, not built. Reported (user): "but currently for the older one, if the
+  attandance is marked is it shown that way ?" and, after the answer, "we need to fix that".
+  Found by reading the code, not reproduced in a browser.
+  Today: on the teacher's class page the attendance form never shows saved marks. The
+  checkboxes have no link to existing rows (`src/routes/teacher/classes/[id]/+page.svelte`,
+  the `ix-checkbox` per student), and the load does not read `class_session_id` for the
+  attendance rows, so it cannot tell which session a mark belongs to. The session picker
+  does not show which sessions are already marked. Saved marks appear only in each student's
+  history list (date and Present/Absent, one line per row).
+  Consequences: marks are append-only (AD-5), so saving an old session again without
+  re-ticking everyone adds an "absent" row per student. The comment in `markAttendance` says
+  the latest row per student and session is current, but nothing reads it that way:
+  `compute_student_streak` (0028) and `recompute_student_badges` (0021) count any
+  `present = true` row, so a mistaken "present" keeps its credit after a correction;
+  `child_attendance` (0036) and the teacher's history return every row, so a re-marked
+  session shows twice.
+  Already recorded in `implementation-artifacts/deferred-work.md`: the blank picker (6-2
+  review) and the duplicate rows for the parent (7-3 review, "needs a migration").
+  Open for planning: whether the fix is the form only (preselect the current marks, show
+  which sessions are marked) or also makes the latest mark the one that counts for streaks,
+  badges, the teacher's history and the parent's list (needs a migration); whether a
+  correction should take back a badge or streak already earned (badges are never deleted
+  today); what an unmarked student in a partly marked session shows.
+
+- 2026-10-13: #102 built on `main`. Spec:
+  `implementation-artifacts/spec-102-attendance-corrections.md`.
+  Decided (user, 2026-10-13): the fix covers the form and the counting; the latest mark wins
+  for marks saved before the change too. After review: a save writes only the marks the
+  teacher changed (a session with no marks: every student; a marked session: only students
+  whose tick differs from what the form showed), and when the saved marks cannot be read the
+  Save button is disabled.
+  Built: migration `0045_attendance_current.sql` adds the view `attendance_current` (the
+  latest mark per session and student); `compute_student_streak`, `recompute_student_badges`
+  and `child_attendance` read it; streaks are recomputed once for sessions with re-marked
+  students. On the teacher's class page the form shows the saved marks, the picker shows
+  "· marked", and the history has one line per session. Earned badges are never removed.
+  Not pushed to the hosted database. Before the push: run the count query in the migration's
+  header to see how many old marks change meaning; streaks of those students can drop.
+  Known limits: a tick made in the moment between a save and the redrawn list is dropped;
+  two sessions on one day show as two history lines with the same date. In
+  `deferred-work.md`: `recorded_at` is not stamped by the database, no index for the view,
+  the migration's data steps are tested only on an empty table.
+  Not checked by hand in a browser by a person; the Tibetan text "ཐོ་འགོད་བྱས་ཟིན།" was written by
+  the assistant and needs a reader's check.
