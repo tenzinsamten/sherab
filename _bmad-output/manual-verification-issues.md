@@ -2237,3 +2237,17 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Known limits (in `deferred-work.md`): ending leaves the copies students already have, and
   the end dialog does not say so; other homework pages still take today from UTC; nothing
   tests the action's date. Not checked by hand in a browser by a person.
+
+- 2026-10-13: #103b built on `main` (follow-up of #103). Spec:
+  `implementation-artifacts/spec-103b-ending-series-existing-copies.md`.
+  Decided (user, 2026-10-13): a choice when ending -- a tick "also archive the homework
+  students already have", off by default; ticked, every copy of the series not yet archived
+  is archived.
+  Built: the tick below "End series" on the series page; `endSeries` archives the open copies
+  after ending; the question and the toast say which happened; the plain end question now
+  says existing homework stays. No migration. Tests, build and check pass on a reset local
+  database.
+  Not checked by hand in a browser by a person. The five new Tibetan texts were written by
+  the assistant and need a reader's check. In `deferred-work.md`: no "archive the rest" for a
+  series that is already ended or paused; no browser test of the tick.
+

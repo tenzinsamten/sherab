@@ -325,3 +325,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-103-ended-series-no-new-copies.md`
   summary: No test covers the `endSeries` action or the series page's load (the route has no `page.server.spec.ts`), so nothing pins that the end date is Munich's.
   evidence: #103 review. The database rule is tested in `rls.spec.ts`; the action's date is a one-line `todayInBerlin()` call checked by reading.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103b-ending-series-existing-copies.md`
+  summary: A weekly series that is already ended or paused has no "archive the remaining copies" action; its copies can only be archived one by one, each with its own question.
+  evidence: #103b review. The tick and the End button show only while the series is active (`isSeriesInactive` in the series page). Covers series ended before #103b and a ticked end whose archive step failed.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103b-ending-series-existing-copies.md`
+  summary: Nothing tests the end-series tick box in a browser (tick, which question is asked, which toast) or the student's page after a ticked end; `e2e/` has no weekly-series test.
+  evidence: #103b review. The action is tested with a fake client and the update against the local database; both acceptance criteria of the spec are unverified by a test or by hand.
+- source_spec: `_bmad-output/implementation-artifacts/spec-103b-ending-series-existing-copies.md`
+  summary: Archived copies lose the teacher's Mark done / Mark reviewed buttons and copies a student finished stay in the student's Done list; the archive questions say neither. The Tibetan texts use two words each for "archive" and "series".
+  evidence: #103b review. `+page.svelte` hides both forms when `archivedAt` is set (same for a single archive); `bo.json` has "ཡིག་མཛོད་དུ་འཇུག" and "མཛོད་དུ་བཞག", "རིམ་པ" and "ཕྲེང་བ". Needs a Tibetan reader.
