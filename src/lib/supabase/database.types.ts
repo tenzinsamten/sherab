@@ -497,6 +497,7 @@ export type Database = {
 			};
 			classes: {
 				Row: {
+					badge_subject: string | null;
 					code: string;
 					created_at: string;
 					created_by: string | null;
@@ -514,6 +515,7 @@ export type Database = {
 					syllabus_links: HomeworkReferenceLink[];
 				};
 				Insert: {
+					badge_subject?: string | null;
 					code: string;
 					created_at?: string;
 					created_by?: string | null;
@@ -531,6 +533,7 @@ export type Database = {
 					syllabus_links?: HomeworkReferenceLink[];
 				};
 				Update: {
+					badge_subject?: string | null;
 					code?: string;
 					created_at?: string;
 					created_by?: string | null;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
-import { actions } from './+page.server';
+import { actions, load } from './+page.server';
 
 /**
  * /admin/classes `create` (Story 6-4 matrix row "New class"): the schedule
@@ -64,6 +64,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 				{
 					name: 'Grammar',
 					nameBo: 'བརྡ་སྤྲོད།',
+					badgeSubject: 'language',
 					startTime: '10:00',
 					durationMinutes: '90',
 					startsOn: '2026-10-10',
@@ -109,6 +110,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 					{
 						name: 'Grammar',
 						nameBo: 'བརྡ་སྤྲོད།',
+						badgeSubject: 'language',
 						weekday: '7',
 						startTime: '10:00',
 						durationMinutes: '90',
@@ -131,6 +133,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 				{
 					name: 'Grammar',
 					nameBo: 'བརྡ་སྤྲོད།',
+					badgeSubject: 'language',
 					weekday: '7',
 					startTime: '10:00',
 					durationMinutes: '90',
@@ -151,7 +154,8 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			schedule_ends_on: null,
 			schedule_interval_weeks: 1,
 			default_start_time: '10:00',
-			default_duration_minutes: 90
+			default_duration_minutes: 90,
+			badge_subject: 'language'
 		});
 		expect(fake.rpcCalls).toEqual([]);
 		expect(result).toEqual({
@@ -159,7 +163,8 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 			class: fake.created,
 			name: 'Grammar',
 			nameBo: 'བརྡ་སྤྲོད།',
-			nameDe: ''
+			nameDe: '',
+			badgeSubject: 'language'
 		});
 	});
 
@@ -170,6 +175,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 				{
 					name: 'Grammar',
 					nameBo: 'བརྡ་སྤྲོད།',
+					badgeSubject: 'language',
 					weekday: '7',
 					startsOn: today,
 					intervalWeeks: '2'
@@ -188,6 +194,7 @@ describe('admin classes create: schedule at creation (Story 6-4)', () => {
 				{
 					name: 'Grammar',
 					nameBo: 'བརྡ་སྤྲོད།',
+					badgeSubject: 'language',
 					weekday: '7',
 					startsOn: today,
 					intervalWeeks: '5'
@@ -313,7 +320,7 @@ describe('admin classes delete: stored syllabus files (0039)', () => {
 
 describe('admin classes names (#76)', () => {
 	const today = todayInBerlin();
-	const schedule = { weekday: '7', startsOn: today };
+	const schedule = { weekday: '7', startsOn: today, badgeSubject: 'language' };
 
 	it('create without a Tibetan name: fail 400, nothing inserted, the names echoed back', async () => {
 		const fake = fakeSupabase();
@@ -347,6 +354,73 @@ describe('admin classes names (#76)', () => {
 		});
 	});
 
+	it('a failed create with a valid subject echoes the subject back', async () => {
+		const fake = fakeSupabase();
+		const result = await actions.create(
+			event(
+				{ name: 'Dance', nameBo: '', weekday: '7', startsOn: today, badgeSubject: 'dance' },
+				fake.client
+			)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: m.classes_error_name_bo_required(), badgeSubject: 'dance' }
+		});
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it('create with a subject: the insert carries badge_subject', async () => {
+		const fake = fakeSupabase();
+		await actions.create(
+			event(
+				{ name: 'Dance', nameBo: 'གར།', weekday: '7', startsOn: today, badgeSubject: 'dance' },
+				fake.client
+			)
+		);
+		expect(fake.inserted).toHaveLength(1);
+		expect(fake.inserted[0]).toMatchObject({ badge_subject: 'dance' });
+	});
+
+	it('create without a subject (or an unknown one): fail 400 with the subject error, values echoed, nothing inserted', async () => {
+		for (const subject of [undefined, 'song']) {
+			const fake = fakeSupabase();
+			const fields: Record<string, string> = {
+				name: 'Grammar',
+				nameBo: 'བརྡ་སྤྲོད།',
+				weekday: '7',
+				startsOn: today
+			};
+			if (subject !== undefined) fields.badgeSubject = subject;
+			const result = await actions.create(event(fields, fake.client));
+			expect(result).toMatchObject({
+				status: 400,
+				data: {
+					subjectError: m.badge_subject_error_required(),
+					name: 'Grammar',
+					nameBo: 'བརྡ་སྤྲོད།',
+					badgeSubject: null,
+					schedule: { weekdays: ['7'], startsOn: today }
+				}
+			});
+			expect((result as { data: object }).data).not.toHaveProperty('error');
+			expect(fake.inserted).toEqual([]);
+		}
+	});
+
+	it('create without a subject, a name or a valid schedule: every error at once', async () => {
+		const fake = fakeSupabase();
+		const result = await actions.create(event({ name: '', startsOn: today }, fake.client));
+		expect(result).toMatchObject({
+			status: 400,
+			data: {
+				error: m.classes_error_name_required(),
+				subjectError: m.badge_subject_error_required(),
+				scheduleErrors: { weekdays: m.calendar_error_weekdays_required() }
+			}
+		});
+		expect(fake.inserted).toEqual([]);
+	});
+
 	type UpdateResult = {
 		data: { id: string; name: string; name_bo: string | null; name_de: string | null }[] | null;
 		error: { code?: string; message: string } | null;
@@ -377,23 +451,31 @@ describe('admin classes names (#76)', () => {
 		};
 	}
 
-	const names = { name: 'Grammar', nameBo: 'བརྡ་སྤྲོད།', nameDe: '' };
+	const names = { name: 'Grammar', nameBo: 'བརྡ་སྤྲོད།', nameDe: '', badgeSubject: 'language' };
 	const saved = { id: 'c1', name: 'Grammar', name_bo: 'བརྡ་སྤྲོད།', name_de: null };
 
-	it('rename saves the three names (an empty German name as NULL)', async () => {
+	it('rename saves the three names (an empty German name as NULL) and the subject', async () => {
 		const { updates, event: e } = renameEvent(
 			{ classId: 'c1', ...names },
 			{ data: [saved], error: null }
 		);
 		expect(await actions.rename(e)).toEqual({ renamed: 'Grammar' });
 		expect(updates).toEqual([
-			{ values: { name: 'Grammar', name_bo: 'བརྡ་སྤྲོད།', name_de: null }, id: 'c1' }
+			{
+				values: {
+					name: 'Grammar',
+					name_bo: 'བརྡ་སྤྲོད།',
+					name_de: null,
+					badge_subject: 'language'
+				},
+				id: 'c1'
+			}
 		]);
 	});
 
 	it('rename without a Tibetan name: fail 400, nothing written', async () => {
 		const { updates, event: e } = renameEvent(
-			{ classId: 'c1', name: 'Grammar', nameBo: ' ' },
+			{ classId: 'c1', name: 'Grammar', nameBo: ' ', badgeSubject: 'dance' },
 			{ data: [saved], error: null }
 		);
 		expect(await actions.rename(e)).toMatchObject({
@@ -401,7 +483,51 @@ describe('admin classes names (#76)', () => {
 			data: {
 				error: m.classes_error_name_bo_required(),
 				renameId: 'c1',
-				renameValues: { name: 'Grammar', nameBo: '', nameDe: '' }
+				renameValues: { name: 'Grammar', nameBo: '', nameDe: '', badgeSubject: 'dance' }
+			}
+		});
+		expect(updates).toEqual([]);
+	});
+
+	it('edit of an unset class: names and the subject are saved together', async () => {
+		const { updates, event: e } = renameEvent(
+			{ classId: 'c1', name: 'Grammar', nameBo: 'བརྡ་སྤྲོད།', badgeSubject: 'language' },
+			{ data: [saved], error: null }
+		);
+		expect(await actions.rename(e)).toEqual({ renamed: 'Grammar' });
+		expect(updates).toHaveLength(1);
+		expect(updates[0].values).toMatchObject({ name: 'Grammar', badge_subject: 'language' });
+	});
+
+	it('edit without a subject (or an unknown one): fail 400, nothing written, values echoed', async () => {
+		for (const subject of [undefined, '', 'song']) {
+			const fields: Record<string, string> = { classId: 'c1', name: 'Grammar', nameBo: 'བོད།' };
+			if (subject !== undefined) fields.badgeSubject = subject;
+			const { updates, event: e } = renameEvent(fields, { data: [saved], error: null });
+			const result = await actions.rename(e);
+			expect(result).toMatchObject({
+				status: 400,
+				data: {
+					subjectError: m.badge_subject_error_required(),
+					renameId: 'c1',
+					renameValues: { name: 'Grammar', nameBo: 'བོད།', badgeSubject: null }
+				}
+			});
+			expect((result as { data: object }).data).not.toHaveProperty('error');
+			expect(updates).toEqual([]);
+		}
+	});
+
+	it('edit without a Tibetan name and without a subject: both errors at once', async () => {
+		const { updates, event: e } = renameEvent(
+			{ classId: 'c1', name: 'Grammar', nameBo: '' },
+			{ data: [saved], error: null }
+		);
+		expect(await actions.rename(e)).toMatchObject({
+			status: 400,
+			data: {
+				error: m.classes_error_name_bo_required(),
+				subjectError: m.badge_subject_error_required()
 			}
 		});
 		expect(updates).toEqual([]);
@@ -428,7 +554,54 @@ describe('admin classes names (#76)', () => {
 		const { event: e } = renameEvent({ classId: 'c1', ...names }, { data: [], error: null });
 		expect(await actions.rename(e)).toMatchObject({
 			status: 400,
-			data: { error: m.classes_error_rename_failed() }
+			data: { error: m.classes_error_save_failed() }
 		});
+	});
+});
+
+describe('admin classes list: badge subject (badge detail CAP-1)', () => {
+	it('each class carries its badge subject, NULL for an unset one', async () => {
+		const rows = [
+			{
+				id: 'c1',
+				name: 'Dance',
+				name_bo: null,
+				name_de: null,
+				code: 'D1',
+				created_at: '2026-10-01',
+				badge_subject: 'dance'
+			},
+			{
+				id: 'c2',
+				name: 'Grammar',
+				name_bo: null,
+				name_de: null,
+				code: 'G1',
+				created_at: '2026-09-01',
+				badge_subject: null
+			}
+		];
+		const query = (data: unknown[]) => {
+			const q = {
+				select: () => q,
+				eq: () => q,
+				order: () => q,
+				then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+					resolve({ data, error: null })
+			};
+			return q;
+		};
+		const supabase = { from: (table: string) => query(table === 'classes' ? rows : []) };
+		const result = (await load({ locals: { supabase } } as unknown as Parameters<
+			typeof load
+		>[0])) as {
+			classes: { id: string; badge_subject: string | null }[];
+			loadError: boolean;
+		};
+		expect(result.loadError).toBe(false);
+		expect(result.classes.map((c) => [c.id, c.badge_subject])).toEqual([
+			['c1', 'dance'],
+			['c2', null]
+		]);
 	});
 });

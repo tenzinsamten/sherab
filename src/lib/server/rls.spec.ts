@@ -290,6 +290,55 @@ describe.skipIf(!reachable)('Story 1-1 RLS policies (requires local Supabase)', 
 		expect(second.error?.code).toBe('23505');
 	});
 
+	it('badge detail CAP-1: classes.badge_subject only takes language, dance or instrument (0047)', async () => {
+		const code = () => `BS${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+		const name = (label: string) => `Badge subject ${label} ${crypto.randomUUID().slice(0, 6)}`;
+
+		const song = await admin.client
+			.from('classes')
+			.insert({ name: name('song'), code: code(), badge_subject: 'song' });
+		expect(song.error?.code).toBe('23514');
+
+		const { data: dance, error } = await admin.client
+			.from('classes')
+			.insert({ name: name('dance'), code: code(), badge_subject: 'dance' })
+			.select('id, badge_subject')
+			.single();
+		expect(error).toBeNull();
+		expect(dance?.badge_subject).toBe('dance');
+		await admin.client.from('classes').delete().eq('id', dance!.id);
+	});
+
+	it('badge detail CAP-1: a teacher can still save the schedule of a class with no subject', async () => {
+		const { data: cls, error } = await admin.client
+			.from('classes')
+			.insert({
+				name: `Badge subject unset ${crypto.randomUUID().slice(0, 6)}`,
+				code: `BU${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+			})
+			.select('id, badge_subject')
+			.single();
+		expect(error).toBeNull();
+		expect(cls?.badge_subject).toBeNull();
+		const { error: assignError } = await admin.client
+			.from('class_teachers')
+			.insert({ class_id: cls!.id, teacher_id: teacherA.id });
+		expect(assignError).toBeNull();
+
+		const { error: scheduleError } = await teacherA.client.rpc('set_class_schedule', {
+			p_class_id: cls!.id,
+			p_weekdays: [7],
+			p_start_time: '10:00',
+			p_duration_minutes: 90,
+			p_starts_on: '3999-01-01',
+			p_ends_on: null
+		});
+		expect(scheduleError).toBeNull();
+
+		await admin.client.from('class_teachers').delete().eq('class_id', cls!.id);
+		await admin.client.from('classes').delete().eq('id', cls!.id);
+	});
+
 	it('a teacher assigned to two classes sees both and only those', async () => {
 		const { error: assignError } = await admin.client
 			.from('class_teachers')

@@ -14,6 +14,7 @@ import {
 } from '$lib/server/calendar';
 import * as m from '$lib/paraglide/messages.js';
 import { localizeName, localizedName } from '$lib/localized-name';
+import { isBadgeSubject, type BadgeSubject } from '$lib/badge-subject';
 import {
 	duplicateName,
 	missingName,
@@ -31,6 +32,16 @@ function nameRequiredMessage(names: NameFields): string | null {
 	return null;
 }
 
+/**
+ * Badge detail CAP-1: the admin must pick a badge subject on create and edit.
+ * Anything other than the three subjects (e.g. `song`) counts as missing.
+ * 0047's check constraint is the real guarantee (AD-2).
+ */
+function readBadgeSubject(formData: FormData): BadgeSubject | null {
+	const value = formData.get('badgeSubject');
+	return isBadgeSubject(value) ? value : null;
+}
+
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	const [
 		{ data: classes, error },
@@ -40,7 +51,7 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	] = await Promise.all([
 		supabase
 			.from('classes')
-			.select('id, name, name_bo, name_de, code, created_at')
+			.select('id, name, name_bo, name_de, code, created_at, badge_subject')
 			.order('created_at', { ascending: false }),
 		// Pending = registrations into the class; approved = enrolled
 		// students (#42), who may be in several classes.
@@ -92,15 +103,19 @@ export const actions: Actions = {
 		// Story 6-4: the class's schedule is part of the create form; an
 		// invalid one creates nothing.
 		const schedule = scheduleFormValues(formData);
+		const badgeSubject = readBadgeSubject(formData);
 
-		// Names and schedule are validated together, so every problem shows at once.
+		// Names, subject and schedule are validated together, so every problem
+		// shows at once.
 		const nameError = nameRequiredMessage(names);
 		const parsed = parseScheduleInput(schedule);
-		if (nameError || !parsed.ok) {
+		if (nameError || !badgeSubject || !parsed.ok) {
 			return fail(400, {
 				...(nameError ? { error: nameError } : {}),
+				...(badgeSubject ? {} : { subjectError: m.badge_subject_error_required() }),
 				...(parsed.ok ? {} : { scheduleErrors: scheduleErrorMessages(parsed.errors) }),
 				...names,
+				badgeSubject,
 				schedule
 			});
 		}
@@ -120,6 +135,7 @@ export const actions: Actions = {
 					...nameColumns(names),
 					code,
 					created_by: user.id,
+					badge_subject: badgeSubject,
 					schedule_weekdays: weekdays,
 					schedule_starts_on: startsOn,
 					schedule_ends_on: endsOn,
@@ -139,6 +155,7 @@ export const actions: Actions = {
 				return fail(400, {
 					error: m.classes_error_duplicate_name({ name: duplicateName(error, names) }),
 					...names,
+					badgeSubject,
 					schedule
 				});
 			}
@@ -150,6 +167,7 @@ export const actions: Actions = {
 			return fail(isCodeGenerationFailure ? 500 : 400, {
 				error: isCodeGenerationFailure ? m.classes_code_generation_failed() : error.message,
 				...names,
+				badgeSubject,
 				schedule
 			});
 		}
@@ -157,24 +175,39 @@ export const actions: Actions = {
 		// The names are echoed back too (not just `class`) so the create-class
 		// form has the same shape to read from on every branch of this
 		// action's return type.
-		return { success: true, class: created ? localizeName(created) : created, ...names };
+		return {
+			success: true,
+			class: created ? localizeName(created) : created,
+			...names,
+			badgeSubject
+		};
 	},
 
-	/** #76: saves a class's names; the same rules as at creation. */
+	/**
+	 * The class edit form: saves a class's names (#76) and badge subject
+	 * (badge detail CAP-1) together; the same rules as at creation.
+	 */
 	rename: async ({ request, locals: { supabase } }) => {
 		const formData = await request.formData();
 		const renameId = String(formData.get('classId') ?? '');
 		const names = readNameFields(formData);
+		const badgeSubject = readBadgeSubject(formData);
+		const renameValues = { ...names, badgeSubject };
 
 		const nameError = nameRequiredMessage(names);
-		if (nameError) {
-			return fail(400, { error: nameError, renameId, renameValues: names });
+		if (nameError || !badgeSubject) {
+			return fail(400, {
+				...(nameError ? { error: nameError } : {}),
+				...(badgeSubject ? {} : { subjectError: m.badge_subject_error_required() }),
+				renameId,
+				renameValues
+			});
 		}
 
 		// RLS's classes_update_admin policy is the real barrier (AD-2).
 		const { data: renamed, error } = await supabase
 			.from('classes')
-			.update(nameColumns(names))
+			.update({ ...nameColumns(names), badge_subject: badgeSubject })
 			.eq('id', renameId)
 			.select('id, name, name_bo, name_de');
 
@@ -182,11 +215,11 @@ export const actions: Actions = {
 			return fail(400, {
 				error: m.classes_error_duplicate_name({ name: duplicateName(error, names) }),
 				renameId,
-				renameValues: names
+				renameValues
 			});
 		}
 		if (error || !renamed?.length) {
-			return fail(400, { error: m.classes_error_rename_failed(), renameId, renameValues: names });
+			return fail(400, { error: m.classes_error_save_failed(), renameId, renameValues });
 		}
 
 		return { renamed: localizedName(renamed[0]) };

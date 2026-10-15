@@ -9,6 +9,8 @@
 	import { createPending } from '$lib/pending.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
 	import LocalizedNameFields from '$lib/components/LocalizedNameFields.svelte';
+	import BadgeSubjectSelect from '$lib/components/BadgeSubjectSelect.svelte';
+	import { badgeSubjectLabel, isBadgeSubject } from '$lib/badge-subject';
 	import { otherNames } from '$lib/localized-name';
 	import type { ActionData, PageProps } from './$types';
 
@@ -18,7 +20,7 @@
 
 	const pending = createPending();
 
-	// #76: the class whose names are being edited (one row at a time).
+	// #76: the class being edited (one row at a time).
 	let editingId = $state<string | null>(null);
 
 	$effect(() => {
@@ -33,16 +35,30 @@
 		}
 		if (form && 'renamed' in form && form.renamed) {
 			editingId = null;
-			showToast('success', m.names_saved({ name: form.renamed }));
+			showToast('success', m.classes_saved({ name: form.renamed }));
 		}
 	});
 
-	// A failed save keeps what was typed; otherwise the class's current names.
+	// A failed save keeps what was entered; otherwise the class's current
+	// names and badge subject.
 	function editValues(cls: ClassRow) {
 		if (form && 'renameValues' in form && form.renameValues && form.renameId === cls.id) {
 			return form.renameValues;
 		}
-		return { name: cls.name, nameBo: cls.name_bo, nameDe: cls.name_de };
+		return {
+			name: cls.name,
+			nameBo: cls.name_bo,
+			nameDe: cls.name_de,
+			badgeSubject: cls.badge_subject
+		};
+	}
+
+	// The subject error of a failed edit, for that class's row only.
+	function editSubjectError(cls: ClassRow) {
+		if (form && 'renameId' in form && form.renameId === cls.id && 'subjectError' in form) {
+			return form.subjectError ?? null;
+		}
+		return null;
 	}
 
 	// A failed create keeps what was entered; otherwise the new-class default
@@ -77,6 +93,16 @@
 		createResult && 'name' in createResult && !createResult.success
 			? { name: createResult.name, nameBo: createResult.nameBo, nameDe: createResult.nameDe }
 			: { name: '', nameBo: '', nameDe: '' }
+	);
+
+	// A failed create keeps the picked subject; a successful one clears it.
+	let createdSubject = $derived(
+		createResult && 'badgeSubject' in createResult && !createResult.success
+			? createResult.badgeSubject
+			: null
+	);
+	let createSubjectError = $derived(
+		form && 'subjectError' in form && !('renameId' in form) ? (form.subjectError ?? null) : null
 	);
 
 	let scheduleErrors = $derived(
@@ -121,6 +147,13 @@
 			{#key createResult?.success ? createResult : null}
 				<LocalizedNameFields label={m.classes_name_label()} values={createdNames} />
 			{/key}
+			{#key createResult}
+				<BadgeSubjectSelect
+					id="new-class-subject"
+					value={createdSubject}
+					error={createSubjectError}
+				/>
+			{/key}
 			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
 			{#key form}
 				<ScheduleFields
@@ -153,6 +186,7 @@
 					<thead>
 						<tr>
 							<th>{m.classes_col_name()}</th>
+							<th>{m.classes_col_subject()}</th>
 							<th>{m.classes_col_code()}</th>
 							<th>{m.classes_col_students()}</th>
 							<th>{m.classes_col_syllabi()}</th>
@@ -168,6 +202,13 @@
 									{#each otherNames(cls) as other (other.lang)}
 										<span class="muted other-name" lang={other.lang}>{other.name}</span>
 									{/each}
+								</td>
+								<td>
+									{#if isBadgeSubject(cls.badge_subject)}
+										{badgeSubjectLabel(cls.badge_subject)}
+									{:else}
+										<ix-pill variant="warning">{m.badge_subject_not_set()}</ix-pill>
+									{/if}
 								</td>
 								<td><CopyField label={m.classes_col_code()} value={cls.code} hideLabel /></td>
 								<td>
@@ -196,7 +237,7 @@
 											disabled={pending.busy || undefined}
 											onclick={() => (editingId = editingId === cls.id ? null : cls.id)}
 										>
-											{m.names_edit()}
+											{m.classes_edit()}
 										</ix-button>
 										{#if cls.approvedCount === 0 && cls.pendingCount === 0}
 											<ix-button
@@ -214,7 +255,7 @@
 							</tr>
 							{#if editingId === cls.id}
 								<tr>
-									<td colspan="6">
+									<td colspan="7">
 										<form
 											method="POST"
 											action="?/rename"
@@ -223,18 +264,23 @@
 										>
 											<input type="hidden" name="classId" value={cls.id} />
 											<fieldset>
-												<legend>{m.names_edit_title({ name: cls.label })}</legend>
+												<legend>{m.classes_edit_title({ name: cls.label })}</legend>
 												<LocalizedNameFields
 													label={m.classes_name_label()}
 													idPrefix="edit-{cls.id}-"
 													values={editValues(cls)}
+												/>
+												<BadgeSubjectSelect
+													id="edit-{cls.id}-subject"
+													value={editValues(cls).badgeSubject}
+													error={editSubjectError(cls)}
 												/>
 											</fieldset>
 											<div class="actions">
 												<ix-button
 													type="submit"
 													loading={pending.is(`rename:${cls.id}`) || undefined}
-													disabled={pending.busy || undefined}>{m.names_save()}</ix-button
+													disabled={pending.busy || undefined}>{m.classes_save()}</ix-button
 												>
 												<ix-button
 													variant="secondary"

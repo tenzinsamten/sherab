@@ -115,7 +115,6 @@
 	"classes_code_generation_failed": "Es konnte kein eindeutiger Klassencode erzeugt werden. Bitte erneut versuchen.",
 	"classes_error_duplicate_name": "Eine Klasse namens „{name}“ gibt es bereits.",
 	"classes_error_name_bo_required": "Der tibetische Klassenname ist erforderlich.",
-	"classes_error_rename_failed": "Die Klassennamen konnten nicht gespeichert werden.",
 	"classes_col_name": "Name",
 	"classes_col_code": "Code",
 	"class_code_label": "Klassencode",
@@ -1166,5 +1165,17 @@
 	"tour_teacher_requests_2_title": "Krankmeldungen",
 	"tour_teacher_requests_2_body": "Eltern haben ihr Kind krankgemeldet. Wenn du genehmigst, bleibt die Serie des Kindes erhalten.",
 	"tour_teacher_requests_3_title": "Beitrittsanfragen",
-	"tour_teacher_requests_3_body": "Ein:e Schüler:in möchte mit dem Code deiner Klasse beitreten. Wenn du genehmigst, kommt das Kind in die Klasse."
+	"tour_teacher_requests_3_body": "Ein:e Schüler:in möchte mit dem Code deiner Klasse beitreten. Wenn du genehmigst, kommt das Kind in die Klasse.",
+	"badge_subject_label": "Abzeichen-Fach",
+	"badge_subject_language": "Sprache",
+	"badge_subject_dance": "Tanz & Gesang",
+	"badge_subject_instrument": "Instrument",
+	"badge_subject_not_set": "Nicht festgelegt",
+	"badge_subject_error_required": "Wähle das Abzeichen-Fach.",
+	"classes_col_subject": "Fach",
+	"classes_edit": "Klasse bearbeiten",
+	"classes_edit_title": "{name} bearbeiten",
+	"classes_save": "Speichern",
+	"classes_saved": "„{name}“ gespeichert.",
+	"classes_error_save_failed": "Die Klasse konnte nicht gespeichert werden."
 }

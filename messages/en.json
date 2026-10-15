@@ -115,7 +115,6 @@
 	"classes_code_generation_failed": "Could not generate a unique class code after several attempts. Please try again.",
 	"classes_error_duplicate_name": "A class called “{name}” already exists.",
 	"classes_error_name_bo_required": "The Tibetan class name is required.",
-	"classes_error_rename_failed": "Could not save the class names.",
 	"classes_col_name": "Name",
 	"classes_col_code": "Code",
 	"class_code_label": "Class code",
@@ -1166,5 +1165,17 @@
 	"tour_teacher_requests_2_title": "Sick answers",
 	"tour_teacher_requests_2_body": "A parent said their child was sick. If you approve it, the student keeps their streak.",
 	"tour_teacher_requests_3_title": "Class join requests",
-	"tour_teacher_requests_3_body": "A student asks to join your class with its code. If you approve, they are added to the class."
+	"tour_teacher_requests_3_body": "A student asks to join your class with its code. If you approve, they are added to the class.",
+	"badge_subject_label": "Badge subject",
+	"badge_subject_language": "Language",
+	"badge_subject_dance": "Dance & song",
+	"badge_subject_instrument": "Instrument",
+	"badge_subject_not_set": "Not set",
+	"badge_subject_error_required": "Choose the badge subject.",
+	"classes_col_subject": "Subject",
+	"classes_edit": "Edit class",
+	"classes_edit_title": "Edit {name}",
+	"classes_save": "Save",
+	"classes_saved": "“{name}” saved.",
+	"classes_error_save_failed": "Could not save the class."
 }

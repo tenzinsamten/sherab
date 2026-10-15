@@ -804,6 +804,11 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await page.locator('#new-class-start input').first().fill('10:00');
 			await page.locator('#new-class-duration input').first().fill('90');
 			await page.locator('#new-class-until input').first().fill(`${fx.year}-12-20`);
+			// Badge detail CAP-1: the subject is required.
+			const subject = page.locator('#new-class-subject');
+			await subject.locator('input').first().click();
+			await subject.locator('ix-select-item[value="dance"]').click();
+			await expect(subject).toHaveJSProperty('value', 'dance');
 			await page.getByRole('button', { name: 'Create class' }).click();
 
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
@@ -814,7 +819,7 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			const { data } = await service
 				.from('classes')
 				.select(
-					'schedule_weekdays, schedule_starts_on, schedule_ends_on, default_start_time, default_duration_minutes'
+					'schedule_weekdays, schedule_starts_on, schedule_ends_on, default_start_time, default_duration_minutes, badge_subject'
 				)
 				.eq('name', name)
 				.single();
@@ -823,7 +828,8 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 				schedule_starts_on: berlinToday(),
 				schedule_ends_on: `${fx.year}-12-20`,
 				default_start_time: '10:00:00',
-				default_duration_minutes: 90
+				default_duration_minutes: 90,
+				badge_subject: 'dance'
 			});
 			// The form is back to the defaults for the next class.
 			await expect(page.locator('#name')).toHaveJSProperty('value', '');
@@ -855,6 +861,11 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 			await page.locator('#name input').first().fill(name);
 			// #76: the Tibetan name is required too.
 			await page.locator('#name-bo input').first().fill(`${name} bo`);
+			// Badge detail CAP-1: the subject is required.
+			const subject = page.locator('#new-class-subject');
+			await subject.locator('input').first().click();
+			await subject.locator('ix-select-item[value="language"]').click();
+			await expect(subject).toHaveJSProperty('value', 'language');
 			await page.getByRole('button', { name: 'Create class' }).click();
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
 

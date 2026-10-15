@@ -451,6 +451,50 @@ test('admin team names: edit the names, and each interface language shows its ow
 	}
 });
 
+test('admin class edit: opens with its badge subject and a names-only save keeps it (badge detail CAP-1)', async ({
+	page
+}) => {
+	const name = `E2E Badge ${fx.tag}`;
+	const renamed = `E2E Badge renamed ${fx.tag}`;
+	const { data: cls, error: insertError } = await service
+		.from('classes')
+		.insert({
+			name,
+			name_bo: `གར ${fx.tag}`,
+			code: `B${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+			badge_subject: 'dance'
+		})
+		.select('id')
+		.single();
+	if (insertError || !cls) throw new Error(`create class: ${insertError?.message}`);
+	try {
+		await signIn(page, fx.admin);
+		await page.goto('/admin/classes');
+		await page.waitForFunction(() => customElements.get('ix-select') !== undefined);
+		await page.waitForLoadState('networkidle');
+
+		const row = page.locator('tr').filter({ hasText: name });
+		await expect(row.getByRole('cell', { name: 'Dance & song', exact: true })).toBeVisible();
+		await row.getByRole('button', { name: 'Edit class' }).click();
+		const form = page.locator('form[action="?/rename"]');
+		await expect(form.locator(`#edit-${cls.id}-subject`)).toHaveJSProperty('value', 'dance');
+
+		await form.locator('ix-input[name="name"] input').first().fill(renamed);
+		await form.getByRole('button', { name: 'Save', exact: true }).click();
+		await expect(page.locator('ix-toast').getByText(`“${renamed}” saved.`)).toBeVisible();
+		await expect(form).toHaveCount(0);
+
+		const { data } = await service
+			.from('classes')
+			.select('name, badge_subject')
+			.eq('id', cls.id)
+			.single();
+		expect(data).toEqual({ name: renamed, badge_subject: 'dance' });
+	} finally {
+		await service.from('classes').delete().eq('id', cls.id);
+	}
+});
+
 // #99: the database assigns the team at approval (0043). /requests has no
 // team field any more; one click approves and the message names the team.
 test('requests approve: no team field, one click approves and the message names the assigned team', async ({
@@ -559,6 +603,11 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 		await field.locator('input').first().fill(typed);
 		// #76: the Tibetan name is required too.
 		await page.locator('#name-bo input').first().fill(`${typed} bo`);
+		// Badge detail CAP-1: the subject is required.
+		const subject = page.locator('#new-class-subject');
+		await subject.locator('input').first().click();
+		await subject.locator('ix-select-item[value="language"]').click();
+		await expect(subject).toHaveJSProperty('value', 'language');
 		await page.getByRole('button', { name: 'Create class' }).click();
 		await expect(page.locator('ix-toast').getByText(/already exists/)).toBeVisible();
 		await expect(field).toHaveJSProperty('value', typed);

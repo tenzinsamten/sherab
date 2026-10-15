@@ -115,7 +115,6 @@
 	"classes_code_generation_failed": "ཐེངས་མང་པོ་འབད་རྗེས་མཚུངས་མེད་ཀྱི་འཛིན་གྲྭའི་ཨང་རྟགས་བཟོ་མ་ཐུབ། སླར་འབད་རོགས།",
 	"classes_error_duplicate_name": "འཛིན་གྲྭ་“{name}”ཞེས་པ་ཧེ་མ་ཡོད་ཟིན།",
 	"classes_error_name_bo_required": "འཛིན་གྲྭའི་བོད་ཡིག་མིང་དགོས་ཀྱི་ཡོད།",
-	"classes_error_rename_failed": "འཛིན་གྲྭའི་མིང་ཚོ་ཉར་ཚགས་མ་ཐུབ།",
 	"classes_col_name": "མིང་།",
 	"classes_col_code": "ཨང་རྟགས།",
 	"class_code_label": "འཛིན་གྲྭའི་ཨང་རྟགས།",
@@ -1166,5 +1165,17 @@
 	"tour_teacher_requests_2_title": "ན་ཚའི་ལན།",
 	"tour_teacher_requests_2_body": "ཕ་མས་ཕྲུ་གུ་ན་ཡོད་ཅེས་བཤད་ཡོད། ཁྱེད་ཀྱིས་ཆོག་མཆན་སྦྱིན་ན་སློབ་མའི་རྒྱུན་མཐུད་སྲུང་ཐུབ།",
 	"tour_teacher_requests_3_title": "འཛིན་གྲྭར་ཞུགས་པའི་རེ་སྐུལ།",
-	"tour_teacher_requests_3_body": "སློབ་མ་ཞིག་གིས་འཛིན་གྲྭའི་ཨང་རྟགས་བེད་སྤྱད་དེ་ཁྱེད་ཀྱི་འཛིན་གྲྭར་ཞུགས་འདོད་བྱེད། ཆོག་མཆན་སྦྱིན་ན་ཁོང་འཛིན་གྲྭར་ཞུགས་ཀྱི་རེད།"
+	"tour_teacher_requests_3_body": "སློབ་མ་ཞིག་གིས་འཛིན་གྲྭའི་ཨང་རྟགས་བེད་སྤྱད་དེ་ཁྱེད་ཀྱི་འཛིན་གྲྭར་ཞུགས་འདོད་བྱེད། ཆོག་མཆན་སྦྱིན་ན་ཁོང་འཛིན་གྲྭར་ཞུགས་ཀྱི་རེད།",
+	"badge_subject_label": "རྟགས་མའི་སློབ་ཚན།",
+	"badge_subject_language": "སྐད་ཡིག",
+	"badge_subject_dance": "གར་འཁྲབ་དང་གླུ་གཞས།",
+	"badge_subject_instrument": "རོལ་ཆ།",
+	"badge_subject_not_set": "གཏན་འཁེལ་མེད།",
+	"badge_subject_error_required": "རྟགས་མའི་སློབ་ཚན་འདེམས་རོགས།",
+	"classes_col_subject": "སློབ་ཚན།",
+	"classes_edit": "འཛིན་གྲྭ་ཞུན་དག",
+	"classes_edit_title": "{name} ཞུན་དག",
+	"classes_save": "ཉར་ཚགས།",
+	"classes_saved": "“{name}” ཉར་ཚགས་ཟིན།",
+	"classes_error_save_failed": "འཛིན་གྲྭ་ཉར་ཚགས་མ་ཐུབ།"
 }
