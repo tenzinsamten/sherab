@@ -1,6 +1,6 @@
 ---
 id: SPEC-class-tracker
-companions: [roles-and-permissions.md, homework-workflow.md, gamification.md, calendar.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/addendum.md]
+companions: [roles-and-permissions.md, homework-workflow.md, gamification.md, calendar.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/addendum.md, ../spec-badge-detail/SPEC.md]
 sources: [../../../../class-tracker-requirements.md, ../../planning-artifacts/prds/prd-tib-class-2026-09-26/prd.md, ../../brainstorming/brainstorm-student-credentials-delivery-2026-10-13/brainstorm-intent.md]
 ---
 
@@ -31,8 +31,8 @@ The Sunday school runs weekly volunteer-taught classes in Tibetan language, song
   - **success:** A student who attends and marks homework Done keeps their streak; missing more than the configured grace window resets it; short-notice leave consumes grace; the grace value and leave notice period can change without a code change. See `gamification.md`.
 
 - **CAP-5**
-  - **intent:** A student earns badges at configurable milestone increments of attendance count and homework-done count, visible only on their own profile.
-  - **success:** Crossing a milestone awards the corresponding badge without ranking the student against peers. See `gamification.md`.
+  - **intent:** A student earns badges at configurable milestones of attendance count and homework-done count, counted per class subject, visible to the student, their linked parents, and teachers of their classes.
+  - **success:** Crossing a milestone in a subject awards that subject's badge without ranking the student against peers. See `gamification.md` and `../spec-badge-detail/SPEC.md`.
 
 - **CAP-6**
   - **intent:** Students belong to a fixed-for-the-year team, manually assigned by their teacher at approval/onboarding (including mid-year joins), and teams are ranked by a combined-streak metric visible only within the school.
@@ -137,7 +137,6 @@ V1 ships directly to the school's own teachers — no separate requirements-gath
 
 ## Open Questions
 
-- Badge milestone step size (every 5 vs. every 10 attendances/homework-done) is explicitly left unresolved in the source — needs confirmation once building.
 - GDPR-specific obligations (a go-live precondition for the parent role; owner not assigned) beyond the described consent-at-registration and admin-approved-deletion flow (data controller identity, retention limits, breach notification) are unaddressed, and this app stores EU minors' personal data — needs a compliance decision before real student data is stored. Sharper now that the app stores a parent account per family (an adult's name and email) and shows teacher notes to parents.
 - Should students be notified (push/email) when a session is moved or cancelled, or is in-app display enough for v1?
 - Can a parent set leave for a date range (e.g. a three-week holiday), or only per session?

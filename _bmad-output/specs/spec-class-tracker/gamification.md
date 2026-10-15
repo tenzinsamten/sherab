@@ -12,9 +12,10 @@ Detail behind CAP-4, CAP-5, CAP-6. The kernel states the intents and success cri
 
 ## Badges
 
-- v1 criteria: attendance count and homework count, awarded at increments (e.g. a badge at 5 classes attended, another at 10, another at 15; same milestone pattern for homework count).
-- Exact step size (5 vs. 10) is unresolved — see Open Questions in SPEC.md.
-- Visible only on the student's own profile; not ranked against others.
+- Criteria: attendance count and homework-done count, each counted **per class subject** (language, dance incl. song, instrument).
+- Milestones: 1, 5, 10, 25, 50, 100 (`app_settings.badge_milestone_thresholds`), each with its own icon.
+- Visible to the student, their linked parents, teachers of their classes, and admin; never ranked against others.
+- Full rules, icons, badge page, and celebration: `../spec-badge-detail/SPEC.md` and its `badge-catalog.md`.
 
 ## Leaderboard
 

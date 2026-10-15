@@ -1,0 +1,42 @@
+- id: "1"
+  title: Class badge subject
+  description: >-
+    The admin sets a required badge subject (language, dance incl. song,
+    instrument) on each class in /admin/classes; existing classes stay
+    unset until assigned. See SPEC.md CAP-1 and badge-catalog.md.
+
+- id: "2"
+  title: Per-subject badges and access
+  description: >-
+    Badges are counted and awarded per class subject, replacing the
+    subject-less rows, and parents of linked children and teachers of the
+    student's classes can read them. See SPEC.md CAP-2, CAP-8 and Constraints.
+  invoke_dev_with: >-
+    Existing subject-less badge rows may be discarded (no migration of
+    history). Add the new subject column to database.types.ts by hand.
+
+- id: "3"
+  title: Badge icons, detail and progress
+  description: >-
+    The Badges tile shows each badge's icon from static/badges/, tapping an
+    earned badge opens its detail, and each subject track shows progress to
+    the next milestone. See SPEC.md CAP-4, CAP-5, CAP-6.
+  spec_checkpoint: true
+
+- id: "4"
+  title: Badge page for student, parent and teacher
+  description: >-
+    A dedicated badge page lists earned and greyed locked badges per subject,
+    linked from the tile's "See all", with parent and teacher versions for a
+    given student. See SPEC.md CAP-7, CAP-8.
+  spec_checkpoint: true
+  done_checkpoint: true
+
+- id: "5"
+  title: New-badge celebration
+  description: >-
+    The first time a student opens the app after earning a badge, a one-time
+    "New badge!" moment shows its icon and never reappears after dismissal.
+    See SPEC.md CAP-9.
+  spec_checkpoint: true
+  done_checkpoint: true
