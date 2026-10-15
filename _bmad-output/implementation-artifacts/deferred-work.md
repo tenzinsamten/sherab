@@ -337,3 +337,6 @@
 - source_spec: `_bmad-output/specs/spec-badge-detail/stories/2-per-subject-badges-and-access.md`
   summary: Add a browser/render test that two badges differing only by subject both render on the Badges tile (each-key includes the subject).
   evidence: No component or e2e test renders StudentProgressTiles; reverting the key to type-milestone would crash on duplicate keys unnoticed. Belongs with badge detail story 3, which replaces the tile.
+- source_spec: `_bmad-output/specs/spec-badge-detail/stories/3-badge-icons-detail-and-progress.md`
+  summary: Extend e2e badge coverage to the parent child page, the trophy-pill fallback, the top-badge state and closing the dialog with its Close button.
+  evidence: e2e/badges.e2e.ts covers only /student, an icon milestone, a non-top badge and Escape; the parent page and those dialog paths have no rendered check.
