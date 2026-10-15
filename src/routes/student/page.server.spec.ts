@@ -113,7 +113,8 @@ function run(
 	tables: Record<string, Result>,
 	rpc: Result = leaderboard,
 	countsResult: Result = counts,
-	joinResult: Result = joinRequests
+	joinResult: Result = joinRequests,
+	progressResult: Result = { data: [], error: null }
 ) {
 	const calls: { name: string; args: unknown }[] = [];
 	const supabase = {
@@ -122,6 +123,7 @@ function run(
 			calls.push({ name, args });
 			if (name === 'homework_counts') return countsResult;
 			if (name === 'my_class_join_requests') return joinResult;
+			if (name === 'badge_progress') return progressResult;
 			return rpc;
 		}
 	};
@@ -263,11 +265,80 @@ describe('student dashboard load', () => {
 				error: null
 			}
 		});
+		// Badge detail 3: subject order (language before dance), with icons.
 		expect(result).toMatchObject({
 			badges: [
-				{ subject: 'dance', badgeType: 'attendance', milestone: 1 },
-				{ subject: 'language', badgeType: 'attendance', milestone: 1 }
+				{
+					subject: 'language',
+					badgeType: 'attendance',
+					milestone: 1,
+					icon: '/badges/language-attendance-1.svg'
+				},
+				{
+					subject: 'dance',
+					badgeType: 'attendance',
+					milestone: 1,
+					icon: '/badges/dance-attendance-1.svg'
+				}
 			]
+		});
+	});
+
+	it('badge detail 3: loads badge_progress() for the caller and shapes it per subject', async () => {
+		const result = await run(base, leaderboard, counts, joinRequests, {
+			data: [
+				{ subject: 'dance', badge_type: 'attendance', total: 7, next_milestone: 10 },
+				{ subject: 'dance', badge_type: 'homework', total: 0, next_milestone: 1 },
+				{ subject: 'language', badge_type: 'attendance', total: 0, next_milestone: 1 },
+				{ subject: 'language', badge_type: 'homework', total: 0, next_milestone: 1 }
+			],
+			error: null
+		});
+		expect(lastRpcCalls).toContainEqual({ name: 'badge_progress', args: { p_student_id: 's1' } });
+		expect(result).toMatchObject({
+			loadError: false,
+			progressLoadError: false,
+			badgeProgress: [
+				{
+					subject: 'language',
+					attendance: { total: 0, next: 1 },
+					homework: { total: 0, next: 1 }
+				},
+				{
+					subject: 'dance',
+					attendance: { total: 7, next: 10 },
+					homework: { total: 0, next: 1 }
+				}
+			]
+		});
+	});
+
+	it('badge detail 3: a badge_progress() failure sets only progressLoadError', async () => {
+		const result = await run(
+			{
+				...base,
+				badges_earned: {
+					data: [
+						{
+							badge_subject: 'dance',
+							badge_type: 'attendance',
+							milestone: 1,
+							earned_at: '2026-10-01T00:00:00Z'
+						}
+					],
+					error: null
+				}
+			},
+			leaderboard,
+			counts,
+			joinRequests,
+			{ data: null, error: { message: 'boom' } }
+		);
+		expect(result).toMatchObject({
+			badgeProgress: [],
+			progressLoadError: true,
+			loadError: false,
+			badges: [{ subject: 'dance', badgeType: 'attendance', milestone: 1 }]
 		});
 	});
 

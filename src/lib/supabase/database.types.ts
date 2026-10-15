@@ -1443,6 +1443,15 @@ export type Database = {
 				Args: { p_student_id: string };
 				Returns: { open_count: number; overdue_count: number }[];
 			};
+			badge_progress: {
+				Args: { p_student_id: string };
+				Returns: {
+					subject: string;
+					badge_type: string;
+					total: number;
+					next_milestone: number | null;
+				}[];
+			};
 			mark_tour_seen: {
 				Args: { p_tour: string };
 				Returns: undefined;

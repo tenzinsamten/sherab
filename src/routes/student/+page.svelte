@@ -117,7 +117,13 @@
 		</a>
 	</div>
 
-	<StudentProgressTiles streak={data.streak} badges={data.badges} loadError={data.loadError} />
+	<StudentProgressTiles
+		streak={data.streak}
+		badges={data.badges}
+		badgeProgress={data.badgeProgress}
+		progressLoadError={data.progressLoadError}
+		loadError={data.loadError}
+	/>
 
 	<section class="card">
 		<div class="card-header">

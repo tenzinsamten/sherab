@@ -7,7 +7,12 @@ import {
 	type LocalizedNames
 } from '$lib/localized-name';
 import { todayInBerlin } from '$lib/berlin-date';
-import { shapeStudentBadges, type StudentBadge } from '$lib/server/badges';
+import {
+	shapeBadgeProgress,
+	shapeStudentBadges,
+	type BadgeProgress,
+	type StudentBadge
+} from '$lib/server/badges';
 import { toHhMm } from '$lib/server/calendar';
 import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
 import { leaveErrorMessage, leaveRangeErrorMessage } from '$lib/server/leave';
@@ -305,6 +310,7 @@ async function loadChildDetails(
 		done,
 		{ data: streakRow, error: streakError },
 		{ data: badgeRows, error: badgesError },
+		{ data: progressRows, error: progressError },
 		{ data: profileRow, error: profileError },
 		{ data: teamRows, error: teamError },
 		{ data: attendanceRows, error: attendanceError },
@@ -332,6 +338,7 @@ async function loadChildDetails(
 			.order('badge_subject')
 			.order('badge_type')
 			.order('milestone', { ascending: true }),
+		supabase.rpc('badge_progress', { p_student_id: childId }),
 		supabase.from('profiles').select('team_id').eq('id', childId).maybeSingle(),
 		supabase.rpc('team_leaderboard'),
 		supabase.rpc('child_attendance', { p_student_id: childId }),
@@ -409,6 +416,7 @@ async function loadChildDetails(
 
 	const streak: StudentStreak | null = shapeStudentStreak(streakRow);
 	const badges: StudentBadge[] = shapeStudentBadges(badgeRows);
+	const badgeProgress: BadgeProgress[] = shapeBadgeProgress(progressRows);
 
 	const errors: ChildSectionErrors = {
 		summary: Boolean(streakError || badgesError),
@@ -423,6 +431,9 @@ async function loadChildDetails(
 	return {
 		streak,
 		badges,
+		badgeProgress,
+		// Its own flag: a progress-only failure keeps the streak and badges.
+		progressLoadError: Boolean(progressError),
 		team,
 		teamId: team ? teamId : null,
 		leaderboard,

@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
 import { localizedName, pickLocalized } from '$lib/localized-name';
 import { todayInBerlin } from '$lib/berlin-date';
-import { shapeStudentBadges } from '$lib/server/badges';
+import { shapeBadgeProgress, shapeStudentBadges } from '$lib/server/badges';
 import { shapeTeamLeaderboard } from '$lib/server/leaderboard';
 import { shapeStudentStreak } from '$lib/server/streak';
 import {
@@ -57,7 +57,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		{ data: badgeRows, error: badgesError },
 		{ data: teamRows, error: teamError },
 		{ data: countRows, error: countsError },
-		{ data: joinRows, error: joinError }
+		{ data: joinRows, error: joinError },
+		{ data: progressRows, error: progressError }
 	] = await Promise.all([
 		loadStudentHomework(supabase, user.id, {
 			filter: 'todo',
@@ -81,7 +82,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		// The one Open/Overdue count (Story 7-3), shared with the parent cards.
 		supabase.rpc('homework_counts', { p_student_id: user.id }),
 		// Pending and not-dismissed rejected requests, newest first (0031).
-		supabase.rpc('my_class_join_requests')
+		supabase.rpc('my_class_join_requests'),
+		// Per-subject progress toward the next badge (0049), counted in Postgres.
+		supabase.rpc('badge_progress', { p_student_id: user.id })
 	]);
 	const counts = countRows?.[0];
 
@@ -104,6 +107,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		teamId: team && profile.status === 'approved' ? profile.team_id : null,
 		streak: shapeStudentStreak(streakRow),
 		badges: shapeStudentBadges(badgeRows),
+		badgeProgress: shapeBadgeProgress(progressRows),
+		// Its own flag: a progress-only failure keeps the streak and badges.
+		progressLoadError: Boolean(progressError),
 		nextDue: homework.items.slice(0, NEXT_DUE_COUNT),
 		classes: classes.map((c) => ({ ...c, todo: todoByClass.get(c.id) ?? 0 })),
 		joinRequests: (joinRows ?? []).map((r): StudentJoinRequest => ({

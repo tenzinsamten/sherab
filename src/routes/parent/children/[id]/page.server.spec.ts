@@ -118,6 +118,12 @@ type LoadResult = {
 	loadError: boolean;
 	streak: { currentStreak: number } | null;
 	badges: { subject: string; badgeType: string; milestone: number }[];
+	badgeProgress: {
+		subject: string;
+		attendance: { total: number; next: number | null };
+		homework: { total: number; next: number | null };
+	}[];
+	progressLoadError: boolean;
 	team: { name: string; rank: number; total: number } | null;
 	teamId: string | null;
 	leaderboard: { teamId: string; teamName: string; totalStreak: number }[];
@@ -873,6 +879,13 @@ describe('parent child page: detail sections', () => {
 		class_people: {
 			data: [{ person_id: 'tch', display_name: 'Pema', is_teacher: true }],
 			error: null
+		},
+		badge_progress: {
+			data: [
+				{ subject: 'dance', badge_type: 'attendance', total: 7, next_milestone: 10 },
+				{ subject: 'dance', badge_type: 'homework', total: 5, next_milestone: 10 }
+			],
+			error: null
 		}
 	};
 
@@ -902,8 +915,22 @@ describe('parent child page: detail sections', () => {
 		]);
 		expect(result.streak).toMatchObject({ currentStreak: 3 });
 		expect(result.badges).toEqual([
-			{ subject: 'dance', badgeType: 'homework', milestone: 5, earnedAt: at(3) }
+			{
+				subject: 'dance',
+				badgeType: 'homework',
+				milestone: 5,
+				earnedAt: at(3),
+				icon: '/badges/dance-homework-5.svg'
+			}
 		]);
+		expect(result.badgeProgress).toEqual([
+			{
+				subject: 'dance',
+				attendance: { total: 7, next: 10 },
+				homework: { total: 5, next: 10 }
+			}
+		]);
+		expect(fake.rpc).toHaveBeenCalledWith('badge_progress', { p_student_id: CHILD });
 		expect(result.team).toEqual({ name: 'Yaks', rank: 2, total: 2 });
 		expect(result.teamId).toBe('t2');
 		expect(result.leaderboard.map((t) => t.teamName)).toEqual(['Snow Lions', 'Yaks']);
@@ -968,6 +995,7 @@ describe('parent child page: detail sections', () => {
 			tab: 'overview',
 			streak: null,
 			badges: [],
+			badgeProgress: [],
 			team: null,
 			teamId: null,
 			leaderboard: [],
@@ -1072,6 +1100,20 @@ describe('parent child page: detail sections', () => {
 		for (const [section, value] of Object.entries(errors)) {
 			expect([section, value]).toEqual([section, (flagged as readonly string[]).includes(section)]);
 		}
+	});
+
+	it('badge detail 3: a badge_progress() failure flags only progressLoadError', async () => {
+		const fake = fakeSupabase({
+			linked,
+			tables: fullTables(),
+			rpc: { ...fullRpc, badge_progress: boom }
+		});
+		const result = await runLoad(fake);
+		expect(result.progressLoadError).toBe(true);
+		expect(result.badgeProgress).toEqual([]);
+		expect(Object.values(result.errors).every((v) => v === false)).toBe(true);
+		expect(result.streak).toMatchObject({ currentStreak: 3 });
+		expect(result.badges).toHaveLength(1);
 	});
 
 	it.each([

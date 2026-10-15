@@ -297,6 +297,8 @@
 		<StudentProgressTiles
 			streak={data.streak}
 			badges={data.badges}
+			badgeProgress={data.badgeProgress}
+			progressLoadError={data.progressLoadError}
 			loadError={data.errors.summary}
 		/>
 

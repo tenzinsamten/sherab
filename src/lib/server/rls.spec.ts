@@ -5987,6 +5987,96 @@ describe.skipIf(!reachable)('Badge detail 2: per-subject badges (requires local 
 		}
 		expect(await badgesOf(kid)).toEqual([]);
 	});
+
+	// Badge detail story 3 (0049): badge_progress() per subject, both tracks.
+	describe('Badge detail 3: badge_progress()', () => {
+		async function progressOf(client: ReturnType<typeof anonClient>, studentId: string) {
+			const { data, error } = await client.rpc('badge_progress', { p_student_id: studentId });
+			expect(error).toBeNull();
+			return data;
+		}
+
+		it('lists both tracks of each enrolled subject with the recompute counts, even at 0', async () => {
+			const language = await createClass('language');
+			const dance = await createClass('dance');
+			const unset = await createClass(null);
+			const kid = await createStudent(dance, [language, unset]);
+			await present(kid, dance, [1, 2, 3, 4, 5, 6, 7]);
+			await present(kid, unset, [8, 9]);
+
+			expect(await progressOf(admin.client, kid)).toEqual([
+				{ subject: 'language', badge_type: 'attendance', total: 0, next_milestone: 1 },
+				{ subject: 'language', badge_type: 'homework', total: 0, next_milestone: 1 },
+				{ subject: 'dance', badge_type: 'attendance', total: 7, next_milestone: 10 },
+				{ subject: 'dance', badge_type: 'homework', total: 0, next_milestone: 1 }
+			]);
+		});
+
+		it('song and dance share one count (a shared day once), and Done homework moves the target', async () => {
+			const song = await createClass('dance');
+			const dance = await createClass('dance');
+			const kid = await createStudent(song, [dance]);
+			await present(kid, song, [1, 2, 3]);
+			await present(kid, dance, [3, 4]);
+			await homeworkDone(kid, dance, 5);
+
+			expect(await progressOf(admin.client, kid)).toEqual([
+				{ subject: 'dance', badge_type: 'attendance', total: 4, next_milestone: 5 },
+				{ subject: 'dance', badge_type: 'homework', total: 5, next_milestone: 10 }
+			]);
+			expect(await badgesOf(kid)).toContain('dance-homework-005');
+		});
+
+		it('a student enrolled only in classes without a subject has no progress rows', async () => {
+			const unset = await createClass(null);
+			const kid = await createStudent(unset);
+			await present(kid, unset, [1]);
+
+			expect(await progressOf(admin.client, kid)).toEqual([]);
+		});
+
+		it('the student, a linked parent, a teacher of the student and admin read it; anyone else gets no rows', async () => {
+			const parent = await createApprovedParent();
+			const otherParent = await createApprovedParent();
+			const otherTeacher = await createSignedInUser('teacher');
+			const cls = await createClass('dance');
+			const otherClass = await createClass('dance', otherTeacher);
+			const kid = await createStudent(cls, [], parent.email);
+			const otherKid = await createStudent(otherClass, [], otherParent.email);
+			await present(kid, cls, [1, 2]);
+
+			const signInParent = async (p: { email: string; password: string }) => {
+				const client = anonClient();
+				const { error } = await client.auth.signInWithPassword(p);
+				expect(error).toBeNull();
+				return client;
+			};
+
+			const expected = [
+				{ subject: 'dance', badge_type: 'attendance', total: 2, next_milestone: 5 },
+				{ subject: 'dance', badge_type: 'homework', total: 0, next_milestone: 1 }
+			];
+			for (const client of [
+				await signInStudent(kid),
+				await signInParent(parent),
+				teacher.client,
+				admin.client
+			]) {
+				expect(await progressOf(client, kid)).toEqual(expected);
+			}
+			for (const client of [
+				await signInStudent(otherKid),
+				await signInParent(otherParent),
+				otherTeacher.client
+			]) {
+				expect(await progressOf(client, kid)).toEqual([]);
+			}
+			// Not signed in: no execute grant for anon.
+			const { data, error } = await anonClient().rpc('badge_progress', { p_student_id: kid });
+			expect(data ?? []).toEqual([]);
+			expect(error).not.toBeNull();
+		});
+	});
 });
 
 describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', () => {
