@@ -1184,6 +1184,36 @@
 	"badge_progress_value": "{total} / {next}",
 	"badge_progress_top": "{total}། ངོ་རྟགས་མཐོ་ཤོས་ཐོབ་ཟིན།",
 	"badge_progress_empty": "འཛིན་གྲྭར་རྟགས་མའི་སློབ་ཚན་གཏན་འཁེལ་བྱས་རྗེས་ཡར་རྒྱས་མངོན་གྱི་རེད།",
+	"badge_page_heading": "ངོ་རྟགས།",
+	"badge_page_heading_own": "ངའི་ངོ་རྟགས།",
+	"badge_page_heading_of": "{name} ཡི་ངོ་རྟགས།",
+	"badge_page_intro": "སློབ་ཚན་སོ་སོའི་ངོ་རྟགས་ཡོངས་རྫོགས། ཐོབ་ཟིན་པའི་ངོ་རྟགས་ཚོན་མདོག་དང་ཚེས་གྲངས་བཅས་མངོན། མ་ཐོབ་པའི་ངོ་རྟགས་ལ་ཐོབ་ཐབས་མངོན།",
+	"badge_page_empty": "ད་དུང་མངོན་རྒྱུའི་ངོ་རྟགས་མེད། འཛིན་གྲྭར་རྟགས་མའི་སློབ་ཚན་གཏན་འཁེལ་བྱས་རྗེས་ངོ་རྟགས་མངོན་གྱི་རེད།",
+	"badge_page_load_failed": "ངོ་རྟགས་ཕབ་ལེན་བྱེད་མ་ཐུབ། ཡང་བསྐྱར་ཚོད་ལྟ་བྱེད་རོགས།",
+	"badge_locked": "སྒོ་བརྒྱབ།",
+	"badge_unlock_attendance": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{subject} སློབ་ཉིན་ {count} ལ་ཞུགས་དགོས།",
+				"countPlural=other": "{subject} སློབ་ཉིན་ {count} ལ་ཞུགས་དགོས།"
+			}
+		}
+	],
+	"badge_unlock_homework": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{subject} ནང་སྦྱོང་ {count} གྲུབ་དགོས།",
+				"countPlural=other": "{subject} ནང་སྦྱོང་ {count} གྲུབ་དགོས།"
+			}
+		}
+	],
+	"badge_see_all": "ཚང་མ་ལྟ།",
+	"badge_see_all_label": "ངོ་རྟགས་ཚང་མ་ལྟ།",
+	"badge_page_link": "ངོ་རྟགས།",
 	"classes_col_subject": "སློབ་ཚན།",
 	"classes_edit": "འཛིན་གྲྭ་ཞུན་དག",
 	"classes_edit_title": "{name} ཞུན་དག",

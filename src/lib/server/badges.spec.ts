@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	BADGE_ICON_MILESTONES,
 	badgeIconPath,
+	loadBadgePage,
+	parseBadgeMilestones,
+	shapeBadgePage,
 	shapeBadgeProgress,
 	shapeStudentBadges,
 	type StudentBadgeRow
@@ -189,4 +192,213 @@ describe('shapeBadgeProgress', () => {
 			shapeBadgeProgress([{ subject: 'dance', badge_type: 'skill', total: 1, next_milestone: 5 }])
 		).toThrow(/Unrecognized badge_type/);
 	});
+});
+
+describe('parseBadgeMilestones', () => {
+	it('reads the setting as ascending positive integers', () => {
+		expect(parseBadgeMilestones([10, 1, 5, 5])).toEqual([1, 5, 10]);
+	});
+
+	it.each([[null], [{}], [[]], [['a', -1, 2.5]]])(
+		'falls back to the database default for %j',
+		(value) => {
+			expect(parseBadgeMilestones(value)).toEqual([1, 5, 10, 25, 50, 100]);
+		}
+	);
+});
+
+type Fake = {
+	badges?: { data: unknown; error: unknown };
+	progress?: { data: unknown; error: unknown };
+	setting?: { data: unknown; error: unknown };
+};
+
+/** A fake client answering the three reads of loadBadgePage; `calls` records filters. */
+function fakeClient(opts: Fake) {
+	const calls: { table: string; method: string; args: unknown[] }[] = [];
+	const rpc = vi.fn(async () => opts.progress ?? { data: [], error: null });
+	const from = (table: string) => {
+		const result =
+			table === 'badges_earned'
+				? (opts.badges ?? { data: [], error: null })
+				: (opts.setting ?? { data: { value: [1, 5, 10, 25, 50, 100] }, error: null });
+		const c: Record<string, unknown> = {};
+		for (const method of ['select', 'eq', 'order']) {
+			c[method] = (...args: unknown[]) => {
+				calls.push({ table, method, args });
+				return c;
+			};
+		}
+		c.maybeSingle = async () => result;
+		c.then = (resolve: (value: unknown) => unknown) => resolve(result);
+		return c;
+	};
+	return { calls, rpc, client: { from, rpc } as unknown as Parameters<typeof loadBadgePage>[0] };
+}
+
+const progressRow = (subject: string, badge_type: string, total: number, next: number | null) => ({
+	subject,
+	badge_type,
+	total,
+	next_milestone: next
+});
+
+describe('shapeBadgePage / loadBadgePage', () => {
+	const STUDENT = 's1';
+
+	it('lists every milestone of each progress subject, earned with dates and locked with null', async () => {
+		const fake = fakeClient({
+			badges: {
+				data: [
+					{
+						badge_subject: 'dance',
+						badge_type: 'attendance',
+						milestone: 5,
+						earned_at: '2026-09-20T10:00:00Z'
+					},
+					{
+						badge_subject: 'dance',
+						badge_type: 'attendance',
+						milestone: 1,
+						earned_at: '2026-09-06T10:00:00Z'
+					}
+				],
+				error: null
+			},
+			progress: {
+				data: [
+					progressRow('dance', 'attendance', 7, 10),
+					progressRow('dance', 'homework', 0, 1),
+					progressRow('language', 'attendance', 0, 1),
+					progressRow('language', 'homework', 0, 1)
+				],
+				error: null
+			}
+		});
+
+		const { sections, loadError } = await loadBadgePage(fake.client, STUDENT);
+
+		expect(loadError).toBe(false);
+		expect(fake.rpc).toHaveBeenCalledWith('badge_progress', { p_student_id: STUDENT });
+		expect(fake.calls).toContainEqual({
+			table: 'badges_earned',
+			method: 'eq',
+			args: ['student_id', STUDENT]
+		});
+		expect(fake.calls).toContainEqual({
+			table: 'app_settings',
+			method: 'eq',
+			args: ['key', 'badge_milestone_thresholds']
+		});
+		// Language before dance, no instrument; attendance before homework.
+		expect(sections.map((s) => s.subject)).toEqual(['language', 'dance']);
+		expect(sections[1].tracks.map((t) => t.type)).toEqual(['attendance', 'homework']);
+		const all = sections.flatMap((s) => s.tracks.flatMap((t) => t.badges));
+		expect(all).toHaveLength(24);
+		expect(all.filter((b) => b.earnedAt)).toHaveLength(2);
+
+		const danceAttendance = sections[1].tracks[0];
+		expect(danceAttendance).toMatchObject({ type: 'attendance', total: 7, next: 10 });
+		expect(danceAttendance.badges.map((b) => b.milestone)).toEqual([1, 5, 10, 25, 50, 100]);
+		expect(danceAttendance.badges[0]).toEqual({
+			milestone: 1,
+			icon: '/badges/dance-attendance-1.svg',
+			earnedAt: '2026-09-06T10:00:00Z'
+		});
+		expect(danceAttendance.badges[2]).toEqual({
+			milestone: 10,
+			icon: '/badges/dance-attendance-10.svg',
+			earnedAt: null
+		});
+	});
+
+	it('keeps a subject the student left when they hold a badge in it, with no known count', () => {
+		const sections = shapeBadgePage(
+			[
+				{
+					subject: 'instrument',
+					badgeType: 'homework',
+					milestone: 1,
+					earnedAt: '2026-05-01T00:00:00Z',
+					icon: '/badges/instrument-homework-1.svg'
+				}
+			],
+			[
+				{
+					subject: 'language',
+					attendance: { total: 0, next: 1 },
+					homework: { total: 0, next: 1 }
+				}
+			],
+			[1, 5, 10, 25, 50, 100]
+		);
+
+		expect(sections.map((s) => s.subject)).toEqual(['language', 'instrument']);
+		const instrument = sections[1];
+		expect(instrument.tracks.flatMap((t) => t.badges)).toHaveLength(12);
+		expect(instrument.tracks[1]).toMatchObject({ type: 'homework', total: null, next: null });
+		expect(instrument.tracks[1].badges[0].earnedAt).toBe('2026-05-01T00:00:00Z');
+	});
+
+	it('uses the configured milestones, keeping an earned one no longer configured; no icon means null', () => {
+		const [section] = shapeBadgePage(
+			[
+				{
+					subject: 'dance',
+					badgeType: 'homework',
+					milestone: 5,
+					earnedAt: '2026-05-01T00:00:00Z',
+					icon: '/badges/dance-homework-5.svg'
+				}
+			],
+			[{ subject: 'dance', attendance: { total: 0, next: 3 }, homework: { total: 5, next: 7 } }],
+			[3, 7]
+		);
+		expect(section.tracks[0].badges.map((b) => b.milestone)).toEqual([3, 7]);
+		expect(section.tracks[1].badges.map((b) => [b.milestone, b.icon])).toEqual([
+			[3, null],
+			[5, '/badges/dance-homework-5.svg'],
+			[7, null]
+		]);
+	});
+
+	it('shows every badge as locked for a student with no badges yet', () => {
+		const sections = shapeBadgePage(
+			[],
+			[{ subject: 'dance', attendance: { total: 0, next: 1 }, homework: { total: 0, next: 1 } }],
+			[1, 5, 10, 25, 50, 100]
+		);
+		const all = sections.flatMap((s) => s.tracks.flatMap((t) => t.badges));
+		expect(all).toHaveLength(12);
+		expect(all.every((b) => b.earnedAt === null)).toBe(true);
+	});
+
+	it('is empty for a student with no subjects and no badges', async () => {
+		const fake = fakeClient({});
+		expect(await loadBadgePage(fake.client, STUDENT)).toEqual({ sections: [], loadError: false });
+	});
+
+	it('falls back to the default milestones when the setting row is missing', async () => {
+		const fake = fakeClient({
+			setting: { data: null, error: null },
+			progress: { data: [progressRow('language', 'attendance', 0, 1)], error: null }
+		});
+		const { sections } = await loadBadgePage(fake.client, STUDENT);
+		expect(sections[0].tracks[0].badges.map((b) => b.milestone)).toEqual([1, 5, 10, 25, 50, 100]);
+	});
+
+	it.each([
+		['badges', { badges: { data: null, error: { message: 'x' } } }],
+		['progress', { progress: { data: null, error: { message: 'x' } } }],
+		['setting', { setting: { data: null, error: { message: 'x' } } }]
+	] as [string, Fake][])(
+		'a failed %s read is a load error, not an empty page',
+		async (_l, opts) => {
+			const fake = fakeClient({
+				progress: { data: [progressRow('language', 'attendance', 0, 1)], error: null },
+				...opts
+			});
+			expect(await loadBadgePage(fake.client, STUDENT)).toEqual({ sections: [], loadError: true });
+		}
+	);
 });

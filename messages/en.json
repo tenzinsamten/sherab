@@ -1184,6 +1184,36 @@
 	"badge_progress_value": "{total} / {next}",
 	"badge_progress_top": "{total}, top badge reached",
 	"badge_progress_empty": "Progress shows once a class has a badge subject.",
+	"badge_page_heading": "Badges",
+	"badge_page_heading_own": "My badges",
+	"badge_page_heading_of": "Badges of {name}",
+	"badge_page_intro": "Every badge in each subject. Earned badges show in colour with their date; locked badges show what unlocks them.",
+	"badge_page_empty": "No badges to show yet. Badges appear once a class has a badge subject.",
+	"badge_page_load_failed": "Couldn't load the badges. Please try again.",
+	"badge_locked": "Locked",
+	"badge_unlock_attendance": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Attend {count} {subject} class",
+				"countPlural=other": "Attend {count} {subject} classes"
+			}
+		}
+	],
+	"badge_unlock_homework": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Finish {count} {subject} homework",
+				"countPlural=other": "Finish {count} {subject} homework"
+			}
+		}
+	],
+	"badge_see_all": "See all",
+	"badge_see_all_label": "See all badges",
+	"badge_page_link": "Badges",
 	"classes_col_subject": "Subject",
 	"classes_edit": "Edit class",
 	"classes_edit_title": "Edit {name}",

@@ -123,6 +123,7 @@
 		badgeProgress={data.badgeProgress}
 		progressLoadError={data.progressLoadError}
 		loadError={data.loadError}
+		seeAllHref={resolve('/student/badges')}
 	/>
 
 	<section class="card">

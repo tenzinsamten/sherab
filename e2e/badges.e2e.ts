@@ -7,9 +7,14 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
  * each-key item from story 2), the detail dialog opens from the keyboard,
  * closes with Escape and returns focus, and per-subject progress shows.
  *
- * Its own fixture: a teacher, a language and a dance class, and an approved
- * student enrolled in both with one Done homework in each (badges are
- * trigger-written: language-homework-1 and dance-homework-1).
+ * Story 4: the tile's "See all" opens /student/badges with every badge of the
+ * student's subjects (earned and locked); the teacher reaches the same page
+ * from the class roster and the linked parent from their child's page.
+ *
+ * Its own fixture: a teacher, a language and a dance class, an approved
+ * parent, and an approved student (their child) enrolled in both with one
+ * Done homework in each (badges are trigger-written: language-homework-1,
+ * then dance-homework-1).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -17,6 +22,8 @@ test.describe.configure({ mode: 'serial' });
 const tag = crypto.randomUUID().slice(0, 8);
 let teacher: TestUser;
 let student: TestUser;
+let parent: TestUser;
+let danceClassId = '';
 const userIds: string[] = [];
 const classIds: string[] = [];
 const team = fixtureTeam(tag);
@@ -26,7 +33,7 @@ function check<T>(result: { data: T; error: { message: string } | null }, what: 
 	return result.data;
 }
 
-async function createUser(role: 'teacher' | 'student'): Promise<TestUser> {
+async function createUser(role: 'teacher' | 'student' | 'parent'): Promise<TestUser> {
 	const domain = role === 'student' ? 'students.internal.invalid' : 'example.test';
 	const email = `e2e-bd3-${role}-${tag}@${domain}`;
 	const password = crypto.randomUUID();
@@ -131,6 +138,12 @@ test.beforeAll(async () => {
 		teacher = await createUser('teacher');
 		const language = await createClass('language');
 		const dance = await createClass('dance');
+		danceClassId = dance;
+		parent = await createUser('parent');
+		check(
+			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
+			'approve parent'
+		);
 		student = await createUser('student');
 		check(
 			await service
@@ -140,6 +153,7 @@ test.beforeAll(async () => {
 					status: 'approved',
 					registration_name: `E2E BD3 Student ${tag}`,
 					display_name: `E2E BD3 Student ${tag}`,
+					parent_id: parent.id,
 					team_id: await team.id()
 				})
 				.eq('id', student.id),
@@ -185,17 +199,18 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 	await signIn(page, student);
 	await openDashboard(page);
 
-	// Two subjects at the same milestone both show, language first.
+	// Two subjects at the same milestone both show, most recently earned
+	// first (story 4): dance was finished after language.
 	const icons = page.locator('button[data-badge]');
 	await expect(icons).toHaveCount(2);
-	await expect(icons.nth(0)).toHaveAttribute('data-badge', 'language-homework-1');
-	await expect(icons.nth(1)).toHaveAttribute('data-badge', 'dance-homework-1');
-	await expect(icons.nth(0).locator('img')).toHaveAttribute(
+	await expect(icons.nth(0)).toHaveAttribute('data-badge', 'dance-homework-1');
+	await expect(icons.nth(1)).toHaveAttribute('data-badge', 'language-homework-1');
+	await expect(icons.nth(1).locator('img')).toHaveAttribute(
 		'src',
 		'/badges/language-homework-1.svg'
 	);
 	await expect(page.getByRole('button', { name: 'Dance & song Homework badge 1' })).toBeVisible();
-	await expect(icons.nth(1)).toHaveAttribute('title', 'Dance & song Homework badge 1');
+	await expect(icons.nth(0)).toHaveAttribute('title', 'Dance & song Homework badge 1');
 
 	// Progress per subject, both tracks.
 	await expect(page.locator('[data-progress="language-homework"] dd')).toHaveText('1 / 5');
@@ -204,7 +219,7 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 	await expect(page.locator('[data-progress="language-attendance"] dd')).toHaveText('0 / 1');
 
 	// Keyboard: focus the dance icon, Enter opens the detail.
-	const danceIcon = icons.nth(1);
+	const danceIcon = icons.nth(0);
 	await danceIcon.focus();
 	await page.keyboard.press('Enter');
 	const dialog = page.getByRole('dialog', { name: '1 Dance & song homework done' });
@@ -220,4 +235,99 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeHidden();
 	await expect(danceIcon).toBeFocused();
+});
+
+/** The badge page's grid: 2 subjects x 2 tracks x 6 milestones, 2 of them earned. */
+async function expectBadgePage(page: Page) {
+	const badges = page.locator('li[data-badge]');
+	await expect(badges).toHaveCount(24);
+	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
+	await expect(page.locator('li[data-state="locked"]')).toHaveCount(22);
+	await expect(page.locator('section[data-subject]')).toHaveCount(2);
+	await expect(page.locator('section[data-subject="instrument"]')).toHaveCount(0);
+	await expect(page.locator('section[data-subject]').nth(0)).toHaveAttribute(
+		'data-subject',
+		'language'
+	);
+
+	// The next locked dance homework badge: requirement and progress.
+	const next = page.locator('li[data-badge="dance-homework-5"]');
+	await expect(next).toHaveAttribute('data-state', 'locked');
+	await expect(next).toContainText('Locked');
+	await expect(next).toContainText('Finish 5 Dance & song homework');
+	await expect(next.locator('.badge-progress')).toHaveText('1 / 5');
+	// Later ones: the requirement only.
+	const later = page.locator('li[data-badge="dance-homework-25"]');
+	await expect(later).toContainText('Finish 25 Dance & song homework');
+	await expect(later.locator('.badge-progress')).toHaveCount(0);
+	await expect(page.locator('li[data-badge="dance-attendance-1"]')).toContainText(
+		'Attend 1 Dance & song class'
+	);
+	// Locked: the real icon, greyed, not a button.
+	const lockedIcon = later.locator('img');
+	await expect(lockedIcon).toHaveAttribute('src', '/badges/dance-homework-25.svg');
+	await expect(later.locator('button')).toHaveCount(0);
+	expect(
+		await later.locator('.badge-visual').evaluate((el) => getComputedStyle(el).filter)
+	).toContain('grayscale');
+
+	// Earned: dated, and a tap opens the detail.
+	const earned = page.locator('li[data-badge="dance-homework-1"]');
+	await expect(earned).toContainText(/Earned on /);
+	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await earned.getByRole('button', { name: 'Dance & song Homework badge 1' }).click();
+	const dialog = page.getByRole('dialog', { name: '1 Dance & song homework done' });
+	await expect(dialog).toBeVisible();
+	await expect(
+		page.locator('ix-modal[data-testid="badge-detail"]').getByText('Next: 5')
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+}
+
+test('the tile links to the badge page, which lists every badge earned and locked', async ({
+	page
+}) => {
+	await signIn(page, student);
+	await openDashboard(page);
+
+	await page.getByTestId('badges-see-all').click();
+	await expect(page).toHaveURL(/\/student\/badges$/);
+	await page.waitForLoadState('networkidle');
+	await expectBadgePage(page);
+});
+
+test("a teacher of the student's class opens the badge page from the roster", async ({ page }) => {
+	await signIn(page, teacher);
+	await page.goto(`/teacher/classes/${danceClassId}`);
+	await page.waitForLoadState('networkidle');
+
+	await page.locator(`button.student-toggle[data-student-id="${student.id}"]`).click();
+	await page.getByRole('link', { name: `Badges of E2E BD3 Student ${tag}` }).click();
+	await expect(page).toHaveURL(
+		new RegExp(`/teacher/classes/${danceClassId}/students/${student.id}/badges$`)
+	);
+	await page.waitForLoadState('networkidle');
+	await expectBadgePage(page);
+
+	// A student who is not in the class: 404.
+	const response = await page.goto(
+		`/teacher/classes/${danceClassId}/students/${crypto.randomUUID()}/badges`
+	);
+	expect(response?.status()).toBe(404);
+});
+
+test("the linked parent sees their child's badge page; another child is a 404", async ({
+	page
+}) => {
+	await signIn(page, parent);
+	await page.goto(`/parent/children/${student.id}`);
+	await page.waitForLoadState('networkidle');
+	await page.getByTestId('badges-see-all').click();
+	await expect(page).toHaveURL(new RegExp(`/parent/children/${student.id}/badges$`));
+	await page.waitForLoadState('networkidle');
+	await expectBadgePage(page);
+
+	const response = await page.goto(`/parent/children/${crypto.randomUUID()}/badges`);
+	expect(response?.status()).toBe(404);
 });

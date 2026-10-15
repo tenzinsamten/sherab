@@ -3,6 +3,7 @@
 		badgeIconLabel,
 		badgeSubjectLabel,
 		badgeTrackLabel,
+		recentBadges,
 		type BadgeSubject
 	} from '$lib/badge-subject';
 	import { num } from '$lib/format';
@@ -15,14 +16,16 @@
 	 * A student's streak and badges tiles (Stories 4-1/4-2), on the student
 	 * dashboard and the parent's child page. Badges show as icons that open
 	 * their detail, with per-subject progress toward the next badge (badge
-	 * detail story 3).
+	 * detail story 3). The tile shows the most recently earned badges only;
+	 * "See all" leads to the badge page with every badge (story 4).
 	 */
 	let {
 		streak,
 		badges,
 		badgeProgress,
 		loadError,
-		progressLoadError
+		progressLoadError,
+		seeAllHref
 	}: {
 		streak: { currentStreak: number } | null;
 		badges: BadgeView[];
@@ -34,7 +37,15 @@
 		loadError: boolean;
 		/** badge_progress() failed: only the progress section shows "—". */
 		progressLoadError: boolean;
+		/** The student's badge page, linked as "See all". */
+		seeAllHref: string;
 	} = $props();
+
+	/** How many earned badges the tile shows. */
+	const RECENT_BADGES = 6;
+
+	// Newest first (a tie keeps the subject order).
+	let shownBadges = $derived(recentBadges(badges, RECENT_BADGES));
 
 	let detail = $state<ReturnType<typeof BadgeDetailDialog>>();
 
@@ -74,13 +85,19 @@
 
 	<ix-card variant="outline" passive>
 		<ix-card-content>
-			<p class="section-label">{m.student_badges_label()}</p>
+			<div class="badge-tile-header">
+				<p class="section-label">{m.student_badges_label()}</p>
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
+				<a href={seeAllHref} aria-label={m.badge_see_all_label()} data-testid="badges-see-all"
+					>{m.badge_see_all()}</a
+				>
+			</div>
 			{#if loadError}
 				<p class="stat-tile-value muted">—</p>
 			{:else}
-				{#if badges.length > 0}
+				{#if shownBadges.length > 0}
 					<ul class="badge-icons">
-						{#each badges as badge (`${badge.subject}-${badge.badgeType}-${badge.milestone}`)}
+						{#each shownBadges as badge (`${badge.subject}-${badge.badgeType}-${badge.milestone}`)}
 							<li>
 								<button
 									type="button"
@@ -132,6 +149,21 @@
 <BadgeDetailDialog bind:this={detail} />
 
 <style>
+	.badge-tile-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: var(--space-2);
+		margin-bottom: var(--space-2);
+	}
+	.badge-tile-header a {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+	}
+	.badge-tile-header .section-label {
+		margin-bottom: 0;
+	}
 	.badge-icons {
 		list-style: none;
 		padding: 0;

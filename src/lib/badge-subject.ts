@@ -47,3 +47,19 @@ export function badgeIconLabel(badge: BadgeText): string {
 		count: num(badge.milestone)
 	});
 }
+
+/** What unlocks a locked badge, e.g. "Attend 25 Dance & song classes" (badge detail CAP-7). */
+export function badgeUnlockText(badge: BadgeText): string {
+	// The plain count picks the plural form; num() then localizes its digits.
+	const args = { count: badge.milestone, subject: badgeSubjectLabel(badge.subject) };
+	return num(
+		badge.badgeType === 'homework' ? m.badge_unlock_homework(args) : m.badge_unlock_attendance(args)
+	);
+}
+
+/** The `limit` most recently earned badges, newest first (a tie keeps the given order). */
+export function recentBadges<T extends { earnedAt: string }>(badges: T[], limit: number): T[] {
+	return [...badges]
+		.sort((a, b) => Date.parse(b.earnedAt) - Date.parse(a.earnedAt))
+		.slice(0, limit);
+}

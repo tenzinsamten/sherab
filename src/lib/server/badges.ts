@@ -1,4 +1,6 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { BADGE_SUBJECTS, isBadgeSubject, type BadgeSubject } from '$lib/badge-subject';
+import type { Database } from '$lib/supabase/database.types';
 
 export type BadgeType = 'attendance' | 'homework';
 
@@ -120,4 +122,122 @@ export function shapeBadgeProgress(rows: BadgeProgressRow[] | null): BadgeProgre
 		bySubject.set(row.subject, entry);
 	}
 	return BADGE_SUBJECTS.flatMap((subject) => bySubject.get(subject) ?? []);
+}
+
+/** The milestone list when `app_settings.badge_milestone_thresholds` is missing or malformed (0048/0049). */
+export const DEFAULT_BADGE_MILESTONES: readonly number[] = [1, 5, 10, 25, 50, 100];
+
+/**
+ * `app_settings.badge_milestone_thresholds` as ascending positive integers,
+ * or the same fallback the database uses (0048, 0049) when it is missing,
+ * not an array, or empty.
+ */
+export function parseBadgeMilestones(value: unknown): number[] {
+	if (!Array.isArray(value)) return [...DEFAULT_BADGE_MILESTONES];
+	const milestones = value.filter(
+		(v): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0
+	);
+	if (milestones.length === 0) return [...DEFAULT_BADGE_MILESTONES];
+	return Array.from(new Set(milestones)).sort((a, b) => a - b);
+}
+
+/** One badge on the badge page; `earnedAt` null means locked. */
+export type BadgePageBadge = { milestone: number; icon: string | null; earnedAt: string | null };
+
+export type BadgePageTrack = {
+	type: BadgeType;
+	/** The track's real count, or null when the student has no progress row for it (a subject they left). */
+	total: number | null;
+	/** The next target from badge_progress; null at the top or when `total` is unknown. */
+	next: number | null;
+	badges: BadgePageBadge[];
+};
+
+export type BadgePageSection = { subject: BadgeSubject; tracks: BadgePageTrack[] };
+
+/**
+ * Shapes the badge page (badge detail CAP-7): one section per subject the
+ * student has progress in (an enrolled class with that subject) or already
+ * holds a badge in, so an earned badge never disappears. Each subject has
+ * the attendance then the homework track, listing every configured milestone
+ * (plus any earned one no longer configured) in ascending order.
+ */
+export function shapeBadgePage(
+	badges: StudentBadge[],
+	progress: BadgeProgress[],
+	milestones: number[]
+): BadgePageSection[] {
+	const subjects = BADGE_SUBJECTS.filter(
+		(subject) =>
+			progress.some((row) => row.subject === subject) ||
+			badges.some((badge) => badge.subject === subject)
+	);
+	return subjects.map((subject) => {
+		const row = progress.find((p) => p.subject === subject);
+		return {
+			subject,
+			tracks: BADGE_TYPES.map((type): BadgePageTrack => {
+				const earned = new Map(
+					badges
+						.filter((b) => b.subject === subject && b.badgeType === type)
+						.map((b) => [b.milestone, b.earnedAt])
+				);
+				const all = Array.from(new Set([...milestones, ...earned.keys()])).sort((a, b) => a - b);
+				return {
+					type,
+					total: row ? row[type].total : null,
+					next: row ? row[type].next : null,
+					badges: all.map((milestone) => ({
+						milestone,
+						icon: badgeIconPath({ subject, badgeType: type, milestone }),
+						earnedAt: earned.get(milestone) ?? null
+					}))
+				};
+			})
+		};
+	});
+}
+
+type Client = SupabaseClient<Database>;
+
+/**
+ * Reads everything the badge page shows for one student: their earned
+ * badges, badge_progress() (0049) and the milestone setting, in parallel.
+ * RLS and badge_progress decide who may read them (the student, linked
+ * parents, teachers of the student's classes, admin); the routes check
+ * access first. A failed read is `loadError`, never an empty page.
+ */
+export async function loadBadgePage(
+	supabase: Client,
+	studentId: string
+): Promise<{ sections: BadgePageSection[]; loadError: boolean }> {
+	const [
+		{ data: badgeRows, error: badgesError },
+		{ data: progressRows, error: progressError },
+		{ data: setting, error: settingError }
+	] = await Promise.all([
+		supabase
+			.from('badges_earned')
+			.select('badge_subject, badge_type, milestone, earned_at')
+			.eq('student_id', studentId),
+		supabase.rpc('badge_progress', { p_student_id: studentId }),
+		supabase
+			.from('app_settings')
+			.select('value')
+			.eq('key', 'badge_milestone_thresholds')
+			.maybeSingle()
+	]);
+	const failure = badgesError ?? progressError ?? settingError;
+	if (failure) {
+		console.error(`Could not load the badge page. ${failure.message}`);
+		return { sections: [], loadError: true };
+	}
+	return {
+		sections: shapeBadgePage(
+			shapeStudentBadges(badgeRows),
+			shapeBadgeProgress(progressRows),
+			parseBadgeMilestones(setting?.value ?? null)
+		),
+		loadError: false
+	};
 }

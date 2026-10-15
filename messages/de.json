@@ -1184,6 +1184,36 @@
 	"badge_progress_value": "{total} / {next}",
 	"badge_progress_top": "{total}, höchstes Abzeichen erreicht",
 	"badge_progress_empty": "Der Fortschritt erscheint, sobald eine Klasse ein Abzeichen-Fach hat.",
+	"badge_page_heading": "Abzeichen",
+	"badge_page_heading_own": "Meine Abzeichen",
+	"badge_page_heading_of": "Abzeichen von {name}",
+	"badge_page_intro": "Alle Abzeichen in jedem Fach. Erhaltene Abzeichen sind farbig und zeigen ihr Datum; gesperrte zeigen, was sie freischaltet.",
+	"badge_page_empty": "Noch keine Abzeichen zu zeigen. Abzeichen erscheinen, sobald eine Klasse ein Abzeichen-Fach hat.",
+	"badge_page_load_failed": "Die Abzeichen konnten nicht geladen werden. Bitte versuche es erneut.",
+	"badge_locked": "Gesperrt",
+	"badge_unlock_attendance": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Besuche {count} Unterrichtstag in {subject}",
+				"countPlural=other": "Besuche {count} Unterrichtstage in {subject}"
+			}
+		}
+	],
+	"badge_unlock_homework": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Erledige {count} Hausaufgabe in {subject}",
+				"countPlural=other": "Erledige {count} Hausaufgaben in {subject}"
+			}
+		}
+	],
+	"badge_see_all": "Alle ansehen",
+	"badge_see_all_label": "Alle Abzeichen ansehen",
+	"badge_page_link": "Abzeichen",
 	"classes_col_subject": "Fach",
 	"classes_edit": "Klasse bearbeiten",
 	"classes_edit_title": "{name} bearbeiten",

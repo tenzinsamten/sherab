@@ -1,4 +1,4 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages.js';
 import {
 	localizeName,
@@ -15,6 +15,7 @@ import {
 } from '$lib/server/badges';
 import { toHhMm } from '$lib/server/calendar';
 import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
+import { loadLinkedChild } from '$lib/server/linked-child';
 import { leaveErrorMessage, leaveRangeErrorMessage } from '$lib/server/leave';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
 import { shapeStudentStreak, type StudentStreak } from '$lib/server/streak';
@@ -150,15 +151,7 @@ export type ChildSectionErrors = {
  */
 export const load: PageServerLoad = async ({ params, url, parent, locals: { supabase } }) => {
 	const { parentStatus } = await parent();
-	if (parentStatus !== 'approved' || !UUID_PATTERN.test(params.id)) {
-		throw error(404, 'Not found');
-	}
-
-	const { data: linked } = await supabase.rpc('linked_children');
-	const child = (linked ?? []).find((c) => c.id === params.id && c.status === 'approved');
-	if (!child) {
-		throw error(404, 'Not found');
-	}
+	const child = await loadLinkedChild(supabase, parentStatus, params.id);
 
 	const { data: enrollments, error: enrollmentsError } = await supabase
 		.from('class_enrollments')

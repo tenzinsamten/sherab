@@ -300,6 +300,7 @@
 			badgeProgress={data.badgeProgress}
 			progressLoadError={data.progressLoadError}
 			loadError={data.errors.summary}
+			seeAllHref={resolve('/parent/children/[id]/badges', { id: data.child.id })}
 		/>
 
 		<section class="card" aria-labelledby="team-heading">

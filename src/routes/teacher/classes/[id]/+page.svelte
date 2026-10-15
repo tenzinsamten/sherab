@@ -393,6 +393,19 @@
 									role="group"
 									aria-labelledby="student-title-{student.id}"
 								>
+									<p class="student-badges-link">
+										<a
+											href={resolve('/teacher/classes/[id]/students/[studentId]/badges', {
+												id: data.class.id,
+												studentId: student.id
+											})}
+											aria-label={m.badge_page_heading_of({ name: student.displayName })}
+											data-testid="student-badges-link"
+										>
+											<ix-icon name="trophy" size="16" aria-hidden="true"></ix-icon>
+											{m.badge_page_link()}
+										</a>
+									</p>
 									<div class="skill-forms">
 										{#each skillAreas as area (area)}
 											{@const key = skillKey(student.id, area)}
@@ -512,6 +525,15 @@
 </div>
 
 <style>
+	.student-badges-link {
+		margin: 0 0 var(--space-2);
+	}
+	.student-badges-link a {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		min-height: 44px;
+	}
 	.attendance-row {
 		display: flex;
 		flex-wrap: wrap;
