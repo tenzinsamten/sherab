@@ -117,7 +117,7 @@ type LoadResult = {
 	deletionLoadError: boolean;
 	loadError: boolean;
 	streak: { currentStreak: number } | null;
-	badges: { badgeType: string; milestone: number }[];
+	badges: { subject: string; badgeType: string; milestone: number }[];
 	team: { name: string; rank: number; total: number } | null;
 	teamId: string | null;
 	leaderboard: { teamId: string; teamName: string; totalStreak: number }[];
@@ -786,8 +786,20 @@ describe('parent child page: detail sections', () => {
 			},
 			badges_earned: {
 				data: [
-					{ student_id: CHILD, badge_type: 'homework', milestone: 5, earned_at: at(3) },
-					{ student_id: SIBLING, badge_type: 'attendance', milestone: 10, earned_at: at(3) }
+					{
+						student_id: CHILD,
+						badge_subject: 'dance',
+						badge_type: 'homework',
+						milestone: 5,
+						earned_at: at(3)
+					},
+					{
+						student_id: SIBLING,
+						badge_subject: 'language',
+						badge_type: 'attendance',
+						milestone: 10,
+						earned_at: at(3)
+					}
 				],
 				error: null
 			},
@@ -889,7 +901,9 @@ describe('parent child page: detail sections', () => {
 			['i4', 'reviewed', 'Alphabet']
 		]);
 		expect(result.streak).toMatchObject({ currentStreak: 3 });
-		expect(result.badges).toEqual([{ badgeType: 'homework', milestone: 5, earnedAt: at(3) }]);
+		expect(result.badges).toEqual([
+			{ subject: 'dance', badgeType: 'homework', milestone: 5, earnedAt: at(3) }
+		]);
 		expect(result.team).toEqual({ name: 'Yaks', rank: 2, total: 2 });
 		expect(result.teamId).toBe('t2');
 		expect(result.leaderboard.map((t) => t.teamName)).toEqual(['Snow Lions', 'Yaks']);

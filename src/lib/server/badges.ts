@@ -1,10 +1,14 @@
+import { isBadgeSubject, type BadgeSubject } from '$lib/badge-subject';
+
 export type StudentBadge = {
+	subject: BadgeSubject;
 	badgeType: 'attendance' | 'homework';
 	milestone: number;
 	earnedAt: string;
 };
 
 export type StudentBadgeRow = {
+	badge_subject: string;
 	badge_type: string;
 	milestone: number;
 	earned_at: string;
@@ -28,7 +32,12 @@ export function shapeStudentBadges(rows: StudentBadgeRow[] | null): StudentBadge
 			// must surface loudly rather than mislabel a row.
 			throw new Error(`Unrecognized badge_type: ${row.badge_type}`);
 		}
+		if (!isBadgeSubject(row.badge_subject)) {
+			// Same reasoning: 0048's check constraint limits badge_subject.
+			throw new Error(`Unrecognized badge_subject: ${row.badge_subject}`);
+		}
 		return {
+			subject: row.badge_subject,
 			badgeType: row.badge_type,
 			milestone: row.milestone,
 			earnedAt: row.earned_at

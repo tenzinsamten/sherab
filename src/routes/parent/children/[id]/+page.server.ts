@@ -327,8 +327,9 @@ async function loadChildDetails(
 			.maybeSingle(),
 		supabase
 			.from('badges_earned')
-			.select('badge_type, milestone, earned_at')
+			.select('badge_subject, badge_type, milestone, earned_at')
 			.eq('student_id', childId)
+			.order('badge_subject')
 			.order('badge_type')
 			.order('milestone', { ascending: true }),
 		supabase.from('profiles').select('team_id').eq('id', childId).maybeSingle(),

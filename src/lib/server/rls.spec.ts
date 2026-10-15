@@ -5138,7 +5138,9 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 			.from('classes')
 			.insert({
 				name: `Story 4-2 ${prefix}`,
-				code: `S4B${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+				code: `S4B${crypto.randomUUID().slice(0, 4).toUpperCase()}`,
+				// Badge detail 2: a class without a subject counts toward nothing.
+				badge_subject: 'dance'
 			})
 			.select('id')
 			.single();
@@ -5545,14 +5547,20 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 			name: `No Direct Writes Self ${crypto.randomUUID().slice(0, 6)}`
 		});
 
-		const insertAttempt = await teacherA.client
-			.from('badges_earned')
-			.insert({ student_id: student, badge_type: 'attendance', milestone: 999 });
+		const insertAttempt = await teacherA.client.from('badges_earned').insert({
+			student_id: student,
+			badge_subject: 'dance',
+			badge_type: 'attendance',
+			milestone: 999
+		});
 		expect(insertAttempt.error).not.toBeNull();
 
-		const adminInsertAttempt = await admin.client
-			.from('badges_earned')
-			.insert({ student_id: student, badge_type: 'attendance', milestone: 999 });
+		const adminInsertAttempt = await admin.client.from('badges_earned').insert({
+			student_id: student,
+			badge_subject: 'dance',
+			badge_type: 'attendance',
+			milestone: 999
+		});
 		expect(adminInsertAttempt.error).not.toBeNull();
 
 		// The actual abuse case this boundary exists to prevent: a student
@@ -5560,9 +5568,12 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		// anyone (trigger-written only, AD-3), so this is rejected exactly
 		// like the teacher/admin attempts above, not specially allowed just
 		// because student_id matches auth.uid().
-		const selfInsertAttempt = await signedInStudent.client
-			.from('badges_earned')
-			.insert({ student_id: signedInStudent.id, badge_type: 'attendance', milestone: 999 });
+		const selfInsertAttempt = await signedInStudent.client.from('badges_earned').insert({
+			student_id: signedInStudent.id,
+			badge_subject: 'dance',
+			badge_type: 'attendance',
+			milestone: 999
+		});
 		expect(selfInsertAttempt.error).not.toBeNull();
 
 		const { data: selfInsertCheck } = await adminClient
@@ -5590,7 +5601,7 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		expect(unchanged?.milestone).not.toBe(999);
 	});
 
-	it('RLS: admin and the student themself can read a badge row; another student and even the assigned teacher cannot (no teacher access, unlike streaks)', async () => {
+	it('RLS: admin, the student themself and the assigned teacher can read a badge row; another student cannot', async () => {
 		const classId = await createClass('RLS Visibility');
 		const signedInStudent = await createSignedInStudent({
 			classId,
@@ -5620,14 +5631,12 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 			.eq('student_id', signedInStudent.id);
 		expect(selfRead.data).toHaveLength(1);
 
-		// Per Boundaries: "visible only on the student's own profile" -- unlike
-		// student_streaks' three-way shape, even the assigned teacher has no
-		// read access here.
+		// Badge detail 2 (CAP-8): teachers of the student's classes can read.
 		const assignedTeacherRead = await teacherA.client
 			.from('badges_earned')
 			.select('student_id')
 			.eq('student_id', signedInStudent.id);
-		expect(assignedTeacherRead.data).toEqual([]);
+		expect(assignedTeacherRead.data).toHaveLength(1);
 
 		const otherStudentRead = await otherSignedInStudent.client
 			.from('badges_earned')
@@ -5694,6 +5703,289 @@ describe.skipIf(!reachable)('Story 4-2 badges (requires local Supabase)', () => 
 		if (restoreError) {
 			throw new Error(`Failed to restore badge_milestone_thresholds: ${restoreError}`);
 		}
+	});
+});
+
+// Badge detail story 2 (0048): badges are counted and awarded per badge
+// subject of the class, and teachers of the student's classes can read them.
+describe.skipIf(!reachable)('Badge detail 2: per-subject badges (requires local Supabase)', () => {
+	type Subject = 'language' | 'dance' | 'instrument';
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teamId: string;
+
+	const label = (text: string) => `BD2 ${text} ${crypto.randomUUID().slice(0, 8)}`;
+	/** Far-past days, so the shared calendar's real class days are left alone. */
+	function pastDay(n: number): string {
+		const d = new Date('1880-01-01T00:00:00Z');
+		d.setUTCDate(d.getUTCDate() + n);
+		return d.toISOString().slice(0, 10);
+	}
+
+	async function createClass(subject: Subject | null, classTeacher = teacher) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: label('Class'),
+				code: `B${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+				badge_subject: subject
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: classTeacher.id });
+		if (assignError) throw new Error(`Failed to assign the teacher: ${assignError.message}`);
+		return data.id;
+	}
+
+	/** An approved student of `classId`, enrolled in `alsoIn` too. */
+	async function createStudent(classId: string, alsoIn: string[] = [], guardianEmail?: string) {
+		const { id, error } = await signUpStudent({
+			classId,
+			registrationName: label('Kid'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register the student: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: teamId })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve the student: ${approveError.message}`);
+		for (const other of alsoIn) {
+			const { error: enrollError } = await adminClient
+				.from('class_enrollments')
+				.insert({ student_id: id, class_id: other });
+			if (enrollError) throw new Error(`Failed to enroll: ${enrollError.message}`);
+		}
+		return id;
+	}
+
+	async function signInStudent(id: string) {
+		const password = crypto.randomUUID();
+		const { data, error } = await adminClient.auth.admin.updateUserById(id, { password });
+		if (error || !data.user?.email) throw new Error(`Failed to set a password: ${error?.message}`);
+		const client = anonClient();
+		const { error: signInError } = await client.auth.signInWithPassword({
+			email: data.user.email,
+			password
+		});
+		if (signInError) throw new Error(`Failed to sign in: ${signInError.message}`);
+		return client;
+	}
+
+	async function present(studentId: string, classId: string, days: number[]) {
+		const rows = [];
+		for (const day of days) {
+			rows.push({
+				student_id: studentId,
+				class_id: classId,
+				class_session_id: await sessionFor(classId, pastDay(day)),
+				present: true,
+				recorded_by: teacher.id
+			});
+		}
+		const { error } = await adminClient.from('attendance_records').insert(rows);
+		if (error) throw new Error(`Failed to mark attendance: ${error.message}`);
+	}
+
+	async function homeworkDone(studentId: string, classId: string, count: number) {
+		const { data: assignment, error: assignmentError } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: label('HW'),
+				skill_area: 'language',
+				created_by: teacher.id
+			})
+			.select('id')
+			.single();
+		if (assignmentError || !assignment)
+			throw new Error(`Failed to create assignment: ${assignmentError?.message}`);
+		for (let n = 0; n < count; n++) {
+			const { data: instance, error: instanceError } = await adminClient
+				.from('homework_instances')
+				.insert({
+					assignment_id: assignment.id,
+					class_id: classId,
+					period_start: pastDay(n),
+					due_date: pastDay(n)
+				})
+				.select('id')
+				.single();
+			if (instanceError || !instance)
+				throw new Error(`Failed to create instance: ${instanceError?.message}`);
+			const { error } = await adminClient.from('homework_status_history').insert({
+				instance_id: instance.id,
+				class_id: classId,
+				student_id: studentId,
+				status: 'done',
+				recorded_by: teacher.id
+			});
+			if (error) throw new Error(`Failed to mark homework done: ${error.message}`);
+		}
+	}
+
+	/** The student's badges as `subject-type-milestone`, sorted. */
+	async function badgesOf(studentId: string) {
+		const { data, error } = await adminClient
+			.from('badges_earned')
+			.select('badge_subject, badge_type, milestone')
+			.eq('student_id', studentId);
+		if (error) throw new Error(`Failed to read badges: ${error.message}`);
+		return data
+			.map((b) => `${b.badge_subject}-${b.badge_type}-${String(b.milestone).padStart(3, '0')}`)
+			.sort();
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		teamId = await fixtureTeamId();
+	}, 30000);
+
+	it('per-subject attendance: 10 dance days and 3 language days earn dance 1, 5, 10 and language 1', async () => {
+		const dance = await createClass('dance');
+		const language = await createClass('language');
+		const kid = await createStudent(dance, [language]);
+
+		await present(kid, dance, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+		await present(kid, language, [1, 2, 3]);
+
+		expect(await badgesOf(kid)).toEqual([
+			'dance-attendance-001',
+			'dance-attendance-005',
+			'dance-attendance-010',
+			'language-attendance-001'
+		]);
+	});
+
+	it('song counts as dance: present days of song and dance classes add up, a shared day once', async () => {
+		const song = await createClass('dance');
+		const dance = await createClass('dance');
+		const kid = await createStudent(song, [dance]);
+
+		// Days 1-3 in song, 3-4 in dance: 4 distinct days (5 raw marks).
+		await present(kid, song, [1, 2, 3]);
+		await present(kid, dance, [3, 4]);
+		expect(await badgesOf(kid)).toEqual(['dance-attendance-001']);
+
+		await present(kid, dance, [5]);
+		expect(await badgesOf(kid)).toEqual(['dance-attendance-001', 'dance-attendance-005']);
+	});
+
+	it('per-subject homework: 5 Done in a language class earn language homework 1 and 5 only', async () => {
+		const language = await createClass('language');
+		const dance = await createClass('dance');
+		const kid = await createStudent(language, [dance]);
+
+		await homeworkDone(kid, language, 5);
+
+		expect(await badgesOf(kid)).toEqual(['language-homework-001', 'language-homework-005']);
+	});
+
+	it('a class without a subject counts toward no badge', async () => {
+		const unset = await createClass(null);
+		const kid = await createStudent(unset);
+
+		await present(kid, unset, [1, 2]);
+		await homeworkDone(kid, unset, 1);
+
+		expect(await badgesOf(kid)).toEqual([]);
+	});
+
+	it('assigning a subject later awards the badges the history already earns', async () => {
+		const cls = await createClass(null);
+		const kid = await createStudent(cls);
+		await present(kid, cls, [1, 2, 3, 4, 5]);
+		expect(await badgesOf(kid)).toEqual([]);
+
+		const { error } = await admin.client
+			.from('classes')
+			.update({ badge_subject: 'dance' })
+			.eq('id', cls);
+		expect(error).toBeNull();
+
+		expect(await badgesOf(kid)).toEqual(['dance-attendance-001', 'dance-attendance-005']);
+	});
+
+	it('changing a subject keeps the old badges and recomputes the new subject from the history', async () => {
+		const cls = await createClass('dance');
+		const kid = await createStudent(cls);
+		await present(kid, cls, [1, 2, 3, 4, 5]);
+		await homeworkDone(kid, cls, 1);
+		const danceBadges = ['dance-attendance-001', 'dance-attendance-005', 'dance-homework-001'];
+		expect(await badgesOf(kid)).toEqual(danceBadges);
+
+		const { error } = await admin.client
+			.from('classes')
+			.update({ badge_subject: 'language' })
+			.eq('id', cls);
+		expect(error).toBeNull();
+
+		expect(await badgesOf(kid)).toEqual([
+			...danceBadges,
+			'language-attendance-001',
+			'language-attendance-005',
+			'language-homework-001'
+		]);
+	});
+
+	it("a teacher of any of the student's classes reads all of the student's badges", async () => {
+		const languageTeacher = await createSignedInUser('teacher');
+		const dance = await createClass('dance');
+		const language = await createClass('language', languageTeacher);
+		const kid = await createStudent(dance, [language]);
+		await present(kid, dance, [1]);
+
+		const { data, error } = await languageTeacher.client
+			.from('badges_earned')
+			.select('badge_subject, badge_type, milestone')
+			.eq('student_id', kid);
+		expect(error).toBeNull();
+		expect(data).toEqual([{ badge_subject: 'dance', badge_type: 'attendance', milestone: 1 }]);
+	});
+
+	it("other teachers, other students and another student's parent read no rows", async () => {
+		const otherTeacher = await createSignedInUser('teacher');
+		const otherParent = await createApprovedParent();
+		const cls = await createClass('dance');
+		const otherClass = await createClass('dance', otherTeacher);
+		const kid = await createStudent(cls);
+		const otherKid = await createStudent(otherClass, [], otherParent.email);
+		await present(kid, cls, [1]);
+		expect(await badgesOf(kid)).toEqual(['dance-attendance-001']);
+
+		const parentClient = anonClient();
+		const { error: signInError } = await parentClient.auth.signInWithPassword({
+			email: otherParent.email,
+			password: otherParent.password
+		});
+		expect(signInError).toBeNull();
+
+		for (const client of [otherTeacher.client, await signInStudent(otherKid), parentClient]) {
+			const { data, error } = await client.from('badges_earned').select('id').eq('student_id', kid);
+			expect(error).toBeNull();
+			expect(data).toEqual([]);
+		}
+	});
+
+	it('a client insert into badges_earned is rejected (trigger-written only)', async () => {
+		const cls = await createClass('dance');
+		const kid = await createStudent(cls);
+		const kidClient = await signInStudent(kid);
+
+		for (const client of [kidClient, teacher.client, admin.client]) {
+			const { error } = await client.from('badges_earned').insert({
+				student_id: kid,
+				badge_subject: 'dance',
+				badge_type: 'attendance',
+				milestone: 1
+			});
+			expect(error).not.toBeNull();
+		}
+		expect(await badgesOf(kid)).toEqual([]);
 	});
 });
 
@@ -9519,8 +9811,8 @@ describe.skipIf(!reachable)('7-3 parent reads (requires local Supabase)', () => 
 		await adminClient
 			.from('badges_earned')
 			.upsert(
-				{ student_id: studentId, badge_type: 'attendance', milestone: 1 },
-				{ onConflict: 'student_id,badge_type,milestone' }
+				{ student_id: studentId, badge_subject: 'dance', badge_type: 'attendance', milestone: 1 },
+				{ onConflict: 'student_id,badge_subject,badge_type,milestone' }
 			);
 		return hw;
 	}
@@ -15325,7 +15617,11 @@ describe.skipIf(!reachable)('#102 attendance corrections (requires local Supabas
 	async function createClass(label: string) {
 		const { data, error } = await adminClient
 			.from('classes')
-			.insert({ name: name(label), code: `K${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.insert({
+				name: name(label),
+				code: `K${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+				badge_subject: 'dance'
+			})
 			.select('id')
 			.single();
 		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);

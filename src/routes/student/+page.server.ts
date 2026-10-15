@@ -72,8 +72,9 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.maybeSingle(),
 		supabase
 			.from('badges_earned')
-			.select('badge_type, milestone, earned_at')
+			.select('badge_subject, badge_type, milestone, earned_at')
 			.eq('student_id', user.id)
+			.order('badge_subject')
 			.order('badge_type')
 			.order('milestone', { ascending: true }),
 		supabase.rpc('team_leaderboard'),

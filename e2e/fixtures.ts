@@ -177,7 +177,12 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 		const admin = await createUser('admin', tag, userIds);
 		const teacher = await createUser('teacher', tag, userIds);
 
-		const makeClass = async (key: string, start: string, duration: number) => {
+		const makeClass = async (
+			key: string,
+			start: string,
+			duration: number,
+			badgeSubject: 'language' | 'dance'
+		) => {
 			const name = `E2E47 ${tag} ${key}`;
 			const row = check(
 				await service
@@ -187,6 +192,7 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 						code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
 						default_start_time: start,
 						default_duration_minutes: duration,
+						badge_subject: badgeSubject,
 						...schedule
 					})
 					.select('id')
@@ -200,8 +206,8 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 			);
 			return { id: row.id as string, name };
 		};
-		const classA = await makeClass('A', '10:00', 90);
-		const classB = await makeClass('B', '12:00', 60);
+		const classA = await makeClass('A', '10:00', 90, 'language');
+		const classB = await makeClass('B', '12:00', 60, 'dance');
 		const classC = { id: '', name: `E2E47 ${tag} C` };
 		classC.id = check(
 			await service
@@ -209,6 +215,7 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 				.insert({
 					name: classC.name,
 					code: `E${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+					badge_subject: 'language',
 					...schedule
 				})
 				.select('id')

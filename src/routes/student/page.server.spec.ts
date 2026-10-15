@@ -242,6 +242,35 @@ describe('student dashboard load', () => {
 		}
 	);
 
+	it('badge detail 2: shapes per-subject badges, two subjects sharing a milestone', async () => {
+		const result = await run({
+			...base,
+			badges_earned: {
+				data: [
+					{
+						badge_subject: 'dance',
+						badge_type: 'attendance',
+						milestone: 1,
+						earned_at: '2026-10-01T00:00:00Z'
+					},
+					{
+						badge_subject: 'language',
+						badge_type: 'attendance',
+						milestone: 1,
+						earned_at: '2026-10-02T00:00:00Z'
+					}
+				],
+				error: null
+			}
+		});
+		expect(result).toMatchObject({
+			badges: [
+				{ subject: 'dance', badgeType: 'attendance', milestone: 1 },
+				{ subject: 'language', badgeType: 'attendance', milestone: 1 }
+			]
+		});
+	});
+
 	it('sends a non-student home', async () => {
 		await expect(
 			run({ ...base, profiles: { data: { role: 'teacher', team_id: null }, error: null } })

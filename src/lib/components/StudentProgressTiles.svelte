@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { badgeSubjectLabel, type BadgeSubject } from '$lib/badge-subject';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -9,17 +10,21 @@
 		loadError
 	}: {
 		streak: { currentStreak: number } | null;
-		badges: { badgeType: 'attendance' | 'homework'; milestone: number }[];
+		badges: { subject: BadgeSubject; badgeType: 'attendance' | 'homework'; milestone: number }[];
 		loadError: boolean;
 	} = $props();
 
+	// Subject prefix is interim until the badge icons/detail (badge detail story 3).
 	function badgeEntryLabel(badge: {
+		subject: BadgeSubject;
 		badgeType: 'attendance' | 'homework';
 		milestone: number;
 	}): string {
-		return badge.badgeType === 'homework'
-			? m.student_badges_entry_homework({ count: num(badge.milestone) })
-			: m.student_badges_entry_attendance({ count: num(badge.milestone) });
+		const entry =
+			badge.badgeType === 'homework'
+				? m.student_badges_entry_homework({ count: num(badge.milestone) })
+				: m.student_badges_entry_attendance({ count: num(badge.milestone) });
+		return `${badgeSubjectLabel(badge.subject)}: ${entry}`;
 	}
 </script>
 
@@ -54,7 +59,7 @@
 				<ul
 					style="list-style:none; padding:0; margin:0; display:flex; flex-wrap:wrap; gap: var(--space-1);"
 				>
-					{#each badges as badge (`${badge.badgeType}-${badge.milestone}`)}
+					{#each badges as badge (`${badge.subject}-${badge.badgeType}-${badge.milestone}`)}
 						<li><ix-pill variant="primary" icon="trophy">{badgeEntryLabel(badge)}</ix-pill></li>
 					{/each}
 				</ul>

@@ -116,6 +116,7 @@ export type Database = {
 			};
 			badges_earned: {
 				Row: {
+					badge_subject: BadgeSubject;
 					badge_type: BadgeType;
 					earned_at: string;
 					id: string;
@@ -123,6 +124,7 @@ export type Database = {
 					student_id: string;
 				};
 				Insert: {
+					badge_subject: BadgeSubject;
 					badge_type: BadgeType;
 					earned_at?: string;
 					id?: string;
@@ -130,6 +132,7 @@ export type Database = {
 					student_id: string;
 				};
 				Update: {
+					badge_subject?: BadgeSubject;
 					badge_type?: BadgeType;
 					earned_at?: string;
 					id?: string;
@@ -1816,6 +1819,8 @@ export type SkillArea = Database['public']['Enums']['skill_area'];
 export type SkillLevel = Database['public']['Enums']['skill_level'];
 export type HomeworkStatusValue = 'assigned' | 'done' | 'reviewed';
 export type BadgeType = 'attendance' | 'homework';
+/** badges_earned.badge_subject (0048); same values as classes.badge_subject (0047). */
+export type BadgeSubject = 'language' | 'dance' | 'instrument';
 /** One entry of homework_assignments.reference_links (0013). */
 export type HomeworkReferenceLink = { url: string; label: string | null };
 /** B11 (#57): what a leave-range save does (did) to one session (0030). */
