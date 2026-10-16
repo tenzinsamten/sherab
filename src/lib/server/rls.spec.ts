@@ -6077,6 +6077,114 @@ describe.skipIf(!reachable)('Badge detail 2: per-subject badges (requires local 
 			expect(error).not.toBeNull();
 		});
 	});
+
+	// Badge detail story 5 (0050): badges_earned.seen_at and mark_badges_seen().
+	describe('Badge detail 5: mark_badges_seen()', () => {
+		async function seenOf(studentId: string) {
+			const { data, error } = await adminClient
+				.from('badges_earned')
+				.select('id, seen_at')
+				.eq('student_id', studentId)
+				.order('id');
+			if (error) throw new Error(`Failed to read seen_at: ${error.message}`);
+			return data;
+		}
+
+		it('a newly earned badge starts unseen, and the student reads it as unseen', async () => {
+			const cls = await createClass('dance');
+			const kid = await createStudent(cls);
+			await present(kid, cls, [1]);
+
+			const rows = await seenOf(kid);
+			expect(rows).toHaveLength(1);
+			expect(rows[0].seen_at).toBeNull();
+
+			const { data, error } = await (
+				await signInStudent(kid)
+			)
+				.from('badges_earned')
+				.select('id')
+				.eq('student_id', kid)
+				.is('seen_at', null);
+			expect(error).toBeNull();
+			expect(data).toEqual([{ id: rows[0].id }]);
+		});
+
+		it("marks the caller's own unseen rows only, once", async () => {
+			const cls = await createClass('language');
+			const kid = await createStudent(cls);
+			await present(kid, cls, [1, 2, 3, 4, 5]);
+			const ids = (await seenOf(kid)).map((r) => r.id);
+			expect(ids).toHaveLength(2);
+			const kidClient = await signInStudent(kid);
+
+			expect((await kidClient.rpc('mark_badges_seen', { p_ids: ids })).error).toBeNull();
+			const first = await seenOf(kid);
+			expect(first.every((r) => r.seen_at !== null)).toBe(true);
+
+			// Again: nothing changes (seen_at stays the first dismissal).
+			expect((await kidClient.rpc('mark_badges_seen', { p_ids: ids })).error).toBeNull();
+			expect(await seenOf(kid)).toEqual(first);
+		});
+
+		it("another student's ids change nothing; parents, teachers and admin consume nothing", async () => {
+			const parent = await createApprovedParent();
+			const cls = await createClass('dance');
+			const kid = await createStudent(cls, [], parent.email);
+			const otherKid = await createStudent(cls);
+			await present(kid, cls, [1]);
+			const ids = (await seenOf(kid)).map((r) => r.id);
+			expect(ids).toHaveLength(1);
+
+			const parentClient = anonClient();
+			const { error: signInError } = await parentClient.auth.signInWithPassword({
+				email: parent.email,
+				password: parent.password
+			});
+			expect(signInError).toBeNull();
+
+			for (const client of [
+				await signInStudent(otherKid),
+				parentClient,
+				teacher.client,
+				admin.client
+			]) {
+				const { error } = await client.rpc('mark_badges_seen', { p_ids: ids });
+				expect(error).toBeNull();
+			}
+			expect((await seenOf(kid))[0].seen_at).toBeNull();
+		});
+
+		it('refuses a signed-out caller, and a direct update by the student is ignored', async () => {
+			const cls = await createClass('dance');
+			const kid = await createStudent(cls);
+			await present(kid, cls, [1]);
+			const ids = (await seenOf(kid)).map((r) => r.id);
+
+			const signedOut = await anonClient().rpc('mark_badges_seen', { p_ids: ids });
+			expect(signedOut.error).not.toBeNull();
+
+			await (
+				await signInStudent(kid)
+			)
+				.from('badges_earned')
+				.update({ seen_at: new Date().toISOString() })
+				.eq('student_id', kid);
+			expect((await seenOf(kid))[0].seen_at).toBeNull();
+		});
+
+		it('the migration counts rows existing when it runs as seen (no retroactive celebration)', async () => {
+			const { readFile } = await import('node:fs/promises');
+			const sql = await readFile(
+				new URL('../../../supabase/migrations/0050_badges_seen.sql', import.meta.url),
+				'utf8'
+			);
+			const backfill = sql.search(
+				/update public\.badges_earned\s+set seen_at = earned_at\s+where seen_at is null;/
+			);
+			expect(backfill).toBeGreaterThan(sql.indexOf('add column seen_at timestamptz'));
+		});
+	});
 });
 
 describe.skipIf(!reachable)('Story 4-3 leaderboard (requires local Supabase)', () => {

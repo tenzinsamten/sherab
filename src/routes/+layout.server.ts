@@ -2,6 +2,7 @@ import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import { loadSickLeave } from '$lib/server/leave';
 import { loadClassJoinRequests } from '$lib/server/class-join';
 import { getCapabilities } from '$lib/server/capabilities';
+import { shapeNewBadges, type NewBadge } from '$lib/server/badges';
 import {
 	ACTIVE_ROLE_COOKIE,
 	activeRole,
@@ -29,6 +30,7 @@ export const load: LayoutServerLoad = async ({
 			roles: [] as Role[],
 			activeRole: null as Role | null,
 			menuExpanded,
+			newBadges: [] as NewBadge[],
 			loadError: false
 		};
 	}
@@ -115,6 +117,29 @@ export const load: LayoutServerLoad = async ({
 		countError = countError || Boolean(deletionCountErr);
 	}
 
+	// Badge detail CAP-9: badges the student has not seen celebrated yet, for
+	// the "New badge!" dialog. Only the student's own signed-in view, and only
+	// once approved -- a parent, teacher or admin never reads or consumes
+	// them. RLS limits the rows to the caller's own anyway (student_id =
+	// auth.uid() branch). A failed read shows nothing: no dialog, no error.
+	let newBadges: NewBadge[] = [];
+	if (active === 'student' && profile?.role === 'student' && profile.status === 'approved') {
+		const { data: unseen, error: unseenError } = await supabase
+			.from('badges_earned')
+			.select('id, badge_subject, badge_type, milestone, earned_at')
+			.eq('student_id', user.id)
+			.is('seen_at', null);
+		if (unseenError) {
+			console.error(`Could not read new badges. ${unseenError.message}`);
+		} else {
+			try {
+				newBadges = shapeNewBadges(unseen);
+			} catch (shapeError) {
+				console.error('Could not shape new badges.', shapeError);
+			}
+		}
+	}
+
 	return {
 		session,
 		profile: profile ?? null,
@@ -122,6 +147,7 @@ export const load: LayoutServerLoad = async ({
 		roles,
 		activeRole: active,
 		menuExpanded,
+		newBadges,
 		loadError: Boolean(error || countError)
 	};
 };

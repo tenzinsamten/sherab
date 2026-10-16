@@ -121,6 +121,7 @@ export type Database = {
 					earned_at: string;
 					id: string;
 					milestone: number;
+					seen_at: string | null;
 					student_id: string;
 				};
 				Insert: {
@@ -129,6 +130,7 @@ export type Database = {
 					earned_at?: string;
 					id?: string;
 					milestone: number;
+					seen_at?: string | null;
 					student_id: string;
 				};
 				Update: {
@@ -137,6 +139,7 @@ export type Database = {
 					earned_at?: string;
 					id?: string;
 					milestone?: number;
+					seen_at?: string | null;
 					student_id?: string;
 				};
 				Relationships: [
@@ -1451,6 +1454,10 @@ export type Database = {
 					total: number;
 					next_milestone: number | null;
 				}[];
+			};
+			mark_badges_seen: {
+				Args: { p_ids: string[] };
+				Returns: undefined;
 			};
 			mark_tour_seen: {
 				Args: { p_tour: string };

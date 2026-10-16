@@ -1214,6 +1214,19 @@
 	"badge_see_all": "ཚང་མ་ལྟ།",
 	"badge_see_all_label": "ངོ་རྟགས་ཚང་མ་ལྟ།",
 	"badge_page_link": "ངོ་རྟགས།",
+	"badge_new_title": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "ངོ་རྟགས་གསར་པ།",
+				"countPlural=other": "ངོ་རྟགས་གསར་པ།"
+			}
+		}
+	],
+	"badge_new_intro": "ཡག་པོ་བྱུང་། ཁྱེད་ཀྱིས་ཐོབ་པ།",
+	"badge_new_close": "ཁ་བརྒྱབ།",
+	"badge_new_see_all": "ངའི་ངོ་རྟགས་ཚང་མ་ལྟ།",
 	"classes_col_subject": "སློབ་ཚན།",
 	"classes_edit": "འཛིན་གྲྭ་ཞུན་དག",
 	"classes_edit_title": "{name} ཞུན་དག",

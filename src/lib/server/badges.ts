@@ -59,14 +59,37 @@ export function shapeStudentBadges(rows: StudentBadgeRow[] | null): StudentBadge
 			icon: badgeIconPath(badge)
 		};
 	});
-	// Subject (language, dance, instrument), then attendance before homework,
-	// then milestone -- never the alphabetical order the query returns.
-	return shaped.sort(
-		(a, b) =>
-			BADGE_SUBJECTS.indexOf(a.subject) - BADGE_SUBJECTS.indexOf(b.subject) ||
-			BADGE_TYPES.indexOf(a.badgeType) - BADGE_TYPES.indexOf(b.badgeType) ||
-			a.milestone - b.milestone
+	return shaped.sort(compareBadges);
+}
+
+/**
+ * Subject (language, dance, instrument), then attendance before homework,
+ * then milestone -- never the alphabetical order the query returns.
+ */
+function compareBadges(
+	a: Pick<StudentBadge, 'subject' | 'badgeType' | 'milestone'>,
+	b: Pick<StudentBadge, 'subject' | 'badgeType' | 'milestone'>
+): number {
+	return (
+		BADGE_SUBJECTS.indexOf(a.subject) - BADGE_SUBJECTS.indexOf(b.subject) ||
+		BADGE_TYPES.indexOf(a.badgeType) - BADGE_TYPES.indexOf(b.badgeType) ||
+		a.milestone - b.milestone
 	);
+}
+
+/** A badge the student has not seen celebrated yet (badge detail CAP-9). */
+export type NewBadge = StudentBadge & { id: string };
+
+/**
+ * Shapes the caller's unseen `badges_earned` rows for the "New badge!"
+ * dialog: like `shapeStudentBadges` (same order, icons), keeping each row's
+ * id so dismissing the dialog can mark exactly these rows seen.
+ */
+export function shapeNewBadges(rows: (StudentBadgeRow & { id: string })[] | null): NewBadge[] {
+	if (!rows) return [];
+	return rows
+		.map((row): NewBadge => ({ ...shapeStudentBadges([row])[0], id: row.id }))
+		.sort(compareBadges);
 }
 
 /**

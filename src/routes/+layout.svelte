@@ -21,6 +21,7 @@
 	import { initials } from '$lib/initials';
 	import HelpFaq from '$lib/components/HelpFaq.svelte';
 	import HelpGuide from '$lib/components/HelpGuide.svelte';
+	import NewBadgeDialog from '$lib/components/NewBadgeDialog.svelte';
 	import PageTour from '$lib/components/PageTour.svelte';
 	import { HELP_ROLES, helpRoleFor, helpTabLabels } from '$lib/help';
 	import { rememberMenuExpand, WIDE_SCREEN_QUERY } from '$lib/menu';
@@ -374,6 +375,11 @@
 			userId={data.profile.id}
 			seen={data.profile.tours_seen ?? []}
 		/>
+		<!-- Badge detail CAP-9: the student's own view only. Students have no
+		     page tours (src/lib/tours.ts), so the two never open together. -->
+		{#if role === 'student' && data.newBadges.length > 0}
+			<NewBadgeDialog badges={data.newBadges} userId={data.profile.id} />
+		{/if}
 	</ix-application>
 {:else}
 	<!-- Signed out: no side menu, so the header stands alone -- inside

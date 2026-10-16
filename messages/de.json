@@ -1214,6 +1214,19 @@
 	"badge_see_all": "Alle ansehen",
 	"badge_see_all_label": "Alle Abzeichen ansehen",
 	"badge_page_link": "Abzeichen",
+	"badge_new_title": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Neues Abzeichen!",
+				"countPlural=other": "Neue Abzeichen!"
+			}
+		}
+	],
+	"badge_new_intro": "Super gemacht! Das hast du dir verdient:",
+	"badge_new_close": "Schließen",
+	"badge_new_see_all": "Alle meine Abzeichen ansehen",
 	"classes_col_subject": "Fach",
 	"classes_edit": "Klasse bearbeiten",
 	"classes_edit_title": "{name} bearbeiten",

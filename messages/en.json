@@ -1214,6 +1214,19 @@
 	"badge_see_all": "See all",
 	"badge_see_all_label": "See all badges",
 	"badge_page_link": "Badges",
+	"badge_new_title": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "New badge!",
+				"countPlural=other": "New badges!"
+			}
+		}
+	],
+	"badge_new_intro": "Well done! You earned:",
+	"badge_new_close": "Close",
+	"badge_new_see_all": "See all my badges",
 	"classes_col_subject": "Subject",
 	"classes_edit": "Edit class",
 	"classes_edit_title": "Edit {name}",

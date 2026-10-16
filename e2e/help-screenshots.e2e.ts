@@ -327,6 +327,16 @@ test('teacher pages', async ({ page }) => {
 
 test('student pages', async ({ page }) => {
 	test.setTimeout(180_000);
+	// Badges the demo data earned are new: mark them seen, so the "New badge!"
+	// dialog (badge detail CAP-9) is not in the pictures.
+	check(
+		await service
+			.from('badges_earned')
+			.update({ seen_at: new Date().toISOString() })
+			.eq('student_id', childId)
+			.is('seen_at', null),
+		'mark badges seen'
+	);
 	// Before any language switch: signIn() looks for the English button.
 	await signIn(page, child);
 	for (const locale of LOCALES) {

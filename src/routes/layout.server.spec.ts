@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 
 /**
@@ -26,7 +26,11 @@ function sick(id: string, decision: 'approved' | 'rejected' | null, ownChild: bo
 }
 
 function runLoad(opts: {
-	role: 'admin' | 'teacher' | 'parent';
+	role: 'admin' | 'teacher' | 'parent' | 'student';
+	/** The profile's status (students: pending until approved). */
+	status?: string;
+	/** Badge detail CAP-9: the caller's unseen badges_earned rows. */
+	unseen?: { data: unknown; error: unknown };
 	/** B13: the caller's own parents row status (getCapabilities' read). */
 	parentStatus?: string;
 	parentReadError?: unknown;
@@ -55,7 +59,14 @@ function runLoad(opts: {
 				calls.push({ table, method: 'neq', args });
 				return c;
 			},
-			single: async (): Promise<Result> => ({ data: { id: 'u1', role: opts.role }, error: null }),
+			is: (...args: unknown[]) => {
+				calls.push({ table, method: 'is', args });
+				return c;
+			},
+			single: async (): Promise<Result> => ({
+				data: { id: 'u1', role: opts.role, status: opts.status ?? 'approved' },
+				error: null
+			}),
 			then: (resolve: (value: Result) => unknown) =>
 				resolve(
 					head
@@ -66,7 +77,9 @@ function runLoad(opts: {
 										table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
 									error: null
 								}
-						: { data: null, error: null }
+						: table === 'badges_earned'
+							? (opts.unseen ?? { data: [], error: null })
+							: { data: null, error: null }
 				),
 			maybeSingle: async (): Promise<Result> =>
 				table === 'profiles'
@@ -99,6 +112,7 @@ function runLoad(opts: {
 		pendingRequestsCount: number;
 		roles: string[];
 		activeRole: string | null;
+		newBadges: unknown[];
 		loadError: boolean;
 	}>;
 	return { result, rpcCalls, calls };
@@ -290,5 +304,81 @@ describe('root layout: roles and active role (B13 #68)', () => {
 			activeRole: 'teacher',
 			loadError: false
 		});
+	});
+});
+
+describe('root layout: new badges (badge detail CAP-9)', () => {
+	const row = (id: string, subject: string, type: string, milestone: number) => ({
+		id,
+		badge_subject: subject,
+		badge_type: type,
+		milestone,
+		earned_at: '2026-10-11T10:00:00Z'
+	});
+	const unseen = {
+		data: [
+			row('b3', 'dance', 'homework', 1),
+			row('b2', 'dance', 'attendance', 5),
+			row('b1', 'language', 'attendance', 100),
+			row('b4', 'dance', 'attendance', 1)
+		],
+		error: null
+	};
+
+	it('an approved student gets their own unseen badges, in tile order, with icons', async () => {
+		const { result, calls } = runLoad({ role: 'student', unseen });
+		const { newBadges, loadError } = await result;
+		expect(loadError).toBe(false);
+		expect(newBadges).toEqual([
+			{
+				id: 'b1',
+				subject: 'language',
+				badgeType: 'attendance',
+				milestone: 100,
+				earnedAt: '2026-10-11T10:00:00Z',
+				icon: '/badges/language-attendance-100.svg'
+			},
+			expect.objectContaining({ id: 'b4', icon: '/badges/dance-attendance-1.svg' }),
+			expect.objectContaining({ id: 'b2', icon: '/badges/dance-attendance-5.svg' }),
+			expect.objectContaining({ id: 'b3', icon: '/badges/dance-homework-1.svg' })
+		]);
+		expect(
+			calls.filter((c) => c.table === 'badges_earned').map((c) => [c.method, ...c.args])
+		).toEqual([
+			['eq', 'student_id', 'u1'],
+			['is', 'seen_at', null]
+		]);
+	});
+
+	it('a milestone without an icon keeps the badge, with no icon (trophy fallback)', async () => {
+		const { result } = runLoad({
+			role: 'student',
+			unseen: { data: [row('b9', 'dance', 'attendance', 7)], error: null }
+		});
+		expect((await result).newBadges).toEqual([expect.objectContaining({ id: 'b9', icon: null })]);
+	});
+
+	it('a pending student gets none and nothing is read', async () => {
+		const { result, calls } = runLoad({ role: 'student', status: 'pending', unseen });
+		expect((await result).newBadges).toEqual([]);
+		expect(calls.some((c) => c.table === 'badges_earned')).toBe(false);
+	});
+
+	it('parent, teacher and admin logins never read or get new badges', async () => {
+		for (const role of ['parent', 'teacher', 'admin'] as const) {
+			const { result, calls } = runLoad({ role, unseen, sickQueue: queue });
+			expect((await result).newBadges).toEqual([]);
+			expect(calls.some((c) => c.table === 'badges_earned')).toBe(false);
+		}
+	});
+
+	it('a failed read shows nothing and is no load error', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { result } = runLoad({
+			role: 'student',
+			unseen: { data: null, error: { message: 'boom' } }
+		});
+		expect(await result).toMatchObject({ newBadges: [], loadError: false });
+		logged.mockRestore();
 	});
 });

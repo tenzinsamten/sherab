@@ -11,6 +11,11 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
  * student's subjects (earned and locked); the teacher reaches the same page
  * from the class roster and the linked parent from their child's page.
  *
+ * Story 5: the "New badge!" celebration shows both new badges once, is
+ * dismissed by keyboard (or by its link to the badge page) and then stays
+ * gone on reload and on another device; parent and teacher views never show
+ * or consume it.
+ *
  * Its own fixture: a teacher, a language and a dance class, an approved
  * parent, and an approved student (their child) enrolled in both with one
  * Done homework in each (badges are trigger-written: language-homework-1,
@@ -193,6 +198,159 @@ async function openDashboard(page: Page) {
 	await page.waitForLoadState('networkidle');
 }
 
+/** The student's badges_earned rows and whether each was seen, by badge key. */
+async function seenState(): Promise<Record<string, boolean>> {
+	const rows = check(
+		await service
+			.from('badges_earned')
+			.select('badge_subject, badge_type, milestone, seen_at')
+			.eq('student_id', student.id),
+		'read seen_at'
+	);
+	return Object.fromEntries(
+		rows.map((r) => [`${r.badge_subject}-${r.badge_type}-${r.milestone}`, r.seen_at !== null])
+	);
+}
+
+const newBadgeDialog = (page: Page) => page.getByRole('dialog', { name: /^New badges?!$/ });
+
+/**
+ * Before asserting that no dialog opened: iX is defined, the network is
+ * quiet, and a short pause gives a dialog that would open time to do so.
+ */
+async function settle(page: Page) {
+	await page.evaluate(() => customElements.whenDefined('ix-modal'));
+	await page.waitForLoadState('networkidle');
+	await page.waitForTimeout(750);
+}
+
+// Story 5 (CAP-9): the parent and teacher come first, while both badges are
+// still new: their views never show or consume the celebration.
+test("the parent's and teacher's views never show or consume the celebration", async ({ page }) => {
+	await signIn(page, parent);
+	await page.goto(`/parent/children/${student.id}/badges`);
+	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
+	await settle(page);
+	await expect(newBadgeDialog(page)).toHaveCount(0);
+
+	await page.context().clearCookies();
+	await signIn(page, teacher);
+	await page.goto(`/teacher/classes/${danceClassId}/students/${student.id}/badges`);
+	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
+	await settle(page);
+	await expect(newBadgeDialog(page)).toHaveCount(0);
+
+	expect(await seenState()).toEqual({ 'language-homework-1': false, 'dance-homework-1': false });
+});
+
+test('new badges are celebrated once: keyboard, Escape marks them seen, on any device', async ({
+	page,
+	browser
+}) => {
+	await signIn(page, student);
+	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	const dialog = page.getByRole('dialog', { name: 'New badges!' });
+	await expect(dialog).toBeVisible();
+
+	// Both new badges in one dialog, in tile order (language before dance).
+	const shown = page.locator('[data-testid="new-badge-dialog"] [data-testid="new-badge"]');
+	await expect(shown).toHaveCount(2);
+	await expect(shown.nth(0)).toContainText('1 Language homework done');
+	await expect(shown.nth(0).locator('img')).toHaveAttribute(
+		'src',
+		'/badges/language-homework-1.svg'
+	);
+	await expect(shown.nth(1)).toContainText('1 Dance & song homework done');
+
+	// Focus is inside the dialog; showing it marked nothing.
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() => document.activeElement?.closest('[data-testid="new-badge-dialog"]') != null
+			)
+		)
+		.toBe(true);
+	expect(await seenState()).toEqual({ 'language-homework-1': false, 'dance-homework-1': false });
+
+	// Escape closes it and marks both seen. Focus opened on the body (the
+	// sign-in redirect), so it goes to the page heading.
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+	await expect(page.locator('h1').first()).toBeFocused();
+	await expect.poll(seenState).toEqual({ 'language-homework-1': true, 'dance-homework-1': true });
+
+	// A reload shows no dialog.
+	await page.reload();
+	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await page.waitForLoadState('networkidle');
+	await expect(page.locator('button[data-badge]')).toHaveCount(2);
+	await expect(newBadgeDialog(page)).toHaveCount(0);
+
+	// Another device (a fresh browser context): no dialog either.
+	const other = await browser.newContext();
+	try {
+		const otherPage = await other.newPage();
+		await signIn(otherPage, student);
+		await otherPage.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+		await otherPage.waitForLoadState('networkidle');
+		await expect(otherPage.locator('button[data-badge]')).toHaveCount(2);
+		await expect(newBadgeDialog(otherPage)).toHaveCount(0);
+	} finally {
+		await other.close();
+	}
+});
+
+test("the dialog's link opens the badge page and marks the badge seen", async ({ page }) => {
+	// Make the dance badge new again (as if just earned).
+	check(
+		await service
+			.from('badges_earned')
+			.update({ seen_at: null })
+			.eq('student_id', student.id)
+			.eq('badge_subject', 'dance'),
+		'reset seen_at'
+	);
+	await signIn(page, student);
+	const dialog = newBadgeDialog(page);
+	await expect(dialog).toBeVisible();
+	await expect(
+		page.locator('[data-testid="new-badge-dialog"] [data-testid="new-badge"]')
+	).toHaveCount(1);
+
+	await page.getByTestId('new-badge-see-all').click();
+	await expect(page).toHaveURL(/\/student\/badges$/);
+	await expect(dialog).toBeHidden();
+	await page.waitForLoadState('networkidle');
+	await expect(page.locator('li[data-badge]')).toHaveCount(24);
+	await expect.poll(seenState).toEqual({ 'language-homework-1': true, 'dance-homework-1': true });
+});
+
+test('when marking fails the dialog still closes and shows again next visit', async ({ page }) => {
+	check(
+		await service
+			.from('badges_earned')
+			.update({ seen_at: null })
+			.eq('student_id', student.id)
+			.eq('badge_subject', 'language'),
+		'reset seen_at'
+	);
+	await page.route('**/api/badges/seen', (route) => route.fulfill({ status: 500, body: '{}' }));
+	await signIn(page, student);
+	const dialog = newBadgeDialog(page);
+	await expect(dialog).toBeVisible();
+	await page.locator('[data-testid="new-badge-dialog"] ix-button').click();
+	await expect(dialog).toBeHidden();
+	expect(await seenState()).toEqual({ 'language-homework-1': false, 'dance-homework-1': true });
+
+	// Next visit, saving works again: shown once more, then gone.
+	await page.unroute('**/api/badges/seen');
+	await page.reload();
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+	await expect.poll(seenState).toEqual({ 'language-homework-1': true, 'dance-homework-1': true });
+});
+
 test('earned badges show as icons, open their detail by keyboard and return focus', async ({
 	page
 }) => {
@@ -330,4 +488,94 @@ test("the linked parent sees their child's badge page; another child is a 404", 
 
 	const response = await page.goto(`/parent/children/${crypto.randomUUID()}/badges`);
 	expect(response?.status()).toBe(404);
+});
+
+// Last, as it adds a Done homework (the earlier tests count 1 per subject).
+test('a badge dismissed in this session stays gone when the layout reloads its data', async ({
+	page
+}) => {
+	// The language badge is new again, and one dance homework is open.
+	check(
+		await service
+			.from('badges_earned')
+			.update({ seen_at: null })
+			.eq('student_id', student.id)
+			.eq('badge_subject', 'language'),
+		'reset seen_at'
+	);
+	const assignment = check(
+		await service
+			.from('homework_assignments')
+			.insert({
+				class_id: danceClassId,
+				title: `E2E BD5 HW ${tag}`,
+				skill_area: 'language',
+				whole_class: false,
+				created_by: teacher.id
+			})
+			.select('id')
+			.single(),
+		'create assignment'
+	).id;
+	const instance = check(
+		await service
+			.from('homework_instances')
+			.insert({
+				assignment_id: assignment,
+				class_id: danceClassId,
+				period_start: '1890-01-13',
+				due_date: '1890-01-13'
+			})
+			.select('id')
+			.single(),
+		'create instance'
+	).id;
+	check(
+		await service.from('homework_status_history').insert({
+			instance_id: instance,
+			class_id: danceClassId,
+			student_id: student.id,
+			status: 'assigned',
+			recorded_by: teacher.id
+		}),
+		'assign homework'
+	);
+
+	// Saving "seen" fails, so the row stays unseen in the database.
+	await page.route('**/api/badges/seen', (route) => route.fulfill({ status: 500, body: '{}' }));
+	await signIn(page, student);
+	const dialog = newBadgeDialog(page);
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+
+	// A client-side navigation (no reload) to the homework, then Done: the
+	// form action re-runs the root layout load, which still returns the badge.
+	await page.evaluate((href) => {
+		const link = document.createElement('a');
+		link.href = href;
+		document.body.append(link);
+		link.click();
+	}, `/student/homework/${instance}`);
+	await expect(page).toHaveURL(new RegExp(`/student/homework/${instance}$`));
+	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.getByRole('button', { name: 'Mark done' }).click();
+	await page
+		.locator('ix-modal:not([data-testid])')
+		.getByRole('button', { name: 'Mark done' })
+		.click();
+	await expect(page.locator('ix-toast').getByText('Marked done.')).toBeVisible();
+
+	// 2 dance homework earns no badge; the dismissed language badge stays gone.
+	await settle(page);
+	await expect(dialog).toHaveCount(0);
+	expect(await seenState()).toEqual({ 'language-homework-1': false, 'dance-homework-1': true });
+
+	check(
+		await service
+			.from('badges_earned')
+			.update({ seen_at: new Date().toISOString() })
+			.eq('student_id', student.id),
+		'mark seen'
+	);
 });
