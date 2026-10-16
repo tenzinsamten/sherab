@@ -1182,7 +1182,6 @@
 	"badge_dialog_close": "Close",
 	"badge_progress_heading": "Next badges",
 	"badge_progress_value": "{total} / {next}",
-	"badge_progress_top": "{total}, top badge reached",
 	"badge_progress_empty": "Progress shows once a class has a badge subject.",
 	"badge_page_heading": "Badges",
 	"badge_page_heading_own": "My badges",
@@ -1211,8 +1210,6 @@
 			}
 		}
 	],
-	"badge_see_all": "See all",
-	"badge_see_all_label": "See all badges",
 	"badge_page_link": "Badges",
 	"badge_new_title": [
 		{

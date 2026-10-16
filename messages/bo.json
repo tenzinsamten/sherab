@@ -1182,7 +1182,6 @@
 	"badge_dialog_close": "ཁ་བརྒྱབ།",
 	"badge_progress_heading": "རྗེས་མའི་ངོ་རྟགས།",
 	"badge_progress_value": "{total} / {next}",
-	"badge_progress_top": "{total}། ངོ་རྟགས་མཐོ་ཤོས་ཐོབ་ཟིན།",
 	"badge_progress_empty": "འཛིན་གྲྭར་རྟགས་མའི་སློབ་ཚན་གཏན་འཁེལ་བྱས་རྗེས་ཡར་རྒྱས་མངོན་གྱི་རེད།",
 	"badge_page_heading": "ངོ་རྟགས།",
 	"badge_page_heading_own": "ངའི་ངོ་རྟགས།",
@@ -1211,8 +1210,6 @@
 			}
 		}
 	],
-	"badge_see_all": "ཚང་མ་ལྟ།",
-	"badge_see_all_label": "ངོ་རྟགས་ཚང་མ་ལྟ།",
 	"badge_page_link": "ངོ་རྟགས།",
 	"badge_new_title": [
 		{

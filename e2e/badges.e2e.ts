@@ -4,9 +4,9 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 /**
  * Badge detail story 3: the Badges tile on /student shows each earned badge
  * as its icon, two subjects at the same milestone both show (the deferred
- * each-key item from story 2), each track's next badge shows greyed, and
- * per-subject progress shows. Nothing inside the tile is clickable on its
- * own; the badge page's detail dialog opens and closes (story 4).
+ * each-key item from story 2), and each track's next badge shows as its
+ * icon greyed, with no progress text. Nothing inside the tile is clickable
+ * on its own; the badge page's detail dialog opens and closes (story 4).
  *
  * Story 4: the whole tile links to /student/badges with every badge of the
  * student's subjects (earned and locked); the teacher reaches the same page
@@ -352,7 +352,7 @@ test('when marking fails the dialog still closes and shows again next visit', as
 	await expect.poll(seenState).toEqual({ 'language-homework-1': true, 'dance-homework-1': true });
 });
 
-test('the tile shows earned badges, greyed next badges and progress, with no inner controls', async ({
+test('the tile shows earned badges and greyed next badges, with no inner controls', async ({
 	page
 }) => {
 	await signIn(page, student);
@@ -382,14 +382,16 @@ test('the tile shows earned badges, greyed next badges and progress, with no inn
 		'grayscale'
 	);
 
-	// Progress per subject, both tracks.
-	await expect(page.locator('[data-progress="language-homework"] dd')).toHaveText('1 / 5');
-	await expect(page.locator('[data-progress="dance-homework"] dd')).toHaveText('1 / 5');
-	await expect(page.locator('[data-progress="dance-attendance"] dd')).toHaveText('0 / 1');
-	await expect(page.locator('[data-progress="language-attendance"] dd')).toHaveText('0 / 1');
+	await expect(
+		page.getByRole('img', { name: 'Dance & song Homework badge 5 (Locked)' })
+	).toBeVisible();
+
+	// Icons only: no "See all" and no progress text.
+	const tile = page.getByTestId('badges-tile');
+	await expect(tile).not.toContainText('See all');
+	await expect(tile.locator('[data-progress]')).toHaveCount(0);
 
 	// The whole card is the one link; nothing inside it is a control.
-	const tile = page.getByTestId('badges-see-all');
 	await expect(tile).toHaveAttribute('href', '/student/badges');
 	await expect(tile.locator('button, a')).toHaveCount(0);
 
@@ -452,7 +454,7 @@ test('the tile links to the badge page, which lists every badge earned and locke
 	await signIn(page, student);
 	await openDashboard(page);
 
-	await page.getByTestId('badges-see-all').click();
+	await page.getByTestId('badges-tile').click();
 	await expect(page).toHaveURL(/\/student\/badges$/);
 	await page.waitForLoadState('networkidle');
 	await expectBadgePage(page);
@@ -484,7 +486,7 @@ test("the linked parent sees their child's badge page; another child is a 404", 
 	await signIn(page, parent);
 	await page.goto(`/parent/children/${student.id}`);
 	await page.waitForLoadState('networkidle');
-	await page.getByTestId('badges-see-all').click();
+	await page.getByTestId('badges-tile').click();
 	await expect(page).toHaveURL(new RegExp(`/parent/children/${student.id}/badges$`));
 	await page.waitForLoadState('networkidle');
 	await expectBadgePage(page);

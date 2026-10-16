@@ -16,10 +16,10 @@
 	/**
 	 * A student's streak and badges tiles (Stories 4-1/4-2), on the student
 	 * dashboard and the parent's child page. The tile shows the most recently
-	 * earned badges, then each track's next badge greyed out with the
-	 * per-subject progress toward it (badge detail story 3). The whole badges
-	 * card is one link to the badge page with every badge and its detail
-	 * (story 4); nothing inside it is clickable on its own.
+	 * earned badges, then each track's next badge as its icon greyed out
+	 * (badge detail story 3). The whole badges card is one link to the badge
+	 * page with every badge, its detail and progress (story 4); nothing
+	 * inside it is clickable on its own.
 	 */
 	let {
 		streak,
@@ -39,7 +39,7 @@
 		loadError: boolean;
 		/** badge_progress() failed: only the progress section shows "—". */
 		progressLoadError: boolean;
-		/** The student's badge page, linked as "See all". */
+		/** The student's badge page, which the whole badges card links to. */
 		seeAllHref: string;
 	} = $props();
 
@@ -61,12 +61,6 @@
 
 	const badgeKey = (badge: Pick<BadgeView, 'subject' | 'badgeType' | 'milestone'>) =>
 		`${badge.subject}-${badge.badgeType}-${badge.milestone}`;
-
-	function progressText(track: ProgressTrack): string {
-		return track.next === null
-			? m.badge_progress_top({ total: num(track.total) })
-			: m.badge_progress_value({ total: num(track.total), next: num(track.next) });
-	}
 </script>
 
 <div class="tile-grid" style="margin-bottom: var(--space-4);">
@@ -92,13 +86,10 @@
 	</ix-card>
 
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
-	<a href={seeAllHref} class="tile-link" data-testid="badges-see-all">
+	<a href={seeAllHref} class="tile-link" data-testid="badges-tile">
 		<ix-card variant="outline">
 			<ix-card-content>
-				<div class="badge-tile-header">
-					<p class="section-label">{m.student_badges_label()}</p>
-					<span class="badge-see-all">{m.badge_see_all()}</span>
-				</div>
+				<p class="section-label">{m.student_badges_label()}</p>
 				{#if loadError}
 					<p class="stat-tile-value muted">—</p>
 				{:else}
@@ -121,36 +112,29 @@
 						<p class="muted" style="margin:0;">{m.student_badges_empty()}</p>
 					{/if}
 
-					<p class="section-label badge-progress-heading">{m.badge_progress_heading()}</p>
+					<!-- Once every track is at its top badge there is nothing left to show. -->
+					{#if progressLoadError || nextBadges.length > 0 || badgeProgress.length === 0}
+						<p class="section-label badge-progress-heading">{m.badge_progress_heading()}</p>
+					{/if}
 					{#if progressLoadError}
 						<p class="stat-tile-value muted">—</p>
-					{:else if badgeProgress.length > 0}
-						{#if nextBadges.length > 0}
-							<!-- The greyed icons repeat the progress list below, which carries the text. -->
-							<ul class="badge-icons badge-next" aria-hidden="true">
-								{#each nextBadges as badge (badgeKey(badge))}
-									{@const icon = badgeIconPath(badge)}
-									<li data-badge={badgeKey(badge)} data-state="next">
-										{#if icon}
-											<img src={icon} alt="" width="56" height="56" />
-										{:else}
-											<ix-pill variant="neutral" icon="trophy">{num(badge.milestone)}</ix-pill>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						{/if}
-						<dl class="badge-progress">
-							{#each badgeProgress as row (row.subject)}
-								{#each ['attendance', 'homework'] as const as track (track)}
-									<div data-progress={`${row.subject}-${track}`}>
-										<dt>{badgeSubjectLabel(row.subject)} · {badgeTrackLabel(track)}</dt>
-										<dd>{progressText(row[track])}</dd>
-									</div>
-								{/each}
+					{:else if nextBadges.length > 0}
+						<ul class="badge-icons badge-next">
+							{#each nextBadges as badge (badgeKey(badge))}
+								{@const icon = badgeIconPath(badge)}
+								{@const label = `${badgeIconLabel(badge)} (${m.badge_locked()})`}
+								<li data-badge={badgeKey(badge)} data-state="next" title={label}>
+									{#if icon}
+										<img src={icon} alt={label} width="56" height="56" />
+									{:else}
+										<ix-pill variant="neutral" icon="trophy" aria-label={label}
+											>{num(badge.milestone)}</ix-pill
+										>
+									{/if}
+								</li>
 							{/each}
-						</dl>
-					{:else}
+						</ul>
+					{:else if badgeProgress.length === 0}
 						<p class="muted" style="margin:0;">{m.badge_progress_empty()}</p>
 					{/if}
 				{/if}
@@ -160,22 +144,6 @@
 </div>
 
 <style>
-	.badge-tile-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: var(--space-2);
-		margin-bottom: var(--space-2);
-	}
-	.badge-tile-header .section-label {
-		margin-bottom: 0;
-	}
-	.badge-see-all {
-		color: var(--theme-color-primary);
-	}
-	.tile-link:hover .badge-see-all {
-		text-decoration: underline;
-	}
 	.badge-icons {
 		list-style: none;
 		padding: 0;
@@ -193,29 +161,10 @@
 	}
 	/* Not yet earned: the real icon, greyed and faded, as on the badge page. */
 	.badge-next {
-		margin-bottom: var(--space-1);
 		filter: grayscale(1);
 		opacity: 0.4;
 	}
 	.badge-progress-heading {
 		margin-top: var(--space-2);
-	}
-	.badge-progress {
-		margin: 0;
-		display: grid;
-		gap: var(--space-1);
-	}
-	.badge-progress div {
-		display: flex;
-		justify-content: space-between;
-		gap: var(--space-2);
-	}
-	.badge-progress dt,
-	.badge-progress dd {
-		margin: 0;
-	}
-	.badge-progress dd {
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
 	}
 </style>

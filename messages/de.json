@@ -1182,7 +1182,6 @@
 	"badge_dialog_close": "Schließen",
 	"badge_progress_heading": "Nächste Abzeichen",
 	"badge_progress_value": "{total} / {next}",
-	"badge_progress_top": "{total}, höchstes Abzeichen erreicht",
 	"badge_progress_empty": "Der Fortschritt erscheint, sobald eine Klasse ein Abzeichen-Fach hat.",
 	"badge_page_heading": "Abzeichen",
 	"badge_page_heading_own": "Meine Abzeichen",
@@ -1211,8 +1210,6 @@
 			}
 		}
 	],
-	"badge_see_all": "Alle ansehen",
-	"badge_see_all_label": "Alle Abzeichen ansehen",
 	"badge_page_link": "Abzeichen",
 	"badge_new_title": [
 		{
