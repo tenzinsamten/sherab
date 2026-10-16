@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		badgeIconLabel,
+		badgeIconPath,
 		badgeSubjectLabel,
 		badgeTrackLabel,
 		recentBadges,
@@ -8,16 +9,17 @@
 	} from '$lib/badge-subject';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
-	import BadgeDetailDialog, { type BadgeView } from './BadgeDetailDialog.svelte';
+	import type { BadgeView } from './BadgeDetailDialog.svelte';
 
 	type ProgressTrack = { total: number; next: number | null };
 
 	/**
 	 * A student's streak and badges tiles (Stories 4-1/4-2), on the student
-	 * dashboard and the parent's child page. Badges show as icons that open
-	 * their detail, with per-subject progress toward the next badge (badge
-	 * detail story 3). The tile shows the most recently earned badges only;
-	 * "See all" leads to the badge page with every badge (story 4).
+	 * dashboard and the parent's child page. The tile shows the most recently
+	 * earned badges, then each track's next badge greyed out with the
+	 * per-subject progress toward it (badge detail story 3). The whole badges
+	 * card is one link to the badge page with every badge and its detail
+	 * (story 4); nothing inside it is clickable on its own.
 	 */
 	let {
 		streak,
@@ -47,12 +49,18 @@
 	// Newest first (a tie keeps the subject order).
 	let shownBadges = $derived(recentBadges(badges, RECENT_BADGES));
 
-	let detail = $state<ReturnType<typeof BadgeDetailDialog>>();
+	// Each track's next badge to earn, in progress order; none after the top milestone.
+	let nextBadges = $derived(
+		badgeProgress.flatMap((row) =>
+			(['attendance', 'homework'] as const).flatMap((badgeType) => {
+				const milestone = row[badgeType].next;
+				return milestone === null ? [] : [{ subject: row.subject, badgeType, milestone }];
+			})
+		)
+	);
 
-	/** The badge's track's next target from badge_progress; undefined when there is no row. */
-	function trackNext(badge: BadgeView): number | null | undefined {
-		return badgeProgress.find((row) => row.subject === badge.subject)?.[badge.badgeType].next;
-	}
+	const badgeKey = (badge: Pick<BadgeView, 'subject' | 'badgeType' | 'milestone'>) =>
+		`${badge.subject}-${badge.badgeType}-${badge.milestone}`;
 
 	function progressText(track: ProgressTrack): string {
 		return track.next === null
@@ -83,70 +91,73 @@
 		</ix-card-content>
 	</ix-card>
 
-	<ix-card variant="outline" passive>
-		<ix-card-content>
-			<div class="badge-tile-header">
-				<p class="section-label">{m.student_badges_label()}</p>
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
-				<a href={seeAllHref} aria-label={m.badge_see_all_label()} data-testid="badges-see-all"
-					>{m.badge_see_all()}</a
-				>
-			</div>
-			{#if loadError}
-				<p class="stat-tile-value muted">—</p>
-			{:else}
-				{#if shownBadges.length > 0}
-					<ul class="badge-icons">
-						{#each shownBadges as badge (`${badge.subject}-${badge.badgeType}-${badge.milestone}`)}
-							<li>
-								<button
-									type="button"
-									class="badge-button"
-									class:badge-button-pill={!badge.icon}
-									aria-label={badgeIconLabel(badge)}
-									title={badgeIconLabel(badge)}
-									data-badge={`${badge.subject}-${badge.badgeType}-${badge.milestone}`}
-									onclick={(event) => detail?.open(badge, trackNext(badge), event.currentTarget)}
-								>
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
+	<a href={seeAllHref} class="tile-link" data-testid="badges-see-all">
+		<ix-card variant="outline">
+			<ix-card-content>
+				<div class="badge-tile-header">
+					<p class="section-label">{m.student_badges_label()}</p>
+					<span class="badge-see-all">{m.badge_see_all()}</span>
+				</div>
+				{#if loadError}
+					<p class="stat-tile-value muted">—</p>
+				{:else}
+					{#if shownBadges.length > 0}
+						<ul class="badge-icons">
+							{#each shownBadges as badge (badgeKey(badge))}
+								<li data-badge={badgeKey(badge)} data-state="earned" title={badgeIconLabel(badge)}>
 									{#if badge.icon}
-										<img src={badge.icon} alt="" width="56" height="56" />
+										<img src={badge.icon} alt={badgeIconLabel(badge)} width="56" height="56" />
 									{:else}
 										<ix-pill variant="primary" icon="trophy">
 											{badgeSubjectLabel(badge.subject)} · {badgeTrackLabel(badge.badgeType)}
 											{num(badge.milestone)}
 										</ix-pill>
 									{/if}
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{:else}
-					<p class="muted" style="margin:0;">{m.student_badges_empty()}</p>
-				{/if}
-
-				<p class="section-label badge-progress-heading">{m.badge_progress_heading()}</p>
-				{#if progressLoadError}
-					<p class="stat-tile-value muted">—</p>
-				{:else if badgeProgress.length > 0}
-					<dl class="badge-progress">
-						{#each badgeProgress as row (row.subject)}
-							{#each ['attendance', 'homework'] as const as track (track)}
-								<div data-progress={`${row.subject}-${track}`}>
-									<dt>{badgeSubjectLabel(row.subject)} · {badgeTrackLabel(track)}</dt>
-									<dd>{progressText(row[track])}</dd>
-								</div>
+								</li>
 							{/each}
-						{/each}
-					</dl>
-				{:else}
-					<p class="muted" style="margin:0;">{m.badge_progress_empty()}</p>
-				{/if}
-			{/if}
-		</ix-card-content>
-	</ix-card>
-</div>
+						</ul>
+					{:else}
+						<p class="muted" style="margin:0;">{m.student_badges_empty()}</p>
+					{/if}
 
-<BadgeDetailDialog bind:this={detail} />
+					<p class="section-label badge-progress-heading">{m.badge_progress_heading()}</p>
+					{#if progressLoadError}
+						<p class="stat-tile-value muted">—</p>
+					{:else if badgeProgress.length > 0}
+						{#if nextBadges.length > 0}
+							<!-- The greyed icons repeat the progress list below, which carries the text. -->
+							<ul class="badge-icons badge-next" aria-hidden="true">
+								{#each nextBadges as badge (badgeKey(badge))}
+									{@const icon = badgeIconPath(badge)}
+									<li data-badge={badgeKey(badge)} data-state="next">
+										{#if icon}
+											<img src={icon} alt="" width="56" height="56" />
+										{:else}
+											<ix-pill variant="neutral" icon="trophy">{num(badge.milestone)}</ix-pill>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						<dl class="badge-progress">
+							{#each badgeProgress as row (row.subject)}
+								{#each ['attendance', 'homework'] as const as track (track)}
+									<div data-progress={`${row.subject}-${track}`}>
+										<dt>{badgeSubjectLabel(row.subject)} · {badgeTrackLabel(track)}</dt>
+										<dd>{progressText(row[track])}</dd>
+									</div>
+								{/each}
+							{/each}
+						</dl>
+					{:else}
+						<p class="muted" style="margin:0;">{m.badge_progress_empty()}</p>
+					{/if}
+				{/if}
+			</ix-card-content>
+		</ix-card>
+	</a>
+</div>
 
 <style>
 	.badge-tile-header {
@@ -156,13 +167,14 @@
 		gap: var(--space-2);
 		margin-bottom: var(--space-2);
 	}
-	.badge-tile-header a {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-	}
 	.badge-tile-header .section-label {
 		margin-bottom: 0;
+	}
+	.badge-see-all {
+		color: var(--theme-color-primary);
+	}
+	.tile-link:hover .badge-see-all {
+		text-decoration: underline;
 	}
 	.badge-icons {
 		list-style: none;
@@ -170,30 +182,20 @@
 		margin: 0;
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--space-1);
 	}
-	.badge-button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		border: none;
-		background: none;
-		border-radius: 8px;
-		cursor: pointer;
-	}
-	.badge-button img {
+	.badge-icons img {
 		display: block;
 		width: 56px;
 		height: 56px;
 		object-fit: contain;
 	}
-	.badge-button-pill {
-		min-height: 44px;
-	}
-	.badge-button:focus-visible {
-		outline: 2px solid var(--theme-color-focus-bdr, currentColor);
-		outline-offset: 2px;
+	/* Not yet earned: the real icon, greyed and faded, as on the badge page. */
+	.badge-next {
+		margin-bottom: var(--space-1);
+		filter: grayscale(1);
+		opacity: 0.4;
 	}
 	.badge-progress-heading {
 		margin-top: var(--space-2);

@@ -26,6 +26,18 @@ type BadgeText = {
 	milestone: number;
 };
 
+/** Milestones that have an icon in `static/badges/` (badge-catalog.md). */
+export const BADGE_ICON_MILESTONES: readonly number[] = [1, 5, 10, 25, 50, 100];
+
+/**
+ * The badge's icon (`/badges/{subject}-{type}-{milestone}.svg`), or null for a
+ * milestone with no icon -- the caller then shows the trophy pill.
+ */
+export function badgeIconPath(badge: BadgeText): string | null {
+	if (!BADGE_ICON_MILESTONES.includes(badge.milestone)) return null;
+	return `/badges/${badge.subject}-${badge.badgeType}-${badge.milestone}.svg`;
+}
+
 /** The track's name: "Attendance" or "Homework". */
 export function badgeTrackLabel(badgeType: 'attendance' | 'homework'): string {
 	return badgeType === 'homework' ? m.badge_track_homework() : m.badge_track_attendance();

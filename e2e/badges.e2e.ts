@@ -4,10 +4,11 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 /**
  * Badge detail story 3: the Badges tile on /student shows each earned badge
  * as its icon, two subjects at the same milestone both show (the deferred
- * each-key item from story 2), the detail dialog opens from the keyboard,
- * closes with Escape and returns focus, and per-subject progress shows.
+ * each-key item from story 2), each track's next badge shows greyed, and
+ * per-subject progress shows. Nothing inside the tile is clickable on its
+ * own; the badge page's detail dialog opens and closes (story 4).
  *
- * Story 4: the tile's "See all" opens /student/badges with every badge of the
+ * Story 4: the whole tile links to /student/badges with every badge of the
  * student's subjects (earned and locked); the teacher reaches the same page
  * from the class roster and the linked parent from their child's page.
  *
@@ -283,7 +284,7 @@ test('new badges are celebrated once: keyboard, Escape marks them seen, on any d
 	await page.reload();
 	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
 	await page.waitForLoadState('networkidle');
-	await expect(page.locator('button[data-badge]')).toHaveCount(2);
+	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
 	await expect(newBadgeDialog(page)).toHaveCount(0);
 
 	// Another device (a fresh browser context): no dialog either.
@@ -293,7 +294,7 @@ test('new badges are celebrated once: keyboard, Escape marks them seen, on any d
 		await signIn(otherPage, student);
 		await otherPage.waitForFunction(() => customElements.get('ix-modal') !== undefined);
 		await otherPage.waitForLoadState('networkidle');
-		await expect(otherPage.locator('button[data-badge]')).toHaveCount(2);
+		await expect(otherPage.locator('li[data-state="earned"]')).toHaveCount(2);
 		await expect(newBadgeDialog(otherPage)).toHaveCount(0);
 	} finally {
 		await other.close();
@@ -351,7 +352,7 @@ test('when marking fails the dialog still closes and shows again next visit', as
 	await expect.poll(seenState).toEqual({ 'language-homework-1': true, 'dance-homework-1': true });
 });
 
-test('earned badges show as icons, open their detail by keyboard and return focus', async ({
+test('the tile shows earned badges, greyed next badges and progress, with no inner controls', async ({
 	page
 }) => {
 	await signIn(page, student);
@@ -359,7 +360,7 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 
 	// Two subjects at the same milestone both show, most recently earned
 	// first (story 4): dance was finished after language.
-	const icons = page.locator('button[data-badge]');
+	const icons = page.locator('li[data-state="earned"]');
 	await expect(icons).toHaveCount(2);
 	await expect(icons.nth(0)).toHaveAttribute('data-badge', 'dance-homework-1');
 	await expect(icons.nth(1)).toHaveAttribute('data-badge', 'language-homework-1');
@@ -367,8 +368,19 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 		'src',
 		'/badges/language-homework-1.svg'
 	);
-	await expect(page.getByRole('button', { name: 'Dance & song Homework badge 1' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Dance & song Homework badge 1' })).toBeVisible();
 	await expect(icons.nth(0)).toHaveAttribute('title', 'Dance & song Homework badge 1');
+
+	// Each track's next badge, greyed: 2 subjects x 2 tracks.
+	const next = page.locator('li[data-state="next"]');
+	await expect(next).toHaveCount(4);
+	await expect(page.locator('li[data-badge="dance-homework-5"] img')).toHaveAttribute(
+		'src',
+		'/badges/dance-homework-5.svg'
+	);
+	expect(await page.locator('.badge-next').evaluate((el) => getComputedStyle(el).filter)).toContain(
+		'grayscale'
+	);
 
 	// Progress per subject, both tracks.
 	await expect(page.locator('[data-progress="language-homework"] dd')).toHaveText('1 / 5');
@@ -376,23 +388,14 @@ test('earned badges show as icons, open their detail by keyboard and return focu
 	await expect(page.locator('[data-progress="dance-attendance"] dd')).toHaveText('0 / 1');
 	await expect(page.locator('[data-progress="language-attendance"] dd')).toHaveText('0 / 1');
 
-	// Keyboard: focus the dance icon, Enter opens the detail.
-	const danceIcon = icons.nth(0);
-	await danceIcon.focus();
-	await page.keyboard.press('Enter');
-	const dialog = page.getByRole('dialog', { name: '1 Dance & song homework done' });
-	await expect(dialog).toBeVisible();
-	const detail = page.locator('ix-modal[data-testid="badge-detail"]');
-	await expect(detail.getByText('1 Dance & song homework done')).toBeVisible();
-	await expect(detail.getByText('Subject: Dance & song')).toBeVisible();
-	await expect(detail.getByText(/^Earned on /)).toBeVisible();
-	// The track's real next target, from the progress row (1 done -> 5).
-	await expect(detail.getByText('Next: 5')).toBeVisible();
+	// The whole card is the one link; nothing inside it is a control.
+	const tile = page.getByTestId('badges-see-all');
+	await expect(tile).toHaveAttribute('href', '/student/badges');
+	await expect(tile.locator('button, a')).toHaveCount(0);
 
-	// Escape closes it and focus returns to the icon.
-	await page.keyboard.press('Escape');
-	await expect(dialog).toBeHidden();
-	await expect(danceIcon).toBeFocused();
+	// Clicking a badge icon follows the card's link.
+	await icons.nth(0).click();
+	await expect(page).toHaveURL(/\/student\/badges$/);
 });
 
 /** The badge page's grid: 2 subjects x 2 tracks x 6 milestones, 2 of them earned. */

@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BADGE_SUBJECTS, isBadgeSubject, type BadgeSubject } from '$lib/badge-subject';
+import {
+	BADGE_SUBJECTS,
+	badgeIconPath,
+	isBadgeSubject,
+	type BadgeSubject
+} from '$lib/badge-subject';
 import type { Database } from '$lib/supabase/database.types';
 
 export type BadgeType = 'attendance' | 'homework';
@@ -7,8 +12,8 @@ export type BadgeType = 'attendance' | 'homework';
 /** Attendance before homework, wherever badges are listed. */
 const BADGE_TYPES: readonly BadgeType[] = ['attendance', 'homework'];
 
-/** Milestones that have an icon in `static/badges/` (badge-catalog.md). */
-export const BADGE_ICON_MILESTONES: readonly number[] = [1, 5, 10, 25, 50, 100];
+// Shared with the browser (the badges tile greys the next badge's icon).
+export { BADGE_ICON_MILESTONES, badgeIconPath } from '$lib/badge-subject';
 
 export type StudentBadge = {
 	subject: BadgeSubject;
@@ -90,19 +95,6 @@ export function shapeNewBadges(rows: (StudentBadgeRow & { id: string })[] | null
 	return rows
 		.map((row): NewBadge => ({ ...shapeStudentBadges([row])[0], id: row.id }))
 		.sort(compareBadges);
-}
-
-/**
- * The badge's icon (`/badges/{subject}-{type}-{milestone}.svg`), or null for a
- * milestone with no icon -- the caller then shows the trophy pill.
- */
-export function badgeIconPath(badge: {
-	subject: BadgeSubject;
-	badgeType: BadgeType;
-	milestone: number;
-}): string | null {
-	if (!BADGE_ICON_MILESTONES.includes(badge.milestone)) return null;
-	return `/badges/${badge.subject}-${badge.badgeType}-${badge.milestone}.svg`;
 }
 
 /** One track's progress toward its next badge; `next` is null after the top milestone. */
