@@ -340,3 +340,6 @@
 - source_spec: `_bmad-output/specs/spec-badge-detail/stories/3-badge-icons-detail-and-progress.md`
   summary: Extend e2e badge coverage to the parent child page, the trophy-pill fallback, the top-badge state and closing the dialog with its Close button.
   evidence: e2e/badges.e2e.ts covers only /student, an icon milestone, a non-top badge and Escape; the parent page and those dialog paths have no rendered check.
+- source_spec: `_bmad-output/specs/spec-badge-detail/stories/5-new-badge-celebration.md`
+  summary: Replace the regex check of 0050's "existing rows count as seen" backfill with a test that applies the migration to pre-existing badge rows.
+  evidence: rls.spec.ts only matches the SQL text; a reset DB has no badge rows when 0050 runs, and there is no harness to seed rows before a single migration.
