@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import type { Cookies } from '@sveltejs/kit';
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import type { Database } from './database.types';
+import { fetchWithTimeout } from './fetch-timeout';
 
 /**
  * Typed Supabase client bound to the request's cookies, for use in
@@ -12,6 +13,7 @@ import type { Database } from './database.types';
  */
 export function createSupabaseServerClient(cookies: Cookies) {
 	return createServerClient<Database>(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+		global: { fetch: fetchWithTimeout() },
 		cookies: {
 			getAll: () => cookies.getAll(),
 			setAll: (cookiesToSet) => {
