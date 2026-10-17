@@ -40,6 +40,7 @@ function runLoad(opts: {
 	pendingParents?: number;
 	pendingDeletions?: number;
 	deletionError?: unknown;
+	parentCountError?: unknown;
 	sickQueue?: { data: unknown; error: unknown };
 	joinQueue?: { data: unknown; error: unknown };
 }) {
@@ -75,7 +76,7 @@ function runLoad(opts: {
 							: {
 									count:
 										table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
-									error: null
+									error: table === 'parents' ? (opts.parentCountError ?? null) : null
 								}
 						: table === 'badges_earned'
 							? (opts.unseen ?? { data: [], error: null })
@@ -191,6 +192,11 @@ describe('root layout: nav badge count', () => {
 		expect(await result).toMatchObject({ loadError: true });
 	});
 
+	it('flags a load error when the pending parents count fails', async () => {
+		const { result } = runLoad({ role: 'admin', parentCountError: { message: 'boom' } });
+		expect(await result).toMatchObject({ loadError: true });
+	});
+
 	it('flags a load error when sick_leave_queue fails', async () => {
 		const { result } = runLoad({
 			role: 'teacher',
@@ -238,11 +244,6 @@ describe('root layout: roles and active role (B13 #68)', () => {
 			const { result } = runLoad({ role, cookie: 'parent' });
 			expect(await result).toMatchObject({ roles: [role], activeRole: role });
 		}
-	});
-
-	it('never reads the parents row of a parent-only login', async () => {
-		const { calls } = runLoad({ role: 'parent' });
-		expect(calls.some((c) => c.table === 'parents')).toBe(false);
 	});
 
 	it('a teacher-parent defaults to the teacher role', async () => {
@@ -380,5 +381,245 @@ describe('root layout: new badges (badge detail CAP-9)', () => {
 		});
 		expect(await result).toMatchObject({ newBadges: [], loadError: false });
 		logged.mockRestore();
+	});
+});
+
+/**
+ * CAP-3 (navigation latency 3): a deferred fake that holds every query until
+ * the test releases it, so the load's rounds of queries can be counted. Each
+ * round is the set of queries in flight once the load is waiting; all of them
+ * are released together before the next round is read.
+ */
+function runRounds(opts: {
+	role: 'admin' | 'teacher' | 'parent' | 'student';
+	status?: string;
+	parentStatus?: string;
+	capabilitiesError?: unknown;
+	pendingStudents?: number;
+	pendingParents?: number;
+	pendingDeletions?: number;
+	countError?: unknown;
+	unseen?: { data: unknown; error: unknown };
+}) {
+	type Pending = { label: string; release: () => void };
+	let pending: Pending[] = [];
+	const selects: { table: string; columns: string }[] = [];
+	const defer = (label: string, value: () => unknown) =>
+		new Promise((resolve) => pending.push({ label, release: () => resolve(value()) }));
+
+	const chain = (table: string) => {
+		let head = false;
+		const c = {
+			select: (columns: string, options?: { head?: boolean }) => {
+				selects.push({ table, columns });
+				head = Boolean(options?.head);
+				return c;
+			},
+			eq: () => c,
+			neq: () => c,
+			is: () => c,
+			single: () =>
+				defer('profiles.single', () => ({
+					data: {
+						id: 'u1',
+						role: opts.role,
+						status: opts.status ?? 'approved',
+						display_name: 'Tashi',
+						email: 'tashi@example.com',
+						email_confirmed_at: null,
+						tours_seen: []
+					},
+					error: null
+				})),
+			maybeSingle: () =>
+				defer(`${table}.maybeSingle`, () =>
+					table === 'profiles'
+						? { data: { role: opts.role }, error: null }
+						: opts.capabilitiesError
+							? { data: null, error: opts.capabilitiesError }
+							: { data: opts.parentStatus ? { status: opts.parentStatus } : null, error: null }
+				),
+			then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+				defer(head ? `${table}.count` : table, () =>
+					head
+						? {
+								count:
+									table === 'parents'
+										? (opts.pendingParents ?? 0)
+										: table === 'deletion_requests'
+											? (opts.pendingDeletions ?? 0)
+											: (opts.pendingStudents ?? 0),
+								error: table === 'deletion_requests' ? (opts.countError ?? null) : null
+							}
+						: (opts.unseen ?? { data: [], error: null })
+				).then(resolve, reject)
+		};
+		return c;
+	};
+	const supabase = {
+		from: chain,
+		rpc: (fn: string) => defer(`rpc.${fn}`, () => ({ data: [], error: null }))
+	};
+	const pathReads = { count: 0 };
+	const realUrl = new URL('http://localhost/calendar');
+	const url = {
+		get pathname() {
+			pathReads.count += 1;
+			return realUrl.pathname;
+		}
+	};
+
+	const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+	async function drive() {
+		let settled = false;
+		const result = (
+			load({
+				cookies: { get: () => undefined },
+				url,
+				locals: {
+					supabase,
+					safeGetSession: async () => ({ session: {}, user: { id: 'u1' } })
+				}
+			} as unknown as Parameters<typeof load>[0]) as Promise<Record<string, unknown>>
+		).then((value) => {
+			settled = true;
+			return value;
+		});
+		const rounds: string[][] = [];
+		for (;;) {
+			await flush();
+			if (settled || pending.length === 0) break;
+			const batch = pending;
+			pending = [];
+			rounds.push(batch.map((p) => p.label).sort());
+			for (const p of batch) p.release();
+		}
+		return { data: await result, rounds, selects, pathReads: pathReads.count };
+	}
+	return drive();
+}
+
+describe('root layout: two rounds of queries (CAP-3)', () => {
+	it('an admin reads profile and capabilities, then every count in one batch', async () => {
+		const { data, rounds } = await runRounds({
+			role: 'admin',
+			pendingStudents: 1,
+			pendingParents: 2,
+			pendingDeletions: 3
+		});
+		expect(rounds).toEqual([
+			['parents.maybeSingle', 'profiles.maybeSingle', 'profiles.single'],
+			[
+				'deletion_requests.count',
+				'parents.count',
+				'profiles.count',
+				'rpc.list_class_join_requests',
+				'rpc.sick_leave_queue'
+			]
+		]);
+		expect(data).toMatchObject({
+			pendingRequestsCount: 6,
+			roles: ['admin'],
+			activeRole: 'admin',
+			newBadges: [],
+			loadError: false
+		});
+	});
+
+	it('every admin count has started before any of them resolves', async () => {
+		const { rounds } = await runRounds({ role: 'admin' });
+		// The whole second round was in flight at once, with none released yet.
+		expect(rounds[1]).toHaveLength(5);
+		expect(rounds).toHaveLength(2);
+	});
+
+	it('a teacher reads profile and capabilities, then only the three staff reads', async () => {
+		const { data, rounds } = await runRounds({ role: 'teacher', pendingStudents: 2 });
+		expect(rounds).toEqual([
+			['parents.maybeSingle', 'profiles.maybeSingle', 'profiles.single'],
+			['profiles.count', 'rpc.list_class_join_requests', 'rpc.sick_leave_queue']
+		]);
+		expect(data).toMatchObject({
+			pendingRequestsCount: 2,
+			roles: ['teacher'],
+			activeRole: 'teacher',
+			loadError: false
+		});
+	});
+
+	it('any failed admin count flags a load error', async () => {
+		const { data } = await runRounds({ role: 'admin', countError: { message: 'boom' } });
+		expect(data).toMatchObject({ loadError: true });
+	});
+
+	it('reads only the profile columns its consumers use', async () => {
+		const { selects } = await runRounds({ role: 'admin' });
+		expect(selects.find((s) => s.table === 'profiles')?.columns).toBe(
+			'id, role, status, display_name, email, email_confirmed_at, tours_seen'
+		);
+	});
+
+	it('a parent-only login reads no counts and ignores its capabilities', async () => {
+		for (const capabilities of [
+			{ parentStatus: 'approved' },
+			{ capabilitiesError: { message: 'boom' } }
+		]) {
+			const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const { data, rounds } = await runRounds({ role: 'parent', ...capabilities });
+			logged.mockRestore();
+			expect(rounds).toEqual([['parents.maybeSingle', 'profiles.maybeSingle', 'profiles.single']]);
+			expect(data).toMatchObject({
+				roles: ['parent'],
+				activeRole: 'parent',
+				pendingRequestsCount: 0,
+				newBadges: [],
+				loadError: false
+			});
+		}
+	});
+
+	it('an unapproved student gets no menu data or badges, and the path is read', async () => {
+		const { data, rounds, pathReads } = await runRounds({ role: 'student', status: 'pending' });
+		expect(rounds).toHaveLength(1);
+		expect(pathReads).toBeGreaterThan(0);
+		expect(data).toMatchObject({ pendingRequestsCount: 0, newBadges: [], loadError: false });
+	});
+
+	it('an approved student reads new badges in round 2, and not the path', async () => {
+		const { data, rounds, pathReads } = await runRounds({
+			role: 'student',
+			unseen: {
+				data: [
+					{
+						id: 'b1',
+						badge_subject: 'dance',
+						badge_type: 'attendance',
+						milestone: 1,
+						earned_at: '2026-10-11T10:00:00Z'
+					}
+				],
+				error: null
+			}
+		});
+		expect(rounds).toEqual([
+			['parents.maybeSingle', 'profiles.maybeSingle', 'profiles.single'],
+			['badges_earned']
+		]);
+		expect(pathReads).toBe(0);
+		expect(data).toMatchObject({
+			newBadges: [expect.objectContaining({ id: 'b1' })],
+			loadError: false
+		});
+	});
+
+	it('a failed badge read in round 2 shows nothing and is no load error', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { data } = await runRounds({
+			role: 'student',
+			unseen: { data: null, error: { message: 'boom' } }
+		});
+		logged.mockRestore();
+		expect(data).toMatchObject({ newBadges: [], loadError: false });
 	});
 });

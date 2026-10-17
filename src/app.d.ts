@@ -36,9 +36,15 @@ declare global {
 		}
 		interface PageData {
 			session?: Session | null;
-			profile?:
-				| import('$lib/supabase/database.types').Database['public']['Tables']['profiles']['Row']
-				| null;
+			/**
+			 * The root layout's profile read (CAP-3): only these columns, so a
+			 * consumer that needs another one fails `npm run check`. Keep in
+			 * step with LAYOUT_PROFILE_COLUMNS in src/routes/+layout.server.ts.
+			 */
+			profile?: Pick<
+				Database['public']['Tables']['profiles']['Row'],
+				'id' | 'role' | 'status' | 'display_name' | 'email' | 'email_confirmed_at' | 'tours_seen'
+			> | null;
 			pendingRequestsCount?: number;
 		}
 		// interface PageState {}

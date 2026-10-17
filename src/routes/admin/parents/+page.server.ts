@@ -41,31 +41,32 @@ const STATUS_ORDER: Record<ParentStatus, number> = { pending: 0, approved: 1, re
  * profiles admin select) is the real barrier.
  */
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
-	const { data: parentRows, error: parentsError } = await supabase
-		.from('parents')
-		.select(PARENT_COLUMNS);
+	// CAP-5: one round trip. The children are every student with a parent,
+	// not `parent_id IN (<all ids>)`, which grows the URL with each parent
+	// and fails at a few hundred. RLS (profiles admin select) still limits
+	// the rows; a child whose parent is not listed is never shown.
+	const [{ data: parentRows, error: parentsError }, { data: childData, error: childrenError }] =
+		await Promise.all([
+			supabase.from('parents').select(PARENT_COLUMNS),
+			supabase
+				.from('profiles')
+				.select('id, parent_id, display_name, registration_name, status')
+				.eq('role', 'student')
+				.not('parent_id', 'is', null)
+		]);
 
 	if (parentsError) {
 		console.error('admin parents load: parents failed', parentsError.message);
 		return { parents: [], pendingCount: 0, loadError: true };
 	}
-
 	const rows = (parentRows ?? []) as unknown as ParentRow[];
-	const ids = rows.map((r) => r.id);
-
-	let childRows: ChildRow[] = [];
-	if (ids.length > 0) {
-		const { data, error } = await supabase
-			.from('profiles')
-			.select('id, parent_id, display_name, registration_name, status')
-			.eq('role', 'student')
-			.in('parent_id', ids);
-		if (error) {
-			console.error('admin parents load: children failed', error.message);
-			return { parents: [], pendingCount: 0, loadError: true };
-		}
-		childRows = (data ?? []) as unknown as ChildRow[];
+	if (childrenError) {
+		console.error('admin parents load: children failed', childrenError.message);
+		// With no parents there are no children to show, so this is no load
+		// error -- as before, when the children read was skipped then.
+		if (rows.length > 0) return { parents: [], pendingCount: 0, loadError: true };
 	}
+	const childRows = (childData ?? []) as unknown as ChildRow[];
 
 	const childrenByParent = new Map<string, { id: string; name: string; status: ChildStatus }[]>();
 	for (const child of childRows) {

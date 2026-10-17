@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page.server';
 
 /**
@@ -9,7 +9,13 @@ import { load } from './+page.server';
 type ChainResult = { data?: unknown; error: unknown };
 
 function fakeLocals(results: { parents: ChainResult; profiles?: ChainResult }) {
-	type Call = { table: string; select?: string; eqArgs?: unknown[]; inArgs?: unknown[] };
+	type Call = {
+		table: string;
+		select?: string;
+		eqArgs?: unknown[];
+		inArgs?: unknown[];
+		notArgs?: unknown[];
+	};
 	const calls: Call[] = [];
 	const makeChain = (table: string, result: ChainResult) => {
 		const call: Call = { table };
@@ -25,6 +31,10 @@ function fakeLocals(results: { parents: ChainResult; profiles?: ChainResult }) {
 			},
 			in: (...args: unknown[]) => {
 				call.inArgs = args;
+				return chain;
+			},
+			not: (...args: unknown[]) => {
+				call.notArgs = args;
 				return chain;
 			},
 			then: (resolve: (value: ChainResult) => unknown) => resolve(result)
@@ -114,7 +124,8 @@ describe('admin parents +page.server.ts load', () => {
 		);
 		expect(childrenCall?.select).toBe('id, parent_id, display_name, registration_name, status');
 		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
-		expect(childrenCall?.inArgs).toEqual(['parent_id', ['p1']]);
+		expect(childrenCall?.notArgs).toEqual(['parent_id', 'is', null]);
+		expect(childrenCall?.inArgs).toBeUndefined();
 	});
 
 	it('orders pending, then approved, then rejected, each by name (email fallback)', async () => {
@@ -164,19 +175,80 @@ describe('admin parents +page.server.ts load', () => {
 		expect(result.pendingCount).toBe(1);
 	});
 
-	it('skips the children query and returns an empty list when there are no parents', async () => {
+	it('returns an empty list when there are no parents (CAP-5: both reads in one round)', async () => {
 		const { locals, calls } = fakeLocals({ parents: { data: [], error: null } });
 
 		const result = await run(locals);
 
 		expect(result).toEqual({ parents: [], pendingCount: 0, loadError: false });
-		expect(calls.map((c) => c.table)).toEqual(['parents']);
+		expect(calls.map((c) => c.table)).toEqual(['parents', 'profiles']);
+	});
+
+	it('maps the children of 1 000 parents with no id list in the query (CAP-5)', async () => {
+		const ids = Array.from({ length: 1000 }, (_, i) => `p${String(i).padStart(4, '0')}`);
+		const { locals, calls } = fakeLocals({
+			parents: {
+				data: ids.map((id) =>
+					parentRow(id, 'approved', {
+						display_name: `Parent ${id}`,
+						email: `${id}@example.com`,
+						email_confirmed_at: 'x'
+					})
+				),
+				error: null
+			},
+			profiles: {
+				data: [
+					...ids.map((id) => ({
+						id: `c-${id}`,
+						parent_id: id,
+						display_name: `Child ${id}`,
+						registration_name: null,
+						status: 'approved'
+					})),
+					// RLS may still return a child of a parent not listed; it is not shown.
+					{
+						id: 'c-orphan',
+						parent_id: 'gone',
+						display_name: 'Orphan',
+						registration_name: null,
+						status: 'approved'
+					}
+				],
+				error: null
+			}
+		});
+
+		const result = await run(locals);
+		if (!result) throw new Error('no result');
+
+		expect(result.loadError).toBe(false);
+		expect(result.parents).toHaveLength(1000);
+		for (const p of result.parents) {
+			expect(p.children).toEqual([{ id: `c-${p.id}`, name: `Child ${p.id}`, status: 'approved' }]);
+		}
+		const childrenCall = calls.find((c) => c.table === 'profiles');
+		expect(childrenCall?.inArgs).toBeUndefined();
+		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
+		expect(childrenCall?.notArgs).toEqual(['parent_id', 'is', null]);
 	});
 
 	it('sets loadError and no rows when the parents query fails', async () => {
 		const { locals } = fakeLocals({ parents: { data: null, error: { message: 'boom' } } });
 
 		expect(await run(locals)).toEqual({ parents: [], pendingCount: 0, loadError: true });
+	});
+
+	it('a failed children query with no parents is no load error (logged only)', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { locals } = fakeLocals({
+			parents: { data: [], error: null },
+			profiles: { data: null, error: { message: 'boom' } }
+		});
+
+		expect(await run(locals)).toEqual({ parents: [], pendingCount: 0, loadError: false });
+		expect(logged).toHaveBeenCalledWith('admin parents load: children failed', 'boom');
+		logged.mockRestore();
 	});
 
 	it('sets loadError when the children query fails', async () => {
