@@ -74,29 +74,47 @@ export const load: PageServerLoad = async ({
 	const { first, last } = monthBounds(month);
 	const canEdit = role === 'admin' || role === 'teacher';
 
-	const [daysResult, sessionsResult, classesResult] = await Promise.all([
-		supabase
-			.from('class_days')
-			.select('id, day, cancelled')
-			.gte('day', first)
-			.lte('day', last)
-			.order('day'),
-		supabase
-			.from('class_sessions_effective')
-			.select(
-				'id, class_id, class_name, class_name_bo, class_name_de, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled, extra'
-			)
-			.gte('day', first)
-			.lte('day', last),
-		canEdit
-			? supabase
-					.from('classes')
-					.select(
-						'id, name, name_bo, name_de, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks'
-					)
-					.order('name')
-			: Promise.resolve({ data: [], error: null })
-	]);
+	// #104h (CAP-4): the student and parent reads start in the same batch as
+	// days and sessions. They filter by what is known up front (the caller's
+	// id and the month) instead of by ids from an earlier read; the results
+	// are joined in code below.
+	const [daysResult, sessionsResult, classesResult, studentAnswersResult, parentReads] =
+		await Promise.all([
+			supabase
+				.from('class_days')
+				.select('id, day, cancelled')
+				.gte('day', first)
+				.lte('day', last)
+				.order('day'),
+			supabase
+				.from('class_sessions_effective')
+				.select(
+					'id, class_id, class_name, class_name_bo, class_name_de, class_day_id, start_time, duration_minutes, start_time_override, duration_minutes_override, session_cancelled, day_cancelled, extra'
+				)
+				.gte('day', first)
+				.lte('day', last),
+			canEdit
+				? supabase
+						.from('classes')
+						.select(
+							'id, name, name_bo, name_de, default_start_time, default_duration_minutes, schedule_weekdays, schedule_starts_on, schedule_ends_on, schedule_interval_weeks'
+						)
+						.order('name')
+				: Promise.resolve({ data: [], error: null }),
+			// Story 7-4: a student's own answers on this month's sessions. RLS
+			// (session_leave_history_select) lets a student read only their own rows.
+			role === 'student'
+				? supabase
+						.from('session_leave_history')
+						.select('class_session_id, answer, class_sessions!inner(class_days!inner(day))')
+						.eq('student_id', user.id)
+						.gte('class_sessions.class_days.day', first)
+						.lte('class_sessions.class_days.day', last)
+						.order('answered_at', { ascending: false })
+						.order('id', { ascending: false })
+				: null,
+			role === 'parent' ? readParentView(supabase, user.id, first, last) : null
+		]);
 
 	// #58: a parent (a parent-only login, or B13 a staff login with Parent
 	// active) sees the sessions of their approved children's classes (RLS
@@ -107,8 +125,8 @@ export const load: PageServerLoad = async ({
 	let selectedChild: string | null = null;
 	const childAnswers: Record<string, ChildSessionAnswer[]> = {};
 	let parentError = false;
-	if (role === 'parent') {
-		const parentView = await loadParentView(supabase, url.searchParams.get('child'), sessionRows);
+	if (parentReads) {
+		const parentView = shapeParentView(parentReads, url.searchParams.get('child'), sessionRows);
 		children = parentView.children;
 		selectedChild = parentView.selectedChild;
 		sessionRows = parentView.sessionRows;
@@ -116,22 +134,17 @@ export const load: PageServerLoad = async ({
 		parentError = parentView.error;
 	}
 
-	// Story 7-4: a student's own current answer per session, read-only. RLS
-	// (session_leave_history_select) lets a student read only their own rows.
+	// Story 7-4: a student's own current answer per session, read-only. Only
+	// sessions the month shows count, and a failed answers read counts only
+	// when the month shows at least one session.
 	const leaveAnswers: Record<string, LeaveAnswer> = {};
 	let leaveError = false;
-	const monthSessionIds = sessionRows.flatMap((r) => (r.id ? [r.id] : []));
-	if (role === 'student' && monthSessionIds.length > 0) {
-		const { data: answers, error: answersError } = await supabase
-			.from('session_leave_history')
-			.select('class_session_id, answer')
-			.eq('student_id', user.id)
-			.in('class_session_id', monthSessionIds)
-			.order('answered_at', { ascending: false })
-			.order('id', { ascending: false });
-		leaveError = Boolean(answersError);
+	const monthSessionIds = new Set(sessionRows.flatMap((r) => (r.id ? [r.id] : [])));
+	if (studentAnswersResult && monthSessionIds.size > 0) {
+		leaveError = Boolean(studentAnswersResult.error);
 		// Newest first: the first row per session is the current answer.
-		for (const a of answers ?? []) {
+		for (const a of studentAnswersResult.data ?? []) {
+			if (!monthSessionIds.has(a.class_session_id)) continue;
 			leaveAnswers[a.class_session_id] ??= a.answer;
 		}
 	}
@@ -181,27 +194,58 @@ type SessionRow = {
 };
 
 /**
- * The parent branch of the calendar load (#58). Children come from
- * linked_children() (approved only); each child's classes from
- * class_enrollments with the child's explicit id; the current answer per
- * (session, child) from session_leave_history, newest row first. `?child=`
- * narrows the view when it names an approved child; anything else is the
- * all-children view. Sessions of classes no child in view is enrolled in
- * are dropped, so a pending child's classes never show.
+ * The parent branch's reads (#58, #104h), all started at once: children from
+ * linked_children(), the enrollments of the caller's children (embedded
+ * profiles.parent_id = caller), and their answers on this month's sessions
+ * (embedded class_days.day in the month, profiles.parent_id = caller).
  */
-async function loadParentView<T extends SessionRow>(
-	supabase: SupabaseClient,
+function readParentView(supabase: SupabaseClient, userId: string, first: string, last: string) {
+	return Promise.all([
+		supabase.rpc('linked_children'),
+		supabase
+			.from('class_enrollments')
+			.select(
+				'class_id, student_id, student:profiles!class_enrollments_student_id_fkey!inner(parent_id)'
+			)
+			.eq('student.parent_id', userId),
+		supabase
+			.from('session_leave_history')
+			.select(
+				'class_session_id, student_id, answer, class_sessions!inner(class_days!inner(day)), student:profiles!session_leave_history_student_id_fkey!inner(parent_id)'
+			)
+			.eq('student.parent_id', userId)
+			.gte('class_sessions.class_days.day', first)
+			.lte('class_sessions.class_days.day', last)
+			.order('answered_at', { ascending: false })
+			.order('id', { ascending: false })
+	]);
+}
+
+/**
+ * The parent branch of the calendar load (#58), shaped from readParentView's
+ * results. Only approved children count (linked_children() also returns
+ * pending ones); enrollments and answers are kept only for the children in
+ * view, so a teacher-parent's wider RLS reach never shows. `?child=` narrows
+ * the view when it names an approved child; anything else is the
+ * all-children view. Sessions of classes no child in view is enrolled in are
+ * dropped, so a pending child's classes never show. The current answer per
+ * (session, child) is the newest row. A failed linked_children read always
+ * counts; a failed enrollments read counts only when a child is in view; a
+ * failed answers read counts only when at least one session is shown.
+ */
+function shapeParentView<T extends SessionRow>(
+	[linkedResult, enrollResult, answersResult]: Awaited<ReturnType<typeof readParentView>>,
 	childParam: string | null,
 	rows: T[]
-): Promise<{
+): {
 	children: CalendarChild[];
 	selectedChild: string | null;
 	sessionRows: T[];
 	childAnswers: Record<string, ChildSessionAnswer[]>;
 	error: boolean;
-}> {
-	const { data: linked, error: linkedError } = await supabase.rpc('linked_children');
-	const children: CalendarChild[] = (linked ?? [])
+} {
+	const linkedError = Boolean(linkedResult.error);
+	const children: CalendarChild[] = (linkedResult.data ?? [])
 		.filter((c) => c.status === 'approved')
 		.map((c) => ({ id: c.id, name: c.name }))
 		.sort((a, b) => a.name.localeCompare(b.name));
@@ -209,19 +253,13 @@ async function loadParentView<T extends SessionRow>(
 	const inView = selectedChild ? children.filter((c) => c.id === selectedChild) : children;
 	const childAnswers: Record<string, ChildSessionAnswer[]> = {};
 	if (inView.length === 0) {
-		return { children, selectedChild, sessionRows: [], childAnswers, error: Boolean(linkedError) };
+		return { children, selectedChild, sessionRows: [], childAnswers, error: linkedError };
 	}
 
-	const { data: enrollments, error: enrollError } = await supabase
-		.from('class_enrollments')
-		.select('class_id, student_id')
-		.in(
-			'student_id',
-			inView.map((c) => c.id)
-		);
+	const enrollError = Boolean(enrollResult.error);
 	const childrenByClass = new Map<string, CalendarChild[]>();
 	for (const child of inView) {
-		for (const e of enrollments ?? []) {
+		for (const e of enrollResult.data ?? []) {
 			if (e.student_id !== child.id) continue;
 			const list = childrenByClass.get(e.class_id) ?? [];
 			if (!list.some((c) => c.id === child.id)) list.push(child);
@@ -230,24 +268,16 @@ async function loadParentView<T extends SessionRow>(
 	}
 
 	const sessionRows = rows.filter((r) => r.class_id !== null && childrenByClass.has(r.class_id));
-	const sessionIds = sessionRows.flatMap((r) => (r.id ? [r.id] : []));
+	const sessionIds = new Set(sessionRows.flatMap((r) => (r.id ? [r.id] : [])));
+	const childIds = new Set(inView.map((c) => c.id));
 
 	const current = new Map<string, LeaveAnswer>();
 	let answersError = false;
-	if (sessionIds.length > 0) {
-		const { data: answers, error } = await supabase
-			.from('session_leave_history')
-			.select('class_session_id, student_id, answer')
-			.in(
-				'student_id',
-				inView.map((c) => c.id)
-			)
-			.in('class_session_id', sessionIds)
-			.order('answered_at', { ascending: false })
-			.order('id', { ascending: false });
-		answersError = Boolean(error);
+	if (sessionIds.size > 0) {
+		answersError = Boolean(answersResult.error);
 		// Newest first: the first row per (session, child) is the current answer.
-		for (const a of answers ?? []) {
+		for (const a of answersResult.data ?? []) {
+			if (!childIds.has(a.student_id) || !sessionIds.has(a.class_session_id)) continue;
 			const key = `${a.class_session_id}:${a.student_id}`;
 			if (!current.has(key)) current.set(key, a.answer);
 		}
@@ -269,7 +299,7 @@ async function loadParentView<T extends SessionRow>(
 		selectedChild,
 		sessionRows,
 		childAnswers,
-		error: Boolean(linkedError || enrollError || answersError)
+		error: linkedError || enrollError || answersError
 	};
 }
 
