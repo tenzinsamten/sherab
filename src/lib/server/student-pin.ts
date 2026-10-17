@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { Database } from '$lib/supabase/database.types';
@@ -19,7 +19,12 @@ type Client = SupabaseClient<Database>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type ActionContext = { request: Request; classId: string; supabase: Client; user: User | null };
+type ActionContext = {
+	request: Request;
+	classId: string;
+	supabase: Client;
+	user: App.SessionUser | null;
+};
 
 export async function resetStudentPin({ request, classId, supabase, user }: ActionContext) {
 	if (!user) return fail(401, { error: m.pin_reset_error_failed() });
@@ -73,7 +78,9 @@ export async function resetStudentPin({ request, classId, supabase, user }: Acti
 
 	// Privileged (RLS-bypassing) Auth Admin call, only after the checks above.
 	// Supabase Auth ends every session of the user when an admin sets a new
-	// password, so the student is signed out on all devices.
+	// password, so a refresh of an old session is refused. Until the old
+	// access token expires (at most 1 h), it still reaches page loads and
+	// RLS-scoped queries as the student; only its refresh is refused.
 	const pin = generateStudentPin();
 	const { error } = await createSupabaseAdminClient().auth.admin.updateUserById(studentId, {
 		password: pin

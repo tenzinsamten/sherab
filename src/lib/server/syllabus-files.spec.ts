@@ -1,4 +1,4 @@
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
@@ -182,7 +182,7 @@ function fakeSupabase(answers: Record<string, Result | ((arg: unknown) => Result
 	return { supabase: client as unknown as SupabaseClient<Database>, calls };
 }
 
-const user = { id: 'teacher-1' } as User;
+const user = { id: 'teacher-1' } as App.SessionUser;
 
 /** The section as `sectionFiles` reads it, holding `count` files (the first is FILE at OLD_PATH). */
 const sectionWith = (count: number) =>
@@ -215,7 +215,7 @@ function context(
 			classId: CLASS,
 			syllabusId: SYLLABUS,
 			supabase,
-			user: user as User | null
+			user: user as App.SessionUser | null
 		}
 	};
 }

@@ -1,4 +1,5 @@
 import { redirect, type Handle } from '@sveltejs/kit';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { sequence } from '@sveltejs/kit/hooks';
 import { cookieMaxAge, cookieName, getTextDirection } from '$lib/paraglide/runtime';
 import { paraglideMiddleware } from '$lib/paraglide/server';
@@ -39,6 +40,51 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 	});
 
 /**
+ * CAP-1: the session from the cookie, with its access token verified
+ * locally by `getClaims()` against the project's ES256 signing key, so there
+ * is no per-request call to Supabase Auth on a warm isolate; auth-js
+ * refetches the JWKS at most every 10 min, and getSession() still refreshes
+ * an expiring token. The result is memoised: one verification per request,
+ * however many loads ask. Create one per request, never share it across
+ * requests.
+ *
+ * A missing, expired, forged or unverifiable token gives no session. After a
+ * sign-out or ban, until the old token expires (at most 1 h) it still reaches
+ * page loads and RLS-scoped queries as that user; only its refresh is refused.
+ */
+export function createSafeGetSession(
+	supabase: Pick<SupabaseClient, 'auth'>
+): App.Locals['safeGetSession'] {
+	let result: ReturnType<App.Locals['safeGetSession']> | undefined;
+
+	const verify: App.Locals['safeGetSession'] = async () => {
+		const signedOut = { session: null, user: null };
+		try {
+			const {
+				data: { session }
+			} = await supabase.auth.getSession();
+			if (!session) return signedOut;
+
+			const { data, error } = await supabase.auth.getClaims(session.access_token);
+			if (error || !data) return signedOut;
+			const { sub, email, app_metadata, user_metadata } = data.claims;
+			if (typeof sub !== 'string' || !sub) return signedOut;
+			const user: App.SessionUser = {
+				id: sub,
+				email,
+				app_metadata: app_metadata ?? {},
+				user_metadata: user_metadata ?? {}
+			};
+			return { session, user };
+		} catch {
+			return signedOut;
+		}
+	};
+
+	return () => (result ??= verify());
+}
+
+/**
  * Attaches a request-scoped, cookie-bound Supabase client to `event.locals`
  * (AD-1/AD-2: every query below this point carries the caller's JWT, so
  * Postgres RLS -- not this hook -- is the real authorization boundary).
@@ -46,26 +92,7 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 const handleSupabase: Handle = async ({ event, resolve }) => {
 	event.locals.supabase = createSupabaseServerClient(event.cookies);
 
-	event.locals.safeGetSession = async () => {
-		const {
-			data: { session }
-		} = await event.locals.supabase.auth.getSession();
-		if (!session) {
-			return { session: null, user: null };
-		}
-
-		// getUser() re-validates the JWT against Supabase Auth rather than
-		// trusting the (possibly stale/forged) cookie session as-is.
-		const {
-			data: { user },
-			error
-		} = await event.locals.supabase.auth.getUser();
-		if (error) {
-			return { session: null, user: null };
-		}
-
-		return { session, user };
-	};
+	event.locals.safeGetSession = createSafeGetSession(event.locals.supabase);
 
 	return resolve(event, {
 		filterSerializedResponseHeaders: (name) =>

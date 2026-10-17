@@ -1,6 +1,6 @@
 import { localizeName } from '$lib/localized-name';
 import { fail, redirect } from '@sveltejs/kit';
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
 import { getLocale } from '$lib/paraglide/runtime';
 import {
@@ -222,7 +222,7 @@ type ActionContext = {
 	/** The route's syllabus list, e.g. `/teacher/classes/<id>/syllabus`. */
 	listPath: string;
 	supabase: Client;
-	user: User | null;
+	user: App.SessionUser | null;
 };
 
 export async function createSyllabus({
@@ -299,7 +299,7 @@ type SectionActionContext = {
 	classId: string;
 	syllabusId: string;
 	supabase: Client;
-	user: User | null;
+	user: App.SessionUser | null;
 };
 
 /**

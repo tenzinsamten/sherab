@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
 import type { Database } from '$lib/supabase/database.types';
 import {
@@ -90,7 +90,7 @@ export type FileActionContext = {
 	classId: string;
 	syllabusId: string;
 	supabase: Client;
-	user: User | null;
+	user: App.SessionUser | null;
 };
 
 /** Wrong class, section or file, or no permission: one answer for all. */

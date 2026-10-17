@@ -2,7 +2,7 @@
 // for information about these interfaces
 /// <reference types="vite-plugin-pwa/info" />
 /// <reference types="vite-plugin-pwa/client" />
-import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
+import type { Session, SupabaseClient, UserAppMetadata, UserMetadata } from '@supabase/supabase-js';
 import type { Database } from '$lib/supabase/database.types';
 
 declare global {
@@ -14,10 +14,25 @@ declare global {
 			cf?: IncomingRequestCfProperties;
 		}
 
+		/** The claim-backed user `safeGetSession` returns (from `sub`, `email`, metadata). */
+		interface SessionUser {
+			id: string;
+			email?: string;
+			app_metadata: UserAppMetadata;
+			user_metadata: UserMetadata;
+		}
+
 		// interface Error {}
 		interface Locals {
 			supabase: SupabaseClient<Database>;
-			safeGetSession: () => Promise<{ session: Session | null; user: User | null }>;
+			/**
+			 * The cookie session and the user its access token was verified
+			 * for, locally against the signing key (CAP-1). `user` holds only
+			 * what the token's claims carry.
+			 */
+			safeGetSession: () => Promise<
+				{ session: Session; user: App.SessionUser } | { session: null; user: null }
+			>;
 		}
 		interface PageData {
 			session?: Session | null;

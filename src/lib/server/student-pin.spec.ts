@@ -352,8 +352,9 @@ describe.skipIf(!reachable)('resetStudentPin (#88, requires local Supabase)', ()
 
 		expect(await canSignIn(studentA.email, studentA.password)).toBe(false);
 		expect(await canSignIn(studentA.email, pin)).toBe(true);
-		// The session from before the reset is refused by Supabase Auth
-		// (what safeGetSession's getUser() asks on every request).
+		// Supabase Auth refuses the session from before the reset, so its
+		// refresh fails. Page loads verify the access token locally
+		// (safeGetSession's getClaims()), so they follow at token expiry.
 		expect((await before.auth.getUser()).error).not.toBeNull();
 		studentA.password = pin;
 	});

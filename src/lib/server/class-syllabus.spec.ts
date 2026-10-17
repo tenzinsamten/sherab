@@ -1,4 +1,4 @@
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
@@ -192,7 +192,7 @@ function fakeSupabase(answers: Record<string, Result>, storageRemoves = true) {
 	return { supabase: client as unknown as SupabaseClient<Database>, calls };
 }
 
-const user = { id: 'teacher-1' } as User;
+const user = { id: 'teacher-1' } as App.SessionUser;
 const ok = (data: unknown): Result => ({ data, error: null });
 const SYLLABUS_FOUND = ok({ id: 'syl-1' });
 const SYLLABUS_MISSING = ok(null);
@@ -214,7 +214,7 @@ function context(
 			classId: 'class-1',
 			syllabusId: 'syl-1',
 			supabase,
-			user: user as User | null
+			user: user as App.SessionUser | null
 		}
 	};
 }

@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
 import { localizedName } from '$lib/localized-name';
 import {
@@ -366,7 +366,7 @@ export async function markHomeworkDone({
 }: {
 	request: Request;
 	supabase: Client;
-	user: User | null;
+	user: App.SessionUser | null;
 }) {
 	if (!user) {
 		return fail(401, { error: m.student_homework_error_not_signed_in() });

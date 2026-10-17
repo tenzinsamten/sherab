@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as m from '$lib/paraglide/messages.js';
 import { pickLocalized } from '$lib/localized-name';
 import type { Database } from '$lib/supabase/database.types';
@@ -103,7 +103,12 @@ export async function loadEnrollableStudents(
 	return { students, error: Boolean(error) };
 }
 
-type ActionContext = { request: Request; classId: string; supabase: Client; user: User | null };
+type ActionContext = {
+	request: Request;
+	classId: string;
+	supabase: Client;
+	user: App.SessionUser | null;
+};
 
 export async function enrollStudent({ request, classId, supabase, user }: ActionContext) {
 	if (!user) return fail(401, { error: m.enroll_error_failed() });
