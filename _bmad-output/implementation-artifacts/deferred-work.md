@@ -347,3 +347,7 @@
 - source_spec: `_bmad-output/specs/spec-navigation-latency/stories/1-local-jwt-verification-with-getclaims.md`
   summary: Callers read the unverified cookie `session.user` (`+layout.svelte:84`, `requests/+page.server.ts:129-212`, `parent/+layout.server.ts:16`, `parent/+page.server.ts:75`, `account/+page.server.ts:41-46`) instead of the verified `user` from `safeGetSession`.
   evidence: Pre-existing; the old `getUser()` code returned the same cookie session object. RLS still scopes queries to the token's `sub`, so a tampered `session.user.id` can mislabel UI or filters but not widen access. Fix: switch these reads to `user.id` / `user.email`, or rebuild `session.user` from the claims.
+
+- source_spec: `_bmad-output/specs/spec-navigation-latency/stories/3-parallel-root-layout-and-one-query-parents-list.md`
+  summary: `/admin/parents` reads parents and children unpaged, so past `max_rows = 1000` (local config.toml; also the hosted default) rows are dropped without a load error.
+  evidence: Pre-existing: the old parents read was unpaged and the old `parent_id IN (...)` children read had the same cap. Fix: page with `.range()`, or read `count: 'exact'` and flag truncation. Only matters past 1 000 parents or 1 000 children with a parent.
