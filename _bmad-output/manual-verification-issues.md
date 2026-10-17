@@ -2441,3 +2441,35 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Open for planning: user to check JWT signing keys and the logs for the stall window; then
   a navigation-latency spec. Nothing is fixed yet.
 
+
+- 2026-10-17: #105 logged, not built. Reported (user, production, admin login): the
+  class-day controls are missing on `/calendar`; the user wants the admin to be able to view
+  a class day, edit it, and add a new one when needed.
+  What exists today (code at ef6c387):
+  - Add days: the header `Add days` button (`calendar/+page.svelte`, admin only) runs
+    `?/addClassDays` with a start and end date.
+  - View: an admin clicks a date (`day-button`) to open that day and its sessions.
+  - Edit: the day view offers Cancel day / Restore day (`?/setClassDayCancelled`).
+  - A class day holds only `day` (unique date) and `cancelled` (0018_calendar.sql:75); times
+    and durations belong to class sessions (`setClassSchedule`, per-session overrides).
+  All shown only when the page's `role` is `admin` (`isAdmin`), which comes from the root
+  layout's active role.
+  Checked so far: not a regression from the navigation-latency deploy. Story 4 left the
+  calendar actions untouched, the `class_days` policies are the same admin-only rules
+  (0051 only wraps `is_admin()`), and all 22 calendar e2e tests pass locally, admin ones
+  included. Not reproduced in production yet.
+  Open for planning:
+  1. Do the existing controls (Add days, day view, Cancel day) show for this production
+     admin? If not: is the login also an approved parent with Parent active (role
+     switcher), which shows the parent calendar without controls?
+  2. What should "edit a class day" change beyond cancel/restore: move it to another date,
+     delete it, or add a note? Today only `cancelled` is editable.
+  3. Is a list view of class days wanted (e.g. all days of a term) besides the month grid?
+  Nothing is to be fixed before that.
+- 2026-10-17: #105 built (spec `implementation-artifacts/spec-105-class-day-move-delete.md`,
+  SPEC-class-day-admin). The user answered the open questions: the controls show in
+  production, so this is a feature, not a bug; the month grid stays the view; the admin can
+  now move a future day to a free future date (sessions, answers and attendance dates follow,
+  leave marks stay as answered, schedule edits never add or remove its sessions) and delete
+  an untouched future day. Enforced in migration 0052. To verify in production after applying
+  0052: as admin, move a test day and delete an untouched one.
