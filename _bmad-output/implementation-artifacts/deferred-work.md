@@ -351,3 +351,7 @@
 - source_spec: `_bmad-output/specs/spec-navigation-latency/stories/3-parallel-root-layout-and-one-query-parents-list.md`
   summary: `/admin/parents` reads parents and children unpaged, so past `max_rows = 1000` (local config.toml; also the hosted default) rows are dropped without a load error.
   evidence: Pre-existing: the old parents read was unpaged and the old `parent_id IN (...)` children read had the same cap. Fix: page with `.range()`, or read `count: 'exact'` and flag truncation. Only matters past 1 000 parents or 1 000 children with a parent.
+
+- source_spec: `_bmad-output/specs/spec-navigation-latency/stories/5-rls-helpers-evaluated-once-per-query.md`
+  summary: No automated check keeps the hot-table RLS policies in the once-per-query `(select auth.uid())` / `(select public.is_admin())` form; a later migration that copies an old bare definition would bring the per-row cost back with every test green.
+  evidence: Verified: `rls.spec.ts` tests access only, and nothing in src, e2e or supabase reads `pg_policies` or `EXPLAIN`. Tests reach the DB only through supabase-js, which cannot see policy text. Cheapest fix: a service-role-only RPC returning `qual` / `with_check` for the hot tables, with an `rls.spec.ts` assertion that none contains a bare `auth.uid()` or `is_admin()`.
