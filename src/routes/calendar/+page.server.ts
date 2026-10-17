@@ -3,6 +3,7 @@ import * as m from '$lib/paraglide/messages.js';
 import { localizedName } from '$lib/localized-name';
 import { currentBerlinMonth, todayInBerlin } from '$lib/berlin-date';
 import {
+	isIsoDate,
 	monthBounds,
 	parseDurationInput,
 	parseMonth,
@@ -43,6 +44,10 @@ export type ChildSessionAnswer = { childId: string; name: string; answer: LeaveA
 /** Postgres error codes the schedule / extra-session functions raise. */
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
+/** class_days guards (0052, #105): the day or target date is not after today (Berlin). */
+const CLASS_DAY_NOT_FUTURE = 'CD001';
+/** class_days_guard_delete (0052): a session has attendance, answers or a sick-leave decision. */
+const CLASS_DAY_TOUCHED = 'CD002';
 
 /**
  * Calendar (Stories 6-1, 6-4): one month's class days and sessions, for every
@@ -381,6 +386,77 @@ export const actions: Actions = {
 			success: true,
 			action: cancelled ? ('dayCancelled' as const) : ('dayRestored' as const)
 		};
+	},
+
+	/**
+	 * Admin (#105): move a future class day to another free future date. Its
+	 * sessions and their answers follow through class_day_id. The database
+	 * enforces every rule (class_days_guard_move, class_days_day_unique, RLS).
+	 */
+	moveClassDay: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { error: m.calendar_error_failed() });
+
+		const formData = await request.formData();
+		const dayId = String(formData.get('dayId') ?? '');
+		const newDate = String(formData.get('newDate') ?? '').trim();
+		if (!dayId) return fail(400, { error: m.calendar_error_failed() });
+		if (!isIsoDate(newDate)) return fail(400, { error: m.calendar_error_date_invalid() });
+
+		// The database accepts a no-op move; tell the admin instead.
+		const { data: current, error: readError } = await supabase
+			.from('class_days')
+			.select('day')
+			.eq('id', dayId)
+			.maybeSingle();
+		if (readError || !current) return fail(400, { error: m.calendar_error_failed() });
+		if (current.day === newDate) return fail(400, { error: m.calendar_error_move_same_date() });
+
+		const { data, error } = await supabase
+			.from('class_days')
+			.update({ day: newDate })
+			.eq('id', dayId)
+			.select('id');
+		if (error) {
+			const message =
+				error.code === CLASS_DAY_NOT_FUTURE
+					? m.calendar_error_move_not_future()
+					: error.code === UNIQUE_VIOLATION
+						? m.calendar_error_day_taken()
+						: m.calendar_error_failed();
+			return fail(400, { error: message });
+		}
+		// RLS turns a non-admin's update into zero rows.
+		if (!data || data.length === 0) return fail(400, { error: m.calendar_error_failed() });
+		return { success: true, action: 'dayMoved' as const, date: newDate };
+	},
+
+	/**
+	 * Admin (#105): delete a future class day nothing references, with its
+	 * sessions. class_days_guard_delete refuses today, the past and a day
+	 * with attendance, answers or sick-leave decisions.
+	 */
+	deleteClassDay: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { error: m.calendar_error_failed() });
+
+		const formData = await request.formData();
+		const dayId = String(formData.get('dayId') ?? '');
+		if (!dayId) return fail(400, { error: m.calendar_error_failed() });
+
+		const { data, error } = await supabase.from('class_days').delete().eq('id', dayId).select('id');
+		if (error) {
+			const message =
+				error.code === CLASS_DAY_NOT_FUTURE
+					? m.calendar_error_delete_not_future()
+					: error.code === CLASS_DAY_TOUCHED
+						? m.calendar_error_day_has_answers()
+						: m.calendar_error_failed();
+			return fail(400, { error: message });
+		}
+		// RLS turns a non-admin's delete into zero rows.
+		if (!data || data.length === 0) return fail(400, { error: m.calendar_error_failed() });
+		return { success: true, action: 'dayDeleted' as const };
 	},
 
 	/**

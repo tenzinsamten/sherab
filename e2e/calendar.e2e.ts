@@ -928,6 +928,122 @@ test.describe('many classes (#66)', () => {
 	});
 });
 
+test.describe('admin moves and deletes a class day (#105)', () => {
+	test.use({ viewport: WIDE });
+
+	test('admin moves a future day with its sessions, then deletes the untouched day', async ({
+		page
+	}) => {
+		// A fifth class day on the fixture weekday (so classes A and B get
+		// sessions), moved to the next day and then deleted. Removed in any
+		// case, so the phone test still sees six chips.
+		const from = `${fx.month}-25`;
+		const to = `${fx.month}-26`;
+		const { data: day, error } = await service
+			.from('class_days')
+			.insert({ day: from })
+			.select('id')
+			.single();
+		if (error || !day) throw new Error(`add class day: ${error?.message}`);
+		try {
+			const { data: session, error: sessionError } = await service
+				.from('class_sessions')
+				.select('id')
+				.eq('class_day_id', day.id)
+				.eq('class_id', fx.classA.id)
+				.maybeSingle();
+			if (sessionError || !session) {
+				throw new Error(
+					`class A has no session on the added day ${from}: ${sessionError?.message ?? 'none found'}`
+				);
+			}
+			const chip = page.locator(`.ec-event.ev-${session.id}`);
+
+			await signIn(page, fx.admin);
+			await openCalendar(page, fx.month);
+			const modal = dayModal(page);
+			await expect(chip).toBeVisible();
+			expect(await inside(chip, gridCell(page, from))).toBe(true);
+
+			await page.locator(`button.day-button[data-date="${from}"]`).click();
+			await expect(isOpen(modal)).toBeVisible();
+			await modal.locator('#move-date').locator('input').first().fill(to);
+			await expect(modal.locator('#move-date')).toHaveJSProperty('value', to);
+			await modal.getByRole('button', { name: 'Move day' }).click();
+			await expect(page.locator('ix-toast').getByText('Class day moved.')).toBeVisible();
+			await expect(isOpen(modal)).toHaveCount(0);
+
+			// The same session, now on the new date; the old date is empty.
+			await expect(chip).toBeVisible();
+			await expect.poll(() => inside(chip, gridCell(page, to))).toBe(true);
+			const { data: oldDate } = await service.from('class_days').select('id').eq('day', from);
+			expect(oldDate).toEqual([]);
+
+			// Delete it (confirming the iX warning): the day and its sessions go.
+			await page.locator(`button.day-button[data-date="${to}"]`).click();
+			await expect(isOpen(modal)).toBeVisible();
+			await modal.getByRole('button', { name: 'Delete day' }).click();
+			await page.locator('ix-modal').getByRole('button', { name: 'Delete day' }).last().click();
+			await expect(page.locator('ix-toast').getByText('Class day deleted.')).toBeVisible();
+			await expect(isOpen(modal)).toHaveCount(0);
+			await expect(chip).toHaveCount(0);
+			const { data: left } = await service.from('class_days').select('id').eq('id', day.id);
+			expect(left).toEqual([]);
+		} finally {
+			// Only the day this test added (whatever its date is by now).
+			await service.from('class_days').delete().eq('id', day.id);
+		}
+	});
+
+	/** Opens the admin day view of `day`: the existing class day, or one this test adds and removes. */
+	async function withClassDay(page: Page, day: string, run: (modal: Locator) => Promise<void>) {
+		const { data: existing } = await service
+			.from('class_days')
+			.select('id')
+			.eq('day', day)
+			.maybeSingle();
+		let createdId: string | null = null;
+		if (!existing) {
+			const { data, error } = await service
+				.from('class_days')
+				.insert({ day })
+				.select('id')
+				.single();
+			if (error || !data) throw new Error(`add class day ${day}: ${error?.message}`);
+			createdId = data.id;
+		}
+		try {
+			await openCalendar(page, day.slice(0, 7));
+			const modal = dayModal(page);
+			await page.locator(`button.day-button[data-date="${day}"]`).click();
+			await expect(isOpen(modal)).toBeVisible();
+			await run(modal);
+		} finally {
+			if (createdId) await service.from('class_days').delete().eq('id', createdId);
+		}
+	}
+
+	async function expectNoMoveOrDelete(modal: Locator) {
+		await expect(modal.getByRole('button', { name: /^(Cancel|Restore) day$/ })).toBeVisible();
+		await expect(modal.getByRole('button', { name: 'Move day' })).toHaveCount(0);
+		await expect(modal.getByRole('button', { name: 'Delete day' })).toHaveCount(0);
+		await expect(modal.locator('#move-date')).toHaveCount(0);
+	}
+
+	test("today's day offers Cancel/Restore but no Move or Delete", async ({ page }) => {
+		await signIn(page, fx.admin);
+		await withClassDay(page, berlinToday(), expectNoMoveOrDelete);
+	});
+
+	test('a past day offers Cancel/Restore but no Move or Delete', async ({ page }) => {
+		await signIn(page, fx.admin);
+		// A random long-past date (years from 1900 are viewable).
+		const year = 1901 + Math.floor(Math.random() * 80);
+		const past = `${year}-03-${String(10 + Math.floor(Math.random() * 18))}`;
+		await withClassDay(page, past, expectNoMoveOrDelete);
+	});
+});
+
 test.describe('phone width (375px)', () => {
 	test.use({ viewport: PHONE });
 

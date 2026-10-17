@@ -9,7 +9,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDay as formatIsoDay, num } from '$lib/format';
-	import { confirmAction, showToast } from '$lib/ix';
+	import { confirmAction, confirmWith, showToast } from '$lib/ix';
 	import { createPending } from '$lib/pending.svelte';
 	import { durationValue, ixFieldError, ixValue } from '$lib/ix-fields';
 	import { eventDomClass, toCalendarEvents, type CalendarEventProps } from '$lib/calendar-events';
@@ -63,6 +63,11 @@
 	}
 
 	let monthLabel = $derived(formatMonth(data.month));
+
+	// #105: the earliest date a day can be moved to (today and the past are fixed).
+	let tomorrow = $derived(
+		new Date(Date.parse(`${data.today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+	);
 
 	// #58: a parent's view. `?child=` narrows to one approved child; month
 	// navigation keeps it.
@@ -268,6 +273,8 @@
 				m.calendar_days_added({ added: num(f.added ?? 0), existed: num(f.existed ?? 0) }),
 			dayCancelled: m.calendar_day_cancelled,
 			dayRestored: m.calendar_day_restored,
+			dayMoved: m.calendar_day_moved,
+			dayDeleted: m.calendar_day_deleted,
 			scheduleSaved: m.calendar_schedule_saved,
 			extraAdded: m.calendar_extra_added,
 			sessionSaved: m.calendar_session_saved,
@@ -767,39 +774,100 @@
 					{#if data.isAdmin}
 						{@const dayId = selectedDay.id}
 						{@const date = selectedDay.date}
-						<form
-							method="POST"
-							action="?/setClassDayCancelled"
-							use:enhance={pending.submit(`day:${dayId}`)}
-						>
-							<input type="hidden" name="dayId" value={dayId} />
-							<input
-								type="hidden"
-								name="cancelled"
-								value={selectedDay.cancelled ? 'false' : 'true'}
-							/>
-							{#if selectedDay.cancelled}
-								<ix-button
-									type="submit"
-									variant="secondary"
-									icon="undo"
-									loading={pending.is(`day:${dayId}`) || undefined}
-									disabled={pending.busy || undefined}
+						<!-- #105: only a future day can be moved or deleted (the database enforces it). -->
+						{@const future = date > data.today}
+						<div class="actions">
+							<form
+								method="POST"
+								action="?/setClassDayCancelled"
+								use:enhance={pending.submit(`day:${dayId}`)}
+							>
+								<input type="hidden" name="dayId" value={dayId} />
+								<input
+									type="hidden"
+									name="cancelled"
+									value={selectedDay.cancelled ? 'false' : 'true'}
+								/>
+								{#if selectedDay.cancelled}
+									<ix-button
+										type="submit"
+										variant="secondary"
+										icon="undo"
+										loading={pending.is(`day:${dayId}`) || undefined}
+										disabled={pending.busy || undefined}
+									>
+										{m.calendar_restore_day()}
+									</ix-button>
+								{:else}
+									<ix-button
+										variant="danger-secondary"
+										icon="cancel"
+										loading={pending.is(`day:${dayId}`) || undefined}
+										disabled={pending.busy || undefined}
+										onclick={(event: MouseEvent) => cancelDay(event, date)}
+									>
+										{m.calendar_cancel_day()}
+									</ix-button>
+								{/if}
+							</form>
+							{#if future}
+								<form
+									method="POST"
+									action="?/deleteClassDay"
+									use:enhance={pending.submit(`delete:${dayId}`, {
+										confirm: confirmWith(
+											m.calendar_delete_day_confirm({ date: formatDay(date) }),
+											m.calendar_delete_day()
+										)
+									})}
 								>
-									{m.calendar_restore_day()}
-								</ix-button>
-							{:else}
-								<ix-button
-									variant="danger-secondary"
-									icon="cancel"
-									loading={pending.is(`day:${dayId}`) || undefined}
-									disabled={pending.busy || undefined}
-									onclick={(event: MouseEvent) => cancelDay(event, date)}
-								>
-									{m.calendar_cancel_day()}
-								</ix-button>
+									<input type="hidden" name="dayId" value={dayId} />
+									<ix-button
+										type="submit"
+										variant="danger-tertiary"
+										icon="trashcan"
+										loading={pending.is(`delete:${dayId}`) || undefined}
+										disabled={pending.busy || undefined}
+									>
+										{m.calendar_delete_day()}
+									</ix-button>
+								</form>
 							{/if}
-						</form>
+						</div>
+						{#if future}
+							<section class="extra" aria-labelledby="move-heading">
+								<h3 id="move-heading">{m.calendar_move_day()}</h3>
+								<p id="move-intro" class="muted">{m.calendar_move_day_intro()}</p>
+								<form
+									method="POST"
+									action="?/moveClassDay"
+									use:enhance={pending.submit(`move:${dayId}`)}
+									novalidate
+								>
+									<input type="hidden" name="dayId" value={dayId} />
+									<div class="field">
+										<ix-date-input
+											id="move-date"
+											name="newDate"
+											label={m.calendar_move_day_label()}
+											format="yyyy-MM-dd"
+											min-date={tomorrow}
+											required
+											{@attach ixValue('')}
+											{@attach ixFieldError(undefined, ['move-intro'])}
+										></ix-date-input>
+									</div>
+									<ix-button
+										type="submit"
+										icon="calendar"
+										loading={pending.is(`move:${dayId}`) || undefined}
+										disabled={pending.busy || undefined}
+									>
+										{m.calendar_move_day()}
+									</ix-button>
+								</form>
+							</section>
+						{/if}
 					{/if}
 					{#if data.canEdit && data.classSchedules.length > 0 && !selectedDay.cancelled}
 						{@const dayId = selectedDay.id}

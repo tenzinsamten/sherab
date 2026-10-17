@@ -14,7 +14,8 @@ type Result = { data?: unknown; error: unknown };
 type Call = [string, ...unknown[]];
 
 function fakeSupabase(
-	results: Record<string, Result>,
+	/** One result per table, or a queue: each query on the table takes the next. */
+	results: Record<string, Result | Result[]>,
 	role = 'admin',
 	rpcResult: { data?: unknown; error: unknown } = { error: null },
 	/** When set, no query answers until it resolves (round-count tests). */
@@ -48,7 +49,8 @@ function fakeSupabase(
 			lte: record('lte'),
 			order: record('order'),
 			maybeSingle: () => c,
-			update: () => c,
+			update: record('update'),
+			delete: record('delete'),
 			upsert: (rows: unknown[]) => {
 				upserted.push(...rows);
 				return c;
@@ -59,6 +61,11 @@ function fakeSupabase(
 			}
 		};
 		return c;
+	}
+	function nextResult(table: string): Result {
+		const entry = results[table];
+		if (Array.isArray(entry)) return entry.shift() ?? { data: [], error: null };
+		return entry ?? { data: [], error: null };
 	}
 	return {
 		upserted,
@@ -71,9 +78,7 @@ function fakeSupabase(
 				tablesRead.push(table);
 				return chain(
 					table,
-					table === 'profiles'
-						? { data: { role }, error: null }
-						: (results[table] ?? { data: [], error: null })
+					table === 'profiles' ? { data: { role }, error: null } : nextResult(table)
 				);
 			},
 			rpc: async (fn: string, args: Record<string, unknown>) => {
@@ -457,6 +462,109 @@ describe('calendar actions', () => {
 		expect(result).toMatchObject({ status: 403, data: { error: m.calendar_error_failed() } });
 		expect(fake.upserted).toEqual([]);
 	});
+});
+
+describe('class day move and delete (#105)', () => {
+	const dbError = (code: string) => ({ data: null, error: { code, message: 'refused' } });
+
+	/** The read of the day's current date, then the update's result. */
+	const moveResults = (update: Result): Result[] => [
+		{ data: { day: '2026-11-08' }, error: null },
+		update
+	];
+
+	it('moveClassDay updates the day to the new date and reports dayMoved', async () => {
+		const fake = fakeSupabase({
+			class_days: moveResults({ data: [{ id: 'd1' }], error: null })
+		});
+		const result = await actions.moveClassDay(
+			event({ dayId: 'd1', newDate: '2026-11-07' }, fake.client)
+		);
+		expect(result).toEqual({ success: true, action: 'dayMoved', date: '2026-11-07' });
+		const calls = fake.queries.filter((q) => q.table === 'class_days')[1]?.calls ?? [];
+		expect(calls).toContainEqual(['update', { day: '2026-11-07' }]);
+		expect(calls).toContainEqual(['eq', 'id', 'd1']);
+	});
+
+	it('moveClassDay refuses an invalid date before any query', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.moveClassDay(event({ dayId: 'd1', newDate: 'soon' }, fake.client));
+		expect(result).toMatchObject({ status: 400, data: { error: m.calendar_error_date_invalid() } });
+		expect(fake.tablesRead).toEqual([]);
+	});
+
+	it.each([
+		['CD001', () => m.calendar_error_move_not_future()],
+		['23505', () => m.calendar_error_day_taken()],
+		['42501', () => m.calendar_error_failed()]
+	])('moveClassDay maps %s to its message', async (code, message) => {
+		const fake = fakeSupabase({ class_days: moveResults(dbError(code)) });
+		const result = await actions.moveClassDay(
+			event({ dayId: 'd1', newDate: '2026-11-07' }, fake.client)
+		);
+		expect(result).toMatchObject({ status: 400, data: { error: message() } });
+	});
+
+	it('moveClassDay refuses the date the day is already on, without an update', async () => {
+		const fake = fakeSupabase({ class_days: moveResults({ data: [{ id: 'd1' }], error: null }) });
+		const result = await actions.moveClassDay(
+			event({ dayId: 'd1', newDate: '2026-11-08' }, fake.client)
+		);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: m.calendar_error_move_same_date() }
+		});
+		expect(fake.queries.filter((q) => q.table === 'class_days')).toHaveLength(1);
+	});
+
+	it.each([
+		['moveClassDay', { dayId: '', newDate: '2026-11-07' }],
+		['deleteClassDay', { dayId: '' }]
+	] as const)('%s: a missing dayId fails before any query', async (name, fields) => {
+		const fake = fakeSupabase({});
+		const result = await actions[name](event(fields, fake.client));
+		expect(result).toMatchObject({ status: 400, data: { error: m.calendar_error_failed() } });
+		expect(fake.tablesRead).toEqual([]);
+	});
+
+	it('deleteClassDay deletes the day and reports dayDeleted', async () => {
+		const fake = fakeSupabase({ class_days: { data: [{ id: 'd1' }], error: null } });
+		const result = await actions.deleteClassDay(event({ dayId: 'd1' }, fake.client));
+		expect(result).toEqual({ success: true, action: 'dayDeleted' });
+		const calls = fake.queries.find((q) => q.table === 'class_days')?.calls ?? [];
+		expect(calls).toContainEqual(['delete']);
+		expect(calls).toContainEqual(['eq', 'id', 'd1']);
+	});
+
+	it.each([
+		['CD001', () => m.calendar_error_delete_not_future()],
+		['CD002', () => m.calendar_error_day_has_answers()],
+		['23503', () => m.calendar_error_failed()]
+	])('deleteClassDay maps %s to its message', async (code, message) => {
+		const fake = fakeSupabase({ class_days: dbError(code) });
+		const result = await actions.deleteClassDay(event({ dayId: 'd1' }, fake.client));
+		expect(result).toMatchObject({ status: 400, data: { error: message() } });
+	});
+
+	it.each([
+		['moveClassDay', { dayId: 'd1', newDate: '2026-11-07' }],
+		['deleteClassDay', { dayId: 'd1' }]
+	] as const)(
+		'%s: a zero-row (RLS-denied) write returns the generic error',
+		async (name, fields) => {
+			const fake = fakeSupabase(
+				{
+					class_days:
+						name === 'moveClassDay'
+							? moveResults({ data: [], error: null })
+							: { data: [], error: null }
+				},
+				'teacher'
+			);
+			const result = await actions[name](event(fields, fake.client));
+			expect(result).toMatchObject({ status: 400, data: { error: m.calendar_error_failed() } });
+		}
+	);
 });
 
 describe('class schedule actions (Story 6-4)', () => {

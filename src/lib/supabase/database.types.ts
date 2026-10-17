@@ -159,6 +159,7 @@ export type Database = {
 					created_by: string | null;
 					day: string;
 					id: string;
+					moved: boolean;
 				};
 				Insert: {
 					cancelled?: boolean;
@@ -166,6 +167,7 @@ export type Database = {
 					created_by?: string | null;
 					day: string;
 					id?: string;
+					moved?: boolean;
 				};
 				Update: {
 					cancelled?: boolean;
@@ -173,6 +175,7 @@ export type Database = {
 					created_by?: string | null;
 					day?: string;
 					id?: string;
+					moved?: boolean;
 				};
 				Relationships: [
 					{

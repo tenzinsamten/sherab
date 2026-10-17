@@ -7132,7 +7132,7 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 		]);
 	});
 
-	it('class days are admin-write only, readable by every signed-in role, never deleted, and sessions are trigger-only', async () => {
+	it('class days are admin-write only, readable by every signed-in role, not deleted by a teacher, and sessions are trigger-only', async () => {
 		const year = randomYear();
 		const classId = await createClass('Access Days');
 		const [created] = await addDays([`${year}-05-03`]);
@@ -7164,8 +7164,8 @@ describe.skipIf(!reachable)('Story 6-1 class days & sessions (requires local Sup
 			.select('id');
 		expect(teacherCancel ?? []).toEqual([]);
 
-		// No hard delete, not even for the admin.
-		await admin.client.from('class_days').delete().eq('id', created.id);
+		// No hard delete by a teacher (#105: the admin deletes untouched future days).
+		await teacherA.client.from('class_days').delete().eq('id', created.id);
 		const { data: stillThere } = await adminClient
 			.from('class_days')
 			.select('id')
@@ -16204,5 +16204,497 @@ describe.skipIf(!reachable)('#102 attendance corrections (requires local Supabas
 			{ session_date: pastDay(22), present: true },
 			{ session_date: pastDay(21), present: false }
 		]);
+	});
+});
+
+describe.skipIf(!reachable)('#105 class day move and delete (requires local Supabase)', () => {
+	let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+	let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+	let parent: { id: string; email: string; client: ReturnType<typeof anonClient> };
+	let student: ReturnType<typeof anonClient>;
+	let classId: string;
+	let kid: string;
+
+	const today = todayInBerlin();
+	const plusDays = (isoDate: string, days: number) => {
+		const date = new Date(`${isoDate}T00:00:00Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	};
+	/**
+	 * A random far-future Sunday (class days are unique school-wide and the
+	 * test database is shared by every run).
+	 */
+	function futureSunday() {
+		const start = `${3000 + Math.floor(Math.random() * 6000)}-01-01`;
+		const dow = new Date(`${start}T00:00:00Z`).getUTCDay();
+		return plusDays(start, ((7 - dow) % 7) + 7 * Math.floor(Math.random() * 50));
+	}
+	/** A random long-past Sunday. */
+	function pastSunday() {
+		const start = `${1000 + Math.floor(Math.random() * 800)}-01-01`;
+		const dow = new Date(`${start}T00:00:00Z`).getUTCDay();
+		return plusDays(start, ((7 - dow) % 7) + 7 * Math.floor(Math.random() * 50));
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** A Sunday-only class (schedule since 1900) taught by `teacher`. */
+	async function createClass(label: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({
+				name: `#105 ${label} ${crypto.randomUUID().slice(0, 8)}`,
+				code: `M${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+				schedule_weekdays: [7],
+				schedule_starts_on: '1900-01-01'
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		await adminClient.from('class_teachers').insert({ class_id: data.id, teacher_id: teacher.id });
+		return data.id;
+	}
+
+	/** An approved child of the shared parent in `cls`. */
+	async function childIn(cls: string, parentEmail: string) {
+		const { id, error } = await signUpStudent({
+			classId: cls,
+			registrationName: `#105 Kid ${crypto.randomUUID().slice(0, 6)}`,
+			guardianEmail: parentEmail
+		});
+		if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			.update({ status: 'approved', team_id: await fixtureTeamId() })
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+		return id;
+	}
+
+	/** Adds a class day with the service role (any date) and returns its id. */
+	async function addDay(day: string) {
+		const { data, error } = await adminClient
+			.from('class_days')
+			.insert({ day })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to add class day ${day}: ${error?.message}`);
+		return data.id;
+	}
+
+	async function sessionOn(cls: string, dayId: string) {
+		const { data } = await adminClient
+			.from('class_sessions')
+			.select('id')
+			.eq('class_id', cls)
+			.eq('class_day_id', dayId)
+			.maybeSingle();
+		return data?.id ?? null;
+	}
+
+	async function dayRow(id: string) {
+		const { data } = await adminClient
+			.from('class_days')
+			.select('day, moved, cancelled')
+			.eq('id', id)
+			.maybeSingle();
+		return data;
+	}
+
+	function answer(sessionId: string, studentId = kid) {
+		return parent.client
+			.from('session_leave_history')
+			.insert({ class_session_id: sessionId, student_id: studentId, answer: 'coming' })
+			.select('id')
+			.single();
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		classId = await createClass('Sunday');
+		const p = await createApprovedParent();
+		parent = { id: p.id, email: p.email, client: await signIn(p.email, p.password) };
+		kid = await childIn(classId, p.email);
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(kid, { password });
+		student = await signIn(data.user!.email!, password);
+	}, 60000);
+
+	it('move: the day, its sessions and their answers go to the new free future date', async () => {
+		const sunday = futureSunday();
+		const saturday = plusDays(sunday, -1);
+		const id = await addDay(sunday);
+		const sessionId = await sessionOn(classId, id);
+		expect(sessionId).not.toBeNull();
+		const { data: ans, error: ansError } = await answer(sessionId!);
+		expect(ansError).toBeNull();
+
+		const { data, error } = await admin.client
+			.from('class_days')
+			.update({ day: saturday })
+			.eq('id', id)
+			.select('id');
+		expect(error).toBeNull();
+		expect(data).toEqual([{ id }]);
+
+		expect(await dayRow(id)).toMatchObject({ day: saturday, moved: true });
+		expect(await sessionOn(classId, id)).toBe(sessionId);
+		const { data: eff } = await adminClient
+			.from('class_sessions_effective')
+			.select('day')
+			.eq('id', sessionId!)
+			.single();
+		expect(eff?.day).toBe(saturday);
+		const { data: kept } = await adminClient
+			.from('session_leave_history')
+			.select('id, class_session_id')
+			.eq('id', ans!.id)
+			.single();
+		expect(kept?.class_session_id).toBe(sessionId);
+		const { data: oldDate } = await adminClient.from('class_days').select('id').eq('day', sunday);
+		expect(oldDate).toEqual([]);
+	});
+
+	it('move onto a date that already has a class day is refused (23505) and nothing changes', async () => {
+		const sunday = futureSunday();
+		const other = plusDays(sunday, 7);
+		const id = await addDay(sunday);
+		await addDay(other);
+		const { error } = await admin.client
+			.from('class_days')
+			.update({ day: other })
+			.eq('id', id)
+			.select('id');
+		expect(error?.code).toBe('23505');
+		expect(await dayRow(id)).toMatchObject({ day: sunday, moved: false });
+	});
+
+	it('move of a past day, or onto today or the past, is refused (CD001)', async () => {
+		const future = await addDay(futureSunday());
+		const past = pastSunday();
+		const pastId = await addDay(past);
+		const before = await dayRow(future);
+
+		for (const target of [today, plusDays(today, -1), pastSunday()]) {
+			const { error } = await admin.client
+				.from('class_days')
+				.update({ day: target })
+				.eq('id', future)
+				.select('id');
+			expect(error?.code).toBe('CD001');
+		}
+		expect(await dayRow(future)).toEqual(before);
+
+		const { error: pastError } = await admin.client
+			.from('class_days')
+			.update({ day: futureSunday() })
+			.eq('id', pastId)
+			.select('id');
+		expect(pastError?.code).toBe('CD001');
+		expect(await dayRow(pastId)).toMatchObject({ day: past, moved: false });
+	});
+
+	it('delete: an untouched future day and its sessions are gone', async () => {
+		const id = await addDay(futureSunday());
+		const sessionId = await sessionOn(classId, id);
+		expect(sessionId).not.toBeNull();
+
+		const { data, error } = await admin.client
+			.from('class_days')
+			.delete()
+			.eq('id', id)
+			.select('id');
+		expect(error).toBeNull();
+		expect(data).toEqual([{ id }]);
+		expect(await dayRow(id)).toBeNull();
+		const { data: sessions } = await adminClient
+			.from('class_sessions')
+			.select('id')
+			.eq('id', sessionId!);
+		expect(sessions).toEqual([]);
+	});
+
+	it('delete of a day with a leave answer, attendance or a sick-leave decision is refused (CD002)', async () => {
+		const withAnswer = await addDay(futureSunday());
+		expect((await answer((await sessionOn(classId, withAnswer))!)).error).toBeNull();
+
+		const withMark = await addDay(futureSunday());
+		const { error: markError } = await adminClient.from('attendance_records').insert({
+			student_id: kid,
+			class_id: classId,
+			class_session_id: (await sessionOn(classId, withMark))!,
+			present: true
+		});
+		expect(markError).toBeNull();
+
+		// A decision needs a current Sick answer, which is only possible on a
+		// session dated today or yesterday. So the fixture uses its own class
+		// and child: their session today gets the answer and the decision, the
+		// answer is removed and the session is re-pointed at a future day, so
+		// only the decision references that day. Only rows this test created
+		// are touched.
+		const decisionClass = await createClass('Decision');
+		const decisionKid = await childIn(decisionClass, parent.email);
+		const withDecision = await addDay(futureSunday());
+		const ownAutoSession = await sessionOn(decisionClass, withDecision);
+		expect(ownAutoSession, 'the Sunday class has a session on the new day').not.toBeNull();
+		await adminClient.from('class_sessions').delete().eq('id', ownAutoSession!);
+		const { data: todayBefore } = await adminClient
+			.from('class_days')
+			.select('id')
+			.eq('day', today)
+			.maybeSingle();
+		const decisionSession = await sessionFor(decisionClass, today);
+		const { error: sickError } = await parent.client
+			.from('session_leave_history')
+			.insert({ class_session_id: decisionSession, student_id: decisionKid, answer: 'sick' });
+		expect(sickError).toBeNull();
+		const { error: decisionError } = await adminClient.from('sick_leave_decisions').insert({
+			class_session_id: decisionSession,
+			student_id: decisionKid,
+			decision: 'approved'
+		});
+		expect(decisionError).toBeNull();
+		await adminClient
+			.from('session_leave_history')
+			.delete()
+			.eq('class_session_id', decisionSession)
+			.eq('student_id', decisionKid);
+		const { data: leftAnswers } = await adminClient
+			.from('session_leave_history')
+			.select('id')
+			.eq('class_session_id', decisionSession);
+		expect(leftAnswers).toEqual([]);
+		const { error: repointError } = await adminClient
+			.from('class_sessions')
+			.update({ class_day_id: withDecision })
+			.eq('id', decisionSession)
+			.eq('class_id', decisionClass);
+		expect(repointError).toBeNull();
+		// Today's class day is removed again only when this fixture created it.
+		if (!todayBefore) {
+			const { data: created } = await adminClient
+				.from('class_days')
+				.select('id')
+				.eq('day', today)
+				.single();
+			await adminClient.from('class_days').delete().eq('id', created!.id);
+		}
+
+		const { error: decisionDelete } = await admin.client
+			.from('class_days')
+			.delete()
+			.eq('id', withDecision)
+			.select('id');
+		expect(decisionDelete?.code).toBe('CD002');
+		expect(await sessionOn(decisionClass, withDecision)).toBe(decisionSession);
+
+		for (const id of [withAnswer, withMark]) {
+			const { error } = await admin.client.from('class_days').delete().eq('id', id).select('id');
+			expect(error?.code).toBe('CD002');
+			expect(await dayRow(id)).not.toBeNull();
+			expect(await sessionOn(classId, id)).not.toBeNull();
+		}
+	});
+
+	it('delete of a past day is refused (CD001)', async () => {
+		const id = await addDay(pastSunday());
+		const { error } = await admin.client.from('class_days').delete().eq('id', id).select('id');
+		expect(error?.code).toBe('CD001');
+		expect(await dayRow(id)).not.toBeNull();
+	});
+
+	it('teacher, parent and student can neither move nor delete a class day', async () => {
+		const sunday = futureSunday();
+		const id = await addDay(sunday);
+		for (const client of [teacher.client, parent.client, student]) {
+			const { data: moved } = await client
+				.from('class_days')
+				.update({ day: plusDays(sunday, -1) })
+				.eq('id', id)
+				.select('id');
+			expect(moved ?? []).toEqual([]);
+			const { data: deleted } = await client.from('class_days').delete().eq('id', id).select('id');
+			expect(deleted ?? []).toEqual([]);
+		}
+		expect(await dayRow(id)).toMatchObject({ day: sunday, moved: false });
+	});
+
+	it('cancel and restore of a past day still work for the admin', async () => {
+		const id = await addDay(pastSunday());
+		const { data: cancelled, error } = await admin.client
+			.from('class_days')
+			.update({ cancelled: true })
+			.eq('id', id)
+			.select('id');
+		expect(error).toBeNull();
+		expect(cancelled).toEqual([{ id }]);
+		const { data: restored } = await admin.client
+			.from('class_days')
+			.update({ cancelled: false })
+			.eq('id', id)
+			.select('id');
+		expect(restored).toEqual([{ id }]);
+		expect(await dayRow(id)).toMatchObject({ cancelled: false, moved: false });
+	});
+
+	it("a schedule edit after a move keeps the moved day's sessions and answers", async () => {
+		const ownClass = await createClass('Regenerate');
+		const ownKid = await childIn(ownClass, parent.email);
+
+		const sunday = futureSunday();
+		const movedId = await addDay(sunday);
+		const stayId = await addDay(plusDays(sunday, 7));
+		const movedSession = (await sessionOn(ownClass, movedId))!;
+		const { data: ans, error: ansError } = await answer(movedSession, ownKid);
+		expect(ansError).toBeNull();
+
+		const { error: moveError } = await admin.client
+			.from('class_days')
+			.update({ day: plusDays(sunday, -1) })
+			.eq('id', movedId)
+			.select('id');
+		expect(moveError).toBeNull();
+
+		// Sunday-only -> Monday-only: neither Saturday nor Sunday matches now.
+		const { error: scheduleError } = await admin.client.rpc('set_class_schedule', {
+			p_class_id: ownClass,
+			p_weekdays: [1],
+			p_start_time: null,
+			p_duration_minutes: null,
+			p_starts_on: '1900-01-01',
+			p_ends_on: null,
+			p_interval_weeks: 1
+		});
+		expect(scheduleError).toBeNull();
+
+		expect(await sessionOn(ownClass, movedId)).toBe(movedSession);
+		const { data: kept } = await adminClient
+			.from('session_leave_history')
+			.select('id')
+			.eq('id', ans!.id);
+		expect(kept).toHaveLength(1);
+		// An unmoved non-matching future day still loses its session.
+		expect(await sessionOn(ownClass, stayId)).toBeNull();
+	});
+	/**
+	 * Runs `fn` with the class day on `day`: the existing one, or one this
+	 * test adds (service role) and removes again afterwards.
+	 */
+	async function withDayOn(day: string, fn: (id: string) => Promise<void>) {
+		const { data: existing } = await adminClient
+			.from('class_days')
+			.select('id')
+			.eq('day', day)
+			.maybeSingle();
+		const id = existing?.id ?? (await addDay(day));
+		try {
+			await fn(id);
+		} finally {
+			if (!existing) await adminClient.from('class_days').delete().eq('id', id);
+		}
+	}
+
+	it("today's class day can be neither moved to a free future date nor deleted (CD001)", async () => {
+		await withDayOn(today, async (id) => {
+			const before = await dayRow(id);
+			const { error: moveError } = await admin.client
+				.from('class_days')
+				.update({ day: futureSunday() })
+				.eq('id', id)
+				.select('id');
+			expect(moveError?.code).toBe('CD001');
+			const { error: deleteError } = await admin.client
+				.from('class_days')
+				.delete()
+				.eq('id', id)
+				.select('id');
+			expect(deleteError?.code).toBe('CD001');
+			expect(await dayRow(id)).toEqual(before);
+		});
+	});
+
+	it("tomorrow's class day can be moved (the boundary is today)", async () => {
+		const tomorrow = plusDays(today, 1);
+		await withDayOn(tomorrow, async (id) => {
+			const before = await dayRow(id);
+			const target = futureSunday();
+			const { data, error } = await admin.client
+				.from('class_days')
+				.update({ day: target })
+				.eq('id', id)
+				.select('id');
+			expect(error).toBeNull();
+			expect(data).toEqual([{ id }]);
+			expect(await dayRow(id)).toMatchObject({ day: target, moved: true });
+			// Put a day that existed before back as it was (service role: no guard).
+			await adminClient.from('class_days').update({ day: tomorrow }).eq('id', id);
+			await adminClient.from('class_days').update({ moved: before!.moved }).eq('id', id);
+		});
+	});
+
+	it("a move carries the day's attendance session_date to the new date", async () => {
+		const sunday = futureSunday();
+		const id = await addDay(sunday);
+		const sessionId = (await sessionOn(classId, id))!;
+		const { data: mark, error: markError } = await adminClient
+			.from('attendance_records')
+			.insert({ student_id: kid, class_id: classId, class_session_id: sessionId, present: true })
+			.select('id, session_date')
+			.single();
+		expect(markError).toBeNull();
+		expect(mark?.session_date).toBe(sunday);
+
+		const saturday = plusDays(sunday, -1);
+		const { error } = await admin.client
+			.from('class_days')
+			.update({ day: saturday })
+			.eq('id', id)
+			.select('id');
+		expect(error).toBeNull();
+		const { data: after } = await adminClient
+			.from('attendance_records')
+			.select('session_date')
+			.eq('id', mark!.id)
+			.single();
+		expect(after?.session_date).toBe(saturday);
+	});
+
+	it('a schedule edit adds no session to a moved day', async () => {
+		const sunday = futureSunday();
+		const saturday = plusDays(sunday, -1);
+		const movedId = await addDay(sunday);
+		const plainSaturday = await addDay(plusDays(saturday, 7));
+		const { error: moveError } = await admin.client
+			.from('class_days')
+			.update({ day: saturday })
+			.eq('id', movedId)
+			.select('id');
+		expect(moveError).toBeNull();
+
+		// Sunday-only -> Saturday-only: the moved day (now a Saturday) matches.
+		const otherClass = await createClass('Saturday Later');
+		expect(await sessionOn(otherClass, movedId)).toBeNull();
+		const { error: scheduleError } = await admin.client.rpc('set_class_schedule', {
+			p_class_id: otherClass,
+			p_weekdays: [6],
+			p_start_time: null,
+			p_duration_minutes: null,
+			p_starts_on: '1900-01-01',
+			p_ends_on: null,
+			p_interval_weeks: 1
+		});
+		expect(scheduleError).toBeNull();
+
+		expect(await sessionOn(otherClass, movedId)).toBeNull();
+		// An unmoved matching future day does get one.
+		expect(await sessionOn(otherClass, plainSaturday)).not.toBeNull();
 	});
 });
