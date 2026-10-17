@@ -2251,3 +2251,193 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   the assistant and need a reader's check. In `deferred-work.md`: no "archive the rest" for a
   series that is already ended or paused; no browser test of the tick.
 
+- 2026-10-17: #104 logged, not built. Reported (user): the app is fine at first, then gets
+  slower the more pages are opened in one session. Investigated by reading code only (no
+  profiler run, nothing changed). Summary: the browser side holds up under review. There is
+  no realtime channel, no `onAuthStateChange`, no `setInterval`, and no browser Supabase
+  client in any page or component (`createSupabaseBrowserClient` in `src/lib/supabase/client.ts`
+  is defined but never imported). Every `addEventListener`, `MutationObserver` and
+  `matchMedia` listener found has a teardown. No clear leak was found, so the findings below
+  are ranked suspects, each to be confirmed by measuring (see "How to confirm"). #104a to
+  #104f are the suspects.
+
+  #104a (most likely, medium confidence) Every navigation costs several network round trips
+  to Supabase Auth, and hover preloading multiplies them.
+  `src/hooks.server.ts:56-70` (`safeGetSession`) calls `auth.getSession()` and then
+  `auth.getUser()`, which is a request to Supabase Auth, each time it is called. It runs in
+  the root layout load (`src/routes/+layout.server.ts:20`) and again in 78 page and layout
+  loads (`grep safeGetSession() src/routes`), so one page change can make 2 or more Auth
+  calls on top of the database queries. `handleUnapprovedStudent` (`hooks.server.ts:101-125`)
+  adds one `profiles` read to every student request. `src/app.html:18` has
+  `data-sveltekit-preload-data="hover"`, so each hover over a link runs the target page's
+  whole server load too (a second set of Auth calls and queries), and the result is
+  discarded if the click comes later. Why it gets slower: this does not grow with the number
+  of navigations by itself, but a user clicking around quickly sends tens of Auth calls a
+  minute; Supabase throttles Auth (and the hosted project may be on the free tier), so
+  responses start to queue and every page feels slower. Severity: medium. Suggested fix
+  (not applied): read the user once per request and cache it on `event.locals` (the layout
+  already did the check; pages could take it from `await parent()` or `locals`); consider
+  `getClaims()` / local JWT verification instead of `getUser()`; change preloading to
+  `tap` or `off` for pages with heavy loads.
+
+  #104b (medium-low confidence) The layout load re-runs on every navigation for some users.
+  `src/routes/+layout.server.ts:48-50` reads `url.pathname` for a not-yet-approved student,
+  and `:68-72` reads it for any login holding more than one role (`roles.length > 1`).
+  Reading `url` makes the load depend on it, so it re-runs on every page change. For a
+  teacher or admin that is the profile read, the capabilities read, the pending-requests
+  count, the sick-leave and class-join loads (`loadSickLeave`, `loadClassJoinRequests`), and
+  for an admin two more counts. Roughly 5 to 7 queries before the page's own load can
+  render. Why it is felt as "slower over time": a multi-role teacher/admin pays this on
+  every click, and the sum with #104a grows with session length. Severity: medium for
+  multi-role logins, none for single-role. Suggested fix: read `url` through a smaller
+  dependency (move the role choice to a cookie-only read, or compute `activeRole` in the
+  client from `page.url` so the server load need not read the URL), and keep the
+  pending-count queries out of the per-navigation path (a single RPC or a short cache).
+
+  #104c (low-medium confidence, unmeasured) A large, always-mounted DOM in the root layout.
+  `src/routes/+layout.svelte:333-346` renders `HelpGuide` for every role (4) plus `HelpFaq`
+  inside `<ix-menu-about>` on every signed-in page, and every `<ix-menu-item>` carries
+  `use:menuItemLabelRoom` (`src/lib/ix.ts:156-170`) which adds a `CSSStyleSheet` to the item's
+  shadow root. `use:menuItemLabelRoom`, `use:headerHomeLink`, `use:avatarLabel` and
+  `use:dropdownButtonLabelRoom` append to `shadowRoot.adoptedStyleSheets` and never remove
+  the sheet; this is harmless while the element lives, but `navItems` (`+layout.svelte:~190`)
+  is `$derived` and keyed by `href`, so when it changes (role switch, pending count) items
+  are re-created and old sheets go with their element. Why it matters: the Help content and
+  the iX shadow trees are constant cost, not growth, so this explains "heavy" more than
+  "slower after N pages". Severity: low. Suggested fix: render Help content only when the
+  About overlay is opened (`{#if}` on the open state), and only the active role's guide.
+
+  #104d (low) Per-navigation timers and listeners in `PageTour`.
+  `src/lib/components/PageTour.svelte:209-212` runs `autoStart` after every navigation:
+  `wait(3000)` race plus up to 8 x `wait(350)` and a `querySelectorAll` per try
+  (`:88`, `:178-183`). A superseded run exits on the next tick through `attempt`, so these
+  do not pile up, but a fast clicker has several pending timeouts and DOM scans at once.
+  The `window` listeners (`:237-250`) are added once and removed with the component, so no
+  leak. `seenHere` (`:36`) and `dismissed` in `NewBadgeDialog.svelte:53` are plain arrays
+  that only grow by one id per tour or badge (a handful per session). Severity: low.
+  Suggested fix: only run the polling loop on routes that have a tour (check `tourFor`
+  before the first `wait`), and cancel pending timeouts in `beforeNavigate`.
+
+  #104e (low, dev only) Service worker enabled in `vite dev`, plus HMR.
+  `vite.config.ts:41` has `devOptions: { enabled: true }` and `+layout.svelte:42-48` calls
+  `registerSW({ immediate: true })`. In dev, an active service worker with `autoUpdate`
+  and Vite HMR can leave old modules and workers running across edits, and the dev server
+  compiles every route on first visit. If the slowness was seen on `npm run dev` only, test
+  `npm run build && npm run preview` first. Severity: low (no effect in production).
+  Suggested fix: leave the dev worker off unless working on the PWA.
+
+  #104f (low) Web-component overlays created per call.
+  `confirmAction` (`src/lib/ix.ts:72-78`) and `showToast` (`:240-243`) create iX modals and
+  toasts through `showMessage` / `toast`; iX removes them from `document.body` when closed.
+  If a dialog is dismissed in a way iX does not clean up (Esc or backdrop while the
+  promise from `result.once` is waiting), the `<ix-modal>` element may stay in the body, and
+  the unresolved promise keeps its closure. Not confirmed. Severity: low. Suggested fix:
+  count `ix-modal` and `ix-toast` nodes in the DOM after 20 dialogs; if they grow, remove the
+  element on `result` close.
+
+  How to confirm (Chrome DevTools, use a production build, `npm run build && npm run preview`,
+  signed in as a multi-role teacher or admin as the worst case):
+  1. Performance monitor (Cmd+Shift+P, "Show Performance monitor"): watch "JS event
+     listeners", "DOM Nodes" and "JS heap size" while clicking through 20 pages and back. A
+     real leak shows listeners or nodes rising by a fixed amount per navigation and not
+     coming back after a forced GC (trash can icon). Flat lines clear #104c to #104f.
+  2. Memory tab: take a heap snapshot after a first visit to /teacher, navigate 20 times
+     round a loop of pages, force GC, take a second snapshot, choose "Comparison" and sort by
+     "# Delta". Look for `Detached` DOM nodes, `CSSStyleSheet`, `ix-modal`, `Promise`, and
+     closures from `PageTour` or `NewBadgeDialog`.
+  3. Network tab, filter "Fetch/XHR" and "WS", "Preserve log": count requests per click. Many
+     requests to `.../auth/v1/user` (or `__data.json` calls on hover) point to #104a and
+     #104b. A WS entry should not appear at all (no realtime in this app); if one does, that
+     is a surprise to chase. Compare the time of the 1st and the 30th navigation in the
+     "Waterfall": if the server calls (TTFB) grow and not the scripting time, the cause is on
+     the server or in Supabase throttling (#104a), not a browser leak.
+  4. Performance tab: record one navigation early and one late. If "Scripting" and
+     "Recalculate style" get longer late, it is the DOM (#104c, #104f); if "Waiting for
+     server response" gets longer, it is #104a and #104b.
+  Open for planning: which of the above shows up in the measurements; nothing is to be fixed
+  before that.
+
+  Measured 2026-10-17 (user, production `sherab.app` through Cloudflare DUS, HAR of 22
+  `__data.json` requests over ~22 min, admin login). Result: no growth with session length.
+  The same page costs the same at minute 0 and minute 22, and almost all of it is
+  "Waiting for server response" (TTFB); download time is ~0 to 5 ms. This points to server
+  load cost (#104a), not a browser leak (#104c to #104f look unlikely). The root layout
+  re-ran twice (`x-sveltekit-invalidated=111` and `011`, ~300 ms), so #104b exists but is
+  minor. Two new findings:
+
+  #104g (high) A 12 s server stall on `/admin/parents`, made worse by hover preloading.
+  One `GET /admin/parents/__data.json` (`invalidated=001`, about 2.5 min into the recording)
+  waited 12.4 s for the server, against ~150 to 200 ms for the same page at other times.
+  The click 3.5 s later was `blocked` 8.8 s behind the still-running hover preload of the
+  same URL, so the user saw a frozen app for ~9 s. Cause not known from the HAR: a slow or
+  locked Supabase query, a Supabase Auth delay or rate limit (#104a), or a Cloudflare
+  Worker limit. Severity: high (this is what "the app gets slower" feels like). Suggested
+  next step (not applied): check the Cloudflare Worker logs and the Supabase API and Auth
+  logs for that minute, review the `/admin/parents` load's queries, and consider a timeout
+  plus `preload-data="tap"` so a stuck preload does not hold the click.
+
+  #104h (medium) `/calendar` is the slowest page on every visit.
+  `/calendar/__data.json` (`invalidated=01`, page load only) took 479, 568 and 577 ms
+  server wait on three visits across 22 min, against ~100 to 175 ms for `/admin/classes`,
+  `/admin/teams`, `/admin/teachers` and `/leaderboard`, ~290 ms for `/requests` and ~370 ms
+  for `/admin`. Steady, not growing. Likely queries run one after another, plus the Auth
+  round trip of #104a. Severity: medium. Suggested fix (not applied): review the calendar
+  load's queries and indexes, run independent queries with `Promise.all`, and fetch only
+  the visible date range.
+
+  Also seen: the first click after ~17 min idle (`/admin/teams`) took 1.1 s (new TLS
+  connection plus 808 ms wait, probably a Worker cold start). Expected; low.
+
+  Database review 2026-10-17 (read-only, no DB connection; impact figures are estimates
+  from code plus the HAR, not measured). Queries and indexes are not the main cost; serial
+  network round trips are. All needed indexes exist; all RLS helpers are
+  `SECURITY DEFINER STABLE`. Findings, ranked:
+  1. (#104a) `auth.getUser()` per load (`src/hooks.server.ts:56-70`, also
+     `+layout.server.ts:20`, `calendar/+page.server.ts:58`), ~100-200 ms serial before any
+     query. Fix: `auth.getClaims()` (present in `@supabase/auth-js` 2.116) verifies the JWT
+     locally, but only with asymmetric signing keys (ES256/RS256); with legacy HS256 it falls
+     back to a network call. Check the dashboard JWT Signing Keys setting first. Caveat: no
+     revocation check until the token expires (max 1 h); RLS still guards data. Keep the
+     `{ session, user }` shape for the 78 callers (build a minimal user from claims). Either
+     way, memoise `safeGetSession` once per request on `event.locals`.
+  2. (#104g) Hover preload (`src/app.html:18`): the click waited 8.8 s behind a stuck
+     preload. Fix: `preload-data="tap"` (or hover only on cheap links), and an
+     `AbortSignal` timeout (~5-8 s) on the Supabase fetch so a stuck request fails fast.
+  3. (#104g) The 12.4 s stall (2026-10-17 05:00:04 UTC, retried click 05:00:07, both ended
+     ~05:00:16) was not a long query: Supabase's default `statement_timeout` for
+     `authenticated` is 8 s (project value not checked). Ranked causes: (a) concurrent
+     access-token refresh from preload plus click with the same refresh token (the page has
+     no `safeGetSession`, so the first query refreshes via `fetchWithAuth`); (b) PostgREST
+     pool acquisition wait (up to 10 s, then PGRST003, which the load would log as
+     `admin parents load: parents failed`); (c) a stalled Worker-to-Supabase connection (no
+     fetch timeout); (d) DDL lock, (e) unbounded query, (f) Auth calls: low. To tell them
+     apart, check the Cloudflare Worker and Supabase Auth/API/Postgres logs for that window.
+  4. (#104h) Calendar serial chains: student pays one extra serial query
+     (`session_leave_history`, `calendar/+page.server.ts:124-131`); parent pays three
+     (`linked_children` RPC, then `class_enrollments`, then `session_leave_history`,
+     `loadParentView` `:192-274`), ~250-450 ms extra. The first two do not depend on the
+     sessions query; move them into the `Promise.all` at `:77-99`, or one RPC. The admin and
+     teacher path is already parallel and month-bounded.
+  5. (#104h) RLS per-row cost: policies call `is_admin()`, `is_teacher_of_class`,
+     `is_enrolled_in_class`, `is_parent_in_class` and bare `auth.uid()` per row
+     (`class_sessions_select` 0025, `class_enrollments_select` 0016,
+     `session_leave_history_select` 0027:164-176, `parents_select_own_or_admin` 0023).
+     `is_parent_in_class` is a nested policy path (the slowest in the app). Est. 20-100 ms on
+     the student and parent branches, ~1-5 ms for admin. Fix: wrap as
+     `(select public.is_admin())` / `(select auth.uid())` so they run once per query
+     (low-risk migration).
+  6. (#104a/b) Root layout re-run (`src/routes/+layout.server.ts`): `profiles select('*')`
+     at `:41` over-fetches, `getCapabilities` runs after the profile read, and the admin
+     `parents` and `deletion_requests` counts (`:98-118`) run after the `Promise.all` at
+     `:82`. Fix: one `Promise.all`, an explicit column list. Est. 100-200 ms per re-run.
+  7. (#104g, latent bug) `/admin/parents/+page.server.ts:58-62` puts every parent id in the
+     URL (`parent_id IN (...)`, ~37 chars per UUID); a few hundred parents can hit the
+     URL-length limit and the page errors. Also serial after `:44-46`. Fix: embed children
+     in the first query (`profiles!profiles_parent_id_fkey` with the role filter) or one
+     RPC; paginate if the list grows.
+  8. (minor) `class_sessions_effective` (0027:65-86) has `session_starts_at(s.id)` per row;
+     unused by the calendar today, but costly if a page selects `starts_at` over a wide
+     range.
+  Open for planning: user to check JWT signing keys and the logs for the stall window; then
+  a navigation-latency spec. Nothing is fixed yet.
+

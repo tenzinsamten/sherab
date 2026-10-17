@@ -343,3 +343,7 @@
 - source_spec: `_bmad-output/specs/spec-badge-detail/stories/5-new-badge-celebration.md`
   summary: Replace the regex check of 0050's "existing rows count as seen" backfill with a test that applies the migration to pre-existing badge rows.
   evidence: rls.spec.ts only matches the SQL text; a reset DB has no badge rows when 0050 runs, and there is no harness to seed rows before a single migration.
+
+- source_spec: `_bmad-output/specs/spec-navigation-latency/stories/1-local-jwt-verification-with-getclaims.md`
+  summary: Callers read the unverified cookie `session.user` (`+layout.svelte:84`, `requests/+page.server.ts:129-212`, `parent/+layout.server.ts:16`, `parent/+page.server.ts:75`, `account/+page.server.ts:41-46`) instead of the verified `user` from `safeGetSession`.
+  evidence: Pre-existing; the old `getUser()` code returned the same cookie session object. RLS still scopes queries to the token's `sub`, so a tampered `session.user.id` can mislabel UI or filters but not widen access. Fix: switch these reads to `user.id` / `user.email`, or rebuild `session.user` from the claims.

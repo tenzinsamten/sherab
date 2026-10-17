@@ -1,0 +1,51 @@
+- id: "1"
+  title: Local JWT verification with getClaims
+  description: >-
+    safeGetSession verifies the user with auth.getClaims() against the
+    project's ES256 key instead of calling auth.getUser(), keeping its
+    { session, user } shape. See SPEC.md CAP-1 and Constraints.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Build the user object from the claims (sub, email, app_metadata,
+    user_metadata) so the 78 callers keep working unchanged. Pass the
+    refreshed access token to getClaims after a token refresh. Cache the
+    JWKS per Worker isolate; no Node-only APIs.
+
+- id: "2"
+  title: Tap preloading and Supabase fetch timeout
+  description: >-
+    The app preloads on tap instead of hover, and every Supabase server
+    fetch aborts after 8 s so a stuck call returns the load's error state.
+    See SPEC.md CAP-2 and latency-findings.md (12 s stall).
+  done_checkpoint: true
+
+- id: "3"
+  title: Parallel root layout and one-query parents list
+  description: >-
+    The root layout runs its independent queries in one concurrent batch
+    with an explicit profile column list, and /admin/parents loads each
+    parent's children in the same query. See SPEC.md CAP-3, CAP-5.
+  invoke_dev_with: >-
+    Code locations are in latency-findings.md (Code map). The /admin/parents
+    test must cover 1 000 seeded parents so the URL-length failure cannot
+    come back.
+
+- id: "4"
+  title: Calendar student and parent queries in one batch
+  description: >-
+    The student and parent calendar fetch their extra data in the first
+    concurrent batch, so they make no more serial round trips than the
+    admin calendar and show identical data. See SPEC.md CAP-4.
+
+- id: "5"
+  title: RLS helpers evaluated once per query
+  description: >-
+    A new migration wraps auth.uid() and the role helpers as (select ...)
+    in the hot-table policies, with access unchanged. See SPEC.md CAP-6 and
+    latency-findings.md (Code map).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    New migration file only; never edit past migrations. Every existing RLS
+    test must pass unchanged, and EXPLAIN on the calendar session query must
+    show the helpers as an InitPlan.
