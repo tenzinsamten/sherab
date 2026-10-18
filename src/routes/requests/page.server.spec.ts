@@ -21,7 +21,7 @@ vi.mock('$lib/server/capabilities', () => ({
 }));
 
 const { actions, load } = await import('./+page.server');
-const { loadSickLeave } = await import('$lib/server/leave');
+const { loadSickLeave, loadUpcomingLeave } = await import('$lib/server/leave');
 const m = await import('$lib/paraglide/messages.js');
 
 /**
@@ -631,6 +631,163 @@ describe('loadSickLeave', () => {
 	});
 });
 
+describe('loadUpcomingLeave (#107)', () => {
+	type Calls = { table: string; method: string; args: unknown[] }[];
+	/** A fake client: each table answers `results[table]` (or fails with `errors[table]`), .range() slices. */
+	function fake(results: Record<string, unknown[]>, errors: Record<string, unknown> = {}) {
+		const calls: Calls = [];
+		function chain(table: string) {
+			let data = results[table] ?? [];
+			const c: Record<string, unknown> = {};
+			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order']) {
+				c[method] = (...args: unknown[]) => {
+					calls.push({ table, method, args });
+					return c;
+				};
+			}
+			c.range = (from: number, to: number) => {
+				calls.push({ table, method: 'range', args: [from, to] });
+				data = data.slice(from, to + 1);
+				return c;
+			};
+			c.then = (resolve: (value: unknown) => unknown) =>
+				resolve(errors[table] ? { data: null, error: errors[table] } : { data, error: null });
+			return c;
+		}
+		return {
+			calls,
+			client: { from: chain } as unknown as Parameters<typeof loadUpcomingLeave>[0]
+		};
+	}
+	const answer = (session: string, student: string, value: string, classification = 'planned') => ({
+		class_session_id: session,
+		student_id: student,
+		answer: value,
+		classification: value === 'on_leave' ? classification : null
+	});
+	const session = (id: string, day: string, start: string | null, cancelled = false) => ({
+		id,
+		day,
+		start_time: start,
+		cancelled,
+		class_name: `Class ${id}`,
+		class_name_bo: null,
+		class_name_de: null
+	});
+
+	it("a teacher's list: their classes only, current On leave per session and student, by day then name", async () => {
+		const { client, calls } = fake({
+			class_teachers: [{ class_id: 'c1' }],
+			session_leave_history: [
+				answer('s2', 'k1', 'on_leave', 'short_notice'),
+				answer('s1', 'k2', 'on_leave'),
+				answer('s1', 'k1', 'on_leave'),
+				answer('s3', 'k1', 'coming'),
+				answer('s3', 'k1', 'on_leave')
+			],
+			class_sessions_effective: [
+				session('s1', '2099-01-03', '10:00:00'),
+				session('s2', '2099-01-10', null)
+			],
+			profiles: [
+				{ id: 'k1', display_name: 'Pema', registration_name: null },
+				{ id: 'k2', display_name: 'Dawa', registration_name: null }
+			]
+		});
+		const result = await loadUpcomingLeave(client, 't1', false);
+
+		expect(result.upcomingLeaveError).toBe(false);
+		expect(
+			result.upcomingLeave.map((r) => [r.sessionId, r.studentName, r.startTime, r.classification])
+		).toEqual([
+			['s1', 'Dawa', '10:00', 'planned'],
+			['s1', 'Pema', '10:00', 'planned'],
+			['s2', 'Pema', null, 'short_notice']
+		]);
+		const leaveCalls = calls
+			.filter((c) => c.table === 'session_leave_history')
+			.map(({ method, args }) => [method, ...args]);
+		expect(leaveCalls).toEqual(
+			expect.arrayContaining([
+				['in', 'class_sessions.class_id', ['c1']],
+				['gte', 'class_sessions.class_days.day', expect.any(String)],
+				['order', 'answered_at', { ascending: false }],
+				['range', 0, 999]
+			])
+		);
+		expect(calls).toContainEqual({
+			table: 'class_teachers',
+			method: 'eq',
+			args: ['teacher_id', 't1']
+		});
+	});
+
+	it('the admin reads every class, and a cancelled session is left out', async () => {
+		const { client, calls } = fake({
+			session_leave_history: [answer('s1', 'k1', 'on_leave'), answer('s2', 'k1', 'on_leave')],
+			class_sessions_effective: [
+				session('s1', '2099-01-03', null),
+				session('s2', '2099-01-10', null, true)
+			],
+			profiles: [{ id: 'k1', display_name: null, registration_name: 'Tashi' }]
+		});
+		const result = await loadUpcomingLeave(client, 'a1', true);
+
+		expect(calls.some((c) => c.table === 'class_teachers')).toBe(false);
+		expect(calls.some((c) => c.method === 'in' && c.args[0] === 'class_sessions.class_id')).toBe(
+			false
+		);
+		expect(result.upcomingLeave.map((r) => [r.sessionId, r.studentName])).toEqual([
+			['s1', 'Tashi']
+		]);
+	});
+
+	it('a teacher with no class gets an empty list without reading answers', async () => {
+		const { client, calls } = fake({ class_teachers: [] });
+		expect(await loadUpcomingLeave(client, 't1', false)).toEqual({
+			upcomingLeave: [],
+			upcomingLeaveError: false
+		});
+		expect(calls.some((c) => c.table === 'session_leave_history')).toBe(false);
+	});
+
+	it('pages past PostgREST max_rows (1000)', async () => {
+		const { client, calls } = fake({
+			class_teachers: [{ class_id: 'c1' }],
+			session_leave_history: [
+				...Array.from({ length: 1000 }, (_, i) => answer(`old${i}`, 'k1', 'coming')),
+				answer('s1', 'k1', 'on_leave')
+			],
+			class_sessions_effective: [session('s1', '2099-01-03', null)],
+			profiles: [{ id: 'k1', display_name: 'Pema', registration_name: null }]
+		});
+		const result = await loadUpcomingLeave(client, 't1', false);
+		expect(
+			calls.filter((c) => c.table === 'session_leave_history' && c.method === 'range')
+		).toHaveLength(2);
+		expect(result.upcomingLeave.map((r) => r.sessionId)).toEqual(['s1']);
+	});
+
+	it.each(['class_teachers', 'session_leave_history', 'class_sessions_effective', 'profiles'])(
+		'a failed %s read flags the error and shows nothing',
+		async (table) => {
+			const { client } = fake(
+				{
+					class_teachers: [{ class_id: 'c1' }],
+					session_leave_history: [answer('s1', 'k1', 'on_leave')],
+					class_sessions_effective: [session('s1', '2099-01-03', null)],
+					profiles: [{ id: 'k1', display_name: 'Pema', registration_name: null }]
+				},
+				{ [table]: { message: 'boom' } }
+			);
+			expect(await loadUpcomingLeave(client, 't1', false)).toEqual({
+				upcomingLeave: [],
+				upcomingLeaveError: true
+			});
+		}
+	);
+});
+
 describe('approveDeletion / rejectDeletion (Story 7-6)', () => {
 	const REQUEST = '11111111-2222-4333-8444-555555555555';
 
@@ -726,7 +883,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 			const query = queryCount++;
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order', 'limit']) {
+			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order', 'limit', 'range']) {
 				chain[method] = (...args: unknown[]) => {
 					calls.push({ table, query, method, args });
 					own.push([method, ...args]);
@@ -941,7 +1098,8 @@ describe('load: class join requests section (B12b, #67)', () => {
 		const rpcCalls: string[] = [];
 		const from = () => {
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order', 'limit']) chain[method] = () => chain;
+			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order', 'limit', 'range'])
+				chain[method] = () => chain;
 			chain.single = async () => ({ data: { role: 'teacher' }, error: null });
 			chain.then = (resolve: (value: Result) => unknown) => resolve({ data: [], error: null });
 			return chain;
@@ -1021,7 +1179,7 @@ describe('load: parent queue marks staff requests (B14a, #68)', () => {
 		const from = (table: string) => {
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'in', 'order', 'neq', 'limit']) {
+			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order', 'neq', 'limit', 'range']) {
 				chain[method] = (...args: unknown[]) => {
 					own.push([method, ...args]);
 					return chain;

@@ -494,6 +494,44 @@
 		{/if}
 	</section>
 
+	<!-- #107: planned leave of the coming weeks; a list, no decision. -->
+	<section class="card" aria-labelledby="upcoming-leave-heading">
+		<h2 id="upcoming-leave-heading">{m.requests_upcoming_leave_heading()}</h2>
+		<p class="muted">{m.requests_upcoming_leave_subtitle()}</p>
+		{#if data.upcomingLeaveError}
+			<p class="muted" role="alert">{m.requests_upcoming_leave_load_failed()}</p>
+		{:else if data.upcomingLeave.length === 0}
+			<p class="muted">{m.requests_upcoming_leave_empty()}</p>
+		{:else}
+			<div class="table-wrap">
+				<table>
+					<tbody>
+						{#each data.upcomingLeave as row (`${row.sessionId}:${row.studentId}`)}
+							<tr>
+								<td>
+									<div class="actions">
+										<strong>{row.studentName}</strong>
+										<ix-pill variant="warning">
+											{m.leave_answer_on_leave()}{#if row.classification}
+												· {row.classification === 'planned'
+													? m.leave_class_planned()
+													: m.leave_class_short_notice()}{/if}
+										</ix-pill>
+									</div>
+									<div class="muted">
+										{row.className} ·
+										<time datetime={row.day}>{formatDay(row.day)}</time>
+										· {row.startTime ?? m.calendar_status_unset()}
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
 	<!-- B12b (#67): hidden while nothing is waiting, like the student queue. -->
 	{#if data.joinLoadError || data.joinPending.length > 0}
 		<section class="card" aria-labelledby="join-heading">

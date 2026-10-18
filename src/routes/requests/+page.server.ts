@@ -13,7 +13,7 @@ import {
 	takenStudentUsernames
 } from '$lib/server/student-credentials';
 import { getCapabilities } from '$lib/server/capabilities';
-import { loadSickLeave, sickDecisionErrorMessage } from '$lib/server/leave';
+import { loadSickLeave, loadUpcomingLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
 import { localizeName, localizedName, type LocalizedNames } from '$lib/localized-name';
@@ -151,7 +151,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		{ data: decidedRows, error: decidedError },
 		{ data: anyTeam, error: teamsError },
 		{ sickPending, sickDecided, sickError },
-		{ joinPending, joinError }
+		{ joinPending, joinError },
+		{ upcomingLeave, upcomingLeaveError }
 	] = await Promise.all([
 		supabase
 			.from('profiles')
@@ -171,7 +172,10 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		loadSickLeave(supabase),
 		// B12b (#67): class join requests of the caller's classes (every class
 		// for the admin). A failure shows in that section only (joinLoadError).
-		loadClassJoinRequests(supabase)
+		loadClassJoinRequests(supabase),
+		// #107: On leave for the coming 12 weeks of the caller's classes (every
+		// class for the admin). A list only; a failure shows in that section.
+		loadUpcomingLeave(supabase, session.user.id, profile.role === 'admin')
 	]);
 
 	// Admin only: teachers never see parent registrations, not even a count.
@@ -238,6 +242,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		deletionDecided,
 		joinPending,
 		joinLoadError: joinError,
+		upcomingLeave,
+		upcomingLeaveError,
 		loadError: Boolean(
 			pendingError || decidedError || teamsError || parentsError || sickError || deletionError
 		)
