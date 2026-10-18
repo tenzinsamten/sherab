@@ -1,0 +1,117 @@
+- id: "1"
+  title: Foundation — Tailwind, shadcn-svelte, Sherab theme, CSS isolation
+  description: >-
+    Install Tailwind CSS v4, shadcn-svelte and Lucide, and build the Sherab
+    theme (brand colors, fonts, today's iX radius, breakpoints) so new and
+    iX components coexist without style leaks. See SPEC.md CAP-5, CAP-7 and
+    stack.md (Stack, Coexistence rules).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    No page migrates in this story. Prove the isolation: every existing e2e
+    test passes unchanged and a screenshot of an iX page is visually
+    unchanged. Verify with DB reset, then test, check and build before commit.
+
+- id: "2"
+  title: New app shell — header, bottom tab bar, side nav, help, toasts
+  description: >-
+    Replace ix-application, ix-menu and the iX header with the new shell for
+    every role: bottom tab bar below 80em, collapsible side nav above, help
+    sheet, toasts behind the existing showToast signature, tours retargeted.
+    See SPEC.md CAP-1, CAP-4, CAP-6 and stack.md (Shell, Primary nav per role).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Pages inside the shell stay iX in this story. Keep the menu-collapse
+    cookie, role switcher, Requests count pill, sign-out push release and
+    PWA registration. Test at 375, 820, 1024 and 1440px in en, de and bo.
+
+- id: "3"
+  title: Parent pages (pilot)
+  description: >-
+    Migrate the parent dashboard, child detail with leave requests,
+    homework and badges pages to the new components, phone-first with a
+    tablet grid. See SPEC.md CAP-2 to CAP-5 and brownfield.md (Screens).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    This is the go/no-go pilot: stop after it so the user can deploy and
+    collect parent feedback. Leave dialog becomes a bottom sheet on phone.
+    Update the parent e2e tests in this story.
+
+- id: "4"
+  title: Student pages
+  description: >-
+    Migrate the student dashboard, classes, class detail, homework list and
+    detail, badges and pending pages, including the new-badge and badge
+    detail dialogs. See SPEC.md CAP-2 to CAP-5.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep the celebration treatment and prefers-reduced-motion handling from
+    component-specs.md. Update the student and badge e2e tests here.
+
+- id: "5"
+  title: Shared pages — calendar, requests, leaderboard, account, help, teams
+  description: >-
+    Migrate the pages every role shares to one new version, with the
+    Requests table and calendar becoming phone-readable. See SPEC.md CAP-2,
+    CAP-3, CAP-4 and stack.md (Coexistence rules).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Admin uses these new versions too; check them inside the admin shell at
+    1440px. The calendar keeps @event-calendar/core; restyle only.
+
+- id: "6"
+  title: Auth pages
+  description: >-
+    Migrate login, register, join, join pending, forgot and reset password,
+    resend confirmation and auth confirm to the new components, including the
+    signed-out header and language switch. See SPEC.md CAP-3, CAP-5, CAP-6.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep CredentialFields and PasswordInput behaviour and autocomplete
+    attributes so password managers keep working on iOS.
+
+- id: "7"
+  title: Teacher class pages
+  description: >-
+    Migrate the teacher dashboard, class page (attendance, class days,
+    upcoming leave), homework list, create and review, and student badge
+    pages. See SPEC.md CAP-2, CAP-3, CAP-4.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Attendance is marked standing up mid-class: one-handed, 44px targets.
+    The homework review table becomes stacked cards on phone. Keep the
+    upcoming-leave behaviour from #106.
+
+- id: "8"
+  title: Syllabus, enrollment and schedule components
+  description: >-
+    Migrate SyllabusList, SyllabusForm, SyllabusDetail, SyllabusFiles,
+    EnrollmentPanel, ScheduleFields and RichTextEditor chrome, used by
+    teacher and admin pages. See SPEC.md CAP-2, CAP-3 and brownfield.md.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Teacher and admin pages using them must both work after this story;
+    admin pages may still be iX around the migrated components.
+
+- id: "9"
+  title: Admin pages
+  description: >-
+    Migrate the admin dashboard, classes, class students, syllabus,
+    teachers, parents and teams pages, desktop-wide with full data tables
+    and usable on tablet. See SPEC.md CAP-8.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Every admin action that exists today must stay reachable; the admin e2e
+    tests are the regression net.
+
+- id: "10"
+  title: Remove iX and final regression
+  description: >-
+    Remove @siemens/ix and @siemens/ix-icons, src/lib/ix.ts and the iX CSS in
+    src/app.css, then run the full regression on iPhone, iPad and laptop in
+    en, de and bo. See SPEC.md CAP-7 and Success signal.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    grep must find no ix- elements, @siemens/ix imports or $lib/ix imports
+    in src/. Compare bundle size before and after and report it.
