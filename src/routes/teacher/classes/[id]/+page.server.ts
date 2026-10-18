@@ -13,6 +13,7 @@ import { resetStudentPin } from '$lib/server/student-pin';
 import { currentSchoolYear } from '$lib/school-year';
 import { todayInBerlin } from '$lib/berlin-date';
 import { loadAssignmentIndex } from '$lib/server/homework-view';
+import { addDays } from '$lib/server/student-homework';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
 import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
@@ -36,8 +37,21 @@ type AttendanceRow = {
 /** A session attendance can be marked for: not cancelled, today (Berlin) or earlier. */
 type MarkableSession = { id: string; day: string; startTime: string | null };
 
+type LeaveAnswer = 'coming' | 'on_leave' | 'sick';
+
+/** #106: an upcoming session with the roster students On leave or Sick for it. */
+type UpcomingLeave = {
+	sessionId: string;
+	day: string;
+	startTime: string | null;
+	entries: { studentId: string; answer: Exclude<LeaveAnswer, 'coming'> }[];
+};
+
 /** How many recent sessions the picker offers. */
 const MARKABLE_SESSION_LIMIT = 60;
+
+/** #106: how far ahead the upcoming-leave card looks (as the parent's leave page). */
+const UPCOMING_LEAVE_DAYS = 12 * 7;
 
 /** Leave and attendance rows per request: PostgREST max_rows (supabase/config.toml). */
 const LEAVE_PAGE_SIZE = 1000;
@@ -83,32 +97,47 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// Story 6-2: attendance is marked against one of the class's sessions --
 	// not cancelled, today (Berlin) or earlier, newest first. The insert
 	// policy enforces the same rule; this only fills the picker.
-	const sessionsResult = await supabase
-		.from('class_sessions_effective')
-		.select('id, day, start_time')
-		.eq('class_id', classId)
-		.eq('cancelled', false)
-		.lte('day', todayInBerlin())
-		.order('day', { ascending: false })
-		.limit(MARKABLE_SESSION_LIMIT);
-	const markableSessions: MarkableSession[] = (sessionsResult.data ?? []).flatMap((r) =>
-		r.id && r.day ? [{ id: r.id, day: r.day, startTime: r.start_time }] : []
-	);
+	// #106: the sessions after today, up to 12 weeks ahead, for the upcoming
+	// leave card -- a parent can answer only before a session starts.
+	const todayBerlin = todayInBerlin();
+	const [sessionsResult, upcomingResult] = await Promise.all([
+		supabase
+			.from('class_sessions_effective')
+			.select('id, day, start_time')
+			.eq('class_id', classId)
+			.eq('cancelled', false)
+			.lte('day', todayBerlin)
+			.order('day', { ascending: false })
+			.limit(MARKABLE_SESSION_LIMIT),
+		supabase
+			.from('class_sessions_effective')
+			.select('id, day, start_time')
+			.eq('class_id', classId)
+			.eq('cancelled', false)
+			.gt('day', todayBerlin)
+			.lte('day', addDays(todayBerlin, UPCOMING_LEAVE_DAYS))
+			.order('day')
+			.order('start_time', { nullsFirst: true })
+	]);
+	const toSession = (r: { id: string | null; day: string | null; start_time: string | null }) =>
+		r.id && r.day ? [{ id: r.id, day: r.day, startTime: r.start_time }] : [];
+	const markableSessions: MarkableSession[] = (sessionsResult.data ?? []).flatMap(toSession);
+	const upcomingSessions: MarkableSession[] = (upcomingResult.data ?? []).flatMap(toSession);
 
-	// Story 7-4: each student's current leave answer per markable session,
-	// keyed `${sessionId}:${studentId}`. RLS lets a teacher of the class read
-	// its sessions' rows (sick stays visible to teachers).
-	const leaveAnswers: Record<string, 'coming' | 'on_leave' | 'sick'> = {};
+	// Story 7-4: each student's current leave answer per markable (and, #106,
+	// upcoming) session, keyed `${sessionId}:${studentId}`. RLS lets a teacher
+	// of the class read its sessions' rows (sick stays visible to teachers).
+	const leaveAnswers: Record<string, LeaveAnswer> = {};
 	let leaveError = false;
-	const markableIds = markableSessions.map((s) => s.id);
-	if (markableIds.length > 0 && studentIds.length > 0) {
+	const leaveSessionIds = [...markableSessions, ...upcomingSessions].map((s) => s.id);
+	if (leaveSessionIds.length > 0 && studentIds.length > 0) {
 		// Paged: sessions x roster can exceed PostgREST's max_rows (1000), which
 		// would silently truncate. A short page ends the read.
 		for (let from = 0; ; from += LEAVE_PAGE_SIZE) {
 			const { data: answers, error: answersError } = await supabase
 				.from('session_leave_history')
 				.select('class_session_id, student_id, answer')
-				.in('class_session_id', markableIds)
+				.in('class_session_id', leaveSessionIds)
 				.in('student_id', studentIds)
 				.order('answered_at', { ascending: false })
 				.order('id', { ascending: false })
@@ -124,6 +153,17 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			if ((answers ?? []).length < LEAVE_PAGE_SIZE) break;
 		}
 	}
+
+	// #106: only the leave itself is listed; Coming is the default answer.
+	const upcomingLeave: UpcomingLeave[] = upcomingSessions.flatMap((s) => {
+		const entries = students.flatMap((student) => {
+			const answer = leaveAnswers[`${s.id}:${student.id}`];
+			return answer === 'on_leave' || answer === 'sick' ? [{ studentId: student.id, answer }] : [];
+		});
+		return entries.length > 0
+			? [{ sessionId: s.id, day: s.day, startTime: s.startTime, entries }]
+			: [];
+	});
 
 	let skillHistory: SkillHistoryRow[] = [];
 	// #102: the current mark per session and student (attendance_current, the
@@ -244,6 +284,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		attendanceError,
 		markableSessions,
 		leaveAnswers,
+		upcomingLeave,
 		currentSkills,
 		homeworkCounts: {
 			open: homeworkIndex.entries.filter((e) => e.open).length,
@@ -260,6 +301,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			skillError ||
 			attendanceError ||
 			sessionsResult.error ||
+			upcomingResult.error ||
 			leaveError ||
 			homeworkIndex.error ||
 			syllabusList.error

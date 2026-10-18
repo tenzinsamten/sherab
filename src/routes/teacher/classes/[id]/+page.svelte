@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatInstant, isoDay, num } from '$lib/format';
+	import { formatDay, formatInstant, isoDay, num } from '$lib/format';
 	import { tick, untrack } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -358,6 +358,37 @@
 				</form>
 			</section>
 
+			<!-- #106: leave parents have given for the coming sessions. -->
+			<section class="card" aria-labelledby="upcoming-leave-heading">
+				<h2 id="upcoming-leave-heading">{m.roster_upcoming_leave_heading()}</h2>
+				{#if data.upcomingLeave.length === 0}
+					<p class="muted" style="margin: 0;">{m.roster_upcoming_leave_empty()}</p>
+				{:else}
+					<ul class="row-list">
+						{#each data.upcomingLeave as session (session.sessionId)}
+							<li>
+								<p class="row-title upcoming-leave-day">
+									{formatDay(session.day, {
+										weekday: 'long',
+										day: 'numeric',
+										month: 'long',
+										year: 'numeric'
+									})}{session.startTime ? ` · ${num(session.startTime.slice(0, 5))}` : ''}
+								</p>
+								<ul class="upcoming-leave-students">
+									{#each session.entries as entry (entry.studentId)}
+										<li class="attendance-row">
+											<span>{studentName(entry.studentId)}</span>
+											<ix-pill variant="warning">{leaveLabel(entry.answer)}</ix-pill>
+										</li>
+									{/each}
+								</ul>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+
 			<section class="card" aria-labelledby="skills-heading">
 				<h2 id="skills-heading" data-tour="class-skills">{m.roster_skills_heading()}</h2>
 				<ul class="row-list">
@@ -539,6 +570,17 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-2);
+	}
+
+	.upcoming-leave-day {
+		margin: 0 0 var(--space-1);
+	}
+	.upcoming-leave-students {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: var(--space-1);
 	}
 
 	.notes-hint {

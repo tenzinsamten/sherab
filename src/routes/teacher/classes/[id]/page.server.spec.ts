@@ -351,6 +351,12 @@ describe('load: markable sessions', () => {
 					return c;
 				};
 			}
+			// The upcoming-leave read (#106): no session after today here.
+			c.gt = (...args: unknown[]) => {
+				calls.push({ table, method: 'gt', args });
+				result = { data: [], error: null };
+				return c;
+			};
 			c.maybeSingle = async () => result;
 			c.then = (resolve: (value: unknown) => unknown) => resolve(result);
 			return c;
@@ -386,8 +392,16 @@ describe('load: markable sessions', () => {
 });
 
 describe('load: leave answers (Story 7-4)', () => {
-	/** Runs load with a two-student roster; session_leave_history pages through `leaveRows` via .range(). */
-	async function runLoad(leaveRows: Record<string, string>[]) {
+	/**
+	 * Runs load with a two-student roster; session_leave_history pages through
+	 * `leaveRows` via .range(). `upcoming` answers the read of sessions after
+	 * today (#106), or fails with `upcomingError`.
+	 */
+	async function runLoad(
+		leaveRows: Record<string, string>[],
+		upcoming: Record<string, string | null>[] = [],
+		upcomingError: { code: string } | null = null
+	) {
 		vi.mocked(loadClassRoster).mockResolvedValueOnce({
 			students: [
 				{ id: 's1', displayName: 'Dawa' },
@@ -406,6 +420,7 @@ describe('load: leave answers (Story 7-4)', () => {
 		};
 		function chain(table: string) {
 			let data = (results[table] ?? []) as unknown;
+			let error: { code: string } | null = null;
 			const c: Record<string, unknown> = {};
 			for (const method of ['select', 'eq', 'lte', 'order', 'limit', 'in']) {
 				c[method] = (...args: unknown[]) => {
@@ -413,13 +428,20 @@ describe('load: leave answers (Story 7-4)', () => {
 					return c;
 				};
 			}
+			c.gt = (...args: unknown[]) => {
+				calls.push({ table, method: 'gt', args });
+				data = upcoming;
+				error = upcomingError;
+				return c;
+			};
 			c.range = (from: number, to: number) => {
 				calls.push({ table, method: 'range', args: [from, to] });
 				data = (data as unknown[]).slice(from, to + 1);
 				return c;
 			};
 			c.maybeSingle = async () => ({ data, error: null });
-			c.then = (resolve: (value: unknown) => unknown) => resolve({ data, error: null });
+			c.then = (resolve: (value: unknown) => unknown) =>
+				resolve(error ? { data: null, error } : { data, error: null });
 			return c;
 		}
 
@@ -428,12 +450,16 @@ describe('load: leave answers (Story 7-4)', () => {
 			locals: { supabase: { from: chain }, safeGetSession: async () => ({ session: {} }) }
 		} as unknown as Parameters<typeof load>[0])) as {
 			leaveAnswers: Record<string, string>;
+			upcomingLeave: unknown[];
 			loadError: boolean;
 		};
 		const leaveCalls = calls
 			.filter((c) => c.table === 'session_leave_history')
 			.map(({ method, args }) => [method, ...args]);
-		return { data, leaveCalls };
+		const sessionCalls = calls
+			.filter((c) => c.table === 'class_sessions_effective')
+			.map(({ method, args }) => [method, ...args]);
+		return { data, leaveCalls, sessionCalls };
 	}
 
 	it("keys each student's current answer by session and student, newest row first", async () => {
@@ -477,6 +503,77 @@ describe('load: leave answers (Story 7-4)', () => {
 		]);
 		// Same dedupe across pages: the newest row (page one) wins.
 		expect(data.leaveAnswers).toEqual({ 'sB:s1': 'coming', 'sA:s2': 'sick' });
+	});
+
+	describe('upcoming leave (#106)', () => {
+		const upcoming = [
+			{ id: 'sC', day: '2099-01-03', start_time: '10:00:00' },
+			{ id: 'sD', day: '2099-01-10', start_time: null }
+		];
+
+		it('reads the sessions after today, up to 12 weeks ahead, and their answers with the markable ones', async () => {
+			const { leaveCalls, sessionCalls } = await runLoad([], upcoming);
+			const today = todayInBerlin();
+			const end = new Date(`${today}T00:00:00Z`);
+			end.setUTCDate(end.getUTCDate() + 84);
+			expect(sessionCalls).toEqual(
+				expect.arrayContaining([
+					['gt', 'day', today],
+					['lte', 'day', end.toISOString().slice(0, 10)]
+				])
+			);
+			expect(leaveCalls).toEqual(
+				expect.arrayContaining([['in', 'class_session_id', ['sB', 'sA', 'sC', 'sD']]])
+			);
+		});
+
+		it('lists each upcoming session with its students On leave or Sick, in roster order', async () => {
+			const { data } = await runLoad(
+				[
+					{ class_session_id: 'sC', student_id: 's2', answer: 'sick' },
+					{ class_session_id: 'sC', student_id: 's1', answer: 'on_leave' },
+					{ class_session_id: 'sD', student_id: 's1', answer: 'on_leave' }
+				],
+				upcoming
+			);
+			expect(data.upcomingLeave).toEqual([
+				{
+					sessionId: 'sC',
+					day: '2099-01-03',
+					startTime: '10:00:00',
+					entries: [
+						{ studentId: 's1', answer: 'on_leave' },
+						{ studentId: 's2', answer: 'sick' }
+					]
+				},
+				{
+					sessionId: 'sD',
+					day: '2099-01-10',
+					startTime: null,
+					entries: [{ studentId: 's1', answer: 'on_leave' }]
+				}
+			]);
+			expect(data.loadError).toBe(false);
+		});
+
+		it('leaves out Coming (also when it replaced an On leave), students off the roster and past sessions', async () => {
+			const { data } = await runLoad(
+				[
+					{ class_session_id: 'sC', student_id: 's1', answer: 'coming' },
+					{ class_session_id: 'sC', student_id: 's1', answer: 'on_leave' },
+					{ class_session_id: 'sD', student_id: 'gone', answer: 'on_leave' },
+					{ class_session_id: 'sB', student_id: 's2', answer: 'on_leave' }
+				],
+				upcoming
+			);
+			expect(data.upcomingLeave).toEqual([]);
+		});
+
+		it('a failed read of the upcoming sessions sets the load error', async () => {
+			const { data } = await runLoad([], [], { code: '08006' });
+			expect(data.upcomingLeave).toEqual([]);
+			expect(data.loadError).toBe(true);
+		});
 	});
 });
 
@@ -538,6 +635,11 @@ describe('load: current attendance marks (#102)', () => {
 					return c;
 				};
 			}
+			c.gt = (...args: unknown[]) => {
+				calls.push({ table, method: 'gt', args });
+				data = [];
+				return c;
+			};
 			c.range = (from: number, to: number) => {
 				calls.push({ table, method: 'range', args: [from, to] });
 				data = (data as unknown[]).slice(from, to + 1);
