@@ -2490,3 +2490,39 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   student name and answer. No migration. The Tibetan wording of the two new texts is still
   English in `messages/bo.json`. To verify: as a parent, set a child On leave for a coming
   session; as the class's teacher, the card lists it; set it back to Coming and it is gone.
+- 2026-10-18: #107 logged, not built. Reported (user, after #106): "i dont see anything in
+  sick leave sectoin". The Sick leave section on `/requests` lists `sick_leave_queue()`
+  (0036): current answers that are `sick` only, on non-cancelled sessions of the caller's
+  classes (every class for the admin). A parent can set Sick only from the session day until
+  the end of the next day (trigger hint `leave_sick_closed`, 0027/0028); On leave and leave
+  periods (0030) never enter this queue, so an empty section is expected when the parent chose
+  On leave. Undecided Sick is approved by pg_cron 14 days after the session and moves to
+  the Decided list. Open for planning: what the parent submitted (Sick or On leave), which
+  login looked (teacher of that class or admin), and whether On leave should be listed or
+  approved on `/requests`. Nothing is fixed yet.
+- 2026-10-18: #107 decided and built, to verify. The user's parent had clicked On leave, so
+  the empty Sick leave section was expected. Decided (user, 2026-10-18): list On leave on
+  `/requests` too, a list only (no approve / reject). Built: `loadUpcomingLeave()` in
+  `src/lib/server/leave.ts` reads the current answers on sessions from today through 12 weeks
+  ahead, of the caller's classes (`class_teachers`; every class for the admin), keeps On
+  leave on non-cancelled sessions, and returns student, class, date, time and
+  Planned / Short-notice. An "Upcoming leave" card on `/requests`, after the Sick leave
+  decisions, shows them; a failed read shows in that card only. No migration. The Tibetan
+  wording of the four new texts is still English in `messages/bo.json`. To verify: as a
+  parent, set a child On leave for a coming session; as the class's teacher (and as admin),
+  `/requests` lists it under Upcoming leave; set it back to Coming and it is gone.
+  Seen while verifying: `rls.spec.ts` "mid-week start (issue #51)" failed in two of four
+  runs with `classes_code_key` (the Story 6-4 `createClass` codes are `S4` + 4 random hex
+  characters, so collisions are likely across that many classes); it passes on a rerun.
+  Not fixed.
+- 2026-10-18: #106 follow-up, fixed, to verify. Reported (user, production): "but it is not
+  showing in class page" (the card showed "No leave reported"). Checked production
+  (read-only, user's OK): the only future leave answers were one child's On leave
+  (short-notice, set 2026-10-17 evening) for the 2026-10-18 sessions of Senior Tibetan
+  Language and Senior Music Instrument. The card read sessions after today (`gt`), so on the
+  class day the leave dropped out of it (it still showed as a pill on today's attendance
+  list). Fixed: the card reads sessions from today (`gte`); the leave read takes today's
+  session once (it is in both lists). Added `page.server.db.spec.ts` (real local Supabase:
+  the class's teacher sees a parent's On leave for a coming session and for a leave period).
+  Also seen: Senior Music Instrument class has no teacher in `class_teachers`, so no teacher
+  sees its leave (only the admin). Not changed; for the admin to assign one.
