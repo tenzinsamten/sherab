@@ -2473,3 +2473,20 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   leave marks stay as answered, schedule edits never add or remove its sessions) and delete
   an untouched future day. Enforced in migration 0052. To verify in production after applying
   0052: as admin, move a test day and delete an untouched one.
+- 2026-10-18: #106 logged. Reported (user): "currently when the parent apply for leave, it
+  doesn't show in the teacher page". Cause: the teacher's class page
+  (`teacher/classes/[id]/+page.server.ts`) reads `session_leave_history` only for the
+  markable sessions (today or earlier), while a parent can answer only before a session
+  starts, so a leave answer shows (as a pill on the attendance list) only on the class day.
+  No other teacher view lists upcoming leave (`/calendar` shows answers to students and
+  parents only, `/requests` queues Sick answers only). RLS already lets the class's teacher
+  read the rows (0051), so no migration is needed. Decided (user, 2026-10-18): an "Upcoming
+  leave" card on the teacher's class page: the next 12 weeks, one row per session with its
+  students On leave or Sick (Coming is not listed).
+- 2026-10-18: #106 built, to verify. The class page load also reads the class's sessions after
+  today up to 12 weeks ahead and their leave answers (same paged read as the markable ones),
+  and returns `upcomingLeave` (sessions with a roster student whose current answer is On leave
+  or Sick). A new "Upcoming leave" card under Attendance lists them by date, with time,
+  student name and answer. No migration. The Tibetan wording of the two new texts is still
+  English in `messages/bo.json`. To verify: as a parent, set a child On leave for a coming
+  session; as the class's teacher, the card lists it; set it back to Coming and it is gone.
