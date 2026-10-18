@@ -97,8 +97,9 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// Story 6-2: attendance is marked against one of the class's sessions --
 	// not cancelled, today (Berlin) or earlier, newest first. The insert
 	// policy enforces the same rule; this only fills the picker.
-	// #106: the sessions after today, up to 12 weeks ahead, for the upcoming
-	// leave card -- a parent can answer only before a session starts.
+	// #106: the sessions from today, up to 12 weeks ahead, for the upcoming
+	// leave card -- a parent can answer only before a session starts, so on
+	// the class day itself the leave is still upcoming.
 	const todayBerlin = todayInBerlin();
 	const [sessionsResult, upcomingResult] = await Promise.all([
 		supabase
@@ -114,7 +115,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			.select('id, day, start_time')
 			.eq('class_id', classId)
 			.eq('cancelled', false)
-			.gt('day', todayBerlin)
+			.gte('day', todayBerlin)
 			.lte('day', addDays(todayBerlin, UPCOMING_LEAVE_DAYS))
 			.order('day')
 			.order('start_time', { nullsFirst: true })
@@ -129,7 +130,8 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// of the class read its sessions' rows (sick stays visible to teachers).
 	const leaveAnswers: Record<string, LeaveAnswer> = {};
 	let leaveError = false;
-	const leaveSessionIds = [...markableSessions, ...upcomingSessions].map((s) => s.id);
+	// Today's session is in both lists.
+	const leaveSessionIds = [...new Set([...markableSessions, ...upcomingSessions].map((s) => s.id))];
 	if (leaveSessionIds.length > 0 && studentIds.length > 0) {
 		// Paged: sessions x roster can exceed PostgREST's max_rows (1000), which
 		// would silently truncate. A short page ends the read.

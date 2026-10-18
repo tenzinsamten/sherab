@@ -351,9 +351,9 @@ describe('load: markable sessions', () => {
 					return c;
 				};
 			}
-			// The upcoming-leave read (#106): no session after today here.
-			c.gt = (...args: unknown[]) => {
-				calls.push({ table, method: 'gt', args });
+			// The upcoming-leave read (#106): no session from today on here.
+			c.gte = (...args: unknown[]) => {
+				calls.push({ table, method: 'gte', args });
 				result = { data: [], error: null };
 				return c;
 			};
@@ -394,8 +394,8 @@ describe('load: markable sessions', () => {
 describe('load: leave answers (Story 7-4)', () => {
 	/**
 	 * Runs load with a two-student roster; session_leave_history pages through
-	 * `leaveRows` via .range(). `upcoming` answers the read of sessions after
-	 * today (#106), or fails with `upcomingError`.
+	 * `leaveRows` via .range(). `upcoming` answers the read of sessions from
+	 * today on (#106), or fails with `upcomingError`.
 	 */
 	async function runLoad(
 		leaveRows: Record<string, string>[],
@@ -428,8 +428,8 @@ describe('load: leave answers (Story 7-4)', () => {
 					return c;
 				};
 			}
-			c.gt = (...args: unknown[]) => {
-				calls.push({ table, method: 'gt', args });
+			c.gte = (...args: unknown[]) => {
+				calls.push({ table, method: 'gte', args });
 				data = upcoming;
 				error = upcomingError;
 				return c;
@@ -511,20 +511,38 @@ describe('load: leave answers (Story 7-4)', () => {
 			{ id: 'sD', day: '2099-01-10', start_time: null }
 		];
 
-		it('reads the sessions after today, up to 12 weeks ahead, and their answers with the markable ones', async () => {
+		it('reads the sessions from today, up to 12 weeks ahead, and their answers with the markable ones', async () => {
 			const { leaveCalls, sessionCalls } = await runLoad([], upcoming);
 			const today = todayInBerlin();
 			const end = new Date(`${today}T00:00:00Z`);
 			end.setUTCDate(end.getUTCDate() + 84);
 			expect(sessionCalls).toEqual(
 				expect.arrayContaining([
-					['gt', 'day', today],
+					['gte', 'day', today],
 					['lte', 'day', end.toISOString().slice(0, 10)]
 				])
 			);
 			expect(leaveCalls).toEqual(
 				expect.arrayContaining([['in', 'class_session_id', ['sB', 'sA', 'sC', 'sD']]])
 			);
+		});
+
+		it("today's session is in both lists: its id is read once and its leave listed", async () => {
+			const { data, leaveCalls } = await runLoad(
+				[{ class_session_id: 'sB', student_id: 's1', answer: 'on_leave' }],
+				[{ id: 'sB', day: '2026-09-20', start_time: '10:00:00' }]
+			);
+			expect(leaveCalls).toEqual(
+				expect.arrayContaining([['in', 'class_session_id', ['sB', 'sA']]])
+			);
+			expect(data.upcomingLeave).toEqual([
+				{
+					sessionId: 'sB',
+					day: '2026-09-20',
+					startTime: '10:00:00',
+					entries: [{ studentId: 's1', answer: 'on_leave' }]
+				}
+			]);
 		});
 
 		it('lists each upcoming session with its students On leave or Sick, in roster order', async () => {
@@ -635,8 +653,8 @@ describe('load: current attendance marks (#102)', () => {
 					return c;
 				};
 			}
-			c.gt = (...args: unknown[]) => {
-				calls.push({ table, method: 'gt', args });
+			c.gte = (...args: unknown[]) => {
+				calls.push({ table, method: 'gte', args });
 				data = [];
 				return c;
 			};
