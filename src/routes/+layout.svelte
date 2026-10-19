@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '@siemens/ix/dist/siemens-ix/siemens-ix.css';
 	import '../app.css';
+	import '$lib/ui/tailwind.css';
 	import { onMount } from 'svelte';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { resolve } from '$app/paths';

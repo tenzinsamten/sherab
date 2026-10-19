@@ -355,3 +355,11 @@
 - source_spec: `_bmad-output/specs/spec-navigation-latency/stories/5-rls-helpers-evaluated-once-per-query.md`
   summary: No automated check keeps the hot-table RLS policies in the once-per-query `(select auth.uid())` / `(select public.is_admin())` form; a later migration that copies an old bare definition would bring the per-row cost back with every test green.
   evidence: Verified: `rls.spec.ts` tests access only, and nothing in src, e2e or supabase reads `pg_policies` or `EXPLAIN`. Tests reach the DB only through supabase-js, which cannot see policy text. Cheapest fix: a service-role-only RPC returning `qual` / `with_check` for the hot tables, with an `rls.spec.ts` assertion that none contains a bare `auth.uid()` or `is_admin()`.
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/1-foundation-tailwind-shadcn-theme-isolation.md`
+  summary: The scoped reset in `src/lib/ui/reset.css` (`[data-ui='new'] *:not(#__)`) would zero margins/padding and override fonts on any iX element placed inside a `data-ui="new"` root; story 2's new shell must not wrap still-iX page content in that root.
+  evidence: Unverified (medium if true): not reachable in story 1, since no iX component sits inside a root. Settle it in story 2 by keeping `data-ui="new"` on the shell's own header/nav only, or by an `ix-visual` run after the shell lands.
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/1-foundation-tailwind-shadcn-theme-isolation.md`
+  summary: The rules for new UI code (style with Tailwind utilities, since scoped Svelte `<style>` loses to the reset; add an `@source` line per migrated folder) live only in CSS comments; add them to the project's agent instructions (AGENTS.md / CLAUDE.md).
+  evidence: Verified: the rule is in `reset.css` and `tailwind.css` headers only; an agent migrating a page would not read those before writing a `<style>` block. Agent-context edit, so deferred rather than patched.

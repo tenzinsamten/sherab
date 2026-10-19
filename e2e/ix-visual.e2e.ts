@@ -14,6 +14,10 @@ import { service, signIn, type TestUser } from './fixtures';
  */
 
 test.describe.configure({ mode: 'serial' });
+test.skip(
+	process.platform !== 'darwin',
+	'Baselines exist for darwin only; another platform would write unverified ones.'
+);
 
 const tag = crypto.randomUUID().slice(0, 8);
 const userIds: string[] = [];
@@ -71,7 +75,34 @@ async function settle(page: Page) {
 	await page.waitForTimeout(500);
 }
 
+/**
+ * Puts what other test files leave behind in the shared database into a fixed
+ * state, so the image does not depend on which tests ran before: masking
+ * alone is not enough, since a mask takes the size of what it covers.
+ */
+async function normalize(page: Page) {
+	await page.evaluate(() => {
+		// The Requests count pill (pending requests from other tests).
+		for (const item of document.querySelectorAll('ix-menu-item[notifications]')) {
+			item.removeAttribute('notifications');
+		}
+		// The admin class counter: one digit.
+		for (const counter of document.querySelectorAll('.page-counter')) counter.textContent = '0';
+		// The admin list of all classes: empty, at a fixed height (it stays masked).
+		const list =
+			location.pathname === '/admin/classes'
+				? document.querySelector<HTMLElement>('.page > section.card:last-of-type')
+				: null;
+		if (list) {
+			list.replaceChildren();
+			list.style.height = '8rem';
+		}
+	});
+}
+
 async function shoot(page: Page, name: string, mask: string[] = []) {
+	await settle(page);
+	await normalize(page);
 	await settle(page);
 	await expect(page).toHaveScreenshot(`${name}.png`, {
 		animations: 'disabled',

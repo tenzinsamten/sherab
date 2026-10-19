@@ -1,0 +1,268 @@
+/* Tailwind v4 preflight (tailwindcss/preflight.css), scoped to the new
+   component system's root: `<div data-ui="new">`. Outside that root nothing
+   here applies, so iX pages keep iX's reboot and src/app.css.
+
+   Unlayered, and every selector carries `:not(#__)` (no element has that
+   id; it only adds an id's weight to the specificity). iX's global CSS and
+   src/app.css are unlayered too and style elements directly, up to
+   `a[href]:not(.disabled):not(:disabled):hover` (0,4,1); `[data-ui='new'] a`
+   alone (0,1,1) would lose to it. With the id weight the reset wins over
+   every legacy element/class rule, and the `!important` Tailwind utilities
+   still win over the reset.
+
+   Consequence for new code: style it with utilities. A scoped Svelte
+   `<style>` rule (class weight) inside the root loses to this reset.
+
+   Font family and line height of the root are set in tailwind.css (with the
+   Tibetan rule). */
+
+/* Box model: no margins, padding or borders by default. */
+[data-ui='new']:not(#__),
+[data-ui='new'] *:not(#__),
+[data-ui='new'] *:not(#__)::before,
+[data-ui='new'] *:not(#__)::after,
+[data-ui='new'] *:not(#__)::backdrop,
+[data-ui='new'] *:not(#__)::file-selector-button {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	border: 0 solid;
+	/* shadcn-svelte's base layer: borders and outlines in theme colours. */
+	border-color: var(--border);
+	outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+/* iX styles every scrollbar on the page (thin, themed). */
+[data-ui='new']:not(#__),
+[data-ui='new'] *:not(#__) {
+	scrollbar-color: auto;
+	scrollbar-width: auto;
+}
+
+/* The root undoes what it inherits from iX's and app.css's `body`. */
+[data-ui='new']:not(#__) {
+	color: var(--foreground);
+	font-size: 1rem;
+	font-weight: 400;
+	font-style: normal;
+	letter-spacing: normal;
+	font-feature-settings: normal;
+	font-variation-settings: normal;
+	text-decoration: none;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+	tab-size: 4;
+	-webkit-tap-highlight-color: transparent;
+}
+
+[data-ui='new'] hr:not(#__) {
+	height: 0;
+	color: inherit;
+	border-top-width: 1px;
+}
+
+[data-ui='new'] abbr:where([title]):not(#__) {
+	-webkit-text-decoration: underline dotted;
+	text-decoration: underline dotted;
+}
+
+/* iX: font family, size, line height, letter spacing per level; app.css:
+   weight, line height, `h2` size, Tibetan font and line height. */
+[data-ui='new'] :is(h1, h2, h3, h4, h5, h6):not(#__) {
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: inherit;
+	font-style: inherit;
+	line-height: inherit;
+	letter-spacing: inherit;
+	font-feature-settings: inherit;
+	text-decoration: inherit;
+}
+
+/* iX and app.css colour every link primary, underline offset, pointer and a
+   focus outline. */
+[data-ui='new'] a:not(#__) {
+	color: inherit;
+	-webkit-text-decoration: inherit;
+	text-decoration: inherit;
+	text-underline-offset: auto;
+	cursor: revert;
+}
+[data-ui='new'] a:not(#__):focus-visible {
+	outline: revert;
+	outline-offset: revert;
+}
+
+[data-ui='new'] :is(b, strong):not(#__) {
+	font-weight: bolder;
+}
+
+/* app.css gives `code` a mono face, bold and letter spacing. */
+[data-ui='new'] :is(code, kbd, samp, pre):not(#__) {
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+		monospace;
+	font-feature-settings: normal;
+	font-variation-settings: normal;
+	font-size: 1em;
+	font-weight: inherit;
+	letter-spacing: inherit;
+}
+
+[data-ui='new'] small:not(#__) {
+	font-size: 80%;
+}
+
+[data-ui='new'] :is(sub, sup):not(#__) {
+	font-size: 75%;
+	line-height: 0;
+	position: relative;
+	vertical-align: baseline;
+}
+[data-ui='new'] sub:not(#__) {
+	bottom: -0.25em;
+}
+[data-ui='new'] sup:not(#__) {
+	top: -0.5em;
+}
+
+/* app.css: full width, cell padding, bottom borders, left aligned, bold
+   muted header cells. */
+[data-ui='new'] table:not(#__) {
+	width: auto;
+	text-indent: 0;
+	border-color: inherit;
+	border-collapse: collapse;
+}
+[data-ui='new'] :is(th, td):not(#__) {
+	text-align: revert;
+	vertical-align: revert;
+}
+[data-ui='new'] th:not(#__) {
+	color: inherit;
+	font-size: inherit;
+	font-weight: revert;
+}
+
+/* app.css: fieldset margin, legend colour and size. */
+[data-ui='new'] legend:not(#__) {
+	color: inherit;
+	font-size: inherit;
+}
+
+/* iX: `label { display: inline-block }`. */
+[data-ui='new'] label:not(#__) {
+	display: revert;
+}
+
+[data-ui='new'] :-moz-focusring:where(:not(iframe)):not(#__) {
+	outline: auto;
+}
+
+[data-ui='new'] progress:not(#__) {
+	vertical-align: baseline;
+}
+
+[data-ui='new'] summary:not(#__) {
+	display: list-item;
+}
+
+[data-ui='new'] :is(ol, ul, menu):not(#__) {
+	list-style: none;
+}
+
+[data-ui='new'] :is(img, svg, video, canvas, audio, iframe, embed, object):not(#__) {
+	display: block;
+	vertical-align: middle;
+}
+
+[data-ui='new'] :is(img, video):not(#__) {
+	max-width: 100%;
+	height: auto;
+}
+
+/* iX: margin and font family on controls; app.css: checkbox accent colour. */
+[data-ui='new'] :is(button, input, select, optgroup, textarea):not(#__),
+[data-ui='new'] *:not(#__)::file-selector-button {
+	font: inherit;
+	font-feature-settings: inherit;
+	font-variation-settings: inherit;
+	letter-spacing: inherit;
+	color: inherit;
+	border-radius: 0;
+	background-color: transparent;
+	opacity: 1;
+	accent-color: auto;
+}
+
+[data-ui='new'] :where(select:is([multiple], [size])) optgroup:not(#__) {
+	font-weight: bolder;
+}
+
+[data-ui='new'] :where(select:is([multiple], [size])) optgroup option:not(#__) {
+	padding-inline-start: 20px;
+}
+
+[data-ui='new'] *:not(#__)::file-selector-button {
+	margin-inline-end: 4px;
+}
+
+[data-ui='new'] *:not(#__)::placeholder {
+	opacity: 1;
+	color: color-mix(in oklab, currentcolor 50%, transparent);
+}
+
+[data-ui='new'] textarea:not(#__) {
+	resize: vertical;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-search-decoration {
+	-webkit-appearance: none;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-date-and-time-value {
+	min-height: 1lh;
+	text-align: inherit;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit {
+	display: inline-flex;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-fields-wrapper {
+	padding: 0;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-year-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-month-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-day-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-hour-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-minute-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-second-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-millisecond-field,
+[data-ui='new'] *:not(#__)::-webkit-datetime-edit-meridiem-field {
+	padding-block: 0;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-calendar-picker-indicator {
+	line-height: 1;
+}
+
+[data-ui='new'] :-moz-ui-invalid:not(#__) {
+	box-shadow: none;
+}
+
+[data-ui='new'] :is(button, input:where([type='button'], [type='reset'], [type='submit'])):not(#__),
+[data-ui='new'] *:not(#__)::file-selector-button {
+	appearance: button;
+}
+
+[data-ui='new'] *:not(#__)::-webkit-inner-spin-button,
+[data-ui='new'] *:not(#__)::-webkit-outer-spin-button {
+	height: auto;
+}
+
+[data-ui='new'] [hidden]:where(:not([hidden='until-found'])):not(#__) {
+	display: none !important;
+}
