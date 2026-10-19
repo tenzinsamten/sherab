@@ -54,13 +54,12 @@ test.afterAll(async () => {
 	if (problems.length) throw new Error(problems.join('; '));
 });
 
-const card = (page: Page) =>
-	page.locator('section', { has: page.getByRole('heading', { name: 'Parent access' }) });
+const card = (page: Page) => page.getByRole('region', { name: 'Parent access' });
 const parentOption = (page: Page) => page.locator('[data-role-option="parent"]');
 
 async function openAccount(page: Page) {
 	await page.goto('/account');
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
@@ -85,9 +84,9 @@ test('teacher requests parent access, the admin approves, Parent appears in the 
 	try {
 		await signIn(adminPage, admin);
 		await adminPage.goto('/requests');
-		await adminPage.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await adminPage.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 		await adminPage.waitForLoadState('networkidle');
-		const row = adminPage.locator('tr', { hasText: teacher.email });
+		const row = adminPage.getByTestId('request-row').filter({ hasText: teacher.email });
 		await expect(row).toContainText('Teacher');
 		await row.getByRole('button', { name: 'Approve' }).click();
 		await expect(adminPage.locator('ix-toast').getByText(/was approved as a parent/)).toBeVisible();
@@ -275,9 +274,9 @@ test('#90: the admin resends the confirmation mail and approves a parent whose e
 
 	await signIn(page, admin);
 	await page.goto('/requests');
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
-	const row = page.locator('tr', { hasText: email });
+	const row = page.getByTestId('request-row').filter({ hasText: email });
 	await expect(row).toContainText('Email not confirmed');
 
 	await row.getByRole('button', { name: 'Resend confirmation email' }).click();
@@ -287,7 +286,7 @@ test('#90: the admin resends the confirmation mail and approves a parent whose e
 	await expect.poll(() => mailCount(email)).toBe(1);
 
 	// Approve asks first; Cancel changes nothing.
-	const modal = page.locator('ix-modal');
+	const modal = page.getByRole('alertdialog', { name: 'Are you sure?' });
 	await row.getByRole('button', { name: 'Approve' }).click();
 	await expect(modal).toContainText(email);
 	await modal.getByRole('button', { name: 'Cancel' }).click();
@@ -334,10 +333,10 @@ test('#91: rejecting a parent asks first; Cancel keeps the request', async ({ pa
 
 	await signIn(page, admin);
 	await page.goto('/requests');
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
-	const row = page.locator('tr', { hasText: email });
-	const modal = page.locator('ix-modal');
+	const row = page.getByTestId('request-row').filter({ hasText: email });
+	const modal = page.getByRole('alertdialog', { name: 'Are you sure?' });
 
 	await row.getByRole('button', { name: 'Reject' }).click();
 	await expect(modal).toContainText('Their account is deleted');

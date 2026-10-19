@@ -290,18 +290,21 @@ test('register: each password field has its own show/hide button (#82)', async (
 test('account: the display name shows the saved one and saves a new one', async ({ page }) => {
 	await signIn(page, fx.teacher);
 	await page.goto('/account');
-	await waitForIx(page);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+	await page.waitForLoadState('networkidle');
 
 	const { data: before } = await service
 		.from('profiles')
 		.select('display_name')
 		.eq('id', fx.teacher.id)
 		.single();
-	await expect(page.locator('#displayName')).toHaveJSProperty('value', before?.display_name ?? '');
-	await expect(page.locator('#email')).toHaveJSProperty('value', fx.teacher.email);
+	// Native fields with visible labels (mobile-first story 5); the email is read-only.
+	await expect(page.getByLabel('Display name')).toHaveValue(before?.display_name ?? '');
+	await expect(page.getByLabel('Email')).toHaveValue(fx.teacher.email);
+	await expect(page.getByLabel('Email')).toHaveAttribute('readonly', '');
 
 	const name = `E2E Renamed ${fx.tag}`;
-	await typeInto(page, 'displayName', name);
+	await page.getByLabel('Display name').fill(name);
 	await page.getByRole('button', { name: 'Save name' }).click();
 	await expect(page.locator('ix-toast').getByText('Name updated.')).toBeVisible();
 
@@ -312,8 +315,8 @@ test('account: the display name shows the saved one and saves a new one', async 
 		.single();
 	expect(after?.display_name).toBe(name);
 	await page.reload();
-	await waitForIx(page);
-	await expect(page.locator('#displayName')).toHaveJSProperty('value', name);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+	await expect(page.getByLabel('Display name')).toHaveValue(name);
 });
 
 test('login: the Sherab logo shows above the card title', async ({ page }) => {

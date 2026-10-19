@@ -139,9 +139,13 @@ async function signInAsStudent(page: Page, credentials: { username: string; pin:
 
 async function openRequests(page: Page) {
 	await page.goto('/requests');
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
+
+/** A request row (a card below 80em, a table row from 80em). */
+const requestRow = (page: Page, text: string) =>
+	page.getByTestId('request-row').filter({ hasText: text });
 
 const status = (page: Page) => page.locator('[data-testid="student-status"]');
 const menuItems = (page: Page) => mainNav(page).getByRole('link');
@@ -251,11 +255,8 @@ test('approval: the approver sees the username and no PIN; the same PIN opens th
 	try {
 		await signIn(teacherPage, teacher);
 		await openRequests(teacherPage);
-		await teacherPage
-			.locator('tr', { hasText: approvedName })
-			.getByRole('button', { name: 'Approve' })
-			.click();
-		const bar = teacherPage.locator('ix-message-bar');
+		await requestRow(teacherPage, approvedName).getByRole('button', { name: 'Approve' }).click();
+		const bar = teacherPage.getByTestId('requests-outcome');
 		await expect(bar).toContainText('The family already has the PIN from registration.');
 		await expect(bar.locator('.credential')).toHaveCount(1);
 		await expect(bar.locator('.credential')).toHaveText(approved.username);
@@ -300,11 +301,11 @@ test('a rejected student signs in and sees only the not-accepted page, with sign
 	try {
 		await signIn(teacherPage, teacher);
 		await openRequests(teacherPage);
+		await requestRow(teacherPage, rejectedName).getByRole('button', { name: 'Reject' }).click();
 		await teacherPage
-			.locator('tr', { hasText: rejectedName })
+			.getByRole('alertdialog', { name: 'Are you sure?' })
 			.getByRole('button', { name: 'Reject' })
 			.click();
-		await teacherPage.locator('ix-modal').getByRole('button', { name: 'Reject' }).last().click();
 		await expect
 			.poll(async () => {
 				const { data } = await service

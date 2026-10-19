@@ -539,27 +539,30 @@ test('requests approve: no team field, one click approves and the message names 
 			}
 		});
 		await signIn(page, fx.admin);
-		await openForm(page, '/requests');
+		await page.goto('/requests');
+		await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+		await page.waitForLoadState('networkidle');
 
 		// The pending row (once approved, the name is listed under "decided").
 		const row = page
-			.locator('tr')
+			.getByTestId('request-row')
 			.filter({ hasText: registrationName })
 			.filter({ has: page.locator('form[action="?/approve"]') });
 		await expect(row).toHaveCount(1);
 		// No team field: not for this row, not anywhere on the page.
 		await expect(page.locator(`#team-${studentId}`)).toHaveCount(0);
-		await expect(row.locator('ix-select')).toHaveCount(0);
+		await expect(row.locator('select')).toHaveCount(0);
 		await expect(page.locator('[name="teamId"]')).toHaveCount(0);
 
 		const approve = row.getByRole('button', { name: 'Approve' });
 		await expect(approve).toBeEnabled();
 		await approve.click();
-		await expect(page.locator('ix-message-bar')).toContainText(`${registrationName} was approved`);
+		const outcome = page.getByTestId('requests-outcome');
+		await expect(outcome).toContainText(`${registrationName} was approved`);
 		// #100: a registration still on a `pending-` address gets its username
 		// and one-time PIN at approval, as before.
-		await expect(page.locator('ix-message-bar')).toContainText('One-time sign-in');
-		const minted = page.locator('ix-message-bar .credential');
+		await expect(outcome).toContainText('One-time sign-in');
+		const minted = outcome.locator('.credential');
 		await expect(minted).toHaveCount(2);
 		await expect(minted.nth(1)).toHaveText(/^\d{6}$/);
 		expect(approvePosts).toHaveLength(1);
@@ -577,7 +580,7 @@ test('requests approve: no team field, one click approves and the message names 
 		expect(profile?.team_id).toEqual(expect.any(String));
 		const assignedName = profile?.teams?.name;
 		expect(assignedName).toEqual(expect.any(String));
-		await expect(page.locator('ix-message-bar')).toContainText(
+		await expect(outcome).toContainText(
 			`${registrationName} was approved and is in team “${assignedName}”.`
 		);
 	} finally {

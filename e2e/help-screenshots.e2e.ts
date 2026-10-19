@@ -253,6 +253,11 @@ async function open(page: Page, locale: string, path: string) {
 	// A /<locale>/... address sets the language cookie and redirects (#79).
 	await page.goto(`/${locale}${path}`);
 	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	// A migrated page (mobile-first stories 3-5): its new-UI root is hydrated.
+	await page.waitForFunction(() => {
+		const root = document.querySelector('main > [data-ui="new"]');
+		return !root || root.hasAttribute('data-hydrated');
+	});
 	await page.waitForLoadState('networkidle');
 	await page.evaluate(() => document.fonts.ready);
 }

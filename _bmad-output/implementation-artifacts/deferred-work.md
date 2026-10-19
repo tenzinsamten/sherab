@@ -388,3 +388,9 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/4-student-pages.md`
   summary: No test checks that the New badge dialog returns focus to a mid-session opener (or leaves focus alone when leaving via the see-all link).
   evidence: All dialog tests open it right after sign-in/reload (focus on body); needs a fixture that earns a badge mid-session.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5-shared-pages.md`
+  summary: Migrate `/calendar` (session and day dialogs as phone bottom sheets, native date/time/number fields, @event-calendar/core restyle) off iX as story 5b, deciding there whether `ScheduleFields` moves with it or stays for story 8.
+  evidence: Split at the story 5 scope gate (user chose Split): the calendar alone is 1320 lines with 36 iX elements and fragile dialog focus/stale-error logic, pushing the spec to ~2300 tokens.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5-shared-pages.md`
+  summary: Mark the viewer's own team row on `/leaderboard` (a student's team, a parent's child's team).
+  evidence: Planned in story 5's matrix but the load (`leaderboard/+page.server.ts`) returns no own-team flag and story 5 forbids load changes; the old iX page never marked it either. User chose Defer at the step-3 matrix audit.

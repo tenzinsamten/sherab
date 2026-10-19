@@ -1,11 +1,17 @@
 <script lang="ts">
+	import Copy from '@lucide/svelte/icons/copy';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { copyText } from '$lib/clipboard';
+	import { ui } from '$lib/ui/classes';
 	import CopyField from './CopyField.svelte';
 
 	/**
 	 * One-time sign-in details (#41): each value copies on its own, and
 	 * "Copy both" copies them together as "Label: value" lines.
+	 * Its own `data-ui="new"` root (mobile-first story 5), so it also works
+	 * on the pages that are still iX (admin teachers, join pending,
+	 * EnrollmentPanel). `credential-fields` lines up CopyField's labels.
 	 */
 	let { fields }: { fields: { label: string; value: string }[] } = $props();
 
@@ -13,22 +19,14 @@
 	let all = $derived(fields.map((f) => `${f.label}: ${f.value}`).join('\n'));
 </script>
 
-<div class="credential-fields" bind:this={block}>
+<div data-ui="new" class="credential-fields mt-2 flex min-w-0 flex-col gap-2" bind:this={block}>
 	{#each fields as field (field.label)}
 		<CopyField label={field.label} value={field.value} />
 	{/each}
 	<div>
-		<ix-button variant="secondary" icon="copy" onclick={() => copyText(all, block)}>
+		<Button variant="outline" class={ui.touch} onclick={() => copyText(all, block)}>
+			<Copy aria-hidden="true" />
 			{m.copy_all()}
-		</ix-button>
+		</Button>
 	</div>
 </div>
-
-<style>
-	.credential-fields {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-		margin-top: var(--space-2);
-	}
-</style>

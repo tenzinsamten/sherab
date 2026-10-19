@@ -278,14 +278,12 @@ test('a rejected request shows as Rejected and can be dismissed', async ({ page 
 
 async function openRequests(page: Page) {
 	await page.goto('/requests');
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
 function joinSection(page: Page) {
-	return page.locator('section.card', {
-		has: page.getByRole('heading', { name: 'Class join requests' })
-	});
+	return page.getByRole('region', { name: 'Class join requests' });
 }
 
 function requestsNavItem(page: Page) {
@@ -294,7 +292,7 @@ function requestsNavItem(page: Page) {
 
 /** The /requests header count pill (its accessible text, e.g. "1 pending"). */
 function headerPill(page: Page) {
-	return page.locator('.page-header ix-pill');
+	return page.getByTestId('requests-count');
 }
 
 /** The layout's load-error toast: shown when the nav count query failed. */
@@ -304,10 +302,14 @@ function loadErrorToast(page: Page) {
 
 async function decide(page: Page, className: string, button: 'Approve' | 'Reject') {
 	await joinSection(page)
-		.locator('tr', { hasText: className })
+		.getByTestId('request-row')
+		.filter({ hasText: className })
 		.getByRole('button', { name: button })
 		.click();
-	await page.locator('ix-modal').getByRole('button', { name: button }).last().click();
+	await page
+		.getByRole('alertdialog', { name: 'Are you sure?' })
+		.getByRole('button', { name: button })
+		.click();
 }
 
 // The teacher tests below depend on the first test's pending request for
@@ -318,7 +320,7 @@ test("a teacher who is the student's parent sees the request without buttons, un
 	await signIn(page, teacherParent);
 	await openRequests(page);
 
-	const row = joinSection(page).locator('tr', { hasText: studentName });
+	const row = joinSection(page).getByTestId('request-row').filter({ hasText: studentName });
 	await expect(row).toContainText(`Asks to join ${targetName}`);
 	await expect(row).toContainText('Your child. Another teacher or the admin decides.');
 	await expect(row.getByRole('button')).toHaveCount(0);
@@ -336,7 +338,7 @@ test('the class teacher approves a request; the class appears in My classes', as
 	await signIn(page, teacher);
 	await openRequests(page);
 
-	const row = joinSection(page).locator('tr', { hasText: studentName });
+	const row = joinSection(page).getByTestId('request-row').filter({ hasText: studentName });
 	await expect(row).toContainText(`Asks to join ${targetName}`);
 	await expect(row).toContainText(`Current classes: ${homeName}`);
 	await expect(loadErrorToast(page)).toHaveCount(0);

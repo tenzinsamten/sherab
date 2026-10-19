@@ -50,6 +50,18 @@
 @source '../components/TextWithLinks.svelte';
 @source '../components/RepeatIcon.svelte';
 @source '../components/SyllabusFiles.svelte';
+/* Story 5: the shared pages (requests, account, leaderboard, help, a team)
+   and the shared components they use. */
+@source '../../routes/requests/*.svelte';
+@source '../../routes/account/*.svelte';
+@source '../../routes/leaderboard/*.svelte';
+@source '../../routes/help/*.svelte';
+@source '../../routes/teams/**/*.svelte';
+@source '../components/PasswordInput.svelte';
+@source '../components/CredentialFields.svelte';
+@source '../components/HelpGuide.svelte';
+@source '../components/HelpFaq.svelte';
+@source '../components/ConfirmDialog.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

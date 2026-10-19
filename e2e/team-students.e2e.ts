@@ -151,10 +151,16 @@ test.afterAll(async () => {
 
 const teamLink = (page: Page, team: string) =>
 	page.getByRole('link', { name: `Students of team ${team}` });
-const studentItems = (page: Page) => page.locator('ul.students li');
+const studentItems = (page: Page) => page.getByTestId('team-students').getByRole('listitem');
+const board = (page: Page) => page.getByTestId('leaderboard');
 
+/** iX is defined, and a migrated page's new-UI root is hydrated (mobile-first stories 3-5). */
 async function ready(page: Page) {
 	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.waitForFunction(() => {
+		const root = document.querySelector('main > [data-ui="new"]');
+		return !root || root.hasAttribute('data-hydrated');
+	});
 	await page.waitForLoadState('networkidle');
 }
 
@@ -182,9 +188,8 @@ test('an approved student opens any team from the leaderboard and sees names onl
 	await ready(page);
 
 	// The leaderboard itself still shows team totals only.
-	const board = page.locator('ol.leaderboard');
-	await expect(board).toContainText(TEAM_A);
-	for (const name of [...NAMES_A, NAME_B]) await expect(board).not.toContainText(name);
+	await expect(board(page)).toContainText(TEAM_A);
+	for (const name of [...NAMES_A, NAME_B]) await expect(board(page)).not.toContainText(name);
 
 	// Another team than their own.
 	await teamLink(page, TEAM_B).click();
@@ -199,9 +204,9 @@ test('an approved student opens any team from the leaderboard and sees names onl
 	await expectTeamA(page);
 
 	// Nothing else about a student: each row is the name and nothing more.
-	const card = page.locator('section.card', { has: studentItems(page) });
+	const card = page.getByRole('region', { name: 'Students (4)' });
 	await expect(card.getByRole('heading', { level: 2 })).toHaveText('Students (4)');
-	await expect(card.locator('a, button, ix-button, ix-pill')).toHaveCount(0);
+	await expect(card.locator('a, button')).toHaveCount(0);
 
 	// The breadcrumb leads back to the leaderboard.
 	const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
@@ -286,12 +291,12 @@ test("a parent opens their child's team from the child's page, and no other team
 	// On the leaderboard only the child's team is a link.
 	await page.goto('/leaderboard');
 	await ready(page);
-	await expect(page.locator('ol.leaderboard')).toContainText(TEAM_A);
+	await expect(board(page)).toContainText(TEAM_A);
 	await expect(teamLink(page, TEAM_B)).toHaveCount(1);
 	await expect(teamLink(page, TEAM_A)).toHaveCount(0);
 	await expect(teamLink(page, TEAM_EMPTY)).toHaveCount(0);
 	await expect(
-		page.locator('ol.leaderboard li', { hasText: TEAM_A }).getByRole('link')
+		board(page).getByTestId('leaderboard-row').filter({ hasText: TEAM_A }).getByRole('link')
 	).toHaveCount(0);
 
 	// Another team's address: not found, no names.

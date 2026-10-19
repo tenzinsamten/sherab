@@ -1,10 +1,23 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import Trophy from '@lucide/svelte/icons/trophy';
 	import { resolve } from '$app/paths';
+	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
+	/**
+	 * The team leaderboard: ranked rows, the top rank highlighted, two
+	 * columns from 48em. Mobile-first story 5.
+	 */
 	let { data }: PageProps = $props();
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	/**
 	 * Composes the full per-row accessible name (rank, team name, combined
@@ -28,84 +41,53 @@
 	<title>{m.leaderboard_heading()} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.leaderboard_section_label()}</p>
-			<h1 class="page-heading">{m.leaderboard_heading()}</h1>
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.leaderboard_section_label()}</p>
+			<h1 class={ui.heading}>{m.leaderboard_heading()}</h1>
 		</div>
 	</header>
 
 	{#if !data.loadError}
 		{#if data.teams.length > 0}
-			<ol class="leaderboard">
+			<ol class="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="leaderboard">
 				{#each data.teams as team, index (team.teamId)}
-					<li aria-label={rowAriaLabel(index + 1, team.teamName, team.totalStreak)}>
-						<ix-card variant="outline" passive>
-							<ix-card-content>
-								<div class="leaderboard-row">
-									<span class="leaderboard-rank" class:top={index === 0}>{num(index + 1)}</span>
-									<span class="leaderboard-team">
-										{#if team.canOpen}
-											<a
-												href={resolve('/teams/[teamId]', { teamId: team.teamId })}
-												aria-label={m.team_students_link_label({ team: team.teamName })}
-												>{team.teamName}</a
-											>
-										{:else}
-											{team.teamName}
-										{/if}
-									</span>
-									<span class="stat-tile-value"
-										>{num(m.leaderboard_streak_weeks({ count: team.totalStreak }))}</span
-									>
-								</div>
-							</ix-card-content>
-						</ix-card>
+					{@const top = index === 0}
+					<li
+						aria-label={rowAriaLabel(index + 1, team.teamName, team.totalStreak)}
+						data-testid="leaderboard-row"
+						data-top={top || undefined}
+						class="flex min-h-16 min-w-0 items-center gap-4 rounded-lg border bg-card p-4 text-card-foreground {top
+							? 'border-2 border-primary bg-accent'
+							: 'border-border'}"
+					>
+						<span
+							class="inline-flex size-10 flex-none items-center justify-center rounded-full font-bold tabular-nums {top
+								? 'bg-primary text-primary-foreground'
+								: 'bg-muted text-foreground'}">{num(index + 1)}</span
+						>
+						<span class="min-w-0 flex-1 font-bold wrap-anywhere">
+							{#if team.canOpen}
+								<a
+									href={resolve('/teams/[teamId]', { teamId: team.teamId })}
+									aria-label={m.team_students_link_label({ team: team.teamName })}
+									class="{ui.link} inline-flex min-h-11 items-center">{team.teamName}</a
+								>
+							{:else}
+								{team.teamName}
+							{/if}
+						</span>
+						<span class="flex-none text-xl font-bold tabular-nums"
+							>{num(m.leaderboard_streak_weeks({ count: team.totalStreak }))}</span
+						>
 					</li>
 				{/each}
 			</ol>
 		{:else}
-			<ix-empty-state header={m.leaderboard_empty()} icon="trophy"></ix-empty-state>
+			<section class={ui.card}>
+				<EmptyState header={m.leaderboard_empty()} icon={Trophy} />
+			</section>
 		{/if}
 	{/if}
 </div>
-
-<style>
-	.leaderboard {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.leaderboard-row {
-		display: flex;
-		align-items: center;
-		gap: var(--space-4);
-	}
-	.leaderboard-rank {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 50%;
-		background: var(--theme-color-component-1);
-		font-weight: var(--theme-font-weight-bold);
-	}
-	.leaderboard-rank.top {
-		background: var(--theme-color-primary);
-		color: var(--theme-color-primary--contrast);
-	}
-	.leaderboard-team {
-		flex: 1;
-		min-width: 0;
-		overflow-wrap: anywhere;
-		font-weight: var(--theme-font-weight-bold);
-	}
-	.leaderboard-row .stat-tile-value {
-		font-size: var(--theme-font-size-xl);
-	}
-</style>

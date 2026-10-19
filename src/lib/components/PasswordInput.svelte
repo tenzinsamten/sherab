@@ -1,5 +1,8 @@
 <script lang="ts">
+	import Eye from '@lucide/svelte/icons/eye';
+	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 
 	/**
@@ -8,71 +11,35 @@
 	 * autocomplete, required, ...), so labels, form actions and password
 	 * managers work as before (#66, B7b); only its `type` flips between
 	 * "password" and "text". Each field starts hidden and toggles on its own.
+	 * Its own `data-ui="new"` root (mobile-first story 5), so it also works
+	 * on the pages that are still iX (login, register, reset password).
 	 */
-	let props: Omit<HTMLInputAttributes, 'type'> = $props();
+	let { class: className, ...props }: Omit<HTMLInputAttributes, 'type' | 'files'> = $props();
 
 	let shown = $state(false);
 	let toggleLabel = $derived(shown ? m.password_hide() : m.password_show());
 </script>
 
-<div class="password-input">
-	<input {...props} type={shown ? 'text' : 'password'} />
+<div data-ui="new" class="password-input relative flex min-w-0">
+	<!-- `[&::-ms-reveal]:hidden`: Edge draws its own reveal button; ours replaces it. -->
+	<Input
+		{...props}
+		type={shown ? 'text' : 'password'}
+		class="flex-1 bg-background pe-12 [&::-ms-reveal]:hidden {className ?? ''}"
+	/>
 	<button
 		type="button"
-		class="password-toggle"
+		class="password-toggle absolute inset-y-0 end-0 inline-flex w-11 items-center justify-center rounded-e-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 		aria-label={toggleLabel}
 		title={toggleLabel}
 		aria-pressed={shown}
 		aria-controls={props.id}
 		onclick={() => (shown = !shown)}
-		><ix-icon name={shown ? 'eye-cancelled' : 'eye'} size="16" aria-hidden="true"></ix-icon></button
 	>
+		{#if shown}
+			<EyeOff class="size-5" aria-hidden="true" />
+		{:else}
+			<Eye class="size-5" aria-hidden="true" />
+		{/if}
+	</button>
 </div>
-
-<style>
-	.password-input {
-		position: relative;
-		display: flex;
-	}
-
-	/* Room for the button at the end of the field. The `:not()`s only lift
-	   this above the shared `.field input` padding in app.css. */
-	.password-input > input:not([type='checkbox']):not([type='radio']) {
-		flex: 1 1 auto;
-		min-width: 0;
-		padding-inline-end: 2.5rem;
-	}
-
-	/* Edge draws its own reveal button; ours replaces it. */
-	.password-input > input::-ms-reveal {
-		display: none;
-	}
-
-	/* Inside the field, at its end, as tall as the field. */
-	.password-toggle {
-		position: absolute;
-		inset-block: 1px;
-		inset-inline-end: 1px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.5rem;
-		padding: 0;
-		background: transparent;
-		color: var(--theme-color-soft-text);
-		border: 0;
-		border-radius: var(--theme-input--border-radius);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.password-toggle:hover {
-		color: var(--theme-color-std-text);
-		background: var(--theme-color-ghost--hover);
-	}
-
-	.password-toggle:focus-visible {
-		outline: 1px solid var(--theme-color-focus-bdr);
-		outline-offset: -1px;
-	}
-</style>

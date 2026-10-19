@@ -43,10 +43,8 @@
 
 	const tabClass =
 		'inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-primary';
-	// HelpGuide and HelpFaq style themselves with scoped CSS, which the
-	// scoped reset beats inside this root; these restore what it removes.
-	const contentClass =
-		'max-w-[70ch] [&_details]:border-b [&_details]:py-3 [&_details:last-child]:border-b-0 [&_details:last-child]:pb-0 [&_details_p]:mt-2 [&_h3]:mb-1 [&_h3]:text-base [&_h3]:font-bold [&_img]:mt-3 [&_img]:rounded-md [&_img]:border';
+	// HelpGuide and HelpFaq carry their own styles (mobile-first story 5).
+	const contentClass = 'max-w-[70ch]';
 </script>
 
 <Sheet.Root bind:open onOpenChangeComplete={(isOpen) => !isOpen && onClosed?.()}>
