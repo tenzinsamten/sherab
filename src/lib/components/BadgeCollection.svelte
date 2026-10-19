@@ -27,7 +27,7 @@
 	 * with what unlocks them and, for the next one, the progress toward it.
 	 * The state is always in text ("Earned on …" / "Locked"), not colour alone.
 	 * Its own `data-ui="new"` root (mobile-first story 3), so it also works on
-	 * pages that are still iX.
+	 * pages that are still iX; the clay celebration styling since story 4.
 	 */
 	let {
 		sections,
@@ -71,7 +71,7 @@
 	{:else}
 		{#each sections as section (section.subject)}
 			<section
-				class={ui.card}
+				class={ui.clay}
 				aria-labelledby="badge-subject-{section.subject}"
 				data-subject={section.subject}
 			>
@@ -91,7 +91,7 @@
 							{#if badge.earnedAt}
 								{@const earnedAt = badge.earnedAt}
 								<li
-									class="flex min-w-0 flex-col items-center gap-1 text-center"
+									class="flex min-w-0 flex-col items-center gap-1 rounded-clay border-3 border-clay bg-card p-2 text-center shadow-clay"
 									data-badge={key}
 									data-state="earned"
 								>
@@ -127,7 +127,7 @@
 							{:else}
 								{@const progress = progressFor(track, badge.milestone)}
 								<li
-									class="flex min-w-0 flex-col items-center gap-1 text-center"
+									class="flex min-w-0 flex-col items-center gap-1 rounded-clay border-3 border-dashed border-clay p-2 text-center"
 									data-badge={key}
 									data-state="locked"
 								>

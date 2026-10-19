@@ -62,7 +62,7 @@ test('student: a syllabus with no sections shows the "no syllabus yet" text', as
 	await signIn(page, fx.student);
 	await open(page, `/student/classes/${fx.classA.id}`);
 	await expect(page.getByText("There's no syllabus for this class yet.")).toBeVisible();
-	await expect(page.locator('.syllabus-section')).toHaveCount(0);
+	await expect(page.getByTestId('syllabus-section')).toHaveCount(0);
 });
 
 test('teacher: adds two sections with links, an empty title is refused, and reorders them', async ({
@@ -179,7 +179,7 @@ test('student: sections in order with text and links; an English section keeps i
 }) => {
 	await signIn(page, fx.student);
 	await open(page, `/student/classes/${fx.classA.id}`);
-	const sections = page.locator('.syllabus-section');
+	const sections = page.getByTestId('syllabus-section');
 	await expect(sections.locator('h3')).toHaveText(['Song 2', 'Song 1']);
 	await expect(sections.nth(0).getByRole('link')).toHaveAttribute('href', 'https://two.example');
 	await expect(sections.nth(1).locator('.rich-text')).toHaveText('The first song');
@@ -191,13 +191,16 @@ test('student: sections in order with text and links; an English section keeps i
 	// A /<locale>/... address sets the language cookie and redirects (#79).
 	await open(page, `/bo/student/classes/${fx.classA.id}`);
 	await expect(page.locator('html')).toHaveAttribute('lang', 'bo');
-	const english = page.locator('.syllabus-section').nth(1);
+	const english = page.getByTestId('syllabus-section').nth(1);
 	await expect(english.locator('.rich-text')).toHaveAttribute('lang', 'en');
 	await expect(english.locator('.rich-text')).not.toHaveCSS('font-family', /Atisha/);
 	await expect(english.locator('h3')).toHaveAttribute('lang', 'en');
 	await expect(english.locator('h3')).not.toHaveCSS('font-family', /Atisha/);
 	// The interface around it is in the Tibetan font.
-	await expect(page.locator('h1.page-heading')).toHaveCSS('font-family', /Atisha/);
+	await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveCSS(
+		'font-family',
+		/Atisha/
+	);
 });
 
 test('teacher: deleting a section asks first and leaves the others in order', async ({ page }) => {

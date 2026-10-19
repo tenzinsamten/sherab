@@ -355,14 +355,15 @@ test('student: sees the files with name and size, opens one as a PDF and downloa
 }) => {
 	await signIn(page, fx.student);
 	await open(page, `/student/classes/${fx.classA.id}`);
-	const section = page.locator('.syllabus-section').filter({ hasText: 'Song 1' });
-	await expect(section.locator('.file-name')).toHaveText(['Lyrics v2.pdf', 'གཞས་ཚིག.pdf']);
-	await expect(section.locator('.file-size')).toHaveText(['4 KB', '2 KB']);
+	const section = page.getByTestId('syllabus-section').filter({ hasText: 'Song 1' });
+	const fileList = section.getByRole('list', { name: 'Files' });
+	await expect(fileList.getByTestId('file-name')).toHaveText(['Lyrics v2.pdf', 'གཞས་ཚིག.pdf']);
+	await expect(fileList.getByTestId('file-size')).toHaveText(['4 KB', '2 KB']);
 	await expect(section.locator('input[type="file"]')).toHaveCount(0);
 	await expect(section.locator('form')).toHaveCount(0);
 
 	const stored = await rows();
-	const link = section.locator('.file-name').nth(1);
+	const link = fileList.getByRole('link', { name: 'གཞས་ཚིག.pdf', exact: true });
 	await expect(link).toHaveAttribute('href', `/files/syllabus/${stored[1].id}`);
 	await expect(link).toHaveAttribute('target', '_blank');
 	const shown = await fetchFile(page, `/files/syllabus/${stored[1].id}`);

@@ -18,6 +18,16 @@ export const ui = {
 	/** A section card (iX's `.card`). */
 	card: 'min-w-0 rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6',
 	cardTitle: 'mb-3 text-lg leading-snug font-bold',
+	/**
+	 * A celebration surface (story 4: progress tiles, badges, the New badge
+	 * dialog): component-specs.md's full clay treatment, kid-facing only.
+	 */
+	clay: 'min-w-0 rounded-clay border-3 border-clay bg-card p-4 text-card-foreground shadow-clay md:p-6',
+	/** A To do / Done filter link (story 4): ≥44px, the current one filled. */
+	filter:
+		'inline-flex min-h-11 items-center justify-center rounded-lg border px-4 text-base font-medium wrap-break-word focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+	filterCurrent: 'border-primary bg-primary text-primary-foreground',
+	filterOther: 'border-border bg-background hover:bg-muted',
 	/** Small uppercase label (iX's `.section-label`). */
 	label: 'text-xs font-bold tracking-wide text-muted-foreground uppercase',
 	/** A big number (iX's `.stat-tile-value`). */

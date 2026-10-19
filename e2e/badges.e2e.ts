@@ -193,9 +193,14 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
+/** The student page's new-UI root is hydrated (mobile-first story 4). */
+async function ready(page: Page) {
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+}
+
 async function openDashboard(page: Page) {
 	await page.goto('/student');
-	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await ready(page);
 	await page.waitForLoadState('networkidle');
 }
 
@@ -216,11 +221,12 @@ async function seenState(): Promise<Record<string, boolean>> {
 const newBadgeDialog = (page: Page) => page.getByRole('dialog', { name: /^New badges?!$/ });
 
 /**
- * Before asserting that no dialog opened: iX is defined, the network is
- * quiet, and a short pause gives a dialog that would open time to do so.
+ * Before asserting that no dialog opened: the page is hydrated (its
+ * breadcrumb or new-UI root says so), the network is quiet, and a short
+ * pause gives a dialog that would open time to do so.
  */
 async function settle(page: Page) {
-	await page.evaluate(() => customElements.whenDefined('ix-modal'));
+	await page.locator('[data-ui="new"][data-hydrated]').first().waitFor();
 	await page.waitForLoadState('networkidle');
 	await page.waitForTimeout(750);
 }
@@ -249,7 +255,7 @@ test('new badges are celebrated once: keyboard, Escape marks them seen, on any d
 	browser
 }) => {
 	await signIn(page, student);
-	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await ready(page);
 	const dialog = page.getByRole('dialog', { name: 'New badges!' });
 	await expect(dialog).toBeVisible();
 
@@ -282,7 +288,7 @@ test('new badges are celebrated once: keyboard, Escape marks them seen, on any d
 
 	// A reload shows no dialog.
 	await page.reload();
-	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await ready(page);
 	await page.waitForLoadState('networkidle');
 	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
 	await expect(newBadgeDialog(page)).toHaveCount(0);
@@ -292,7 +298,7 @@ test('new badges are celebrated once: keyboard, Escape marks them seen, on any d
 	try {
 		const otherPage = await other.newPage();
 		await signIn(otherPage, student);
-		await otherPage.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+		await ready(otherPage);
 		await otherPage.waitForLoadState('networkidle');
 		await expect(otherPage.locator('li[data-state="earned"]')).toHaveCount(2);
 		await expect(newBadgeDialog(otherPage)).toHaveCount(0);
@@ -339,7 +345,7 @@ test('when marking fails the dialog still closes and shows again next visit', as
 	await signIn(page, student);
 	const dialog = newBadgeDialog(page);
 	await expect(dialog).toBeVisible();
-	await page.locator('[data-testid="new-badge-dialog"] ix-button').click();
+	await dialog.getByRole('button', { name: 'Close' }).click();
 	await expect(dialog).toBeHidden();
 	expect(await seenState()).toEqual({ 'language-homework-1': false, 'dance-homework-1': true });
 
@@ -437,7 +443,7 @@ async function expectBadgePage(page: Page) {
 	// Earned: dated, and a tap opens the detail.
 	const earned = page.locator('li[data-badge="dance-homework-1"]');
 	await expect(earned).toContainText(/Earned on /);
-	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
+	await page.locator('[data-testid="page-breadcrumb"][data-hydrated]').waitFor();
 	const opener = earned.getByRole('button', { name: 'Dance & song Homework badge 1' });
 	await opener.click();
 	// Titled with the subject (as the iX header was); the reward is in the body.
@@ -567,10 +573,10 @@ test('a badge dismissed in this session stays gone when the layout reloads its d
 		link.click();
 	}, `/student/homework/${instance}`);
 	await expect(page).toHaveURL(new RegExp(`/student/homework/${instance}$`));
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await ready(page);
 	await page.getByRole('button', { name: 'Mark done' }).click();
 	await page
-		.locator('ix-modal:not([data-testid])')
+		.getByRole('alertdialog', { name: 'Are you sure?' })
 		.getByRole('button', { name: 'Mark done' })
 		.click();
 	await expect(page.locator('ix-toast').getByText('Marked done.')).toBeVisible();

@@ -389,7 +389,7 @@ test('former class: homework from a class the student left still shows its trail
 	await signIn(page, student);
 	await open(page, `/student/homework/${formerInstanceId}`);
 
-	await expect(page.locator('.page-kicker')).toHaveText('Former class');
+	await expect(page.getByTestId('homework-class')).toHaveText('Former class');
 	await expect(crumbItems(page)).toHaveCount(2);
 	await expect(crumbs(page).getByRole('link', { name: 'My Homework' })).toBeVisible();
 	await expect(currentCrumb(page)).toContainText(formerHomeworkTitle);

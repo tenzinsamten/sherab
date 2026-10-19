@@ -66,12 +66,14 @@
 	const badgeKey = (badge: Pick<BadgeView, 'subject' | 'badgeType' | 'milestone'>) =>
 		`${badge.subject}-${badge.badgeType}-${badge.milestone}`;
 
-	const tile = `${ui.card} flex h-full flex-col gap-2`;
+	// Celebration surfaces (story 4): the clay treatment; the streak is the
+	// hero tile on play yellow (component-specs.md, Streak card).
+	const tile = `${ui.clay} flex h-full flex-col gap-2`;
 	const icons = 'flex flex-wrap items-center gap-1';
 </script>
 
-<div data-ui="new" class="mb-4 grid gap-4 sm:grid-cols-2">
-	<div class={tile}>
+<div data-ui="new" class="grid gap-4 sm:grid-cols-2">
+	<div class="{tile} bg-play/20" data-testid="streak-tile">
 		<p class={ui.label}>{m.student_streak_label()}</p>
 		{#if loadError}
 			<!-- A failed fetch is unknown state, not a truthful zero: the
@@ -92,7 +94,7 @@
 
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
 	<a href={seeAllHref} class="{ui.tileLink} group" data-testid="badges-tile">
-		<div class="{tile} transition-colors group-hover:bg-muted/50">
+		<div class="{tile} transition-colors group-hover:bg-muted">
 			<p class={ui.label}>{m.student_badges_label()}</p>
 			{#if loadError}
 				<p class="{ui.stat} {ui.muted}">—</p>

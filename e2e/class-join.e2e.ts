@@ -182,24 +182,22 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
+/** The dashboard, once its new-UI root is hydrated (mobile-first story 4). */
 async function openDashboard(page: Page) {
 	await page.goto('/student');
-	await page.waitForFunction(
-		() =>
-			customElements.get('ix-input') !== undefined && customElements.get('ix-pill') !== undefined
-	);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
 function joinCard(page: Page) {
-	return page.locator('section.card', {
-		has: page.getByRole('heading', { name: 'Join another class' })
-	});
+	return page.getByTestId('join-card');
 }
 
+const codeField = (page: Page) => joinCard(page).getByLabel('Class code');
+
 async function sendCode(page: Page, code: string) {
-	await page.locator('#joinCode input').first().fill(code);
-	await expect(page.locator('#joinCode')).toHaveJSProperty('value', code.toUpperCase());
+	await codeField(page).fill(code);
+	await expect(codeField(page)).toHaveValue(code.toUpperCase());
 	await joinCard(page).getByRole('button', { name: 'Send request' }).click();
 }
 
@@ -211,16 +209,19 @@ test('a student sends a class code and sees the request as Pending', async ({ pa
 	await sendCode(page, 'zzzzzzzz');
 	const error = page.locator('#joinCode-error');
 	await expect(error).toHaveText("That code doesn't open a class you can join. Check the code.");
-	await expect(page.locator('#joinCode')).toHaveClass(/\bix-invalid\b/);
+	await expect(codeField(page)).toHaveAttribute('aria-invalid', 'true');
+	await expect(codeField(page)).toHaveAttribute('aria-describedby', 'joinCode-error');
+	await expect(codeField(page)).toBeFocused();
 
 	await sendCode(page, classes.target.code.toLowerCase());
 	await expect(
 		page.getByText(`Request sent for ${targetName}. You'll see here once it's decided.`)
 	).toBeVisible();
 	const row = joinCard(page).locator('li', { hasText: targetName });
-	await expect(row.locator('ix-pill')).toHaveText('Pending');
+	await expect(row.getByTestId('join-status')).toHaveText('Pending');
 	await expect(row.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
-	await expect(page.locator('#joinCode')).toHaveJSProperty('value', '');
+	await expect(codeField(page)).toHaveValue('');
+	await expect(codeField(page)).not.toHaveAttribute('aria-invalid');
 	await expect(error).toHaveCount(0);
 
 	// The same class again: already requested.
@@ -253,8 +254,8 @@ test('a rejected request shows as Rejected and can be dismissed', async ({ page 
 
 	const card = joinCard(page);
 	const rejected = card.locator('li', { hasText: rejectName });
-	await expect(rejected.locator('ix-pill')).toHaveText('Rejected');
-	await expect(card.locator('li', { hasText: targetName }).locator('ix-pill')).toHaveText(
+	await expect(rejected.getByTestId('join-status')).toHaveText('Rejected');
+	await expect(card.locator('li', { hasText: targetName }).getByTestId('join-status')).toHaveText(
 		'Pending'
 	);
 
@@ -370,7 +371,7 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 	await openDashboard(page);
 	await sendCode(page, classes.second.code);
 	const card = joinCard(page);
-	await expect(card.locator('li', { hasText: secondName }).locator('ix-pill')).toHaveText(
+	await expect(card.locator('li', { hasText: secondName }).getByTestId('join-status')).toHaveText(
 		'Pending'
 	);
 
@@ -392,7 +393,7 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 	}
 
 	await openDashboard(page);
-	await expect(card.locator('li', { hasText: secondName }).locator('ix-pill')).toHaveText(
+	await expect(card.locator('li', { hasText: secondName }).getByTestId('join-status')).toHaveText(
 		'Rejected'
 	);
 	const rows = check(

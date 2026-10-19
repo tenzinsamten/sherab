@@ -3,7 +3,9 @@
 	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
+	import Download from '@lucide/svelte/icons/download';
 	import { confirmWith } from '$lib/ix';
+	import { ui } from '$lib/ui/classes';
 	import type { createPending } from '$lib/pending.svelte';
 	import {
 		MAX_FILE_BYTES,
@@ -99,11 +101,50 @@
 	}
 </script>
 
-{#if pending || files.length > 0}
+{#if !pending}
+	<!-- Read-only (the student's class page): on the new component system
+	     with its own data-ui="new" root (mobile-first story 4). The edit
+	     controls below stay iX until the syllabus pages move (story 8). -->
+	{#if files.length > 0}
+		<div data-ui="new" class="mt-3 min-w-0">
+			<ul class="divide-y divide-border" aria-label={m.syllabus_file_heading()}>
+				{#each files as file (file.id)}
+					<li
+						class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1"
+						data-file-id={file.id}
+					>
+						<span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+							<a
+								class="{ui.link} inline-flex min-h-11 min-w-0 items-center wrap-anywhere"
+								href={resolve('/files/syllabus/[fileId]', { fileId: file.id })}
+								target="_blank"
+								rel="noopener noreferrer"
+								data-testid="file-name">{file.name}</a
+							>
+							<span class="text-sm whitespace-nowrap text-muted-foreground" data-testid="file-size"
+								>{formatFileSize(file.size)}</span
+							>
+						</span>
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() plus the endpoint's own ?download. -->
+						<a
+							class="{ui.link} inline-flex min-h-11 items-center gap-1.5"
+							href="{resolve('/files/syllabus/[fileId]', { fileId: file.id })}?download"
+							download={file.name}
+							data-sveltekit-reload
+							aria-label={m.syllabus_file_download_label({ name: file.name })}
+						>
+							<Download class="size-4 shrink-0" aria-hidden="true" />
+							{m.syllabus_file_download()}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+{:else}
+	<!-- With `pending` (teacher and admin): iX, as before. -->
 	<div class="files">
-		{#if pending}
-			<h3 class="files-heading">{m.syllabus_file_heading()}</h3>
-		{/if}
+		<h3 class="files-heading">{m.syllabus_file_heading()}</h3>
 		{#if files.length > 0}
 			<ul class="file-list" aria-label={m.syllabus_file_heading()}>
 				{#each files as file (file.id)}
@@ -127,44 +168,42 @@
 								aria-label={m.syllabus_file_download_label({ name: file.name })}
 								>{m.syllabus_file_download()}</a
 							>
-							{#if pending}
-								<form
-									method="POST"
-									action="?/replaceFile"
-									enctype="multipart/form-data"
-									use:enhance={submitFile(`replace:${file.id}`, file.id)}
+							<form
+								method="POST"
+								action="?/replaceFile"
+								enctype="multipart/form-data"
+								use:enhance={submitFile(`replace:${file.id}`, file.id)}
+							>
+								<input type="hidden" name="sectionId" value={sectionId} />
+								<input type="hidden" name="fileId" value={file.id} />
+								<input
+									type="file"
+									name="file"
+									accept="application/pdf,.pdf"
+									hidden
+									tabindex="-1"
+									aria-hidden="true"
+									onchange={chosen}
+								/>
+								<ix-button
+									variant="tertiary"
+									aria-label={m.syllabus_file_replace_label({ name: file.name })}
+									loading={pending.is(`replace:${file.id}`) || undefined}
+									disabled={pending.busy || undefined}
+									onclick={pick}>{m.syllabus_file_replace()}</ix-button
 								>
-									<input type="hidden" name="sectionId" value={sectionId} />
-									<input type="hidden" name="fileId" value={file.id} />
-									<input
-										type="file"
-										name="file"
-										accept="application/pdf,.pdf"
-										hidden
-										tabindex="-1"
-										aria-hidden="true"
-										onchange={chosen}
-									/>
-									<ix-button
-										variant="tertiary"
-										aria-label={m.syllabus_file_replace_label({ name: file.name })}
-										loading={pending.is(`replace:${file.id}`) || undefined}
-										disabled={pending.busy || undefined}
-										onclick={pick}>{m.syllabus_file_replace()}</ix-button
-									>
-								</form>
-								<form method="POST" action="?/deleteFile" use:enhance={submitRemove(file)}>
-									<input type="hidden" name="sectionId" value={sectionId} />
-									<input type="hidden" name="fileId" value={file.id} />
-									<ix-button
-										type="submit"
-										variant="tertiary"
-										aria-label={m.syllabus_file_delete_label({ name: file.name })}
-										loading={pending.is(`remove:${file.id}`) || undefined}
-										disabled={pending.busy || undefined}>{m.syllabus_file_delete()}</ix-button
-									>
-								</form>
-							{/if}
+							</form>
+							<form method="POST" action="?/deleteFile" use:enhance={submitRemove(file)}>
+								<input type="hidden" name="sectionId" value={sectionId} />
+								<input type="hidden" name="fileId" value={file.id} />
+								<ix-button
+									type="submit"
+									variant="tertiary"
+									aria-label={m.syllabus_file_delete_label({ name: file.name })}
+									loading={pending.is(`remove:${file.id}`) || undefined}
+									disabled={pending.busy || undefined}>{m.syllabus_file_delete()}</ix-button
+								>
+							</form>
 						</span>
 						{#if shown && shown.fileId === file.id}
 							<p class="field-error file-error" role="alert">{shown.message}</p>
@@ -174,45 +213,41 @@
 			</ul>
 		{/if}
 
-		{#if pending}
-			{#if files.length < MAX_FILES_PER_SECTION}
-				<form
-					method="POST"
-					action="?/uploadFile"
-					enctype="multipart/form-data"
-					class="upload"
-					use:enhance={submitFile(`upload:${sectionId}`, null)}
+		{#if files.length < MAX_FILES_PER_SECTION}
+			<form
+				method="POST"
+				action="?/uploadFile"
+				enctype="multipart/form-data"
+				class="upload"
+				use:enhance={submitFile(`upload:${sectionId}`, null)}
+			>
+				<input type="hidden" name="sectionId" value={sectionId} />
+				<div class="field upload-field">
+					<label for="section-file-{sectionId}">{m.syllabus_file_upload_label()}</label>
+					<input
+						id="section-file-{sectionId}"
+						type="file"
+						name="file"
+						accept="application/pdf,.pdf"
+						aria-describedby="section-file-hint-{sectionId}{uploadError ? ` ${uploadErrorId}` : ''}"
+						aria-invalid={uploadError ? 'true' : undefined}
+					/>
+					<p id="section-file-hint-{sectionId}" class="muted upload-hint">
+						{m.syllabus_file_upload_hint({ size: maxFileSizeText(), count: maxFilesText() })}
+					</p>
+					{#if uploadError}
+						<p id={uploadErrorId} class="field-error" role="alert">{uploadError}</p>
+					{/if}
+				</div>
+				<ix-button
+					type="submit"
+					variant="secondary"
+					loading={pending.is(`upload:${sectionId}`) || undefined}
+					disabled={pending.busy || undefined}>{m.syllabus_file_upload_submit()}</ix-button
 				>
-					<input type="hidden" name="sectionId" value={sectionId} />
-					<div class="field upload-field">
-						<label for="section-file-{sectionId}">{m.syllabus_file_upload_label()}</label>
-						<input
-							id="section-file-{sectionId}"
-							type="file"
-							name="file"
-							accept="application/pdf,.pdf"
-							aria-describedby="section-file-hint-{sectionId}{uploadError
-								? ` ${uploadErrorId}`
-								: ''}"
-							aria-invalid={uploadError ? 'true' : undefined}
-						/>
-						<p id="section-file-hint-{sectionId}" class="muted upload-hint">
-							{m.syllabus_file_upload_hint({ size: maxFileSizeText(), count: maxFilesText() })}
-						</p>
-						{#if uploadError}
-							<p id={uploadErrorId} class="field-error" role="alert">{uploadError}</p>
-						{/if}
-					</div>
-					<ix-button
-						type="submit"
-						variant="secondary"
-						loading={pending.is(`upload:${sectionId}`) || undefined}
-						disabled={pending.busy || undefined}>{m.syllabus_file_upload_submit()}</ix-button
-					>
-				</form>
-			{:else}
-				<p class="muted upload-hint">{m.syllabus_file_limit_reached({ count: maxFilesText() })}</p>
-			{/if}
+			</form>
+		{:else}
+			<p class="muted upload-hint">{m.syllabus_file_limit_reached({ count: maxFilesText() })}</p>
 		{/if}
 	</div>
 {/if}

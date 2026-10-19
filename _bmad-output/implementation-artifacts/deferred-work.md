@@ -379,3 +379,12 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/3-parent-pages-pilot.md`
   summary: No test covers where focus goes for a leave-range `answer` error (`errorFieldId('answer')` → `range-answer-<value>`) or a no-field error (fallback `range-preview`) on `/parent/children/[id]`.
   evidence: Verified gap: no e2e posts an invalid answer or triggers `rangeField: null` (`+page.server.ts:538, 614, 645`). Reaching it needs a forged radio value; add it next to the existing forged-class case in `leave-range.e2e.ts`.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/4-student-pages.md`
+  summary: The student homework detail page ignores `data.loadError`, so a failed status-history read shows "Not done yet" and offers Mark done for homework that may already be done.
+  evidence: `+page.server.ts:70` sets `loadError` from `historyError`; neither the old iX page nor the new one reads it (pre-existing).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/4-student-pages.md`
+  summary: Without JavaScript, the sticky bottom tab bar covers the last control on a page (e.g. the dashboard's join Send button).
+  evidence: The shell measures `--bottom-nav-height` with JS only (story 2); `student-mobile.e2e.ts` no-JS join test submits with Enter to work around it.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/4-student-pages.md`
+  summary: No test checks that the New badge dialog returns focus to a mid-session opener (or leaves focus alone when leaving via the see-all link).
+  evidence: All dialog tests open it right after sign-in/reload (focus on body); needs a fixture that earns a badge mid-session.

@@ -208,10 +208,15 @@ describe('RichText', () => {
 	 * `white-space: pre-wrap`, so any the template added would be visible.
 	 */
 	function html(content: RichTextDoc, lang: 'bo' | 'en' | 'de' = 'en'): string {
-		return render(RichText, { props: { content, lang } })
-			.body.replace(/<!--[\s\S]*?-->/g, '')
-			.replace(/ class="[^"]*svelte-[^"]*"/g, '')
-			.trim();
+		return (
+			render(RichText, { props: { content, lang } })
+				.body.replace(/<!--[\s\S]*?-->/g, '')
+				// Styling is not under test: utility classes (mobile-first story 4)
+				// and the new-UI root marker are left out.
+				.replace(/ class="[^"]*"/g, '')
+				.replace(/ data-ui="new"/g, '')
+				.trim()
+		);
 	}
 
 	it('draws the document in its language, with no whitespace added inside a line', () => {

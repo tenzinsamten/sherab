@@ -1217,7 +1217,7 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 		await expect(content.locator('p').nth(1)).toHaveText(long);
 		await expect(content.locator('ul > li')).toHaveText(['དང་པོ།', 'གཉིས་པ།']);
 		// The page around it keeps the interface's font.
-		await expect(studentPage.locator('.page-subtitle')).not.toHaveCSS('font-family', /Atisha/);
+		await expect(studentPage.getByTestId('homework-meta')).not.toHaveCSS('font-family', /Atisha/);
 		// ...but Tibetan characters anywhere still get Atisha, 1.36x (#78, #85): the
 		// face is also registered under iX's family name.
 		const faces = await studentPage.evaluate(async () => {

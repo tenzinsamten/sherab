@@ -12,12 +12,17 @@
 </script>
 
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
+	import Trophy from '@lucide/svelte/icons/trophy';
 	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { badgeRewardText } from '$lib/badge-subject';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 
 	/**
 	 * The one-time "New badge!" celebration (badge detail CAP-9). Mounted in
@@ -28,24 +33,24 @@
 	 * Escape, or the link to the badge page) marks them seen on the account;
 	 * showing it does not. If marking fails the dialog still closes, and the
 	 * badges show again on the next visit.
+	 *
+	 * Mobile-first story 4: a dialog of the new component system (portalled
+	 * to the shell's `data-ui="new"` root) with the clay celebration styling.
+	 * As it opens, each badge pops in over a light pink burst, once; with
+	 * `prefers-reduced-motion: reduce` they show still (tailwind.css stops
+	 * every animation in the new system then).
 	 */
 	let { badges, userId }: { badges: readonly NewBadgeView[]; userId: string } = $props();
 
-	type ModalElement = HTMLElement & {
-		showModal(): Promise<void>;
-		closeModal(reason?: unknown): Promise<void>;
-		componentOnReady?: () => Promise<unknown>;
-	};
-
-	let modal = $state<HTMLElement>();
-	let closeButton = $state<HTMLElement>();
+	let isOpen = $state(false);
+	let closeButton = $state<HTMLElement | null>(null);
+	let content = $state<HTMLElement | null>(null);
 	// What the dialog shows while open; kept so a layout reload while it is
 	// open does not change it under the student.
 	let shown = $state<NewBadgeView[]>([]);
-	let isOpen = false;
-	// Set while Close or the link is closing it, so focus is not pulled back.
-	let closing = false;
 	let opener: HTMLElement | null = null;
+	// Set when the link closes it: the navigation decides where focus goes.
+	let leaving = false;
 
 	// The layout load does not run again on every navigation, so badges
 	// dismissed in this browser session are remembered here too. Plain
@@ -53,7 +58,7 @@
 	let dismissed: string[] = [];
 	let dismissedOwner = '';
 
-	function pending(): NewBadgeView[] {
+	function toShow(): NewBadgeView[] {
 		if (dismissedOwner !== userId) {
 			dismissedOwner = userId;
 			dismissed = [];
@@ -62,29 +67,21 @@
 	}
 
 	$effect(() => {
-		const toShow = pending();
-		if (toShow.length > 0 && !isOpen && modal) void open(toShow);
+		const next = toShow();
+		if (next.length > 0 && !untrack(() => isOpen)) open(next);
 	});
 
-	async function open(toShow: NewBadgeView[]) {
-		isOpen = true;
-		shown = toShow;
+	function open(next: NewBadgeView[]) {
+		shown = next;
 		opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-		await tick();
-		const el = modal as ModalElement | undefined;
-		if (!el) {
-			isOpen = false;
-			return;
-		}
-		await customElements.whenDefined('ix-modal');
-		await el.componentOnReady?.();
-		// The <dialog> lives in ix-modal's shadow DOM, where an aria-labelledby
-		// to the slotted header can't resolve: name it directly, before it opens.
-		el.shadowRoot
-			?.querySelector('dialog')
-			?.setAttribute('aria-label', m.badge_new_title({ count: toShow.length }));
-		await el.showModal();
-		focusInside();
+		leaving = false;
+		isOpen = true;
+	}
+
+	/** Focus starts on Close (not on the first focusable, the link). */
+	function onOpenAutoFocus(event: Event) {
+		event.preventDefault();
+		closeButton?.focus();
 	}
 
 	/**
@@ -93,11 +90,15 @@
 	 * to the page after the dialog opened.
 	 */
 	function focusInside() {
-		if (!isOpen || !modal || closing) return;
+		if (!isOpen || !content) return;
 		const active = document.activeElement;
-		if (active && active !== document.body && modal.contains(active)) return;
+		if (active && active !== document.body && content.contains(active)) return;
 		closeButton?.focus();
 	}
+
+	afterNavigate(() => {
+		void tick().then(focusInside);
+	});
 
 	/**
 	 * Where focus goes when there is no opener to return to (the dialog
@@ -114,10 +115,6 @@
 		if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
 		target.focus();
 	}
-
-	afterNavigate(() => {
-		void tick().then(focusInside);
-	});
 
 	/** Marks what was shown seen, once per dialog; a failure only logs. */
 	function markSeen() {
@@ -137,22 +134,29 @@
 			.catch((error: unknown) => console.warn('badges: marking seen failed', error));
 	}
 
+	/**
+	 * Close or Escape: every way out marks the badges seen. A tap outside
+	 * does nothing (as iX's modal), so a stray tap cannot dismiss it.
+	 */
+	function onOpenChange(next: boolean) {
+		if (!next) markSeen();
+	}
+
 	function close() {
-		closing = true;
-		void (modal as ModalElement | undefined)?.closeModal();
+		markSeen();
+		isOpen = false;
 	}
 
 	function onLink() {
-		markSeen();
+		leaving = true;
 		close();
 	}
 
-	function onClosed() {
-		markSeen();
-		isOpen = false;
-		closing = false;
+	function onCloseAutoFocus(event: Event) {
+		event.preventDefault();
 		const target = opener;
 		opener = null;
+		if (leaving) return;
 		void tick().then(() => {
 			if (target?.isConnected && target !== document.body) target.focus();
 			else focusPage();
@@ -160,75 +164,78 @@
 	}
 </script>
 
-<ix-modal
-	bind:this={modal}
-	size="480"
-	ondialogClose={onClosed}
-	ondialogDismiss={onClosed}
-	data-testid="new-badge-dialog"
->
-	<!-- svelte-ignore a11y_unknown_aria_attribute -->
-	<ix-modal-header aria-label-close-icon-button={m.badge_new_close()}>
-		{m.badge_new_title({ count: shown.length })}
-	</ix-modal-header>
-	<ix-modal-content>
-		<p class="new-badge-intro">{m.badge_new_intro()}</p>
-		<ul class="new-badges">
-			{#each shown as badge (badge.id)}
-				<li class="new-badge" data-testid="new-badge">
-					{#if badge.icon}
-						<img class="new-badge-icon" src={badge.icon} alt="" width="120" height="120" />
-					{:else}
-						<ix-pill variant="primary" icon="trophy">
-							{num(badge.milestone)}
-						</ix-pill>
-					{/if}
-					<p class="new-badge-reward">{badgeRewardText(badge)}</p>
+<Dialog.Root bind:open={isOpen} {onOpenChange}>
+	<Dialog.Content
+		bind:ref={content}
+		data-testid="new-badge-dialog"
+		showCloseButton={false}
+		class="flex max-h-[85dvh] flex-col gap-4 overflow-hidden rounded-clay border-3 border-clay p-5 shadow-clay ring-0 sm:max-w-md sm:p-6"
+		{onOpenAutoFocus}
+		{onCloseAutoFocus}
+		interactOutsideBehavior="ignore"
+	>
+		<div class="flex flex-col items-center gap-1 text-center">
+			<Dialog.Title class="text-2xl font-bold text-primary">
+				{m.badge_new_title({ count: shown.length })}
+			</Dialog.Title>
+			<Dialog.Description class="text-base">{m.badge_new_intro()}</Dialog.Description>
+		</div>
+		<ul class="-mx-2 flex min-h-0 flex-wrap justify-center gap-4 overflow-y-auto px-2 py-3">
+			{#each shown as badge, i (badge.id)}
+				{@const delay = `animation-delay: ${120 + Math.min(i, 5) * 140}ms`}
+				<!-- The delay is capped: with many badges the last ones are not hidden for long. -->
+				<li
+					class="flex max-w-40 min-w-0 flex-col items-center gap-2 text-center"
+					data-testid="new-badge"
+				>
+					<span class="relative grid size-32 place-items-center">
+						<!-- The flourish: a pink glow and ring burst behind the badge. -->
+						<span
+							class="pointer-events-none absolute inset-2 rounded-full bg-celebrate/25 motion-safe:animate-badge-burst motion-reduce:hidden"
+							style={delay}
+							aria-hidden="true"
+							data-flourish
+						></span>
+						<span
+							class="pointer-events-none absolute inset-0 rounded-full border-4 border-celebrate/50 motion-safe:animate-badge-burst motion-reduce:hidden"
+							style={delay}
+							aria-hidden="true"
+						></span>
+						<span class="relative motion-safe:animate-badge-pop" style={delay} data-badge-icon>
+							{#if badge.icon}
+								<img
+									src={badge.icon}
+									alt=""
+									width="120"
+									height="120"
+									class="size-30 object-contain"
+								/>
+							{:else}
+								<Badge class="px-3 py-1 text-base">
+									<Trophy aria-hidden="true" />
+									{num(badge.milestone)}
+								</Badge>
+							{/if}
+						</span>
+					</span>
+					<p class="font-semibold wrap-break-word">{badgeRewardText(badge)}</p>
 				</li>
 			{/each}
 		</ul>
-	</ix-modal-content>
-	<ix-modal-footer>
-		<a href={resolve('/student/badges')} onclick={onLink} data-testid="new-badge-see-all">
-			{m.badge_new_see_all()}
-		</a>
-		<ix-button bind:this={closeButton} variant="secondary" onclick={close}>
-			{m.badge_new_close()}
-		</ix-button>
-	</ix-modal-footer>
-</ix-modal>
-
-<style>
-	.new-badge-intro {
-		margin: 0 0 var(--space-2);
-		text-align: center;
-	}
-	.new-badges {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-3);
-	}
-	.new-badge {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-1);
-		max-width: 10rem;
-		text-align: center;
-	}
-	.new-badge p {
-		margin: 0;
-	}
-	.new-badge-icon {
-		width: 120px;
-		height: 120px;
-		object-fit: contain;
-	}
-	.new-badge-reward {
-		font-weight: 600;
-	}
-</style>
+		<div
+			class="flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between"
+		>
+			<a
+				href={resolve('/student/badges')}
+				onclick={onLink}
+				class="{ui.link} inline-flex min-h-11 items-center justify-center px-2 text-base"
+				data-testid="new-badge-see-all"
+			>
+				{m.badge_new_see_all()}
+			</a>
+			<Button bind:ref={closeButton} variant="outline" class={ui.touch} onclick={close}>
+				{m.badge_new_close()}
+			</Button>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

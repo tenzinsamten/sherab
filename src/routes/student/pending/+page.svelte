@@ -1,9 +1,28 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import Hourglass from '@lucide/svelte/icons/hourglass';
+	import Info from '@lucide/svelte/icons/info';
+	import LogOut from '@lucide/svelte/icons/log-out';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { resolve } from '$app/paths';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
+	/**
+	 * An unapproved or rejected student's only page, mobile-first story 4: a
+	 * status card with Check again (pending only) and Sign out. A failed
+	 * load claims no status.
+	 */
 	let { data }: PageProps = $props();
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	let heading = $derived(
 		data.loadError
@@ -18,58 +37,55 @@
 	<title>{heading} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<header class="page-header">
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<header class={ui.header}>
 		<div>
-			<h1 class="page-heading">{data.name || heading}</h1>
+			<h1 class={ui.heading}>{data.name || heading}</h1>
 		</div>
 		{#if data.state === 'pending' && !data.loadError}
-			<ix-pill variant="warning">{m.join_pending_status_badge()}</ix-pill>
+			<Badge variant="warning">{m.join_pending_status_badge()}</Badge>
 		{/if}
 	</header>
 
 	<section
-		class="card"
+		class="{ui.card} flex flex-col items-center gap-4"
 		data-testid="student-status"
 		data-state={data.loadError ? 'error' : data.state}
 	>
 		{#if data.loadError}
 			<!-- The profile could not be read: no status is claimed. -->
-			<ix-empty-state header={m.load_error_generic()} icon="info"></ix-empty-state>
+			<EmptyState header={m.load_error_generic()} icon={Info} />
 		{:else if data.state === 'rejected'}
-			<ix-empty-state
+			<EmptyState
 				header={m.student_rejected_heading()}
-				sub-header={m.student_rejected_body()}
-				icon="info"
-			></ix-empty-state>
+				subHeader={m.student_rejected_body()}
+				icon={Info}
+			/>
 		{:else}
-			<ix-empty-state
+			<EmptyState
 				header={m.student_pending_heading()}
-				sub-header={m.student_pending_body()}
-				icon="hourglass"
-			></ix-empty-state>
+				subHeader={m.student_pending_body()}
+				icon={Hourglass}
+			/>
 		{/if}
-		<div class="actions">
+		<div class="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center">
 			{#if data.state === 'pending' && !data.loadError}
 				<!-- A full page load, so the menu is there once the student is approved. -->
-				<a class="check-again" href={resolve('/student')} data-sveltekit-reload>
+				<Button
+					href={resolve('/student')}
+					data-sveltekit-reload
+					class="{ui.touch} w-full sm:w-auto"
+				>
+					<RefreshCw aria-hidden="true" />
 					{m.student_pending_check_again()}
-				</a>
+				</Button>
 			{/if}
 			<form method="POST" action={resolve('/logout')}>
-				<ix-button type="submit" variant="secondary" icon="log-out">{m.nav_sign_out()}</ix-button>
+				<Button type="submit" variant="outline" class="{ui.touch} w-full sm:w-auto">
+					<LogOut aria-hidden="true" />
+					{m.nav_sign_out()}
+				</Button>
 			</form>
 		</div>
 	</section>
 </div>
-
-<style>
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-4);
-		margin-top: var(--space-4);
-	}
-</style>

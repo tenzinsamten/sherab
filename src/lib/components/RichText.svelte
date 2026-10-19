@@ -6,39 +6,46 @@
 		RichTextInline,
 		RichTextMark
 	} from '$lib/rich-text';
+	import { ui } from '$lib/ui/classes';
 
 	/**
 	 * Homework content (#72-#74), drawn element by element from the stored
 	 * document: there is no `{@html}`, so only the elements below can appear.
 	 * `lang` is the language it was written in, which selects the font
-	 * whatever the interface language is (see `[lang]` in app.css).
+	 * whatever the interface language is (see `[lang]` in app.css and the
+	 * Tibetan rule in tailwind.css). Its own `data-ui="new"` root
+	 * (mobile-first story 4), so it also works on pages that are still iX;
+	 * `rich-text` stays as the hook tests find it by.
 	 */
 	let { content, lang }: { content: RichTextDoc; lang: ContentLanguage } = $props();
+
+	const heading = 'mt-4 mb-2 font-bold';
+	const list = 'mb-2 pl-6';
 </script>
 
-<div class="rich-text" {lang}>
+<div data-ui="new" class="rich-text min-w-0 wrap-anywhere [&>:first-child]:mt-0" {lang}>
 	{@render blocks(content.content)}
 </div>
 
 {#snippet blocks(nodes: RichTextBlock[])}
 	{#each nodes as node, i (i)}
 		{#if node.type === 'paragraph'}
-			<p>{@render inline(node.content)}</p>
+			<p class="mb-2 whitespace-pre-wrap [li>&]:mb-1">{@render inline(node.content)}</p>
 		{:else if node.type === 'heading'}
 			<!-- The page title is the h1; the editor's two sizes come below it. -->
 			{#if node.attrs.level === 2}
-				<h2>{@render inline(node.content)}</h2>
+				<h2 class="{heading} text-xl">{@render inline(node.content)}</h2>
 			{:else}
-				<h3>{@render inline(node.content)}</h3>
+				<h3 class="{heading} text-lg">{@render inline(node.content)}</h3>
 			{/if}
 		{:else if node.type === 'bulletList'}
-			<ul>
+			<ul class="{list} list-disc">
 				{#each node.content as item, j (j)}
 					<li>{@render blocks(item.content)}</li>
 				{/each}
 			</ul>
 		{:else}
-			<ol>
+			<ol class="{list} list-decimal">
 				{#each node.content as item, j (j)}
 					<li>{@render blocks(item.content)}</li>
 				{/each}
@@ -60,53 +67,16 @@
 {#snippet marked(text: string, marks: RichTextMark[])}
 	{@const mark = marks[0]}
 	{@const rest = marks.slice(1)}
-	{#if !mark}{text}{:else if mark.type === 'bold'}<strong>{@render marked(text, rest)}</strong
-		>{:else if mark.type === 'italic'}<em>{@render marked(text, rest)}</em
-		>{:else if mark.type === 'underline'}<u>{@render marked(text, rest)}</u
+	{#if !mark}{text}{:else if mark.type === 'bold'}<strong class="font-bold"
+			>{@render marked(text, rest)}</strong
+		>{:else if mark.type === 'italic'}<em class="italic">{@render marked(text, rest)}</em
+		>{:else if mark.type === 'underline'}<u class="underline">{@render marked(text, rest)}</u
 		>{:else if mark.type === 'link'}<a
 			href={mark.attrs.href}
 			target="_blank"
-			rel="noopener noreferrer">{@render marked(text, rest)}</a
+			rel="noopener noreferrer"
+			class={ui.link}>{@render marked(text, rest)}</a
 		>{/if}
 {/snippet}
 
 <!-- eslint-enable svelte/no-navigation-without-resolve -->
-
-<style>
-	.rich-text {
-		overflow-wrap: anywhere;
-	}
-
-	.rich-text p {
-		margin: 0 0 var(--space-2);
-		white-space: pre-wrap;
-	}
-
-	.rich-text h2,
-	.rich-text h3 {
-		margin: var(--space-4) 0 var(--space-2);
-		font-weight: var(--theme-font-weight-bold);
-	}
-
-	.rich-text h2 {
-		font-size: var(--theme-font-size-xl);
-	}
-
-	.rich-text h3 {
-		font-size: var(--theme-font-size-l);
-	}
-
-	.rich-text > :first-child {
-		margin-top: 0;
-	}
-
-	.rich-text ul,
-	.rich-text ol {
-		margin: 0 0 var(--space-2);
-		padding-left: var(--space-6);
-	}
-
-	.rich-text li > p {
-		margin-bottom: var(--space-1);
-	}
-</style>

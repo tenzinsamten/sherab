@@ -40,6 +40,16 @@
 @source '../components/BadgeCollection.svelte';
 @source '../components/BadgeDetailDialog.svelte';
 @source '../components/ChildPicker.svelte';
+/* Story 4: the student pages and the shared components they use. */
+@source '../../routes/student/**/*.svelte';
+@source '../components/StudentHomeworkRows.svelte';
+@source '../components/MarkDoneForm.svelte';
+@source '../components/NewBadgeDialog.svelte';
+@source '../components/CopyField.svelte';
+@source '../components/RichText.svelte';
+@source '../components/TextWithLinks.svelte';
+@source '../components/RepeatIcon.svelte';
+@source '../components/SyllabusFiles.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */
@@ -87,6 +97,13 @@
 	--sidebar-accent-foreground: #ffffff;
 	--sidebar-border: rgba(255, 255, 255, 0.12);
 	--sidebar-ring: #2563eb;
+
+	/* Celebration surfaces (story 4; component-specs.md "full celebration
+	   treatment", design-tokens.md Claymorphism core): progress tiles,
+	   badges and the New badge dialog. Kid-facing only. */
+	--clay: #e4ecfc;
+	--play: #f59e0b;
+	--celebrate: #ec4899;
 }
 
 @theme inline {
@@ -129,6 +146,59 @@
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
+	--color-clay: var(--clay);
+	--color-play: var(--play);
+	--color-celebrate: var(--celebrate);
+
+	--radius-clay: 20px;
+	--shadow-clay: 0 8px 16px rgba(37, 99, 235, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+}
+
+/* The New badge dialog's one-time flourish (story 4): each badge pops in
+   over a light pink burst. Used with `motion-safe:` only. */
+@theme {
+	--animate-badge-pop: badge-pop 560ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+	--animate-badge-burst: badge-burst 760ms ease-out both;
+
+	@keyframes badge-pop {
+		0% {
+			opacity: 0;
+			transform: scale(0.4) rotate(-8deg);
+		}
+		70% {
+			opacity: 1;
+			transform: scale(1.1) rotate(2deg);
+		}
+		100% {
+			opacity: 1;
+			transform: scale(1) rotate(0);
+		}
+	}
+	@keyframes badge-burst {
+		0% {
+			opacity: 0.85;
+			transform: scale(0.3);
+		}
+		100% {
+			opacity: 0;
+			transform: scale(1.5);
+		}
+	}
+}
+
+/* Reduced motion: nothing in the new system animates (dialogs and sheets
+   open still, the badge flourish is not played); a loading spinner keeps
+   turning so a pending press still shows. In the utilities layer and with
+   an id's weight, so it beats the (important) animation utilities. */
+@layer utilities {
+	@media (prefers-reduced-motion: reduce) {
+		[data-ui='new'] *:not(.animate-spin):not(#__),
+		[data-ui='new'] *:not(#__)::before,
+		[data-ui='new'] *:not(#__)::after {
+			animation: none !important;
+			transition: none !important;
+		}
+	}
 }
 
 /* Tibetan: Atisha wherever the language is `bo` -- the new root under a

@@ -343,8 +343,8 @@ test('student pages', async ({ page }) => {
 		await open(page, locale, '/student/homework');
 		await shot(page, locale, 'student-4');
 		await open(page, locale, '/student');
-		// Streak and badges: the second row of tiles on the Dashboard.
-		await shot(page, locale, 'student-5', '.tile-grid ~ .tile-grid');
+		// Streak and badges: the progress tiles on the Dashboard.
+		await shot(page, locale, 'student-5', '[data-ui="new"]:has(> [data-testid="streak-tile"])');
 		await open(page, locale, '/account');
 		await shot(page, locale, 'student-8');
 		await open(page, locale, '/leaderboard');

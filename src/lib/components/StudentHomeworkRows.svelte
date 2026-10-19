@@ -1,18 +1,22 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { isoDay } from '$lib/format';
-	import { confirmWith } from '$lib/ix';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import type { ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
+	import { ui } from '$lib/ui/classes';
+	import MarkDoneForm from './MarkDoneForm.svelte';
 	import RepeatIcon from './RepeatIcon.svelte';
 
 	/**
 	 * A student's homework rows (#43, #46): each opens the homework detail
 	 * page; open ones have a Mark done button posting to the page's
-	 * `?/markDone` action. Used on the dashboard, My homework and class pages.
+	 * `?/markDone` action (asking first, MarkDoneForm). Used on the
+	 * dashboard, My homework and class pages. Mobile-first story 4: stacked
+	 * on a phone (the button full width under its row), side by side from
+	 * 48em; its own `data-ui="new"` root.
 	 */
 	let {
 		items,
@@ -45,109 +49,71 @@
 		const href = resolve('/student/homework/[instanceId]', { instanceId });
 		return fromDone ? `${href}?from=done` : href;
 	}
+
+	const rowLinkId = (instanceId: string) => `homework-row-${instanceId}`;
+
+	/**
+	 * After Mark done: the row's link while the row is still listed; under
+	 * To do it leaves the list, so the page heading.
+	 */
+	function focusTarget(instanceId: string): HTMLElement | null {
+		const link = document.getElementById(rowLinkId(instanceId));
+		if (link) return link;
+		const heading = document.querySelector<HTMLElement>('main h1');
+		if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+		return heading;
+	}
 </script>
 
-<ul class="homework-list">
+<ul data-ui="new" class={ui.rows} data-testid="student-homework-list">
 	{#each items as item (item.instanceId)}
-		<li>
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- detailHref() builds on resolve() and only adds ?from=done. -->
-			<a class="homework-row" href={detailHref(item.instanceId)}>
-				<span class="homework-row-title">
-					<span lang={item.contentLanguage}>{item.title}</span>
+		<li
+			class="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between md:gap-4"
+			data-testid="homework-row"
+			data-instance={item.instanceId}
+		>
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- detailHref() builds on resolve() and only adds ?from=done. -->
+			<a
+				id={rowLinkId(item.instanceId)}
+				class="group flex min-w-0 flex-1 flex-col gap-1 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+				href={detailHref(item.instanceId)}
+			>
+				<span class="flex flex-wrap items-center gap-2 text-lg font-bold">
+					<span
+						lang={item.contentLanguage}
+						class="min-w-0 wrap-break-word group-hover:underline group-focus-visible:underline"
+						>{item.title}</span
+					>
 					{#if item.isRecurring}
-						<ix-pill variant="neutral" outline
-							><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
-						>
+						<Badge variant="outline"><RepeatIcon /> {m.homework_recurring_badge_label()}</Badge>
 					{/if}
 					{#if item.overdue}
-						<ix-pill variant="alarm">{m.student_homework_overdue_label()}</ix-pill>
+						<Badge variant="alarm">{m.student_homework_overdue_label()}</Badge>
 					{/if}
 				</span>
-				<span class="muted homework-row-meta">
+				<span class={ui.muted}>
 					{skillLabel(item.skillArea)} · {m.student_homework_due_label({
 						date: isoDay(item.dueDate)
 					})}
 				</span>
 			</a>
-			<div class="homework-row-side">
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			<div class="shrink-0" data-testid="homework-status">
 				{#if item.status === 'reviewed'}
-					<ix-pill variant="success">{m.student_homework_status_reviewed()}</ix-pill>
+					<Badge variant="success" class="text-sm">{m.student_homework_status_reviewed()}</Badge>
 				{:else if item.status === 'done'}
-					<ix-pill variant="info">{m.student_homework_status_done()}</ix-pill>
+					<Badge variant="info" class="text-sm">{m.student_homework_status_done()}</Badge>
 				{:else}
-					<form
-						method="POST"
-						action="?/markDone"
-						use:enhance={pending.submit(`done:${item.instanceId}`, {
-							confirm: confirmWith(
-								m.student_homework_mark_done_confirm({ title: item.title }),
-								m.student_homework_mark_done()
-							)
-						})}
-					>
-						<input type="hidden" name="instanceId" value={item.instanceId} />
-						<ix-button
-							type="submit"
-							variant="secondary"
-							loading={pending.is(`done:${item.instanceId}`) || undefined}
-							disabled={pending.busy || undefined}
-						>
-							{m.student_homework_mark_done()}
-						</ix-button>
-					</form>
+					<MarkDoneForm
+						instanceId={item.instanceId}
+						title={item.title}
+						{pending}
+						variant="outline"
+						class="w-full md:w-auto"
+						focusAfter={() => focusTarget(item.instanceId)}
+					/>
 				{/if}
 			</div>
 		</li>
 	{/each}
 </ul>
-
-<style>
-	.homework-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.homework-list li {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
-	}
-
-	.homework-list li + li {
-		border-top: 1px solid var(--theme-color-soft-bdr);
-	}
-
-	.homework-row {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-		padding: var(--space-3) 0;
-		color: inherit;
-		text-decoration: none;
-	}
-
-	.homework-row:hover .homework-row-title,
-	.homework-row:focus-visible .homework-row-title {
-		text-decoration: underline;
-	}
-
-	.homework-row-title {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		font-weight: 700;
-		font-size: var(--theme-font-size-l);
-	}
-
-	.homework-row-meta {
-		font-size: var(--theme-font-size-default);
-	}
-
-	.homework-row-side {
-		flex-shrink: 0;
-	}
-</style>

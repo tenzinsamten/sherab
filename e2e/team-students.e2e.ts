@@ -223,7 +223,10 @@ test("the student's team tile opens their team", async ({ page }) => {
 	await signIn(page, studentA);
 	await page.goto('/student');
 	await ready(page);
-	await page.locator('a.tile-link', { hasText: 'My team' }).click();
+	await page
+		.getByTestId('dashboard-tiles')
+		.getByRole('link', { name: /My team/ })
+		.click();
 	await expectTeamA(page);
 });
 

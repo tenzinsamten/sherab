@@ -1,15 +1,28 @@
 <script lang="ts">
-	import { num } from '$lib/format';
+	import { onMount } from 'svelte';
+	import ListTodo from '@lucide/svelte/icons/list-todo';
 	import { resolve } from '$app/paths';
-	import * as m from '$lib/paraglide/messages.js';
+	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
+	import { num } from '$lib/format';
 	import { showToast } from '$lib/ix';
+	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';
 
+	/**
+	 * My homework (#43), mobile-first story 4: the To do / Done filter links,
+	 * then a card per class with its stacked rows; Done has a pager.
+	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	type Filter = 'todo' | 'done';
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	$effect(() => {
 		if (form?.success) showToast('success', m.student_homework_mark_done_success());
@@ -36,52 +49,61 @@
 	<title>{m.student_homework_heading()} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<header class="page-header">
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<header class={ui.header}>
 		<div>
-			<p class="page-kicker">{m.student_section_label()}</p>
-			<h1 class="page-heading">{m.student_homework_heading()}</h1>
+			<p class={ui.kicker}>{m.student_section_label()}</p>
+			<h1 class={ui.heading}>{m.student_homework_heading()}</h1>
 		</div>
 	</header>
 
-	<nav class="actions filter-nav" aria-label={m.student_homework_heading()}>
+	<nav class="flex flex-wrap gap-2" aria-label={m.student_homework_heading()}>
 		{#each filters as f (f.value)}
-			<ix-button
-				variant={data.filter === f.value ? 'primary' : 'secondary'}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- pageHref() builds on resolve(). -->
+			<a
 				href={pageHref(f.value, 1)}
+				class="{ui.filter} {data.filter === f.value ? ui.filterCurrent : ui.filterOther}"
 				aria-current={data.filter === f.value ? 'page' : undefined}
 			>
 				{f.label}
-			</ix-button>
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 	</nav>
 
 	{#if data.groups.length === 0}
 		<!-- A failed load is unknown state, not "no classes" (#45); the layout
 		     also shows the error toast. -->
-		<ix-empty-state
-			header={data.loadError
-				? m.student_homework_load_failed()
-				: data.filter === 'todo'
-					? m.student_no_classes()
-					: m.student_done_empty()}
-			icon="tasks-open"
-		></ix-empty-state>
+		<section class={ui.card}>
+			<EmptyState
+				header={data.loadError
+					? m.student_homework_load_failed()
+					: data.filter === 'todo'
+						? m.student_no_classes()
+						: m.student_done_empty()}
+				icon={ListTodo}
+			/>
+		</section>
 	{/if}
 
 	{#each data.groups as group (group.classId)}
-		<section class="card class-group">
-			<div class="class-group-header">
-				<h2>{group.name}</h2>
+		<section class={ui.card} aria-labelledby="group-{group.classId}" data-testid="class-group">
+			<div class="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+				<h2 id="group-{group.classId}" class="text-lg leading-snug font-bold wrap-break-word">
+					{group.name}
+				</h2>
 				{#if enrolledIds.has(group.classId)}
-					<a href={resolve('/student/classes/[classId]', { classId: group.classId })}>
+					<a
+						href={resolve('/student/classes/[classId]', { classId: group.classId })}
+						class="{ui.link} inline-flex min-h-11 items-center"
+					>
 						{m.student_class_open_link()}
 					</a>
 				{/if}
 			</div>
 
 			{#if group.items.length === 0}
-				<p class="muted" style="margin:0;">{m.student_class_nothing_due()}</p>
+				<p class={ui.muted}>{m.student_class_nothing_due()}</p>
 			{:else}
 				<StudentHomeworkRows items={group.items} fromDone={data.filter === 'done'} />
 			{/if}
@@ -92,25 +114,3 @@
 		<Pager page={data.page} pageCount={data.pageCount} hrefFor={(n) => pageHref('done', n)} />
 	{/if}
 </div>
-
-<style>
-	.filter-nav {
-		margin-bottom: var(--space-4);
-	}
-
-	.class-group + .class-group {
-		margin-top: var(--space-4);
-	}
-
-	.class-group-header {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: var(--space-3);
-		margin-bottom: var(--space-2);
-	}
-
-	.class-group-header h2 {
-		margin: 0;
-	}
-</style>
