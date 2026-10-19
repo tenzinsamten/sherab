@@ -363,3 +363,7 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/1-foundation-tailwind-shadcn-theme-isolation.md`
   summary: The rules for new UI code (style with Tailwind utilities, since scoped Svelte `<style>` loses to the reset; add an `@source` line per migrated folder) live only in CSS comments; add them to the project's agent instructions (AGENTS.md / CLAUDE.md).
   evidence: Verified: the rule is in `reset.css` and `tailwind.css` headers only; an agent migrating a page would not read those before writing a `<style>` block. Agent-context edit, so deferred rather than patched.
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/2-new-app-shell.md`
+  summary: Replace iX toasts with svelte-sonner behind the unchanged `showToast(type, message)` signature (`src/lib/ix.ts:266`), top-center below 80em and top-right from 80em, and move the 53 `page.locator('ix-toast')` e2e checks in 11 files to a `toasts(page)` fixture helper.
+  evidence: Split from story 2 at checkpoint 1 (spec ~1,970 tokens); the shell works with iX toasts meanwhile. Belongs in spec-mobile-ux stories.yaml as its own story before story 3 (bmad-spec is the writer).
