@@ -12,6 +12,10 @@ import { service, signIn, type TestUser } from './fixtures';
  * shell around it (header, navigation) is not part of the proof and can be
  * replaced. Text that depends on the database or the run (counters, lists)
  * is masked. Baselines are platform-specific (darwin).
+ *
+ * Story 3 (parent pages): the parent dashboard is no longer an iX page, so
+ * its shots are gone; the parent pages have their own checks in
+ * parent-mobile.e2e.ts.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -24,10 +28,9 @@ const tag = crypto.randomUUID().slice(0, 8);
 const userIds: string[] = [];
 
 let teacher: TestUser;
-let parent: TestUser;
 let admin: TestUser;
 
-async function createUser(role: 'teacher' | 'parent' | 'admin'): Promise<TestUser> {
+async function createUser(role: 'teacher' | 'admin'): Promise<TestUser> {
 	const email = `e2e-ixvis-${role}-${tag}@example.test`;
 	const password = crypto.randomUUID();
 	const { data, error } = await service.auth.admin.createUser({
@@ -44,13 +47,7 @@ async function createUser(role: 'teacher' | 'parent' | 'admin'): Promise<TestUse
 
 test.beforeAll(async () => {
 	teacher = await createUser('teacher');
-	parent = await createUser('parent');
 	admin = await createUser('admin');
-	const { error } = await service
-		.from('parents')
-		.update({ status: 'approved' })
-		.eq('id', parent.id);
-	if (error) throw new Error(`approve parent: ${error.message}`);
 });
 
 test.afterAll(async () => {
@@ -143,12 +140,6 @@ for (const viewport of VIEWPORTS) {
 			await signIn(page, teacher);
 			await page.goto('/teacher');
 			await shoot(page, `teacher-dashboard-${viewport.name}`);
-		});
-
-		test(`parent dashboard (${viewport.name})`, async ({ page }) => {
-			await signIn(page, parent);
-			await page.goto('/parent');
-			await shoot(page, `parent-dashboard-${viewport.name}`);
 		});
 
 		test(`admin classes (${viewport.name})`, async ({ page }) => {

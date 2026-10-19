@@ -440,7 +440,10 @@ test('parent at phone width: every step of the Sessions tour and its text are on
 		expect(await toursSeen(parent.id)).toEqual(['parent-home', 'parent-child-sessions']);
 
 		// The Overview tab is the same route with its own tour: the tabs, naming Sessions.
-		await page.locator('nav.tabs').getByRole('link', { name: 'Overview' }).click();
+		await page
+			.getByRole('navigation', { name: 'Child sections' })
+			.getByRole('link', { name: 'Overview' })
+			.click();
 		await expect(popover(page)).toBeVisible();
 		await expect(highlighted(page)).toHaveAttribute('data-tour', 'child-tabs');
 		// Leaving the page mid-tour closes it; it stays seen.

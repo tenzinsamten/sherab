@@ -1,131 +1,105 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 
 	/**
-	 * iX breadcrumb above a nested page's header (#61). Every level above the
-	 * current page is a real link (iX renders an <a> in its shadow DOM, which
-	 * routeIxLinks() hands to the SvelteKit router); the last item is the
-	 * current page, which iX marks aria-current="page". On narrow screens the
-	 * earlier levels collapse into iX's "…" dropdown, whose items have no
-	 * href: picking one navigates through the itemClick event instead.
+	 * The breadcrumb above a nested page's header (#61), on the new component
+	 * system (mobile-first story 3); it carries its own `data-ui="new"` root,
+	 * so it works on pages that are still iX. Every level above the current
+	 * page is a real link; the last item is the current page
+	 * (aria-current="page"). On a phone (below 40rem) only the last two
+	 * levels show and the earlier ones move into a "…" menu; a level without
+	 * a link (the admin class name) is left out there, as it would lead
+	 * nowhere. Long labels end with an ellipsis instead of pushing the page
+	 * sideways; a link never gets narrower than 44px.
 	 */
 	type Crumb = { label: string; href?: string };
 	let { items }: { items: Crumb[] } = $props();
 
-	const NARROW = '(max-width: 640px)';
-	let narrow = $state(typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
-	$effect(() => {
-		const query = window.matchMedia(NARROW);
-		narrow = query.matches;
-		const onChange = (event: MediaQueryListEvent) => (narrow = event.matches);
-		query.addEventListener('change', onChange);
-		return () => query.removeEventListener('change', onChange);
+	const last = $derived(items.length - 1);
+
+	// The phone trail: link-less levels dropped (the current page stays).
+	const phone = $derived(
+		items
+			.map((item, index) => ({ item, index }))
+			.filter(({ item, index }) => item.href || index === last)
+	);
+	// Shown on a phone: the last two of those; the rest are in the "…" menu.
+	const phoneVisible = $derived(new Set(phone.slice(-2).map(({ index }) => index)));
+	const collapsed = $derived(phone.slice(0, -2));
+
+	// Vertical padding inside the clipped box keeps Tibetan letters' feet (#86).
+	// Set once the trail is interactive (tests wait for it before opening "…").
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
 	});
 
-	let visibleCount = $derived(narrow ? 2 : 9);
-
-	// A link-less level (the admin class name) would do nothing when picked
-	// from the "…" dropdown, so on narrow screens it is left out; the last
-	// item (the current page) always stays.
-	let shown = $derived(
-		narrow ? items.filter((item, i) => item.href || i === items.length - 1) : items
-	);
-
-	/**
-	 * iX renders a crumb with an href as <a role="button">, so screen readers
-	 * would announce the levels above as buttons. This gives the anchor back
-	 * its link role, and again whenever iX re-renders it.
-	 */
-	function linkRole(node: HTMLElement) {
-		let observer: MutationObserver | undefined;
-		let destroyed = false;
-		const fix = () => {
-			const anchor = node.shadowRoot?.querySelector('a[role="button"]');
-			if (anchor) anchor.removeAttribute('role');
-		};
-		(async () => {
-			await customElements.whenDefined('ix-breadcrumb-item');
-			await (
-				node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
-			).componentOnReady?.();
-			if (destroyed || !node.shadowRoot) return;
-			fix();
-			observer = new MutationObserver(fix);
-			observer.observe(node.shadowRoot, {
-				subtree: true,
-				childList: true,
-				attributes: true,
-				attributeFilter: ['role']
-			});
-		})().catch(() => undefined);
-		return () => {
-			destroyed = true;
-			observer?.disconnect();
-		};
-	}
-
-	function onItemClick(event: CustomEvent<{ breadcrumbKey?: string }>) {
-		// Visible items bubble their own itemClick up from <ix-breadcrumb-item>;
-		// their <a> already navigates. Only the breadcrumb's own event (a
-		// collapsed item picked from the dropdown) needs handling here.
-		if (event.target !== event.currentTarget) return;
-		const key = event.detail?.breadcrumbKey;
-		const target = items.find((item) => item.href && item.href === key);
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- crumb hrefs are built with resolve() by the pages.
-		if (target?.href) void goto(target.href);
-	}
+	const crumbText = 'block max-w-full truncate py-1';
+	const linkClass =
+		'inline-flex min-h-11 max-w-full min-w-11 items-center rounded-md px-1 text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring';
 </script>
 
-<!-- iX computes which items are hidden only when its children change, not
-     when visible-item-count does: remount it when the screen size flips. -->
-{#key visibleCount}
-	<!-- svelte-ignore a11y_unknown_aria_attribute (an iX prop, the "…" button's label) -->
-	<ix-breadcrumb
-		class="page-breadcrumb"
-		aria-label={m.breadcrumb_label()}
-		aria-label-previous-button={m.breadcrumb_show_previous()}
-		visible-item-count={visibleCount}
-		enable-top-layer
-		onitemClick={onItemClick}
-	>
-		<!-- Keyed by label too, so a changed label (the parent page's tab)
-		     replaces the element and iX re-reads its items; the index keeps two
-		     link-less items with the same label apart. -->
-		{#each shown as item, i (`${i}|${item.href ?? ''}|${item.label}`)}
-			<ix-breadcrumb-item
-				label={item.label}
-				href={item.href}
-				breadcrumb-key={item.href ?? `${i}|${item.label}`}
-				{@attach linkRole}
-			></ix-breadcrumb-item>
+<!-- eslint-disable svelte/no-navigation-without-resolve -- crumb hrefs are built with resolve() by the pages. -->
+<Breadcrumb.Root
+	data-ui="new"
+	data-testid="page-breadcrumb"
+	data-hydrated={hydrated || undefined}
+	aria-label={m.breadcrumb_label()}
+	class="mb-2 max-w-full min-w-0"
+>
+	<Breadcrumb.List class="flex-nowrap gap-0.5 text-sm text-muted-foreground">
+		{#if collapsed.length > 0}
+			<Breadcrumb.Item class="shrink-0 sm:hidden" data-crumb-menu>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class="inline-flex size-11 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+						aria-label={m.breadcrumb_show_previous()}
+						data-testid="breadcrumb-more"
+					>
+						<Ellipsis class="size-5" aria-hidden="true" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="start" class="w-auto max-w-[calc(100vw-2rem)] min-w-48">
+						{#each collapsed as { item, index } (index)}
+							<DropdownMenu.Item class="min-h-11 p-0">
+								{#snippet child({ props })}
+									<a {...props} href={item.href} class="{props.class} px-3 text-base">
+										<span class="truncate">{item.label}</span>
+									</a>
+								{/snippet}
+							</DropdownMenu.Item>
+						{/each}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</Breadcrumb.Item>
+			<Breadcrumb.Separator class="shrink-0 sm:hidden" />
+		{/if}
+		{#each items as item, index (`${index}|${item.href ?? ''}|${item.label}`)}
+			{@const hiddenOnPhone = !phoneVisible.has(index)}
+			<Breadcrumb.Item
+				class="{item.href && index !== last ? 'min-w-11' : 'min-w-0'} {index === last
+					? 'shrink'
+					: 'shrink-[2]'} {hiddenOnPhone ? 'hidden sm:inline-flex' : ''}"
+			>
+				{#if index === last}
+					<span aria-current="page" class="{crumbText} px-1 font-medium text-foreground">
+						{item.label}
+					</span>
+				{:else if item.href}
+					<Breadcrumb.Link href={item.href} class={linkClass}>
+						<span class={crumbText}>{item.label}</span>
+					</Breadcrumb.Link>
+				{:else}
+					<span class="{crumbText} px-1">{item.label}</span>
+				{/if}
+			</Breadcrumb.Item>
+			{#if index < last}
+				<Breadcrumb.Separator class="shrink-0 {hiddenOnPhone ? 'hidden sm:block' : ''}" />
+			{/if}
 		{/each}
-	</ix-breadcrumb>
-{/key}
-
-<style>
-	.page-breadcrumb {
-		max-width: 100%;
-		min-width: 0;
-		/* Lines the first label up with the heading (iX pads each crumb 0.5rem). */
-		margin: 0 0 var(--space-3) -0.5rem;
-	}
-
-	/* Long labels shrink with an ellipsis instead of pushing the page sideways
-	   (iX gives each item a fixed 5rem minimum and no shrinking). */
-	.page-breadcrumb ix-breadcrumb-item {
-		flex: 0 1 auto;
-		min-width: 2.5rem;
-		max-width: 100%;
-	}
-
-	/* iX clips each label to a single 1.43em line, which cuts the feet of
-	   Tibetan letters (drawn 1.36x, #85) the way it did on buttons (#78). A
-	   crumb can be Tibetan in any interface language (a class name, a homework
-	   title), so every crumb gets a taller box whose line fills it; it still
-	   fits inside iX's 2.5rem breadcrumb (#86). */
-	.page-breadcrumb ix-breadcrumb-item {
-		height: 2.25rem;
-		line-height: 2.25rem;
-	}
-</style>
+	</Breadcrumb.List>
+</Breadcrumb.Root>
+<!-- eslint-enable svelte/no-navigation-without-resolve -->

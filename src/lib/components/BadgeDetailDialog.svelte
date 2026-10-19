@@ -12,17 +12,23 @@
 </script>
 
 <script lang="ts">
-	import { tick } from 'svelte';
+	import Trophy from '@lucide/svelte/icons/trophy';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { badgeRewardText, badgeSubjectLabel } from '$lib/badge-subject';
 	import { formatDate, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 
-	type ModalElement = HTMLElement & {
-		showModal(): Promise<void>;
-		closeModal(reason?: unknown): Promise<void>;
-	};
-
-	let modal = $state<HTMLElement>();
+	/**
+	 * An earned badge's detail (badge detail CAP-5), on the new component
+	 * system (mobile-first story 3): a dialog portalled to the shell's
+	 * `data-ui="new"` root, titled with the badge's subject (as iX's header was). Escape, the
+	 * close button or the footer button close it; focus returns to the badge
+	 * that opened it.
+	 */
+	let isOpen = $state(false);
 	let badge = $state<BadgeView | null>(null);
 	// The track's next target from badge_progress (null: top reached;
 	// undefined: no progress row for the track, so no Next line).
@@ -33,7 +39,7 @@
 	 * Opens the detail for `shown`; `trackNext` is its track's next target
 	 * (null at the top, undefined when unknown). Focus returns to `from` on close.
 	 */
-	export async function open(
+	export function open(
 		shown: BadgeView,
 		trackNext: number | null | undefined,
 		from: HTMLElement | null
@@ -41,52 +47,44 @@
 		badge = shown;
 		next = trackNext;
 		opener = from;
-		await tick();
-		const el = modal as (ModalElement & { componentOnReady?: () => Promise<unknown> }) | undefined;
-		if (!el) return;
-		await customElements.whenDefined('ix-modal');
-		await el.componentOnReady?.();
-		// The <dialog> lives in ix-modal's shadow DOM, where an aria-labelledby
-		// to the slotted header can't resolve: name it directly, before it opens.
-		el.shadowRoot?.querySelector('dialog')?.setAttribute('aria-label', badgeRewardText(shown));
-		await el.showModal();
+		isOpen = true;
 	}
 
-	function close() {
-		void (modal as ModalElement | undefined)?.closeModal();
-	}
-
-	function onClosed() {
+	function returnFocus(event: Event) {
 		const target = opener;
 		opener = null;
-		void tick().then(() => {
-			if (target?.isConnected) target.focus();
-		});
+		if (target?.isConnected) {
+			event.preventDefault();
+			target.focus();
+		}
 	}
 </script>
 
-<ix-modal
-	bind:this={modal}
-	size="360"
-	ondialogClose={onClosed}
-	ondialogDismiss={onClosed}
-	data-testid="badge-detail"
->
-	<!-- svelte-ignore a11y_unknown_aria_attribute -->
-	<ix-modal-header aria-label-close-icon-button={m.badge_dialog_close()}>
-		{badge ? badgeSubjectLabel(badge.subject) : ''}
-	</ix-modal-header>
-	<ix-modal-content>
+<Dialog.Root bind:open={isOpen}>
+	<Dialog.Content
+		data-testid="badge-detail"
+		closeLabel={m.badge_dialog_close()}
+		class="max-h-[85dvh] overflow-y-auto p-6 sm:max-w-sm"
+		onCloseAutoFocus={returnFocus}
+	>
 		{#if badge}
-			<div class="badge-detail">
+			<div class="flex flex-col items-center gap-2 pt-4 text-center">
+				<Dialog.Title class="text-lg leading-snug font-semibold">
+					{badgeSubjectLabel(badge.subject)}
+				</Dialog.Title>
 				{#if badge.icon}
-					<img class="badge-detail-icon" src={badge.icon} alt="" width="160" height="160" />
+					<img src={badge.icon} alt="" width="160" height="160" class="size-40 object-contain" />
 				{:else}
-					<ix-pill variant="primary" icon="trophy">{num(badge.milestone)}</ix-pill>
+					<Badge>
+						<Trophy aria-hidden="true" />
+						{num(badge.milestone)}
+					</Badge>
 				{/if}
-				<p class="badge-detail-reward">{badgeRewardText(badge)}</p>
-				<p class="muted">{m.badge_detail_subject({ subject: badgeSubjectLabel(badge.subject) })}</p>
-				<p class="muted">
+				<p class="text-lg leading-snug font-semibold">{badgeRewardText(badge)}</p>
+				<Dialog.Description class={ui.muted}>
+					{m.badge_detail_subject({ subject: badgeSubjectLabel(badge.subject) })}
+				</Dialog.Description>
+				<p class={ui.muted}>
 					{m.badge_earned_on({
 						date: formatDate(badge.earnedAt, {
 							day: 'numeric',
@@ -102,31 +100,15 @@
 					</p>
 				{/if}
 			</div>
+			<div class="mt-2 flex justify-center">
+				<Button
+					variant="outline"
+					class="{ui.touch} w-full sm:w-auto"
+					onclick={() => (isOpen = false)}
+				>
+					{m.badge_dialog_close()}
+				</Button>
+			</div>
 		{/if}
-	</ix-modal-content>
-	<ix-modal-footer>
-		<ix-button variant="secondary" onclick={close}>{m.badge_dialog_close()}</ix-button>
-	</ix-modal-footer>
-</ix-modal>
-
-<style>
-	.badge-detail {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-1);
-		text-align: center;
-	}
-	.badge-detail p {
-		margin: 0;
-	}
-	.badge-detail-icon {
-		width: 160px;
-		height: 160px;
-		object-fit: contain;
-	}
-	.badge-detail-reward {
-		font-weight: 600;
-		font-size: 1.125rem;
-	}
-</style>
+	</Dialog.Content>
+</Dialog.Root>

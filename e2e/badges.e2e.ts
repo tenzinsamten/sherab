@@ -378,9 +378,9 @@ test('the tile shows earned badges and greyed next badges, with no inner control
 		'src',
 		'/badges/dance-homework-5.svg'
 	);
-	expect(await page.locator('.badge-next').evaluate((el) => getComputedStyle(el).filter)).toContain(
-		'grayscale'
-	);
+	expect(
+		await page.getByTestId('badge-next').evaluate((el) => getComputedStyle(el).filter)
+	).toContain('grayscale');
 
 	await expect(
 		page.getByRole('img', { name: 'Dance & song Homework badge 5 (Locked)' })
@@ -418,11 +418,11 @@ async function expectBadgePage(page: Page) {
 	await expect(next).toHaveAttribute('data-state', 'locked');
 	await expect(next).toContainText('Locked');
 	await expect(next).toContainText('Finish 5 Dance & song homework');
-	await expect(next.locator('.badge-progress')).toHaveText('1 / 5');
+	await expect(next.locator('[data-progress]')).toHaveText('1 / 5');
 	// Later ones: the requirement only.
 	const later = page.locator('li[data-badge="dance-homework-25"]');
 	await expect(later).toContainText('Finish 25 Dance & song homework');
-	await expect(later.locator('.badge-progress')).toHaveCount(0);
+	await expect(later.locator('[data-progress]')).toHaveCount(0);
 	await expect(page.locator('li[data-badge="dance-attendance-1"]')).toContainText(
 		'Attend 1 Dance & song class'
 	);
@@ -431,21 +431,25 @@ async function expectBadgePage(page: Page) {
 	await expect(lockedIcon).toHaveAttribute('src', '/badges/dance-homework-25.svg');
 	await expect(later.locator('button')).toHaveCount(0);
 	expect(
-		await later.locator('.badge-visual').evaluate((el) => getComputedStyle(el).filter)
+		await later.locator('[data-visual]').evaluate((el) => getComputedStyle(el).filter)
 	).toContain('grayscale');
 
 	// Earned: dated, and a tap opens the detail.
 	const earned = page.locator('li[data-badge="dance-homework-1"]');
 	await expect(earned).toContainText(/Earned on /);
 	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
-	await earned.getByRole('button', { name: 'Dance & song Homework badge 1' }).click();
-	const dialog = page.getByRole('dialog', { name: '1 Dance & song homework done' });
+	const opener = earned.getByRole('button', { name: 'Dance & song Homework badge 1' });
+	await opener.click();
+	// Titled with the subject (as the iX header was); the reward is in the body.
+	const dialog = page.getByRole('dialog', { name: 'Dance & song' });
+	await expect(dialog).toContainText('1 Dance & song homework done');
 	await expect(dialog).toBeVisible();
-	await expect(
-		page.locator('ix-modal[data-testid="badge-detail"]').getByText('Next: 5')
-	).toBeVisible();
+	await expect(dialog).toHaveAttribute('data-testid', 'badge-detail');
+	await expect(dialog.getByText('Next: 5')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeHidden();
+	// Focus goes back to the badge that opened the detail.
+	await expect(opener).toBeFocused();
 }
 
 test('the tile links to the badge page, which lists every badge earned and locked', async ({

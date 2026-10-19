@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+	import * as m from '$lib/paraglide/messages.js';
 	import { Dialog as SheetPrimitive } from 'bits-ui';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -17,7 +18,7 @@
 		class: className,
 		side = 'right',
 		showCloseButton = true,
-		closeLabel = 'Close',
+		closeLabel = m.common_close(),
 		portalProps,
 		children,
 		...restProps

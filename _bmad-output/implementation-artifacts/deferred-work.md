@@ -375,3 +375,7 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/3-parent-pages-pilot.md`
   summary: Regenerate all Help guide screenshots (`npm run help:screenshots`, `HELP_SCREENSHOTS=1`, images under `static/help`) once every role is migrated, in story 10.
   evidence: User decision at story 3 checkpoint 1: the Help guides keep showing the old iX pages until then; parent pages are the first to diverge.
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/3-parent-pages-pilot.md`
+  summary: No test covers where focus goes for a leave-range `answer` error (`errorFieldId('answer')` → `range-answer-<value>`) or a no-field error (fallback `range-preview`) on `/parent/children/[id]`.
+  evidence: Verified gap: no e2e posts an invalid answer or triggers `rangeField: null` (`+page.server.ts:538, 614, 645`). Reaching it needs a forged radio value; add it next to the existing forged-class case in `leave-range.e2e.ts`.

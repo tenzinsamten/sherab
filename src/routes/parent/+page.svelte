@@ -1,147 +1,141 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Hourglass from '@lucide/svelte/icons/hourglass';
+	import Info from '@lucide/svelte/icons/info';
+	import Mail from '@lucide/svelte/icons/mail';
+	import Users from '@lucide/svelte/icons/users';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
+	/**
+	 * The parent dashboard: one card per linked child (mobile-first story 3:
+	 * stacked on a phone, two columns on a tablet). A child still waiting for
+	 * approval is a plain card, not a link.
+	 */
 	let { data }: PageProps = $props();
+
+	const childCard = `${ui.card} flex h-full flex-col gap-3`;
+
+	// Set once the page is interactive (tests wait for it before tapping).
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 </script>
 
 <svelte:head>
 	<title>{m.parent_heading()} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<header class="page-header">
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<header class={ui.header}>
 		<div>
-			<p class="page-kicker">{m.parent_kicker()}</p>
-			<h1 class="page-heading">{m.parent_heading()}</h1>
+			<p class={ui.kicker}>{m.parent_kicker()}</p>
+			<h1 class={ui.heading}>{m.parent_heading()}</h1>
 		</div>
 		{#if data.state === 'pending'}
-			<ix-pill variant="warning">{m.parent_status_pending()}</ix-pill>
+			<Badge variant="warning">{m.parent_status_pending()}</Badge>
 		{/if}
 	</header>
 
-	<section class="card">
-		{#if data.state === 'unconfirmed'}
-			<ix-empty-state
+	{#if data.state === 'unconfirmed'}
+		<section class={ui.card}>
+			<EmptyState
 				header={m.parent_unconfirmed_heading()}
-				sub-header={m.parent_unconfirmed_body({ email: data.email })}
-				icon="mail"
-			></ix-empty-state>
-		{:else if data.state === 'pending'}
-			<ix-empty-state
+				subHeader={m.parent_unconfirmed_body({ email: data.email })}
+				icon={Mail}
+			/>
+		</section>
+	{:else if data.state === 'pending'}
+		<section class={ui.card}>
+			<EmptyState
 				header={m.parent_pending_heading()}
-				sub-header={m.parent_pending_body()}
-				icon="hourglass"
-			></ix-empty-state>
-		{:else if data.state === 'rejected'}
-			<ix-empty-state
+				subHeader={m.parent_pending_body()}
+				icon={Hourglass}
+			/>
+		</section>
+	{:else if data.state === 'rejected'}
+		<section class={ui.card}>
+			<EmptyState
 				header={m.parent_rejected_heading()}
-				sub-header={m.parent_rejected_body()}
-				icon="info"
-			></ix-empty-state>
-		{:else if data.loadError}
-			<ix-empty-state header={m.load_error_generic()} icon="info"></ix-empty-state>
-		{:else if data.children.length === 0}
-			<ix-empty-state
+				subHeader={m.parent_rejected_body()}
+				icon={Info}
+			/>
+		</section>
+	{:else if data.loadError}
+		<section class={ui.card}>
+			<EmptyState header={m.load_error_generic()} icon={Info} />
+		</section>
+	{:else if data.children.length === 0}
+		<section class={ui.card}>
+			<EmptyState
 				header={m.parent_empty_heading()}
-				sub-header={m.parent_empty_body()}
-				icon="user-group"
-			></ix-empty-state>
-		{:else}
-			<ul class="children" aria-label={m.parent_children_label()}>
-				{#each data.children as child (child.id)}
-					<li>
-						{#if child.status === 'pending'}
-							<ix-card variant="outline" passive>
-								<ix-card-content>
-									<p class="child-name">
-										<strong>{child.name}</strong>
-									</p>
-									<ix-pill variant="warning">{m.parent_child_waiting()}</ix-pill>
-								</ix-card-content>
-							</ix-card>
-						{:else}
-							<!-- #56: the whole card opens the child's page. -->
-							<a
-								href={resolve('/parent/children/[id]', { id: child.id })}
-								class="tile-link"
-								data-tour="parent-child-card"
-							>
-								<ix-card variant="outline">
-									<ix-card-content>
-										<p class="child-name" data-tour="parent-child-name">
-											<strong>{child.name}</strong>
-											<ix-icon name="chevron-right" size="16" aria-hidden="true"></ix-icon>
-										</p>
-										<p class="muted child-classes">
-											<span class="section-label">{m.parent_card_classes()}</span>
-											{child.classes.length > 0
-												? child.classes.join(', ')
-												: m.parent_card_no_classes()}
-										</p>
-										<dl class="counts">
-											<div>
-												<dt class="section-label">{m.parent_card_open()}</dt>
-												<dd class={child.open === 0 ? 'stat-tile-value muted' : 'stat-tile-value'}>
-													{num(child.open)}
-												</dd>
-											</div>
-											<div>
-												<dt class="section-label">{m.parent_card_overdue()}</dt>
-												<dd>
-													{#if child.overdue > 0}
-														<ix-pill variant="alarm">{num(child.overdue)}</ix-pill>
-													{:else}
-														<span class="stat-tile-value muted">{num(0)}</span>
-													{/if}
-												</dd>
-											</div>
-										</dl>
-									</ix-card-content>
-								</ix-card>
-							</a>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
+				subHeader={m.parent_empty_body()}
+				icon={Users}
+			/>
+		</section>
+	{:else}
+		<ul class="grid gap-4 md:grid-cols-2" aria-label={m.parent_children_label()}>
+			{#each data.children as child (child.id)}
+				<li class="min-w-0">
+					{#if child.status === 'pending'}
+						<div class={childCard} data-testid="child-card">
+							<p class="text-lg font-bold wrap-break-word">{child.name}</p>
+							<Badge variant="warning">{m.parent_child_waiting()}</Badge>
+						</div>
+					{:else}
+						<!-- #56: the whole card opens the child's page. -->
+						<a
+							href={resolve('/parent/children/[id]', { id: child.id })}
+							class="{ui.tileLink} group"
+							data-tour="parent-child-card"
+							data-testid="child-card"
+						>
+							<div class="{childCard} transition-colors group-hover:bg-muted/50">
+								<p
+									class="flex items-center justify-between gap-2 text-lg font-bold"
+									data-tour="parent-child-name"
+								>
+									<span class="min-w-0 wrap-break-word">{child.name}</span>
+									<ChevronRight class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+								</p>
+								<p class="flex flex-col gap-1">
+									<span class={ui.label}>{m.parent_card_classes()}</span>
+									<span class={ui.muted}>
+										{child.classes.length > 0
+											? child.classes.join(', ')
+											: m.parent_card_no_classes()}
+									</span>
+								</p>
+								<dl class="flex flex-wrap gap-x-8 gap-y-2">
+									<div>
+										<dt class={ui.label}>{m.parent_card_open()}</dt>
+										<dd class="{ui.stat} {child.open === 0 ? ui.muted : ''}">
+											{num(child.open)}
+										</dd>
+									</div>
+									<div>
+										<dt class={ui.label}>{m.parent_card_overdue()}</dt>
+										<dd class="flex min-h-9 items-center">
+											{#if child.overdue > 0}
+												<Badge variant="alarm" class="text-base">{num(child.overdue)}</Badge>
+											{:else}
+												<span class="{ui.stat} {ui.muted}">{num(0)}</span>
+											{/if}
+										</dd>
+									</div>
+								</dl>
+							</div>
+						</a>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
 </div>
-
-<style>
-	.children {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-		gap: var(--space-4);
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-
-	.child-name {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-		margin: 0 0 var(--space-2);
-	}
-
-	.child-classes {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-		margin: 0 0 var(--space-3);
-	}
-
-	.counts {
-		display: flex;
-		gap: var(--space-6);
-		margin: 0;
-	}
-
-	.counts dd {
-		margin: 0;
-	}
-</style>

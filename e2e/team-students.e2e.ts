@@ -204,8 +204,9 @@ test('an approved student opens any team from the leaderboard and sees names onl
 	await expect(card.locator('a, button, ix-button, ix-pill')).toHaveCount(0);
 
 	// The breadcrumb leads back to the leaderboard.
-	await expect(page.locator('ix-breadcrumb [aria-current="page"]')).toHaveText(TEAM_A);
-	await page.locator('ix-breadcrumb').getByRole('link', { name: 'Team Leaderboard' }).click();
+	const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
+	await expect(trail.locator('[aria-current="page"]')).toHaveText(TEAM_A);
+	await trail.getByRole('link', { name: 'Team Leaderboard' }).click();
 	await expect(page).toHaveURL(/\/leaderboard$/);
 
 	// A team without students.

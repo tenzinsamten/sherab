@@ -30,6 +30,16 @@
 @source '../components/shell';
 @source '../../routes/+layout.svelte';
 @source '../../routes/dev/ui';
+/* Story 3: the parent pages and the shared components they use (only
+   their .svelte files: words in server code must not become utilities). */
+@source './classes.ts';
+@source '../../routes/parent/**/*.svelte';
+@source '../components/PageBreadcrumb.svelte';
+@source '../components/Pager.svelte';
+@source '../components/StudentProgressTiles.svelte';
+@source '../components/BadgeCollection.svelte';
+@source '../components/BadgeDetailDialog.svelte';
+@source '../components/ChildPicker.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

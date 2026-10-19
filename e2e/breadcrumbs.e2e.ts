@@ -3,7 +3,7 @@ import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
 import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
 /**
- * iX breadcrumbs on nested pages (#61): the I/O matrix rows "Navigate up",
+ * Breadcrumbs on nested pages (#61; new component system since mobile-first story 3): the I/O matrix rows "Navigate up",
  * "Deep trail on a phone", "Student from Done", "Parent tab" and "Former
  * class", plus the admin and student class trails and the current page's
  * aria-current. Its own fixture: a class taught by one teacher, one approved
@@ -238,15 +238,18 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
-/** Waits for hydration and for the breadcrumb to be upgraded by iX. */
+/** Waits for the breadcrumb to be hydrated (its "…" menu works from then on). */
 async function open(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() => customElements.get('ix-breadcrumb-item') !== undefined);
+	await page.locator('[data-testid="page-breadcrumb"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
-const crumbs = (page: Page) => page.locator('ix-breadcrumb');
-const currentCrumb = (page: Page) => page.locator('ix-breadcrumb [aria-current="page"]');
+const crumbs = (page: Page) => page.getByRole('navigation', { name: 'Breadcrumb' });
+const currentCrumb = (page: Page) => crumbs(page).locator('[aria-current="page"]');
+/** Every level of the trail, the current page included (not the phone's "…" menu). */
+const crumbItems = (page: Page) =>
+	crumbs(page).locator('li[data-slot="breadcrumb-item"]:not([data-crumb-menu])');
 
 /** The old "Back to …" buttons sat in the page header; none is left there. */
 async function expectNoBackButton(page: Page) {
@@ -276,16 +279,11 @@ test('navigate up: the Homework crumb on a homework page goes to the list withou
 	await expect(crumbs(page).getByRole('link', { name: className })).toBeVisible();
 	await expectNoBackButton(page);
 
-	// #86: the label's one line is as tall as the crumb (36px), not iX's 20px,
-	// so Tibetan letters are not cut; it still fits iX's 40px breadcrumb.
-	const labelHeights = await page
-		.locator('ix-breadcrumb-item')
-		.evaluateAll((items) =>
-			items.map((item) => item.shadowRoot?.querySelector('.content')?.clientHeight ?? 0)
-		);
-	expect(labelHeights.length).toBe(4);
-	for (const height of labelHeights) expect(height).toBe(36);
-	expect((await crumbs(page).boundingBox())?.height).toBe(40);
+	// Four levels; every link above the current page is a 44px touch target.
+	await expect(crumbItems(page)).toHaveCount(4);
+	for (const link of await crumbs(page).getByRole('link').all()) {
+		expect((await link.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+	}
 
 	await markDocument(page);
 	await crumbs(page).getByRole('link', { name: 'Homework', exact: true }).click();
@@ -302,7 +300,7 @@ test('phone: a deep trail collapses into "…" without sideways scroll, and a co
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/syllabus/${syllabusId}`);
 
-	const previous = page.locator('ix-breadcrumb ix-dropdown-button.previous-button');
+	const previous = crumbs(page).getByRole('button', { name: 'Show previous pages' });
 	await expect(previous).toBeVisible();
 	await expect(currentCrumb(page)).toContainText(formatSchoolYear(schoolYear));
 	// Only the last two levels show; Dashboard and the class are in the dropdown.
@@ -310,7 +308,9 @@ test('phone: a deep trail collapses into "…" without sideways scroll, and a co
 	await expect(crumbs(page).getByRole('link', { name: className })).toHaveCount(0);
 
 	const fits = await page.evaluate(() => {
-		const trail = document.querySelector('ix-breadcrumb')!.getBoundingClientRect();
+		const trail = document
+			.querySelector('[data-testid="page-breadcrumb"]')!
+			.getBoundingClientRect();
 		const pageEl = document.querySelector('.page')!;
 		return {
 			trailInside: trail.right <= window.innerWidth + 0.5,
@@ -322,7 +322,7 @@ test('phone: a deep trail collapses into "…" without sideways scroll, and a co
 
 	await markDocument(page);
 	await previous.click();
-	await page.locator('ix-breadcrumb ix-dropdown-item', { hasText: className }).click();
+	await page.getByRole('menuitem', { name: className }).click();
 	await expect(page).toHaveURL(new RegExp(`/teacher/classes/${classId}$`));
 	await expect(page.locator('h1')).toHaveText(className);
 	await expectSameDocument(page);
@@ -337,7 +337,7 @@ test('admin: the class level is plain text; Syllabus and Classes crumbs lead up'
 	await expect(currentCrumb(page)).toContainText(formatSchoolYear(schoolYear));
 	await expectNoBackButton(page);
 	// Admin has no class page: the class crumb is shown, but not as a link.
-	await expect(page.locator('ix-breadcrumb-item', { hasText: className })).toHaveCount(1);
+	await expect(crumbItems(page).filter({ hasText: className })).toHaveCount(1);
 	await expect(crumbs(page).getByRole('link', { name: className })).toHaveCount(0);
 
 	await crumbs(page).getByRole('link', { name: 'Syllabus' }).click();
@@ -346,6 +346,21 @@ test('admin: the class level is plain text; Syllabus and Classes crumbs lead up'
 
 	await crumbs(page).getByRole('link', { name: 'Classes' }).click();
 	await expect(page).toHaveURL(/\/admin\/classes$/);
+});
+
+test('admin phone: the link-less class level stays out of the "…" menu', async ({ page }) => {
+	await page.setViewportSize({ width: 360, height: 740 });
+	await signIn(page, admin);
+	await open(page, `/admin/classes/${classId}/syllabus/${syllabusId}`);
+
+	await crumbs(page).getByRole('button', { name: 'Show previous pages' }).click();
+	const menu = page.getByRole('menu');
+	await expect(menu).toBeVisible();
+	await expect(menu.getByRole('menuitem', { name: 'Classes' })).toBeVisible();
+	await expect(menu.getByRole('menuitem', { name: className })).toHaveCount(0);
+	await expect(menu.getByText(className)).toHaveCount(0);
+	// Nor is it shown in the trail itself.
+	await expect(crumbItems(page).filter({ hasText: className })).toBeHidden();
 });
 
 test('student: the My classes crumb on a class page leads to the class list', async ({ page }) => {
@@ -375,7 +390,7 @@ test('former class: homework from a class the student left still shows its trail
 	await open(page, `/student/homework/${formerInstanceId}`);
 
 	await expect(page.locator('.page-kicker')).toHaveText('Former class');
-	await expect(page.locator('ix-breadcrumb-item')).toHaveCount(2);
+	await expect(crumbItems(page)).toHaveCount(2);
 	await expect(crumbs(page).getByRole('link', { name: 'My Homework' })).toBeVisible();
 	await expect(currentCrumb(page)).toContainText(formerHomeworkTitle);
 });
@@ -388,13 +403,14 @@ test('parent tab: the last crumb names the open tab and follows a tab switch', a
 	await expect(crumbs(page).getByRole('link', { name: 'Dashboard' })).toBeVisible();
 	await expect(crumbs(page).getByRole('link', { name: studentName })).toBeVisible();
 
-	await page.locator('nav.tabs').getByRole('link', { name: 'Homework' }).click();
+	const tabs = page.getByRole('navigation', { name: 'Child sections' });
+	await tabs.getByRole('link', { name: 'Homework' }).click();
 	await expect(page).toHaveURL(/tab=homework/);
 	await expect(currentCrumb(page)).toContainText('Homework');
 	await expect(currentCrumb(page)).toHaveCount(1);
 
 	// On Overview the child level is the current page: no link to itself.
-	await page.locator('nav.tabs').getByRole('link', { name: 'Overview' }).click();
+	await tabs.getByRole('link', { name: 'Overview' }).click();
 	await expect(currentCrumb(page)).toContainText('Overview');
 	await expect(crumbs(page).getByRole('link', { name: studentName })).toHaveCount(0);
 });

@@ -190,20 +190,18 @@ test.afterAll(async () => {
 
 async function openSessions(page: Page) {
 	await page.goto(`/parent/children/${student.id}?tab=sessions`);
-	await page.waitForFunction(
-		() =>
-			customElements.get('ix-date-input') !== undefined &&
-			customElements.get('ix-modal') !== undefined
-	);
+	// The page root marks itself hydrated (its controls work from then on).
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
+/** Native date inputs (mobile-first story 3): `fill` takes `YYYY-MM-DD`. */
 async function fillRange(page: Page) {
-	await page.locator('#range-from input').first().fill(from);
-	await expect(page.locator('#range-from')).toHaveJSProperty('value', from);
-	await page.locator('#range-to input').first().fill(to);
-	await expect(page.locator('#range-to')).toHaveJSProperty('value', to);
+	await page.getByLabel('From').fill(from);
+	await page.getByLabel('To', { exact: true }).fill(to);
 }
+
+const sessionList = (page: Page) => page.getByRole('list', { name: 'Sessions' });
 
 async function latestAnswers(ids = sessionIds) {
 	const { data, error } = await service
@@ -222,16 +220,8 @@ async function latestAnswers(ids = sessionIds) {
 	return ids.map((id) => latest.get(id) ?? null);
 }
 
-const modal = (page: Page) => page.locator('ix-modal');
-const openDialog = (page: Page) => modal(page).locator('dialog[open]');
-
-/** Opens an <ix-select>'s list and picks the item with `value`. */
-async function pick(page: Page, selectId: string, value: string) {
-	const select = page.locator(`#${selectId}`);
-	await select.locator('input').first().click();
-	await select.locator(`ix-select-item[value="${value}"]`).click();
-	await expect(select).toHaveJSProperty('value', value);
-}
+/** The period preview: a bottom sheet on a phone, a dialog from 48rem (Desktop Chrome here). */
+const modal = (page: Page) => page.getByRole('dialog', { name: 'Leave period' });
 
 test('a two-week leave for one class: preview counts, save, the Sessions list shows On leave', async ({
 	page
@@ -241,19 +231,20 @@ test('a two-week leave for one class: preview counts, save, the Sessions list sh
 	await expect(page.getByRole('heading', { name: 'Plan a leave period' })).toBeVisible();
 
 	await fillRange(page);
-	await pick(page, 'range-class', classId);
+	await page.getByLabel('Class').selectOption(classId);
 	await page.getByRole('button', { name: 'Preview' }).click();
 
-	await expect(openDialog(page)).toHaveCount(1);
+	await expect(modal(page)).toBeVisible();
+	await expect(modal(page)).toHaveAttribute('data-testid', 'range-dialog');
 	await expect(modal(page)).toContainText(
 		'Sessions: 3 · Planned: 2 · Short-notice: 1 · Left unchanged: 0'
 	);
-	await expect(modal(page).locator('.range-list li')).toHaveCount(3);
+	await expect(modal(page).getByTestId('range-list').getByRole('listitem')).toHaveCount(3);
 	// Nothing is written by the preview.
 	expect(await latestAnswers()).toEqual([null, null, null]);
 
 	await modal(page).getByRole('button', { name: 'Save' }).click();
-	await expect(openDialog(page)).toHaveCount(0);
+	await expect(modal(page)).toHaveCount(0);
 	await expect(page.locator('ix-toast')).toContainText('Changed: 3 · Unchanged or skipped: 0');
 
 	expect(await latestAnswers()).toEqual([
@@ -263,7 +254,7 @@ test('a two-week leave for one class: preview counts, save, the Sessions list sh
 	]);
 	// The other class was not picked: its session in the period is untouched.
 	expect(await latestAnswers([otherSessionId])).toEqual([null]);
-	const list = page.locator('ul.sessions');
+	const list = sessionList(page);
 	await expect(list.getByText('On leave · Short-notice')).toHaveCount(1);
 	await expect(list.getByText('On leave · Planned')).toHaveCount(2);
 });
@@ -279,11 +270,11 @@ test('undo: the same range with Coming (all classes) puts the On leave sessions 
 	await expect(page.getByRole('radio', { name: 'Coming' })).toBeChecked();
 	await page.getByRole('button', { name: 'Preview' }).click();
 
-	await expect(openDialog(page)).toHaveCount(1);
+	await expect(modal(page)).toBeVisible();
 	// All classes: the other class's never-answered session stays as it is.
 	await expect(modal(page)).toContainText('Sessions: 4 · Back to Coming: 3 · Left unchanged: 1');
 	await modal(page).getByRole('button', { name: 'Save' }).click();
-	await expect(openDialog(page)).toHaveCount(0);
+	await expect(modal(page)).toHaveCount(0);
 
 	expect(await latestAnswers()).toEqual([
 		{ answer: 'coming', classification: null },
@@ -291,19 +282,21 @@ test('undo: the same range with Coming (all classes) puts the On leave sessions 
 		{ answer: 'coming', classification: null }
 	]);
 	expect(await latestAnswers([otherSessionId])).toEqual([null]);
-	await expect(page.locator('ul.sessions').getByText('On leave ·')).toHaveCount(0);
+	await expect(sessionList(page).getByText('On leave ·')).toHaveCount(0);
 });
 
 test('an end before the start: an inline error on the dates, nothing opens', async ({ page }) => {
 	await signIn(page, parent);
 	await openSessions(page);
 
-	await page.locator('#range-from input').first().fill(to);
-	await page.locator('#range-to input').first().fill(from);
-	await expect(page.locator('#range-to')).toHaveJSProperty('value', from);
+	await page.getByLabel('From').fill(to);
+	await page.getByLabel('To', { exact: true }).fill(from);
 	await page.getByRole('button', { name: 'Preview' }).click();
 
 	await expect(page.locator('#range-dates-error')).toContainText('starts today or later');
-	await expect(openDialog(page)).toHaveCount(0);
-	await expect(page.locator('#range-from')).toHaveClass(/ix-invalid/);
+	await expect(modal(page)).toHaveCount(0);
+	await expect(page.getByLabel('From')).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.getByLabel('To', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+	// Focus moves to the first field with the error.
+	await expect(page.getByLabel('From')).toBeFocused();
 });

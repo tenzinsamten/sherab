@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Trophy from '@lucide/svelte/icons/trophy';
+	import { Badge } from '$lib/components/ui/badge/index.js';
 	import {
 		badgeIconLabel,
 		badgeIconPath,
@@ -9,6 +11,7 @@
 	} from '$lib/badge-subject';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ui } from '$lib/ui/classes';
 	import type { BadgeView } from './BadgeDetailDialog.svelte';
 
 	type ProgressTrack = { total: number; next: number | null };
@@ -19,7 +22,8 @@
 	 * earned badges, then each track's next badge as its icon greyed out
 	 * (badge detail story 3). The whole badges card is one link to the badge
 	 * page with every badge, its detail and progress (story 4); nothing
-	 * inside it is clickable on its own.
+	 * inside it is clickable on its own. Its own `data-ui="new"` root
+	 * (mobile-first story 3), so it also works on pages that are still iX.
 	 */
 	let {
 		streak,
@@ -61,110 +65,98 @@
 
 	const badgeKey = (badge: Pick<BadgeView, 'subject' | 'badgeType' | 'milestone'>) =>
 		`${badge.subject}-${badge.badgeType}-${badge.milestone}`;
+
+	const tile = `${ui.card} flex h-full flex-col gap-2`;
+	const icons = 'flex flex-wrap items-center gap-1';
 </script>
 
-<div class="tile-grid" style="margin-bottom: var(--space-4);">
-	<ix-card variant="outline" passive>
-		<ix-card-content>
-			<p class="section-label">{m.student_streak_label()}</p>
-			{#if loadError}
-				<!-- A failed fetch is unknown state, not a truthful zero: the
-				     layout shows the error toast, and this tile shows no value
-				     rather than the "no streak yet" copy. -->
-				<p class="stat-tile-value muted">—</p>
-			{:else if streak && streak.currentStreak > 0}
-				<p
-					class="stat-tile-value"
-					aria-label={num(m.student_streak_aria_label({ count: streak.currentStreak }))}
-				>
-					{num(m.student_streak_weeks({ count: streak.currentStreak }))}
-				</p>
-			{:else}
-				<p class="muted" style="margin:0;">{m.student_streak_empty()}</p>
-			{/if}
-		</ix-card-content>
-	</ix-card>
+<div data-ui="new" class="mb-4 grid gap-4 sm:grid-cols-2">
+	<div class={tile}>
+		<p class={ui.label}>{m.student_streak_label()}</p>
+		{#if loadError}
+			<!-- A failed fetch is unknown state, not a truthful zero: the
+			     layout shows the error toast, and this tile shows no value
+			     rather than the "no streak yet" copy. -->
+			<p class="{ui.stat} {ui.muted}">—</p>
+		{:else if streak && streak.currentStreak > 0}
+			<p
+				class={ui.stat}
+				aria-label={num(m.student_streak_aria_label({ count: streak.currentStreak }))}
+			>
+				{num(m.student_streak_weeks({ count: streak.currentStreak }))}
+			</p>
+		{:else}
+			<p class={ui.muted}>{m.student_streak_empty()}</p>
+		{/if}
+	</div>
 
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- seeAllHref is resolve()d by the caller. -->
-	<a href={seeAllHref} class="tile-link" data-testid="badges-tile">
-		<ix-card variant="outline">
-			<ix-card-content>
-				<p class="section-label">{m.student_badges_label()}</p>
-				{#if loadError}
-					<p class="stat-tile-value muted">—</p>
+	<a href={seeAllHref} class="{ui.tileLink} group" data-testid="badges-tile">
+		<div class="{tile} transition-colors group-hover:bg-muted/50">
+			<p class={ui.label}>{m.student_badges_label()}</p>
+			{#if loadError}
+				<p class="{ui.stat} {ui.muted}">—</p>
+			{:else}
+				{#if shownBadges.length > 0}
+					<ul class={icons}>
+						{#each shownBadges as badge (badgeKey(badge))}
+							<li data-badge={badgeKey(badge)} data-state="earned" title={badgeIconLabel(badge)}>
+								{#if badge.icon}
+									<img
+										src={badge.icon}
+										alt={badgeIconLabel(badge)}
+										width="56"
+										height="56"
+										class="size-14 object-contain"
+									/>
+								{:else}
+									<Badge>
+										<Trophy aria-hidden="true" />
+										{badgeSubjectLabel(badge.subject)} · {badgeTrackLabel(badge.badgeType)}
+										{num(badge.milestone)}
+									</Badge>
+								{/if}
+							</li>
+						{/each}
+					</ul>
 				{:else}
-					{#if shownBadges.length > 0}
-						<ul class="badge-icons">
-							{#each shownBadges as badge (badgeKey(badge))}
-								<li data-badge={badgeKey(badge)} data-state="earned" title={badgeIconLabel(badge)}>
-									{#if badge.icon}
-										<img src={badge.icon} alt={badgeIconLabel(badge)} width="56" height="56" />
-									{:else}
-										<ix-pill variant="primary" icon="trophy">
-											{badgeSubjectLabel(badge.subject)} · {badgeTrackLabel(badge.badgeType)}
-											{num(badge.milestone)}
-										</ix-pill>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					{:else}
-						<p class="muted" style="margin:0;">{m.student_badges_empty()}</p>
-					{/if}
-
-					<!-- Once every track is at its top badge there is nothing left to show. -->
-					{#if progressLoadError || nextBadges.length > 0 || badgeProgress.length === 0}
-						<p class="section-label badge-progress-heading">{m.badge_progress_heading()}</p>
-					{/if}
-					{#if progressLoadError}
-						<p class="stat-tile-value muted">—</p>
-					{:else if nextBadges.length > 0}
-						<ul class="badge-icons badge-next">
-							{#each nextBadges as badge (badgeKey(badge))}
-								{@const icon = badgeIconPath(badge)}
-								{@const label = `${badgeIconLabel(badge)} (${m.badge_locked()})`}
-								<li data-badge={badgeKey(badge)} data-state="next" title={label}>
-									{#if icon}
-										<img src={icon} alt={label} width="56" height="56" />
-									{:else}
-										<ix-pill variant="neutral" icon="trophy" aria-label={label}
-											>{num(badge.milestone)}</ix-pill
-										>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					{:else if badgeProgress.length === 0}
-						<p class="muted" style="margin:0;">{m.badge_progress_empty()}</p>
-					{/if}
+					<p class={ui.muted}>{m.student_badges_empty()}</p>
 				{/if}
-			</ix-card-content>
-		</ix-card>
+
+				<!-- Once every track is at its top badge there is nothing left to show. -->
+				{#if progressLoadError || nextBadges.length > 0 || badgeProgress.length === 0}
+					<p class="{ui.label} mt-2">{m.badge_progress_heading()}</p>
+				{/if}
+				{#if progressLoadError}
+					<p class="{ui.stat} {ui.muted}">—</p>
+				{:else if nextBadges.length > 0}
+					<!-- Not yet earned: the real icon, greyed and faded, as on the badge page. -->
+					<ul class="{icons} opacity-40 grayscale" data-testid="badge-next">
+						{#each nextBadges as badge (badgeKey(badge))}
+							{@const icon = badgeIconPath(badge)}
+							{@const label = `${badgeIconLabel(badge)} (${m.badge_locked()})`}
+							<li data-badge={badgeKey(badge)} data-state="next" title={label}>
+								{#if icon}
+									<img
+										src={icon}
+										alt={label}
+										width="56"
+										height="56"
+										class="size-14 object-contain"
+									/>
+								{:else}
+									<Badge variant="secondary" role="img" aria-label={label}>
+										<Trophy aria-hidden="true" />
+										{num(badge.milestone)}
+									</Badge>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{:else if badgeProgress.length === 0}
+					<p class={ui.muted}>{m.badge_progress_empty()}</p>
+				{/if}
+			{/if}
+		</div>
 	</a>
 </div>
-
-<style>
-	.badge-icons {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-1);
-	}
-	.badge-icons img {
-		display: block;
-		width: 56px;
-		height: 56px;
-		object-fit: contain;
-	}
-	/* Not yet earned: the real icon, greyed and faded, as on the badge page. */
-	.badge-next {
-		filter: grayscale(1);
-		opacity: 0.4;
-	}
-	.badge-progress-heading {
-		margin-top: var(--space-2);
-	}
-</style>
