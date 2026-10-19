@@ -7,10 +7,11 @@ import { service, signIn, type TestUser } from './fixtures';
  * later foundation change must leave these pixel-identical (the new CSS
  * must not leak into iX pages).
  *
- * Viewport screenshots only (not full page), so a list that grows with
- * other test runs' leftovers cannot change the image size; text that
- * depends on the database or the run (counters, lists, the avatar) is
- * masked. Baselines are platform-specific (darwin).
+ * Story 2 (new app shell): each image is the page content only -- the
+ * `.page` element (`.auth-page` signed out) -- not the viewport, so the
+ * shell around it (header, navigation) is not part of the proof and can be
+ * replaced. Text that depends on the database or the run (counters, lists)
+ * is masked. Baselines are platform-specific (darwin).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -82,9 +83,11 @@ async function settle(page: Page) {
  */
 async function normalize(page: Page) {
 	await page.evaluate(() => {
-		// The Requests count pill (pending requests from other tests).
-		for (const item of document.querySelectorAll('ix-menu-item[notifications]')) {
-			item.removeAttribute('notifications');
+		// The new shell (story 2) is not part of the proof. A page taller than
+		// the viewport is shot while scrolled, and its sticky header and bottom
+		// bar would lie over the content: hidden, keeping their space.
+		for (const chrome of document.querySelectorAll<HTMLElement>('[data-ui="new"]')) {
+			chrome.style.visibility = 'hidden';
 		}
 		// The admin class counter: one digit.
 		for (const counter of document.querySelectorAll('.page-counter')) counter.textContent = '0';
@@ -100,14 +103,29 @@ async function normalize(page: Page) {
 	});
 }
 
-async function shoot(page: Page, name: string, mask: string[] = []) {
+/**
+ * Makes the viewport tall enough for the whole content element, so it is
+ * shot without scrolling: iX scrolled the page inside its own content area
+ * (which left everything below the first screen blank in the image), the new
+ * shell scrolls the document. The width, which the layout depends on, stays.
+ */
+async function fitHeight(page: Page, content: string) {
+	const box = await page.locator(content).boundingBox();
+	const size = page.viewportSize();
+	if (!box || !size) throw new Error(`no ${content} to shoot`);
+	const height = Math.ceil(box.y + box.height + 200);
+	if (height > size.height) await page.setViewportSize({ width: size.width, height });
+}
+
+async function shoot(page: Page, name: string, mask: string[] = [], content = '.page') {
 	await settle(page);
 	await normalize(page);
+	await fitHeight(page, content);
 	await settle(page);
-	await expect(page).toHaveScreenshot(`${name}.png`, {
+	await expect(page.locator(content)).toHaveScreenshot(`${name}.png`, {
 		animations: 'disabled',
 		caret: 'hide',
-		mask: ['ix-avatar', ...mask].map((selector) => page.locator(selector)),
+		mask: mask.map((selector) => page.locator(selector)),
 		maxDiffPixelRatio: 0.001
 	});
 }
@@ -118,7 +136,7 @@ for (const viewport of VIEWPORTS) {
 
 		test(`login (${viewport.name})`, async ({ page }) => {
 			await page.goto('/login');
-			await shoot(page, `login-${viewport.name}`);
+			await shoot(page, `login-${viewport.name}`, [], '.auth-page');
 		});
 
 		test(`teacher dashboard (${viewport.name})`, async ({ page }) => {
