@@ -371,3 +371,7 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/2-new-app-shell.md`
   summary: When Help is opened from a closing popup (avatar menu "Help", admin More sheet "Help"), the closing Bits UI popup restores focus to its trigger while the Help dialog's focus trap takes focus; keyboard focus may land outside the dialog.
   evidence: Unverified (medium if true): plausible from Bits UI's close-auto-focus behaviour, not checked in a browser. Settle it with a keyboard test (open Help from each entry point, assert `document.activeElement` is inside the dialog); fix with `onCloseAutoFocus={(e) => e.preventDefault()}` on the closing popup when Help was chosen.
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/3-parent-pages-pilot.md`
+  summary: Regenerate all Help guide screenshots (`npm run help:screenshots`, `HELP_SCREENSHOTS=1`, images under `static/help`) once every role is migrated, in story 10.
+  evidence: User decision at story 3 checkpoint 1: the Help guides keep showing the old iX pages until then; parent pages are the first to diverge.
