@@ -414,16 +414,20 @@ test('admin team names: edit the names, and each interface language shows its ow
 		// #79: a locale link sets the language and lands on the plain address;
 		// the language then holds across in-app navigation.
 		await expect(page).toHaveURL(/\/admin\/teams$/);
-		// #86: the menu label's one line is 36px, so Tibetan letters are not cut.
-		await expect
-			.poll(() =>
-				page
-					.locator('ix-menu-item')
-					.filter({ hasText: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' })
-					.evaluate((item) => item.shadowRoot?.querySelector('.tab-text')?.clientHeight ?? 0)
+		// #86: the nav label is not clipped, so Tibetan letters are not cut.
+		// The nav's own name is Tibetan here too, so it is found by its test id.
+		const leaderboardLink = page
+			.getByTestId('side-nav')
+			.getByRole('link', { name: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' });
+		await expect(leaderboardLink).toBeVisible();
+		expect(
+			await leaderboardLink.evaluate((link) =>
+				[...link.querySelectorAll('span')].every(
+					(span) => span.scrollHeight <= span.clientHeight + 1
+				)
 			)
-			.toBe(36);
-		await page.locator('ix-menu-item').filter({ hasText: 'རྩེ་ཕུད་སྒྲིག་ཐོ།' }).click();
+		).toBe(true);
+		await leaderboardLink.click();
 		await expect(page).toHaveURL(/\/leaderboard$/);
 		await expect(page.getByText(tibetan, { exact: true })).toBeVisible();
 		await expect(page.getByText(name, { exact: true })).toHaveCount(0);
@@ -440,8 +444,8 @@ test('admin team names: edit the names, and each interface language shows its ow
 		// has settled: a list opened while the header is still being set up
 		// closes again.
 		await page.waitForLoadState('networkidle');
-		await page.locator('ix-application-header ix-dropdown-button[icon="globe"]').click();
-		await page.locator('ix-dropdown-item[lang="de"]').click();
+		await page.getByTestId('language-menu').click();
+		await page.getByRole('menuitemradio', { name: 'Deutsch' }).click();
 		await expect(page.locator('html')).toHaveAttribute('lang', 'de');
 		await expect(page).toHaveURL(/\/leaderboard$/);
 		await expect(page.getByText(german, { exact: true })).toBeVisible();

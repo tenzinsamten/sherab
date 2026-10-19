@@ -67,12 +67,11 @@ html[data-ix-theme='classic'][data-ix-color-schema] {
 	--theme-color-ghost-primary--hover: rgba(37, 99, 235, 0.12);
 	--theme-color-ghost-primary--active: rgba(37, 99, 235, 0.2);
 }
-/* Sherab frame: header and side menu keep the earlier navy nav bar
-   (#0f172a, white text) with the current page in primary blue, in both
-   colour schemas. Scoped to the two elements so iX buttons elsewhere keep
-   their normal subtle/tertiary colours. */
-ix-application-header,
-ix-menu {
+/* Sherab frame: the signed-out iX header keeps the earlier navy nav bar
+   (#0f172a, white text), in both colour schemas (signed in, the new shell
+   draws its own). Scoped to the header so iX buttons elsewhere keep their
+   normal subtle/tertiary colours. */
+ix-application-header {
 	--sherab-frame: #0f172a;
 	--sherab-frame-text: #ffffff;
 	--sherab-frame-soft: rgba(255, 255, 255, 0.7);
@@ -206,12 +205,29 @@ html[lang='bo'] ix-button {
 	display: block;
 }
 
-/* Signed-out shell (no ix-application): header on top, page scrolls. */
+/* Signed-out shell (no ix-application): header on top, page scrolls. The
+   page is laid out edge to edge (viewport-fit=cover, for the signed-in
+   bottom bar), so keep clear of a landscape iPhone's notch. */
 .app-public {
 	display: flex;
 	flex-direction: column;
 	min-height: 100%;
+	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+		env(safe-area-inset-left);
 	background: var(--theme-color-2);
+}
+
+/* Signed in (story 2), the document scrolls under the shell's sticky header
+   and, below 80em, its sticky bottom bar: focus, scrollIntoView and #hash
+   targets stop clear of both. The bar sets its measured height
+   (BottomNav.svelte; it includes the safe area). */
+html:has([data-app-shell]) {
+	scroll-padding-top: calc(3.5rem + env(safe-area-inset-top));
+}
+@media (width < 80em) {
+	html:has([data-shell-bottom-nav]) {
+		scroll-padding-bottom: var(--bottom-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));
+	}
 }
 .app-public-main {
 	flex: 1;
@@ -296,20 +312,6 @@ h2 {
 .card > .section-label:first-child {
 	margin-top: 0;
 }
-/* #69: the header avatar on the Sherab navy frame -- iX's default avatar
-   colours assume a light header (dark initials on dark navy, visible only
-   on hover). White initials on the primary blue, like the selected menu
-   item; the avatar's button hover/press use the frame's overlay tones. */
-ix-application-header ix-avatar {
-	--theme-avatar--background: #2563eb;
-	--theme-avatar--color: var(--sherab-frame-text, #ffffff);
-	--theme-btn-tertiary--background: transparent;
-	--theme-btn-tertiary--background--hover: var(--sherab-frame-hover, rgba(255, 255, 255, 0.12));
-	--theme-btn-tertiary--background--active: var(--sherab-frame-active, rgba(255, 255, 255, 0.18));
-	--theme-btn-tertiary--background--pressed: var(--sherab-frame-active, rgba(255, 255, 255, 0.18));
-	--theme-btn-tertiary--color: var(--sherab-frame-text, #ffffff);
-	--theme-btn-tertiary--color--hover: var(--sherab-frame-text, #ffffff);
-}
 /* The Sherab logo in iX's `logo` slot: fills the slot's 32px box (iX hides
    the slot below 48em, where the name text takes over as the home link). */
 ix-application-header .header-logo {
@@ -326,10 +328,8 @@ ix-application-header .header-logo img {
 	height: 2rem;
 	width: auto;
 }
-/* The avatar's menu (name card and items) sits on iX's light dropdown but
-   would inherit the header's white text; give it the normal text colour.
-   The initials keep their own --theme-avatar--color. */
-ix-application-header ix-avatar,
+/* The language menu's items sit on iX's light dropdown but would inherit
+   the header's white text; give them the normal text colour. */
 ix-application-header ix-dropdown-item {
 	color: var(--theme-color-std-text);
 }

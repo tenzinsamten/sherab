@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { service, signIn, type TestUser } from './fixtures';
+import { mainNav, openAccountMenu, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B13 (#68): the role switcher in the header avatar menu. Fixtures: a
@@ -55,23 +55,31 @@ test.afterAll(async () => {
 	if (problems.length) throw new Error(problems.join('; '));
 });
 
-const menu = (page: Page) => page.locator('ix-menu');
-const roleOption = (page: Page, role: string) =>
-	page.locator(`ix-avatar ix-dropdown-item[data-role-option="${role}"]`);
+const navItem = (page: Page, name: string) => mainNav(page).getByRole('link', { name });
+const roleOption = (page: Page, role: string) => page.locator(`[data-role-option="${role}"]`);
 
 async function openAvatarMenu(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-avatar') !== undefined);
-	await page.locator('ix-avatar').click();
+	await openAccountMenu(page);
+}
+
+/** The avatar menu's role switcher has `role` checked (and only that one). */
+async function expectActiveRole(page: Page, role: 'teacher' | 'parent') {
+	await openAvatarMenu(page);
+	const other = role === 'teacher' ? 'parent' : 'teacher';
+	await expect(roleOption(page, role)).toHaveAttribute('aria-checked', 'true');
+	await expect(roleOption(page, other)).toHaveAttribute('aria-checked', 'false');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('menu')).toHaveCount(0);
 }
 
 async function expectTeacherMenu(page: Page) {
-	await expect(menu(page).locator('ix-menu-item', { hasText: 'Requests' })).toHaveCount(1);
-	await expect(menu(page).locator('ix-menu-item', { hasText: 'Homework' })).toHaveCount(0);
+	await expect(navItem(page, 'Requests')).toHaveCount(1);
+	await expect(navItem(page, 'Homework')).toHaveCount(0);
 }
 
 async function expectParentMenu(page: Page) {
-	await expect(menu(page).locator('ix-menu-item', { hasText: 'Homework' })).toHaveCount(1);
-	await expect(menu(page).locator('ix-menu-item', { hasText: 'Requests' })).toHaveCount(0);
+	await expect(navItem(page, 'Homework')).toHaveCount(1);
+	await expect(navItem(page, 'Requests')).toHaveCount(0);
 }
 
 test('teacher-parent: switch to Parent, remembered, URL wins, switch back', async ({ page }) => {
@@ -79,16 +87,14 @@ test('teacher-parent: switch to Parent, remembered, URL wins, switch back', asyn
 	// Default: Teacher active, `/` lands on /teacher.
 	await expect(page).toHaveURL(/\/teacher$/);
 	await expectTeacherMenu(page);
-	await expect(roleOption(page, 'teacher')).toHaveAttribute('checked', /.*/);
-	await expect(roleOption(page, 'parent')).not.toHaveAttribute('checked', /.*/);
+	await expectActiveRole(page, 'teacher');
 
 	// Switch to Parent: lands on /parent with the parent menu.
 	await openAvatarMenu(page);
 	await roleOption(page, 'parent').click();
 	await expect(page).toHaveURL(/\/parent$/);
 	await expectParentMenu(page);
-	await expect(roleOption(page, 'parent')).toHaveAttribute('checked', /.*/);
-	await expect(roleOption(page, 'teacher')).not.toHaveAttribute('checked', /.*/);
+	await expectActiveRole(page, 'parent');
 
 	// Shared route: /calendar is the parent (children) view.
 	await page.goto('/calendar');
@@ -104,7 +110,7 @@ test('teacher-parent: switch to Parent, remembered, URL wins, switch back', asyn
 	// URL wins: a /teacher page makes Teacher active for that page.
 	await page.goto('/teacher');
 	await expectTeacherMenu(page);
-	await expect(roleOption(page, 'teacher')).toHaveAttribute('checked', /.*/);
+	await expectActiveRole(page, 'teacher');
 
 	// A forged cookie is ignored.
 	await page.context().addCookies([{ name: 'active_role', value: 'admin', url: page.url() }]);
@@ -145,48 +151,35 @@ test('a teacher with a pending parents row sees no switcher', async ({ page }) =
 	await signIn(page, pendingTeacher);
 	await expect(page).toHaveURL(/\/teacher$/);
 	await expectTeacherMenu(page);
-	await expect(page.locator('ix-avatar ix-dropdown-item[data-role-option]')).toHaveCount(0);
-	await expect(page.locator('ix-avatar ix-dropdown-header')).toHaveCount(0);
+	await openAvatarMenu(page);
+	await expect(page.locator('[data-role-option]')).toHaveCount(0);
+	await expect(page.getByText('Switch role')).toHaveCount(0);
+	await page.keyboard.press('Escape');
 });
 
 test('a parent-only login sees no switcher', async ({ page }) => {
 	await signIn(page, parentOnly);
 	await expect(page).toHaveURL(/\/parent$/);
 	await expectParentMenu(page);
-	await expect(page.locator('ix-avatar ix-dropdown-item[data-role-option]')).toHaveCount(0);
-	await expect(page.locator('ix-avatar ix-dropdown-header')).toHaveCount(0);
+	await openAvatarMenu(page);
+	await expect(page.locator('[data-role-option]')).toHaveCount(0);
+	await expect(page.getByText('Switch role')).toHaveCount(0);
+	await page.keyboard.press('Escape');
 });
 
-test('header: the Sherab logo is the home link on desktop, the name text on a phone', async ({
-	page
-}) => {
+test('header: the Sherab logo is the home link, on desktop and on a phone', async ({ page }) => {
 	await signIn(page, parentOnly);
 	await expect(page).toHaveURL(/\/parent$/);
-	const header = page.locator('ix-application-header');
-	const logoLink = header.locator('a.header-logo');
-	const name = header.locator('.name');
-	// Computed display of the name in iX's shadow root (a locator's
-	// toBeHidden also passes when it matches nothing).
-	const nameDisplay = () =>
-		header.evaluate((el) => {
-			const n = el.shadowRoot?.querySelector('.left-side .name');
-			return n ? getComputedStyle(n).display : 'missing';
-		});
+	const logoLink = page.getByTestId('header-home');
 
-	// Desktop: the logo shows (with its text alternative), the name is hidden.
 	await page.goto('/calendar');
 	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();
-	await expect.poll(nameDisplay).toBe('none');
 	await logoLink.click();
 	await expect(page).toHaveURL(/\/parent$/);
 
-	// Phone: iX hides the logo slot; the "Sherab" name shows and goes home.
 	await page.setViewportSize({ width: 390, height: 800 });
 	await page.goto('/calendar');
-	await expect(logoLink).toBeHidden();
-	await expect.poll(nameDisplay).not.toMatch(/^(none|missing)$/);
-	await expect(name).toBeVisible();
-	await expect(name).toHaveText('Sherab');
-	await name.click();
+	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();
+	await logoLink.click();
 	await expect(page).toHaveURL(/\/parent$/);
 });

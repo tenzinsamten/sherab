@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, mainNav, openAccountMenu, service, signIn, type TestUser } from './fixtures';
 
 /**
  * #100: the username and PIN are made at registration. A family registers a
@@ -144,15 +144,14 @@ async function openRequests(page: Page) {
 }
 
 const status = (page: Page) => page.locator('[data-testid="student-status"]');
-// Light DOM only: iX keeps items of its own inside the menu's shadow DOM.
-const menuItems = (page: Page) => page.locator('css:light=ix-menu > ix-menu-item');
+const menuItems = (page: Page) => mainNav(page).getByRole('link');
 
 /** The avatar menu of an unapproved student: sign-out, no "My Account". */
 async function expectNoAccountEntry(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-avatar') !== undefined);
-	const items = page.locator('css:light=ix-avatar > ix-dropdown-item');
-	await expect(items).toHaveCount(1);
-	await expect(items).toHaveAttribute('label', 'Sign out');
+	const menu = await openAccountMenu(page);
+	await expect(menu.getByRole('menuitem', { name: 'Sign out' })).toHaveCount(1);
+	await expect(menu.getByRole('menuitem', { name: 'My Account' })).toHaveCount(0);
+	await page.keyboard.press('Escape');
 }
 
 let approved: { username: string; pin: string };
@@ -192,7 +191,7 @@ test('register: the screen shows the username and PIN once, and they sign the st
 	await expect(page).toHaveURL(/\/student\/pending$/);
 	await expect(status(page)).toHaveAttribute('data-state', 'pending');
 	await expect(status(page)).toContainText('Waiting for approval');
-	await page.waitForFunction(() => customElements.get('ix-menu') !== undefined);
+	await expect(mainNav(page)).toHaveCount(0);
 	await expect(menuItems(page)).toHaveCount(0);
 	await expectNoAccountEntry(page);
 
@@ -269,13 +268,13 @@ test('approval: the approver sees the username and no PIN; the same PIN opens th
 	// and account entry included, without a page reload: the header logo is a
 	// client-side link.
 	await page.evaluate(() => ((window as unknown as { __noReload: boolean }).__noReload = true));
-	await page.locator('a.header-logo').click();
+	await page.getByTestId('header-home').click();
 	await expect(page).toHaveURL(/\/student$/);
 	await expect(menuItems(page).filter({ hasText: 'My Homework' })).toHaveCount(1);
 	await expect(menuItems(page)).toHaveCount(5);
-	await expect(
-		page.locator('css:light=ix-avatar > ix-dropdown-item[label="My Account"]')
-	).toHaveCount(1);
+	const accountMenu = await openAccountMenu(page);
+	await expect(accountMenu.getByRole('menuitem', { name: 'My Account' })).toHaveCount(1);
+	await page.keyboard.press('Escape');
 	expect(
 		await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)
 	).toBe(true);
@@ -325,7 +324,7 @@ test('a rejected student signs in and sees only the not-accepted page, with sign
 	await expect(status(page)).toHaveAttribute('data-state', 'rejected');
 	await expect(status(page)).toContainText('Your registration was not accepted.');
 	await expect(page.getByRole('link', { name: 'Check again' })).toHaveCount(0);
-	await page.waitForFunction(() => customElements.get('ix-menu') !== undefined);
+	await expect(mainNav(page)).toHaveCount(0);
 	await expect(menuItems(page)).toHaveCount(0);
 	await expectNoAccountEntry(page);
 

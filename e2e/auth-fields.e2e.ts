@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createCalendarFixture, service, signIn, type CalendarFixture } from './fixtures';
+import { createCalendarFixture, openHelp, service, signIn, type CalendarFixture } from './fixtures';
 
 /**
  * iX fields on /join and /account (#66 B7b). Credential fields stay native
@@ -373,27 +373,25 @@ test('help: open signed out from the sign-in page, one guide per role and the FA
 	await expect(answer).toBeVisible();
 });
 
-test('help: a signed-in teacher opens it from the foot of the menu, on the teachers’ guide (#87)', async ({
+test('help: a signed-in teacher opens it from the nav, on the teachers’ guide (#87)', async ({
 	page
 }) => {
 	await signIn(page, fx.teacher);
 	await page.goto('/teacher');
-	await page.waitForFunction(() => customElements.get('ix-menu-about') !== undefined);
 	const step = page.getByRole('heading', { name: 'Approve new students' });
 	await expect(step).toBeHidden();
 
-	// iX's "About and legal" button, labelled Help.
-	await page.locator('ix-menu #aboutAndLegal').click();
-	await expect(page.locator('ix-menu-about').getByRole('heading', { name: 'Help' })).toBeVisible();
+	const help = await openHelp(page);
+	await expect(help.getByRole('heading', { name: 'Help' })).toBeVisible();
 	await expect(step).toBeVisible();
-	// The other guides and the FAQs are tabs of the same overlay.
-	await page.locator('ix-menu-about').getByRole('tab', { name: 'For parents' }).click();
+	// The other guides and the FAQs are tabs of the same sheet.
+	await help.getByRole('tab', { name: 'For parents' }).click();
 	await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
 	await expect(step).toBeHidden();
-	await page.locator('ix-menu-about').getByRole('tab', { name: 'Common questions' }).click();
+	await help.getByRole('tab', { name: 'Common questions' }).click();
 	await expect(page.getByText('I did not get the confirmation email.')).toBeVisible();
 
-	await page.locator('ix-menu-about').getByRole('button', { name: 'Close help' }).click();
+	await help.getByRole('button', { name: 'Close help' }).click();
 	await expect(page.getByText('I did not get the confirmation email.')).toBeHidden();
 	await expect(page).toHaveURL(/\/teacher$/);
 });

@@ -1247,5 +1247,11 @@
 	"classes_edit_title": "{name} ཞུན་དག",
 	"classes_save": "ཉར་ཚགས།",
 	"classes_saved": "“{name}” ཉར་ཚགས་ཟིན།",
-	"classes_error_save_failed": "འཛིན་གྲྭ་ཉར་ཚགས་མ་ཐུབ།"
+	"classes_error_save_failed": "འཛིན་གྲྭ་ཉར་ཚགས་མ་ཐུབ།",
+	"nav_more": "གཞན་དག",
+	"nav_main_label": "དཀར་ཆག་གཙོ་བོ།",
+	"nav_more_label": "ཤོག་ངོས་གཞན་དག",
+	"nav_collapse": "དཀར་ཆག་བསྡུ།",
+	"nav_expand": "དཀར་ཆག་རྒྱས།",
+	"common_close": "ཁ་རྒྱག"
 }

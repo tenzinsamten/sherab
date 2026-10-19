@@ -367,3 +367,7 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/2-new-app-shell.md`
   summary: Replace iX toasts with svelte-sonner behind the unchanged `showToast(type, message)` signature (`src/lib/ix.ts:266`), top-center below 80em and top-right from 80em, and move the 53 `page.locator('ix-toast')` e2e checks in 11 files to a `toasts(page)` fixture helper.
   evidence: Split from story 2 at checkpoint 1 (spec ~1,970 tokens); the shell works with iX toasts meanwhile. Belongs in spec-mobile-ux stories.yaml as its own story before story 3 (bmad-spec is the writer).
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/2-new-app-shell.md`
+  summary: When Help is opened from a closing popup (avatar menu "Help", admin More sheet "Help"), the closing Bits UI popup restores focus to its trigger while the Help dialog's focus trap takes focus; keyboard focus may land outside the dialog.
+  evidence: Unverified (medium if true): plausible from Bits UI's close-auto-focus behaviour, not checked in a browser. Settle it with a keyboard test (open Help from each entry point, assert `document.activeElement` is inside the dialog); fix with `onCloseAutoFocus={(e) => e.preventDefault()}` on the closing popup when Help was chosen.

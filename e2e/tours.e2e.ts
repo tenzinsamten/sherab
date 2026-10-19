@@ -1,5 +1,13 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { berlinToday, fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import {
+	berlinToday,
+	fixtureTeam,
+	helpSheet,
+	openHelp,
+	service,
+	signIn,
+	type TestUser
+} from './fixtures';
 
 /**
  * #101: guided page tours. A tour starts by itself the first time a teacher
@@ -242,7 +250,7 @@ async function toursSeen(userId: string): Promise<string[]> {
 
 /** Long enough for a tour to have started by itself, had there been one to start. */
 async function expectNoTour(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-application') !== undefined);
+	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
 	await page.waitForLoadState('networkidle');
 	await page.waitForTimeout(2500);
 	await expect(popover(page)).toHaveCount(0);
@@ -359,9 +367,9 @@ test('Help: "Show me around this page" runs a seen tour again; other pages say w
 		await page.goto(classPath());
 		await expectNoTour(page);
 
-		const help = page.locator('ix-menu-about');
+		const help = helpSheet(page);
 		const replay = help.getByRole('button', { name: 'Show me around this page' });
-		await page.locator('ix-menu #aboutAndLegal').click();
+		await openHelp(page);
 		await expect(help.getByRole('heading', { name: 'Help' })).toBeVisible();
 		await replay.filter({ visible: true }).click();
 
@@ -377,8 +385,7 @@ test('Help: "Show me around this page" runs a seen tour again; other pages say w
 
 		// A page without a tour: no button, a line instead.
 		await page.goto('/calendar');
-		await page.waitForFunction(() => customElements.get('ix-menu-about') !== undefined);
-		await page.locator('ix-menu #aboutAndLegal').click();
+		await openHelp(page);
 		await expect(help.getByRole('heading', { name: 'Help' })).toBeVisible();
 		await expect(
 			help.getByText('A short tour shows you around these pages').filter({ visible: true })
@@ -501,8 +508,7 @@ test('teacher: the homework, new-homework and Requests tours; a failed save does
 		// The form's tour follows the form: due date before "Assign to".
 		await page.goto(`${classPath()}/homework/new`);
 		await expectNoTour(page);
-		const help = page.locator('ix-menu-about');
-		await page.locator('ix-menu #aboutAndLegal').click();
+		const help = await openHelp(page);
 		await help
 			.getByRole('button', { name: 'Show me around this page' })
 			.filter({ visible: true })
@@ -530,8 +536,7 @@ test('a parent without a child: no tour, nothing marked seen, Help says there is
 		await expectNoTour(page);
 		expect(await toursSeen(childless.id)).toEqual([]);
 
-		const help = page.locator('ix-menu-about');
-		await page.locator('ix-menu #aboutAndLegal').click();
+		const help = await openHelp(page);
 		await help
 			.getByRole('button', { name: 'Show me around this page' })
 			.filter({ visible: true })
@@ -543,5 +548,38 @@ test('a parent without a child: no tour, nothing marked seen, Help says there is
 		expect(await toursSeen(childless.id)).toEqual([]);
 	} finally {
 		await context.close();
+	}
+});
+
+test('Help open before an unseen tour starts: the tour stays away and is not marked seen', async ({
+	browser
+}) => {
+	const context = await personContext(browser);
+	// Holds the tour's start back (it waits for iX's components, up to 3 s)
+	// so Help is surely open by the time it would start.
+	await context.addInitScript(() => {
+		const whenDefined = customElements.whenDefined.bind(customElements);
+		customElements.whenDefined = (name: string) =>
+			name === 'ix-button'
+				? new Promise((resolve) => setTimeout(() => resolve(whenDefined(name)), 2500))
+				: whenDefined(name);
+	});
+	const page = await context.newPage();
+	const before = await toursSeen(teacher.id);
+	try {
+		check(
+			await service.from('profiles').update({ tours_seen: [] }).eq('id', teacher.id),
+			'reset tours_seen'
+		);
+		await signIn(page, teacher);
+		await expect(page).toHaveURL(/\/teacher$/);
+		await openHelp(page);
+
+		await page.waitForTimeout(4500);
+		await expect(popover(page)).toHaveCount(0);
+		expect(await toursSeen(teacher.id)).toEqual([]);
+	} finally {
+		await context.close();
+		await service.from('profiles').update({ tours_seen: before }).eq('id', teacher.id);
 	}
 });

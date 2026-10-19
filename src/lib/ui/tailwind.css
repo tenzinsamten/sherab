@@ -27,6 +27,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @source '../components/ui';
+@source '../components/shell';
+@source '../../routes/+layout.svelte';
 @source '../../routes/dev/ui';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab

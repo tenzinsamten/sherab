@@ -10,25 +10,24 @@
 	import { getLocale, locales, setLocale } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
 	import {
-		avatarLabel,
 		dropdownButtonLabelRoom,
 		headerHomeLink,
-		menuAboutPanels,
-		menuItemLabelRoom,
 		routeIxLinks,
 		setupIx,
 		showToast
 	} from '$lib/ix';
-	import { initials } from '$lib/initials';
-	import HelpFaq from '$lib/components/HelpFaq.svelte';
-	import HelpGuide from '$lib/components/HelpGuide.svelte';
+	import AppHeader from '$lib/components/shell/AppHeader.svelte';
+	import BottomNav from '$lib/components/shell/BottomNav.svelte';
+	import HelpSheet from '$lib/components/shell/HelpSheet.svelte';
+	import PortalRoot from '$lib/components/shell/PortalRoot.svelte';
+	import SideNav from '$lib/components/shell/SideNav.svelte';
 	import NewBadgeDialog from '$lib/components/NewBadgeDialog.svelte';
 	import PageTour from '$lib/components/PageTour.svelte';
-	import { HELP_ROLES, helpRoleFor, helpTabLabels } from '$lib/help';
-	import { rememberMenuExpand, WIDE_SCREEN_QUERY } from '$lib/menu';
+	import { HELP_ROLES, helpRoleFor } from '$lib/help';
+	import { navItems, tabItems } from '$lib/nav';
 	import { releasePush, syncPush } from '$lib/push-client';
 	import { roleHome } from '$lib/role-home';
-	import { isTourRole, tourFor, tourWhere } from '$lib/tours';
+	import { tourFor } from '$lib/tours';
 	import flagTibet from '$lib/assets/flag-tibet.svg';
 	import logoWhite from '$lib/assets/sherab-logo-white.svg';
 
@@ -119,77 +118,20 @@
 	// holding more than one.
 	let userName = $derived(data.profile?.display_name?.trim() || data.profile?.email || '');
 
-	type NavItem = {
-		href: string;
-		label: string;
-		icon: string;
-		exact?: boolean;
-		/** #60: shown as the iX menu item's count pill (omitted at 0). */
-		notifications?: number;
-	};
-
 	// #100: a student who is not approved (pending or rejected) has only the
-	// status page, so no menu entries and no account page.
+	// status page, so no nav entries and no account page.
 	let unapprovedStudent = $derived(
 		data.profile?.role === 'student' && data.profile.status !== 'approved'
 	);
 
-	let navItems = $derived.by((): NavItem[] => {
-		if (unapprovedStudent) return [];
-		const requests = {
-			href: resolve('/requests'),
-			label: m.nav_requests(),
-			icon: 'user-check',
-			notifications: data.pendingRequestsCount || undefined
-		};
-		const leaderboard = {
-			href: resolve('/leaderboard'),
-			label: m.nav_leaderboard(),
-			icon: 'trophy'
-		};
-		const calendar = {
-			href: resolve('/calendar'),
-			label: m.nav_calendar(),
-			icon: 'calendar'
-		};
-		if (role === 'admin') {
-			return [
-				{ href: resolve('/admin'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
-				{ href: resolve('/admin/classes'), label: m.nav_classes(), icon: 'book' },
-				{ href: resolve('/admin/teachers'), label: m.nav_teachers(), icon: 'user-reading' },
-				{ href: resolve('/admin/parents'), label: m.nav_parents(), icon: 'user-management' },
-				{ href: resolve('/admin/teams'), label: m.nav_teams(), icon: 'user-group' },
-				calendar,
-				requests,
-				leaderboard
-			];
-		}
-		if (role === 'teacher') {
-			return [
-				{ href: resolve('/teacher'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
-				calendar,
-				requests,
-				leaderboard
-			];
-		}
-		if (role === 'student') {
-			return [
-				{ href: resolve('/student'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
-				{ href: resolve('/student/classes'), label: m.nav_my_classes(), icon: 'book' },
-				{ href: resolve('/student/homework'), label: m.nav_my_homework(), icon: 'tasks-open' },
-				calendar,
-				{ ...leaderboard, label: m.nav_team_leaderboard() }
-			];
-		}
-		if (role === 'parent') {
-			return [
-				{ href: resolve('/parent'), label: m.nav_dashboard(), icon: 'dashboard', exact: true },
-				{ href: resolve('/parent/homework'), label: m.nav_homework(), icon: 'tasks-open' },
-				calendar
-			];
-		}
-		return [];
+	// Story 2: the side nav (from 80em) and the bottom tab bar (below it),
+	// per role in the order of stack.md (src/lib/nav.ts).
+	let navOptions = $derived({
+		pendingRequests: data.pendingRequestsCount,
+		unapprovedStudent
 	});
+	let sideItems = $derived(navItems(role, navOptions));
+	let tabs = $derived(tabItems(role, navOptions));
 
 	// #87: the help overlay opens on the active role's guide (the parents'
 	// for an admin), so that tab comes first.
@@ -202,25 +144,31 @@
 	// offers to run it again; PageTour starts it by itself the first time.
 	let tour = $derived(tourFor(role, page.route.id, page.url.searchParams.get('tab')));
 	let pageTour: PageTour | undefined = $state();
-	let menuElement:
-		| (HTMLElement & {
-				toggleAbout(show: boolean): Promise<void>;
-				toggleMenu(show?: boolean): Promise<void>;
-		  })
-		| undefined = $state();
+	let helpOpen = $state(false);
 
-	// Help closes first, and below `lg` the menu it was opened from (an
-	// overlay there): the tour points at the page behind them.
-	async function replayTour() {
-		await menuElement?.toggleAbout(false);
-		if (!window.matchMedia(WIDE_SCREEN_QUERY).matches) await menuElement?.toggleMenu(false);
-		const started = await pageTour?.start();
-		if (!started) showToast('info', m.tour_nothing_here());
+	function openHelp() {
+		helpOpen = true;
 	}
 
-	function isActive(item: NavItem) {
-		const path = page.url.pathname;
-		return item.exact ? path === item.href : path === item.href || path.startsWith(item.href + '/');
+	// A page change (a link, back/forward, goto) closes Help.
+	$effect(() => {
+		void page.url.pathname;
+		helpOpen = false;
+	});
+
+	// Help closes first: the tour points at the page behind it, so it
+	// starts once the sheet has finished closing (HelpSheet's onClosed).
+	let replayPending = false;
+	function replayTour() {
+		replayPending = true;
+		helpOpen = false;
+	}
+
+	async function helpClosed() {
+		if (!replayPending) return;
+		replayPending = false;
+		const started = await pageTour?.start();
+		if (!started) showToast('info', m.tour_nothing_here());
 	}
 </script>
 
@@ -255,133 +203,68 @@
 	{/each}
 {/snippet}
 
-<!-- #101: at the top of every Help tab. Only parents and teachers have tours. -->
-{#snippet tourEntry()}
-	{#if isTourRole(role)}
-		<div class="tour-entry">
-			{#if tour}
-				<ix-button variant="secondary" icon="eye" onclick={() => void replayTour()}>
-					{m.tour_replay()}
-				</ix-button>
-				<p class="muted">{m.tour_replay_hint()}</p>
-			{:else}
-				<p class="muted">{tourWhere[role]()}</p>
-			{/if}
-		</div>
-	{/if}
-{/snippet}
-
 {#if data.profile}
-	<ix-application>
-		<ix-application-header name="Sherab" use:headerHomeLink={homeHref}>
-			<!-- ≥ 48em the logo is the home link and the name text is hidden;
-			     below it iX hides this slot and the name is the link. -->
-			<a slot="logo" class="header-logo" href={homeHref}>
-				<img src={logoWhite} alt={m.nav_logo_alt()} width="58" height="32" />
-			</a>
-			<!-- Decision 1 (#64): signed in, the language picker sits in the
-			     default right-hand slot next to the avatar; on small screens
-			     iX folds it into the header's "more" menu. -->
-			<ix-dropdown-button
-				enable-top-layer
-				variant="subtle-tertiary"
-				icon="globe"
-				label={localeFlags[getLocale()]?.name ?? getLocale()}
-				aria-label={m.footer_locale_label()}
-				use:dropdownButtonLabelRoom
-			>
-				{@render languageItems()}
-			</ix-dropdown-button>
-			<ix-avatar
-				slot="ix-application-header-avatar"
-				username={userName}
-				initials={initials(userName) || undefined}
-				use:avatarLabel={userName
-					? m.header_account_menu_label({ name: userName })
-					: m.nav_account()}
-			>
-				{#if data.roles.length > 1}
-					<!-- B13 (#68): only a login holding more than one role sees these. -->
-					<ix-dropdown-header label={m.role_switch_label()}></ix-dropdown-header>
-					{#each data.roles as held (held)}
-						<ix-dropdown-item
-							data-role-option={held}
-							label={roleNames[held]?.() ?? held}
-							checked={held === role || undefined}
-							onclick={() => switchRole(held)}
-						></ix-dropdown-item>
-					{/each}
-					<ix-divider></ix-divider>
-				{/if}
-				{#if !unapprovedStudent}
-					<ix-dropdown-item
-						icon="user"
-						label={m.nav_account()}
-						onclick={() => void goto(resolve('/account'))}
-					></ix-dropdown-item>
-				{/if}
-				<ix-dropdown-item icon="log-out" label={m.nav_sign_out()} onclick={() => void signOut()}
-				></ix-dropdown-item>
-			</ix-avatar>
-		</ix-application-header>
-
-		<ix-menu
-			bind:this={menuElement}
-			start-expanded={data.menuExpanded || undefined}
-			i18n-legal={m.nav_help()}
-			use:rememberMenuExpand
-		>
-			{#each navItems as item (item.href)}
-				<ix-menu-item
-					href={item.href}
-					icon={item.icon}
-					active={isActive(item) || undefined}
-					notifications={item.notifications}
-					use:menuItemLabelRoom
-				>
-					{item.label}
-				</ix-menu-item>
-			{/each}
-			<!-- #87: iX's "About and legal" overlay, opened from the button at the
-			     foot of the menu, holds the guides and FAQs as its tabs. -->
-			<!-- svelte-ignore a11y_unknown_aria_attribute (an iX prop, the close button's label) -->
-			<ix-menu-about
-				label={m.help_heading()}
-				aria-label-close-button={m.help_close()}
-				use:menuAboutPanels
-			>
-				{#each helpRoles as helpRole (helpRole)}
-					<ix-menu-about-item tab-key={helpRole} label={helpTabLabels[helpRole]()}>
-						{@render tourEntry()}
-						<HelpGuide role={helpRole} />
-					</ix-menu-about-item>
-				{/each}
-				<ix-menu-about-item tab-key="faq" label={m.help_faq_heading()}>
-					{@render tourEntry()}
-					<HelpFaq />
-				</ix-menu-about-item>
-			</ix-menu-about>
-		</ix-menu>
-		<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
-		<form bind:this={roleForm} method="POST" action={resolve('/role')} hidden>
-			<input bind:this={roleInput} type="hidden" name="role" />
-		</form>
-
-		<ix-content>
-			{@render children()}
-		</ix-content>
-		<PageTour
-			bind:this={pageTour}
+	<!-- Story 2: the new shell. Only its chrome carries data-ui="new"; the
+	     page content inside <main> is still iX. -->
+	<div class="flex min-h-dvh flex-col" data-app-shell>
+		<AppHeader
+			{homeHref}
+			{userName}
+			roles={data.roles}
 			{role}
-			userId={data.profile.id}
-			seen={data.profile.tours_seen ?? []}
+			{roleNames}
+			{localeFlags}
+			showAccount={!unapprovedStudent}
+			showHelp={role === 'student'}
+			onAccount={() => void goto(resolve('/account'))}
+			onHelp={openHelp}
+			onSwitchRole={switchRole}
+			onSignOut={() => void signOut()}
 		/>
-		<!-- Badge detail CAP-9: the student's own view only. Students have no
-		     page tours (src/lib/tours.ts), so the two never open together. -->
-		{#if role === 'student' && data.newBadges.length > 0}
-			<NewBadgeDialog badges={data.newBadges} userId={data.profile.id} />
+		<div class="flex flex-1">
+			{#if sideItems.length > 0}
+				<SideNav
+					items={sideItems}
+					pathname={page.url.pathname}
+					initialExpanded={data.menuExpanded}
+					onHelp={openHelp}
+				/>
+			{/if}
+			<!-- iX's content area padding, so the pages inside are unchanged. -->
+			<main
+				class="min-w-0 flex-1 pt-3 pr-[max(2rem,env(safe-area-inset-right))] pb-1 pl-[max(2rem,env(safe-area-inset-left))]"
+			>
+				{@render children()}
+			</main>
+		</div>
+		{#if tabs.length > 0}
+			<BottomNav items={tabs} pathname={page.url.pathname} onHelp={openHelp} />
 		{/if}
-	</ix-application>
+	</div>
+	<HelpSheet
+		bind:open={helpOpen}
+		{helpRoles}
+		{role}
+		hasTour={Boolean(tour)}
+		onReplayTour={replayTour}
+		onClosed={() => void helpClosed()}
+	/>
+	<form bind:this={signOutForm} method="POST" action={resolve('/logout')} hidden></form>
+	<form bind:this={roleForm} method="POST" action={resolve('/role')} hidden>
+		<input bind:this={roleInput} type="hidden" name="role" />
+	</form>
+	<PageTour
+		bind:this={pageTour}
+		{role}
+		userId={data.profile.id}
+		seen={data.profile.tours_seen ?? []}
+		{helpOpen}
+	/>
+	<!-- Badge detail CAP-9: the student's own view only. Students have no
+	     page tours (src/lib/tours.ts), so the two never open together. -->
+	{#if role === 'student' && data.newBadges.length > 0}
+		<NewBadgeDialog badges={data.newBadges} userId={data.profile.id} />
+	{/if}
 {:else}
 	<!-- Signed out: no side menu, so the header stands alone -- inside
 	     <ix-application> it would always show a menu toggle on small screens. -->
@@ -410,20 +293,4 @@
 		</main>
 	</div>
 {/if}
-
-<style>
-	.tour-entry {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2) var(--space-4);
-		margin-bottom: var(--space-6);
-		padding-bottom: var(--space-4);
-		border-bottom: 1px solid var(--theme-color-soft-bdr);
-	}
-
-	.tour-entry p {
-		margin: 0;
-		max-width: 70ch;
-	}
-</style>
+<PortalRoot />

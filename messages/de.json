@@ -1247,5 +1247,11 @@
 	"classes_edit_title": "{name} bearbeiten",
 	"classes_save": "Speichern",
 	"classes_saved": "„{name}“ gespeichert.",
-	"classes_error_save_failed": "Die Klasse konnte nicht gespeichert werden."
+	"classes_error_save_failed": "Die Klasse konnte nicht gespeichert werden.",
+	"nav_more": "Mehr",
+	"nav_main_label": "Hauptmenü",
+	"nav_more_label": "Weitere Seiten",
+	"nav_collapse": "Menü einklappen",
+	"nav_expand": "Menü ausklappen",
+	"common_close": "Schließen"
 }

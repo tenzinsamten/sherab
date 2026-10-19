@@ -1247,5 +1247,11 @@
 	"classes_edit_title": "Edit {name}",
 	"classes_save": "Save",
 	"classes_saved": "“{name}” saved.",
-	"classes_error_save_failed": "Could not save the class."
+	"classes_error_save_failed": "Could not save the class.",
+	"nav_more": "More",
+	"nav_main_label": "Main menu",
+	"nav_more_label": "More pages",
+	"nav_collapse": "Collapse menu",
+	"nav_expand": "Expand menu",
+	"common_close": "Close"
 }

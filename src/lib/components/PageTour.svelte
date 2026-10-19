@@ -5,6 +5,7 @@
 	import type { Driver } from 'driver.js';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
+	import { PORTAL_TARGET } from '$lib/components/shell/portal';
 	import { tourFor, type Tour, type TourStep } from '$lib/tours';
 
 	/**
@@ -22,13 +23,16 @@
 	let {
 		role,
 		userId,
-		seen
+		seen,
+		helpOpen = false
 	}: {
 		/** The active role. */
 		role: string | null | undefined;
 		userId: string;
 		/** profiles.tours_seen as the layout last loaded it. */
 		seen: readonly string[];
+		/** The shell's Help sheet is open: no tour starts over it. */
+		helpOpen?: boolean;
 	} = $props();
 
 	// The layout load does not run again on navigation for a single-role
@@ -188,20 +192,22 @@
 
 		// The page's iX components draw themselves after they are defined;
 		// until then the controls have no final size or place.
-		await Promise.race([customElements.whenDefined('ix-application'), wait(3000)]);
+		await Promise.race([customElements.whenDefined('ix-button'), wait(3000)]);
 		for (let tries = 0; tries < 8; tries += 1) {
 			await wait(350);
 			if (mine !== attempt) return;
 			if (stepsOnPage(tour).length > 0) break;
 		}
 		if (mine !== attempt || hasSeen(tour.id)) return;
-		// Not over Help or a dialog the person opened in the meantime. The
-		// app's dialogs are <ix-modal>, whose <dialog> is in its shadow DOM.
-		const menu = document.querySelector<HTMLElement & { showAbout?: boolean }>('ix-menu');
+		// Not over Help, a dialog or a menu the person opened in the meantime.
+		// The pages' dialogs are <ix-modal>, whose <dialog> is in its shadow
+		// DOM; the shell's popups (More sheet, avatar and language menus) are
+		// in the portal root.
 		const modalOpen = [...document.querySelectorAll('ix-modal')].some((modal) =>
 			modal.shadowRoot?.querySelector('dialog[open]')
 		);
-		if (menu?.showAbout || modalOpen) return;
+		const popupOpen = document.querySelector(`${PORTAL_TARGET} [data-state="open"]`) !== null;
+		if (helpOpen || modalOpen || popupOpen) return;
 		await run(tour, mine);
 	}
 

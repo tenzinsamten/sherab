@@ -102,14 +102,14 @@
 	/**
 	 * Where focus goes when there is no opener to return to (the dialog
 	 * usually opens right after the sign-in redirect, with focus on the body):
-	 * the page's <main>, else its first heading.
+	 * the page's heading, else the page content (<main>, the shell's since
+	 * story 2).
 	 */
 	function focusPage() {
 		const target =
-			document.querySelector<HTMLElement>('ix-content main') ??
-			document.querySelector<HTMLElement>('main') ??
-			document.querySelector<HTMLElement>('ix-content h1') ??
-			document.querySelector<HTMLElement>('h1');
+			document.querySelector<HTMLElement>('main h1') ??
+			document.querySelector<HTMLElement>('h1') ??
+			document.querySelector<HTMLElement>('main');
 		if (!target) return;
 		if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
 		target.focus();

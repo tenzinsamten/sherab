@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { service, signIn, type TestUser } from './fixtures';
+import { openAccountMenu, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B14a (#68): a teacher requests parent access on /account, the admin
@@ -56,8 +56,7 @@ test.afterAll(async () => {
 
 const card = (page: Page) =>
 	page.locator('section', { has: page.getByRole('heading', { name: 'Parent access' }) });
-const parentOption = (page: Page) =>
-	page.locator('ix-avatar ix-dropdown-item[data-role-option="parent"]');
+const parentOption = (page: Page) => page.locator('[data-role-option="parent"]');
 
 async function openAccount(page: Page) {
 	await page.goto('/account');
@@ -77,7 +76,9 @@ test('teacher requests parent access, the admin approves, Parent appears in the 
 		page.locator('ix-toast').getByText('Request sent. The admin will review it.')
 	).toBeVisible();
 	await expect(card(page)).toContainText('Awaiting admin approval.');
+	await openAccountMenu(page);
 	await expect(parentOption(page)).toHaveCount(0);
+	await page.keyboard.press('Escape');
 
 	const context = await browser.newContext();
 	const adminPage = await context.newPage();
@@ -97,8 +98,7 @@ test('teacher requests parent access, the admin approves, Parent appears in the 
 	await openAccount(page);
 	await expect(card(page)).toContainText('You have parent access.');
 	await expect(card(page)).toContainText(teacher.email);
-	await page.waitForFunction(() => customElements.get('ix-avatar') !== undefined);
-	await page.locator('ix-avatar').click();
+	await openAccountMenu(page);
 	await expect(parentOption(page)).toHaveCount(1);
 });
 
@@ -211,11 +211,8 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 	const promoted = { id: data.user.id, email, password };
 	await signIn(page, promoted);
 	await expect(page).toHaveURL(/\/teacher$/);
-	await page.waitForFunction(() => customElements.get('ix-avatar') !== undefined);
-	await page.locator('ix-avatar').click();
-	await expect(page.locator('ix-avatar ix-dropdown-item[data-role-option="teacher"]')).toHaveCount(
-		1
-	);
+	await openAccountMenu(page);
+	await expect(page.locator('[data-role-option="teacher"]')).toHaveCount(1);
 	await expect(parentOption(page)).toHaveCount(1);
 
 	// The admin removes them as teacher: the parent account is kept.

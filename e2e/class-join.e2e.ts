@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, navLink, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B12a (#67): on their dashboard an approved student sends another class's
@@ -277,11 +277,7 @@ test('a rejected request shows as Rejected and can be dismissed', async ({ page 
 
 async function openRequests(page: Page) {
 	await page.goto('/requests');
-	await page.waitForFunction(
-		() =>
-			customElements.get('ix-button') !== undefined &&
-			customElements.get('ix-menu-item') !== undefined
-	);
+	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
 	await page.waitForLoadState('networkidle');
 }
 
@@ -292,7 +288,7 @@ function joinSection(page: Page) {
 }
 
 function requestsNavItem(page: Page) {
-	return page.locator('ix-menu-item', { hasText: 'Requests' });
+	return navLink(page, /^Requests/);
 }
 
 /** The /requests header count pill (its accessible text, e.g. "1 pending"). */
@@ -328,7 +324,7 @@ test("a teacher who is the student's parent sees the request without buttons, un
 	// Known state: the count loaded without error (no load-error toast), and
 	// the only pending item is their own child's, so nothing is counted.
 	await expect(loadErrorToast(page)).toHaveCount(0);
-	await expect(requestsNavItem(page)).toHaveJSProperty('notifications', undefined);
+	await expect(requestsNavItem(page)).not.toHaveAttribute('data-count');
 	await expect(headerPill(page)).toHaveCount(0);
 });
 
@@ -343,7 +339,7 @@ test('the class teacher approves a request; the class appears in My classes', as
 	await expect(row).toContainText(`Asks to join ${targetName}`);
 	await expect(row).toContainText(`Current classes: ${homeName}`);
 	await expect(loadErrorToast(page)).toHaveCount(0);
-	await expect(requestsNavItem(page)).toHaveJSProperty('notifications', 1);
+	await expect(requestsNavItem(page)).toHaveAttribute('data-count', '1');
 	await expect(headerPill(page).locator('.sr-only')).toHaveText('1 pending');
 
 	await decide(page, targetName, 'Approve');
@@ -352,7 +348,7 @@ test('the class teacher approves a request; the class appears in My classes', as
 	).toBeVisible();
 	// The last request is gone, so the section is hidden like other empty ones.
 	await expect(joinSection(page)).toHaveCount(0);
-	await expect(requestsNavItem(page)).toHaveJSProperty('notifications', undefined);
+	await expect(requestsNavItem(page)).not.toHaveAttribute('data-count');
 	await expect(headerPill(page)).toHaveCount(0);
 
 	const context = await browser.newContext();
@@ -383,7 +379,7 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 	try {
 		await signIn(teacherPage, teacher);
 		await openRequests(teacherPage);
-		await expect(requestsNavItem(teacherPage)).toHaveJSProperty('notifications', 1);
+		await expect(requestsNavItem(teacherPage)).toHaveAttribute('data-count', '1');
 		await decide(teacherPage, secondName, 'Reject');
 		await expect(
 			teacherPage

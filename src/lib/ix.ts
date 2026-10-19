@@ -163,105 +163,6 @@ export function dropdownButtonLabelRoom(node: HTMLElement) {
 	})();
 }
 
-/**
- * Svelte action for <ix-menu-item>: gives the label a taller line. iX clips
- * the label to one line inside its shadow DOM, which shaves the feet off the
- * deepest Tibetan letters (drawn 1.36x, #85); 2.25rem still fits the item,
- * nested or not (#86).
- */
-export function menuItemLabelRoom(node: HTMLElement) {
-	const sheet = new CSSStyleSheet();
-	sheet.replaceSync('.tab-text { line-height: 2.25rem; }');
-
-	(async () => {
-		await customElements.whenDefined('ix-menu-item');
-		await (
-			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
-		).componentOnReady?.();
-		const root = node.shadowRoot;
-		if (root) root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
-	})();
-}
-
-/**
- * Svelte action for <ix-menu-about>: keeps the shown tab panel in step with
- * the selected tab (#87). Each <ix-tab-panel> hides itself whenever it is
- * connected, and iX only un-hides the active one when its tab set loads or a
- * tab is clicked; a panel connected after that (Svelte hydrating the items)
- * stays hidden, leaving the overlay empty.
- */
-export function menuAboutPanels(node: HTMLElement) {
-	type Panel = HTMLElement & { tabKey?: string };
-
-	function sync() {
-		const tabs = node.shadowRoot?.querySelector<HTMLElement & { activeTabKey?: string }>('ix-tabs');
-		const active = tabs?.activeTabKey;
-		if (!active) return;
-		for (const panel of node.querySelectorAll<Panel>('ix-tab-panel')) {
-			const hidden = panel.tabKey !== active;
-			if (panel.hidden !== hidden) panel.hidden = hidden;
-		}
-	}
-
-	const observer = new MutationObserver(sync);
-	observer.observe(node, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeFilter: ['hidden']
-	});
-
-	(async () => {
-		await customElements.whenDefined('ix-menu-about');
-		await (
-			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
-		).componentOnReady?.();
-		sync();
-	})();
-
-	return {
-		destroy() {
-			observer.disconnect();
-		}
-	};
-}
-
-/**
- * Svelte action for a header <ix-avatar>: gives its menu button an accessible
- * name. iX moves a host `aria-label` onto the avatar image only, and drops it
- * entirely when `initials` are shown, so the button would be announced as
- * just the initials.
- */
-export function avatarLabel(node: HTMLElement, label: string) {
-	let current = label;
-	let destroyed = false;
-
-	// Re-queried on every write: iX may re-render its internal button.
-	function apply() {
-		const button = node.shadowRoot?.querySelector<HTMLElement>('button');
-		if (button) button.setAttribute('aria-label', current);
-		else node.setAttribute('aria-label', current);
-	}
-
-	(async () => {
-		await customElements.whenDefined('ix-avatar');
-		await (
-			node as HTMLElement & { componentOnReady?: () => Promise<unknown> }
-		).componentOnReady?.();
-		if (!destroyed) apply();
-	})();
-
-	return {
-		update(next: string) {
-			current = next;
-			if (!destroyed) apply();
-		},
-		destroy() {
-			destroyed = true;
-		}
-	};
-}
-
 /** App-wide feedback: every action error and short confirmation is an iX toast. */
 export async function showToast(type: ToastType, message: string) {
 	const ix = await setupIx();
@@ -271,10 +172,10 @@ export async function showToast(type: ToastType, message: string) {
 /**
  * Client-side navigation for links rendered by iX (#40).
  *
- * `<ix-button href>` and `<ix-menu-item href>` render an `<a target="_self">`
- * in their shadow DOM. SvelteKit treats any link with a `target` as external
- * and lets the browser do a full page load, so every menu click reloaded the
- * app and iX re-drew from scratch (the flicker). This catches those clicks
+ * `<ix-button href>` renders an `<a target="_self">` in its shadow DOM.
+ * SvelteKit treats any link with a `target` as external and lets the
+ * browser do a full page load, so every such click reloaded the app and iX
+ * re-drew from scratch (the flicker). This catches those clicks
  * first (capture phase) and hands same-origin ones to SvelteKit's router.
  * Returns a cleanup function.
  */

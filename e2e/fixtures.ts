@@ -358,3 +358,39 @@ export function berlinToday(): string {
 		day: '2-digit'
 	}).format(new Date());
 }
+
+/*
+ * The signed-in app shell (mobile-first story 2). Both navigations are in the
+ * page; only one is shown (side nav from 80em, bottom bar below), and role
+ * locators skip the hidden one.
+ */
+
+/** The navigation shown at this width: the side nav or the bottom tab bar. */
+export function mainNav(page: Page) {
+	return page.getByRole('navigation', { name: 'Main menu' });
+}
+
+/** A destination in the shown navigation, by its label (e.g. "Requests"). */
+export function navLink(page: Page, name: string | RegExp) {
+	return mainNav(page).getByRole('link', { name });
+}
+
+/** Opens the header's avatar menu and returns it. */
+export async function openAccountMenu(page: Page) {
+	await page.getByTestId('account-menu').click();
+	const menu = page.getByRole('menu');
+	await expect(menu).toBeVisible();
+	return menu;
+}
+
+/** The Help sheet (a dialog). */
+export function helpSheet(page: Page) {
+	return page.getByRole('dialog', { name: 'Help' });
+}
+
+/** Opens Help from the shown navigation (teacher, parent, admin on desktop). */
+export async function openHelp(page: Page) {
+	await mainNav(page).getByRole('button', { name: 'Help' }).click();
+	await expect(helpSheet(page)).toBeVisible();
+	return helpSheet(page);
+}
