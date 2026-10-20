@@ -78,6 +78,11 @@
 @source '../../routes/(auth)/join/+page.svelte';
 @source '../../routes/(auth)/join/pending/+page.svelte';
 @source '../components/JoinSteps.svelte';
+/* Story 7: the teacher dashboard, the class page and a student's badges
+   (file by file: the class's homework and syllabus pages are still iX). */
+@source '../../routes/teacher/+page.svelte';
+@source '../../routes/teacher/classes/*/+page.svelte';
+@source '../../routes/teacher/classes/*/students/*/badges/+page.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

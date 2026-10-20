@@ -19,6 +19,9 @@ import { service, signIn, type TestUser } from './fixtures';
  *
  * Story 6 (auth pages): the login shots are of the new-UI card
  * (`[data-auth-card]`), re-baselined on the new UI.
+ *
+ * Story 7 (teacher class pages): the teacher dashboard is no longer an iX
+ * page, so its shots are gone; it has its own checks in teacher-mobile.e2e.ts.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -30,10 +33,9 @@ test.skip(
 const tag = crypto.randomUUID().slice(0, 8);
 const userIds: string[] = [];
 
-let teacher: TestUser;
 let admin: TestUser;
 
-async function createUser(role: 'teacher' | 'admin'): Promise<TestUser> {
+async function createUser(role: 'admin'): Promise<TestUser> {
 	const email = `e2e-ixvis-${role}-${tag}@example.test`;
 	const password = crypto.randomUUID();
 	const { data, error } = await service.auth.admin.createUser({
@@ -49,7 +51,6 @@ async function createUser(role: 'teacher' | 'admin'): Promise<TestUser> {
 }
 
 test.beforeAll(async () => {
-	teacher = await createUser('teacher');
 	admin = await createUser('admin');
 });
 
@@ -140,12 +141,6 @@ for (const viewport of VIEWPORTS) {
 		test(`login (${viewport.name})`, async ({ page }) => {
 			await page.goto('/login');
 			await shoot(page, `login-${viewport.name}`, [], '[data-auth-card]');
-		});
-
-		test(`teacher dashboard (${viewport.name})`, async ({ page }) => {
-			await signIn(page, teacher);
-			await page.goto('/teacher');
-			await shoot(page, `teacher-dashboard-${viewport.name}`);
 		});
 
 		test(`admin classes (${viewport.name})`, async ({ page }) => {

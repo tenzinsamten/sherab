@@ -243,6 +243,7 @@ test("the parent's and teacher's views never show or consume the celebration", a
 	await page.context().clearCookies();
 	await signIn(page, teacher);
 	await page.goto(`/teacher/classes/${danceClassId}/students/${student.id}/badges`);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await expect(page.locator('li[data-state="earned"]')).toHaveCount(2);
 	await settle(page);
 	await expect(newBadgeDialog(page)).toHaveCount(0);
@@ -473,6 +474,8 @@ test('the tile links to the badge page, which lists every badge earned and locke
 test("a teacher of the student's class opens the badge page from the roster", async ({ page }) => {
 	await signIn(page, teacher);
 	await page.goto(`/teacher/classes/${danceClassId}`);
+	// The class page is on the new UI (mobile-first story 7): its root marks itself hydrated.
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 
 	await page.locator(`button.student-toggle[data-student-id="${student.id}"]`).click();

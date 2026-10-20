@@ -3,6 +3,7 @@ import {
 	berlinToday,
 	fixtureTeam,
 	helpSheet,
+	openCalendar,
 	openHelp,
 	service,
 	signIn,
@@ -250,7 +251,13 @@ async function toursSeen(userId: string): Promise<string[]> {
 
 /** Long enough for a tour to have started by itself, had there been one to start. */
 async function expectNoTour(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	// A page on the new UI marks its root hydrated; on an iX page, iX is defined.
+	await page.waitForFunction(() => {
+		const root = document.querySelector('main > [data-ui="new"]');
+		return root
+			? root.hasAttribute('data-hydrated')
+			: customElements.get('ix-button') !== undefined;
+	});
 	await page.waitForLoadState('networkidle');
 	await page.waitForTimeout(2500);
 	await expect(popover(page)).toHaveCount(0);
@@ -383,8 +390,9 @@ test('Help: "Show me around this page" runs a seen tour again; other pages say w
 		await expect(popover(page)).toHaveCount(0);
 		expect(await toursSeen(teacher.id)).toEqual(['teacher-home', 'teacher-class']);
 
-		// A page without a tour: no button, a line instead.
-		await page.goto('/calendar');
+		// A page without a tour: no button, a line instead. (Help opens only
+		// once the page has hydrated.)
+		await openCalendar(page);
 		await openHelp(page);
 		await expect(help.getByRole('heading', { name: 'Help' })).toBeVisible();
 		await expect(

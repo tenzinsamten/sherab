@@ -100,21 +100,47 @@
 - id: "7"
   title: Teacher class pages
   description: >-
-    Migrate the teacher dashboard, class page (attendance, class days,
-    upcoming leave), homework list, create and review, and student badge
-    pages. See SPEC.md CAP-2, CAP-3, CAP-4.
+    Migrate the teacher dashboard, class page (attendance, session picker,
+    upcoming leave, skills) and student badge pages. Homework moved to 7b
+    and 7c at the scope gate (user decision). See SPEC.md CAP-2, CAP-3,
+    CAP-4.
   spec_checkpoint: true
   invoke_dev_with: >-
     Attendance is marked standing up mid-class: one-handed, 44px targets.
-    The homework review table becomes stacked cards on phone. Keep the
-    upcoming-leave behaviour from #106.
+    Keep the upcoming-leave behaviour from #106. EnrollmentPanel (story 8)
+    stays iX below the page's new-UI root.
+
+- id: "7b"
+  title: Teacher homework list
+  description: >-
+    Migrate the class homework list (create button, filters, pager, pills)
+    to the new components. Split from story 7 at its scope gate. See SPEC.md
+    CAP-2, CAP-3.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep the homework tour targets (homework-create, homework-filter,
+    homework-row) and the breadcrumbs e2e.
+
+- id: "7c"
+  title: Teacher homework create and review
+  description: >-
+    Migrate homework create and review, with LinkRows, ContentLanguageSelect
+    and RichTextEditor (moved here from story 8, user decision). The review
+    table becomes stacked cards on phone; confirmWith becomes createConfirm.
+    Split from story 7 at its scope gate. See SPEC.md CAP-2, CAP-3.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep every posted field, the per-row pending keys and the series
+    confirms; keep startDateNote (#96) and pickMode clearing the start date.
+    Tour targets must stay visible on the cards at every breakpoint.
 
 - id: "8"
   title: Syllabus, enrollment and schedule components
   description: >-
-    Migrate SyllabusList, SyllabusForm, SyllabusDetail, SyllabusFiles,
-    EnrollmentPanel, ScheduleFields and RichTextEditor chrome, used by
-    teacher and admin pages. See SPEC.md CAP-2, CAP-3 and brownfield.md.
+    Migrate SyllabusList, SyllabusForm, SyllabusDetail, SyllabusFiles and
+    EnrollmentPanel, used by teacher and admin pages (ScheduleFields moved
+    to 5b, RichTextEditor to 7c). See SPEC.md CAP-2, CAP-3 and
+    brownfield.md.
   spec_checkpoint: true
   invoke_dev_with: >-
     Teacher and admin pages using them must both work after this story;

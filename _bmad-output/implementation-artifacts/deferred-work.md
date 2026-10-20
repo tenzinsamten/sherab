@@ -430,3 +430,18 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6b-join-flow.md`
   summary: The class-code field stays editable while `validate_class_code` runs, so step 2 could show the old class with a newly typed code.
   evidence: Unverified (medium if true); pre-existing. Settle with an e2e that edits the code while the RPC is held.
+- source_spec: none
+  summary: Migrate the teacher homework list to the new UI as story 7b.
+  evidence: Split from story 7 at its multi-goal check (user chose Split); independently shippable. Tracked in spec-mobile-ux/stories.yaml.
+- source_spec: none
+  summary: Migrate teacher homework create and review (with LinkRows, ContentLanguageSelect and RichTextEditor) to the new UI as story 7c.
+  evidence: Split from story 7 at its multi-goal check (user chose Split); RichTextEditor moved here from story 8 by user decision. Tracked in spec-mobile-ux/stories.yaml.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7-teacher-class-pages.md`
+  summary: `e2e/teacher-mobile.e2e.ts` builds its sessions on real dates (Berlin today ±7 days) and deletes its class days in cleanup, unlike teacher.e2e's random past year.
+  evidence: Unverified (medium if it bites): could collide with other tests' class days or break on a run across Berlin midnight; the suite runs with one worker, so not seen yet.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7-teacher-class-pages.md`
+  summary: `tours.e2e.ts:374` once saw a tour popover on the teacher class page although the teacher's tours were marked seen.
+  evidence: Unverified flake: reproduced twice in story 7's step-3 checks, never again after the `/calendar` hydration fix (2 fresh-reset runs, 8/8). Keep the trace if it recurs; may relate to the real-date fixture.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7-teacher-class-pages.md`
+  summary: `src/lib/server/rls.spec.ts` 7-4/7-5 "Read: …" tests can time out at vitest's 5000ms default on a loaded machine.
+  evidence: Seen once in story 7's full verification (2 timeouts), then 1558/1558 after a fresh reset; story 7 changed no server code. Also: rls.spec is not re-runnable without a reset (streak tests fail on leftover data).

@@ -315,7 +315,7 @@ test('teacher pages', async ({ page }) => {
 		await shot(page, locale, 'teacher-9', '#parent-access-heading');
 		await open(page, locale, '/teacher');
 		// "My Classes" with the class code, below the tiles.
-		await shot(page, locale, 'teacher-2', '.page h2');
+		await shot(page, locale, 'teacher-2', '#my-classes-heading');
 		await open(page, locale, '/requests');
 		await shot(page, locale, 'teacher-3');
 		await open(page, locale, `/teacher/classes/${classId}`);
@@ -323,7 +323,7 @@ test('teacher pages', async ({ page }) => {
 			page,
 			locale,
 			'teacher-4',
-			'section.card:has(+ section[aria-labelledby="skills-heading"])'
+			'section:has(+ section[aria-labelledby="skills-heading"])'
 		);
 		await shot(page, locale, 'teacher-5', '#skills-heading');
 		await open(page, locale, `/teacher/classes/${classId}/homework/new`);
