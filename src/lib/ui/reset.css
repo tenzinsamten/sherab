@@ -16,13 +16,17 @@
    Font family and line height of the root are set in tailwind.css (with the
    Tibetan rule). */
 
-/* Box model: no margins, padding or borders by default. */
+/* Box model: no margins, padding or borders by default.
+
+   The calendar library's subtree (`.ec`, story 5b) keeps the library's own
+   CSS: these rules skip it (`:where(:not(...))` adds no weight), and its
+   look is set in tailwind.css. */
 [data-ui='new']:not(#__),
-[data-ui='new'] *:not(#__),
-[data-ui='new'] *:not(#__)::before,
-[data-ui='new'] *:not(#__)::after,
-[data-ui='new'] *:not(#__)::backdrop,
-[data-ui='new'] *:not(#__)::file-selector-button {
+[data-ui='new'] *:not(#__):where(:not(.ec, .ec *)),
+[data-ui='new'] *:not(#__):where(:not(.ec, .ec *))::before,
+[data-ui='new'] *:not(#__):where(:not(.ec, .ec *))::after,
+[data-ui='new'] *:not(#__):where(:not(.ec, .ec *))::backdrop,
+[data-ui='new'] *:not(#__):where(:not(.ec, .ec *))::file-selector-button {
 	box-sizing: border-box;
 	margin: 0;
 	padding: 0;
@@ -68,7 +72,7 @@
 
 /* iX: font family, size, line height, letter spacing per level; app.css:
    weight, line height, `h2` size, Tibetan font and line height. */
-[data-ui='new'] :is(h1, h2, h3, h4, h5, h6):not(#__) {
+[data-ui='new'] :is(h1, h2, h3, h4, h5, h6):not(#__):where(:not(.ec *)) {
 	font-family: inherit;
 	font-size: inherit;
 	font-weight: inherit;
@@ -182,7 +186,7 @@
 }
 
 /* iX: margin and font family on controls; app.css: checkbox accent colour. */
-[data-ui='new'] :is(button, input, select, optgroup, textarea):not(#__),
+[data-ui='new'] :is(button, input, select, optgroup, textarea):not(#__):where(:not(.ec *)),
 [data-ui='new'] *:not(#__)::file-selector-button {
 	font: inherit;
 	font-feature-settings: inherit;

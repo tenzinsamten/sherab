@@ -62,6 +62,9 @@
 @source '../components/HelpGuide.svelte';
 @source '../components/HelpFaq.svelte';
 @source '../components/ConfirmDialog.svelte';
+/* Story 5b: the calendar and its schedule fields (also on admin/classes). */
+@source '../../routes/calendar/*.svelte';
+@source '../components/ScheduleFields.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */
@@ -230,4 +233,228 @@
 [data-ui='new'] [lang]:lang(bo):not(#__) {
 	font-family: var(--sherab-font-bo);
 	line-height: 2;
+}
+
+/* Story 5b: @event-calendar/core on /calendar, in the Sherab theme. The
+   library keeps its own CSS inside `.ec` (reset.css skips that subtree);
+   these rules restyle it, scoped under the page root and with an id's
+   weight (`:not(#__)`), so they beat the library's rules and the legacy
+   element rules alike. The library's colours are mapped to theme tokens;
+   each class has its own chip colour (`chip-c0..c5`, $lib/calendar-events),
+   text on its tint at least 7:1. */
+[data-page='calendar'] .calendar-wrap:not(#__) {
+	--chip-c0-bg: #dbeafe;
+	--chip-c0-fg: #1e3a8a;
+	--chip-c0-accent: #2563eb;
+	--chip-c1-bg: #dcfce7;
+	--chip-c1-fg: #14532d;
+	--chip-c1-accent: #16a34a;
+	--chip-c2-bg: #fef3c7;
+	--chip-c2-fg: #78350f;
+	--chip-c2-accent: #d97706;
+	--chip-c3-bg: #ede9fe;
+	--chip-c3-fg: #4c1d95;
+	--chip-c3-accent: #7c3aed;
+	--chip-c4-bg: #fce7f3;
+	--chip-c4-fg: #831843;
+	--chip-c4-accent: #db2777;
+	--chip-c5-bg: #ccfbf1;
+	--chip-c5-fg: #134e4a;
+	--chip-c5-accent: #0d9488;
+	min-width: 0;
+}
+[data-page='calendar'] .calendar-wrap .ec:not(#__) {
+	--ec-border-color: var(--border);
+	--ec-bg-color: var(--card);
+	--ec-text-color: var(--foreground);
+	/* Today is the server's Berlin date (highlightedDates), not the browser's. */
+	--ec-today-bg-color: var(--ec-bg-color);
+	--ec-highlight-color: var(--accent);
+	--ec-button-bg-color: var(--background);
+	--ec-button-border-color: var(--border);
+	--ec-button-text-color: var(--foreground);
+	--ec-button-active-bg-color: var(--muted);
+	--ec-button-active-border-color: var(--input);
+	--ec-button-active-text-color: var(--foreground);
+	--ec-event-bg-color: var(--primary);
+	--ec-event-text-color: var(--primary-foreground);
+	color: var(--foreground);
+	font-size: 1rem;
+}
+[data-page='calendar'] .calendar-wrap .ec-toolbar:not(#__) {
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin: 0 0 0.75rem;
+}
+/* Prev / This month / Next: touch-sized (CAP-3). */
+[data-page='calendar'] .calendar-wrap .ec-button:not(#__) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	padding: 0.375rem 0.75rem;
+	border: 1px solid var(--ec-button-border-color);
+	border-radius: var(--radius);
+	background-color: var(--ec-button-bg-color);
+	color: var(--ec-button-text-color);
+	font: inherit;
+	cursor: pointer;
+}
+[data-page='calendar'] .calendar-wrap .ec-button:not(#__):hover {
+	background-color: var(--ec-button-active-bg-color);
+}
+[data-page='calendar'] .calendar-wrap .ec-button-group .ec-button:not(#__):not(:first-child) {
+	border-start-start-radius: 0;
+	border-end-start-radius: 0;
+	margin-inline-start: -1px;
+}
+[data-page='calendar'] .calendar-wrap .ec-button-group .ec-button:not(#__):not(:last-child) {
+	border-start-end-radius: 0;
+	border-end-end-radius: 0;
+}
+[data-page='calendar']
+	.calendar-wrap
+	:is(.ec-button, .ec-event, .day-button):not(#__):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 1px;
+	z-index: 2;
+}
+[data-page='calendar'] .calendar-wrap .ec-col-head:not(#__) {
+	font-weight: 700;
+	color: var(--muted-foreground);
+}
+[data-page='calendar'] .calendar-wrap .ec-day-grid .ec-day:not(#__) {
+	min-height: 6rem;
+}
+/* The day's number (grid) or weekday (list): a button where the day opens. */
+[data-page='calendar'] .calendar-wrap .day-button:not(#__) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+	margin: 0;
+	padding: 0 0.5rem;
+	border: 0;
+	border-radius: 999px;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+[data-page='calendar'] .calendar-wrap .day-button:not(#__):hover {
+	background: var(--accent);
+}
+[data-page='calendar'] .calendar-wrap .ec-list .day-button:not(#__) {
+	justify-content: flex-start;
+	border-radius: var(--radius);
+	text-align: start;
+}
+[data-page='calendar'] .calendar-wrap .ec-day-grid .today-mark:not(#__) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2rem;
+	min-height: 2rem;
+	border-radius: 999px;
+	background: var(--primary);
+	color: var(--primary-foreground);
+	font-weight: 700;
+}
+[data-page='calendar'] .calendar-wrap .ec-day-grid .day-button.today-mark:not(#__) {
+	min-width: 2.75rem;
+	min-height: 2.75rem;
+}
+[data-page='calendar'] .calendar-wrap .ec-list .today-mark:not(#__) {
+	color: var(--primary);
+	font-weight: 700;
+}
+[data-page='calendar'] .calendar-wrap .ec-list .ec-day-head:not(#__) {
+	align-items: center;
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+/* Chips: class colour tint with an accent edge; cancelled = grey, struck. */
+[data-page='calendar'] .calendar-wrap .ec-event.chip:not(#__) {
+	cursor: pointer;
+}
+[data-page='calendar'] .calendar-wrap .ec-day-grid .ec-event.chip:not(#__) {
+	background: var(--chip-bg);
+	color: var(--chip-fg);
+	border-inline-start: 3px solid var(--chip-accent);
+	box-shadow: none;
+}
+[data-page='calendar'] .calendar-wrap .ec-list .ec-event.chip:not(#__) {
+	align-items: center;
+	min-height: 2.75rem;
+}
+[data-page='calendar'] .calendar-wrap .ec-list .chip .ec-event-tag:not(#__) {
+	align-self: stretch;
+	background: var(--chip-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c0:not(#__) {
+	--chip-bg: var(--chip-c0-bg);
+	--chip-fg: var(--chip-c0-fg);
+	--chip-accent: var(--chip-c0-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c1:not(#__) {
+	--chip-bg: var(--chip-c1-bg);
+	--chip-fg: var(--chip-c1-fg);
+	--chip-accent: var(--chip-c1-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c2:not(#__) {
+	--chip-bg: var(--chip-c2-bg);
+	--chip-fg: var(--chip-c2-fg);
+	--chip-accent: var(--chip-c2-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c3:not(#__) {
+	--chip-bg: var(--chip-c3-bg);
+	--chip-fg: var(--chip-c3-fg);
+	--chip-accent: var(--chip-c3-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c4:not(#__) {
+	--chip-bg: var(--chip-c4-bg);
+	--chip-fg: var(--chip-c4-fg);
+	--chip-accent: var(--chip-c4-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-c5:not(#__) {
+	--chip-bg: var(--chip-c5-bg);
+	--chip-fg: var(--chip-c5-fg);
+	--chip-accent: var(--chip-c5-accent);
+}
+[data-page='calendar'] .calendar-wrap .chip-day:not(#__) {
+	--chip-bg: var(--card);
+	--chip-fg: var(--muted-foreground);
+	--chip-accent: var(--border);
+}
+[data-page='calendar'] .calendar-wrap .chip-cancelled:not(#__) {
+	--chip-bg: #f1f5f9;
+	--chip-fg: #475569;
+	--chip-accent: var(--input);
+}
+[data-page='calendar'] .calendar-wrap .chip-cancelled .chip-text:not(#__) {
+	text-decoration: line-through;
+}
+[data-page='calendar'] .calendar-wrap .ec-list .chip-cancelled .chip-text:not(#__) {
+	color: var(--muted-foreground);
+}
+[data-page='calendar'] .calendar-wrap .chip-text:not(#__) {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 0.25rem;
+	min-width: 0;
+	overflow: hidden;
+}
+[data-page='calendar'] .calendar-wrap .chip-time:not(#__) {
+	font-variant-numeric: tabular-nums;
+	font-weight: 700;
+}
+[data-page='calendar'] .calendar-wrap .chip-extra:not(#__) {
+	font-style: italic;
+}
+[data-page='calendar'] .calendar-wrap .chip-title:not(#__) {
+	overflow-wrap: anywhere;
 }

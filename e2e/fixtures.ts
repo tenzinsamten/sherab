@@ -339,9 +339,9 @@ export async function signIn(page: Page, user: TestUser) {
 /** Open /calendar (optionally `?month=`) and wait for the calendar to render. */
 export async function openCalendar(page: Page, month?: string) {
 	await page.goto(month ? `/calendar?month=${month}` : '/calendar');
+	// The page's new-UI root marks itself hydrated (mobile-first story 5b).
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.locator('.ec').waitFor();
-	// iX components (the dialogs) upgrade asynchronously.
-	await page.waitForFunction(() => customElements.get('ix-modal') !== undefined);
 }
 
 /** ISO weekday (1 = Mon .. 7 = Sun) of a `YYYY-MM-DD` date. */

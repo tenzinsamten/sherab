@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { MediaQuery, SvelteSet } from 'svelte/reactivity';
 	import { Calendar, DayGrid, Interaction, List } from '@event-calendar/core';
+	import Ban from '@lucide/svelte/icons/ban';
+	import CalendarArrowUp from '@lucide/svelte/icons/calendar-arrow-up';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Info from '@lucide/svelte/icons/info';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Undo2 from '@lucide/svelte/icons/undo-2';
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -9,37 +17,49 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDay as formatIsoDay, num } from '$lib/format';
-	import { confirmAction, confirmWith, showToast } from '$lib/ix';
+	import { showToast } from '$lib/ix';
+	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
-	import { durationValue, ixFieldError, ixValue } from '$lib/ix-fields';
 	import { eventDomClass, toCalendarEvents, type CalendarEventProps } from '$lib/calendar-events';
 	import ChildPicker from '$lib/components/ChildPicker.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
 	/**
 	 * Calendar (Story 6-1, month grid #47, schedules 6-4): the selected
-	 * month's class days as a Monday-first month grid (list view at phone
-	 * width) rendered by @event-calendar/core. Clicking a session chip opens
-	 * its dialog (edit for admin / the class's teachers, read-only for
-	 * students); the admin clicks a day to add class days there or cancel /
-	 * restore it, and the admin or a teacher clicks a class day to add an
-	 * extra session. Below the grid, each editable class's schedule.
-	 * Navigation goes through `?month=` so the server keeps scoping one month
-	 * per load.
+	 * month's class days as a Monday-first month grid (list view on a phone)
+	 * rendered by @event-calendar/core. Clicking a session chip opens its
+	 * dialog (edit for admin / the class's teachers, read-only for students);
+	 * the admin clicks a day to add class days there or cancel / restore it,
+	 * and the admin or a teacher clicks a class day to add an extra session.
+	 * Below the grid, each editable class's schedule. Navigation goes through
+	 * `?month=` so the server keeps scoping one month per load.
+	 *
+	 * Mobile-first story 5b: built on the new component system. The session
+	 * and day dialogs are a bottom sheet on a phone and a dialog from 48rem;
+	 * their fields are native date, time, number and select inputs; the
+	 * library keeps its own CSS, themed in src/lib/ui/tailwind.css.
 	 */
 	let { data, form }: PageProps = $props();
 
 	const pending = createPending();
+	const confirm = createConfirm();
 	const calendarHref = resolve('/calendar');
-	// Same breakpoint as the app's phone layout (app.css).
-	const PHONE_QUERY = '(max-width: 640px)';
+	// Phone below 48rem: list view and bottom sheets; from 48rem the month
+	// grid and dialogs (the app's breakpoints, SPEC assumptions).
+	const wide = new MediaQuery('min-width: 48rem', false);
 
 	type Session = (typeof data.days)[number]['sessions'][number];
-	type ModalElement = HTMLElement & {
-		showModal(): Promise<void>;
-		closeModal(reason?: unknown): Promise<void>;
-	};
 
 	// Wall-clock dates: format them as UTC so no time zone shifts the day.
 	const format = (date: string, options: Intl.DateTimeFormatOptions) => formatIsoDay(date, options);
@@ -52,6 +72,14 @@
 		const mm = String(date.getMonth() + 1).padStart(2, '0');
 		const dd = String(date.getDate()).padStart(2, '0');
 		return `${date.getFullYear()}-${mm}-${dd}`;
+	}
+
+	/** A duration in minutes as a number field's value: empty unless a finite number. */
+	function minutesText(minutes: number | string | null | undefined): string {
+		if (minutes === null || minutes === undefined) return '';
+		if (typeof minutes === 'string' && minutes.trim() === '') return '';
+		const n = Number(minutes);
+		return Number.isFinite(n) ? String(n) : '';
 	}
 
 	// Story 7-4: the student's own answer, read-only. Sick shows as Sick here.
@@ -87,8 +115,8 @@
 
 	// ── Class schedules (#66) ───────────────────────────────────────────────
 	// Collapsed rows: each class shows a one-line summary, and its form (a
-	// dozen iX fields) renders only while the row is expanded, so a school
-	// with many classes still renders the grid.
+	// dozen fields) renders only while the row is expanded, so a school with
+	// many classes still renders the grid.
 	const expandedSchedules = new SvelteSet<string>();
 	// Rows opened at least once keep their form mounted (hidden while
 	// collapsed), so collapsing a row keeps its unsaved edits.
@@ -158,17 +186,17 @@
 
 	// ── Dialogs ─────────────────────────────────────────────────────────────
 	let mounted = $state(false);
-	let isPhone = $state(false);
-	let sessionModal = $state<HTMLElement>();
-	let dayModal = $state<HTMLElement>();
+	let pageRoot = $state<HTMLElement>();
 	let sessionOpen = $state(false);
 	let dayOpen = $state(false);
+	// Sheet or dialog: fixed while open, so a rotation does not swap it.
+	let dialogWide = $state(false);
 	let selectedSessionId = $state<string | null>(null);
 	let selectedDate = $state<string | null>(null);
 	// Errors in `form` from before a dialog was opened belong to another dialog.
-	let formAtOpen = $state<unknown>(null);
-	// Where focus returns on close; `focusClass` / `focusDate` find a
-	// re-rendered chip or day button after the month data reloaded.
+	let formAtOpen = $state.raw<unknown>(null);
+	// Where focus returns on close; `focusSelector` finds a re-rendered chip
+	// or day button after the month data reloaded.
 	let opener: HTMLElement | null = null;
 	let focusSelector: string | null = null;
 
@@ -206,18 +234,10 @@
 			: []
 	);
 
-	async function showModal(modal: HTMLElement | undefined, label: string) {
-		await tick();
-		if (!modal) return;
-		await customElements.whenDefined('ix-modal');
-		await (
-			modal as ModalElement & { componentOnReady?: () => Promise<unknown> }
-		).componentOnReady?.();
-		// The <dialog> lives in ix-modal's shadow DOM, where an aria-labelledby
-		// to the slotted header can't resolve: name it directly, before it opens.
-		modal.shadowRoot?.querySelector('dialog')?.setAttribute('aria-label', label);
-		await (modal as ModalElement).showModal();
-	}
+	// While closing (e.g. after a move or delete) no day means no title, not the add form's.
+	let dayTitle = $derived(
+		selectedDay ? formatDay(selectedDay.date) : dayOpen ? m.calendar_add_days_heading() : ''
+	);
 
 	function openSession(sessionId: string, from: HTMLElement | null) {
 		if (sessionOpen || dayOpen) return;
@@ -225,9 +245,8 @@
 		focusSelector = `.${eventDomClass(sessionId)}`;
 		selectedSessionId = sessionId;
 		formAtOpen = page.form;
+		dialogWide = wide.current;
 		sessionOpen = true;
-		const found = data.days.flatMap((d) => d.sessions).find((s) => s.id === sessionId);
-		void showModal(sessionModal, found?.className ?? m.calendar_heading());
 	}
 
 	function openDay(date: string, from: HTMLElement | null, selector?: string, addOnly = false) {
@@ -237,27 +256,29 @@
 		selectedDate = date;
 		dayAddOnly = addOnly;
 		formAtOpen = page.form;
+		dialogWide = wide.current;
 		dayOpen = true;
-		const isClassDay = !addOnly && data.days.some((d) => d.date === date);
-		void showModal(dayModal, isClassDay ? formatDay(date) : m.calendar_add_days_heading());
 	}
 
-	function closeModal(modal: HTMLElement | undefined) {
-		void (modal as ModalElement | undefined)?.closeModal();
-	}
-
-	function onClosed() {
-		sessionOpen = false;
-		dayOpen = false;
-		// Wait for any re-render of the month data, then return focus.
+	/**
+	 * Bits moves focus on close; it goes back to the chip or day that opened
+	 * the dialog instead, or to its re-rendered replacement once the month
+	 * data has reloaded.
+	 */
+	function returnFocus(event: Event) {
+		event.preventDefault();
+		const from = opener;
+		const selector = focusSelector;
+		const find = () =>
+			from && from.isConnected
+				? from
+				: selector
+					? (pageRoot?.querySelector<HTMLElement>(selector) ?? null)
+					: null;
 		void tick().then(() => {
-			const target =
-				opener && opener.isConnected
-					? opener
-					: focusSelector
-						? document.querySelector<HTMLElement>(`.calendar-wrap ${focusSelector}`)
-						: null;
-			target?.focus();
+			const target = find();
+			if (target) target.focus();
+			else requestAnimationFrame(() => find()?.focus());
 		});
 	}
 
@@ -285,21 +306,12 @@
 		if (message) showToast('success', message());
 		// The schedules are not in a dialog: saving one closes nothing.
 		if (f.action !== 'scheduleSaved') {
-			if (sessionOpen) closeModal(sessionModal);
-			if (dayOpen) closeModal(dayModal);
+			untrack(() => {
+				if (sessionOpen) sessionOpen = false;
+				if (dayOpen) dayOpen = false;
+			});
 		}
 	});
-
-	async function cancelDay(event: MouseEvent, date: string) {
-		const formEl = (event.currentTarget as HTMLElement).closest('form');
-		const ok = await confirmAction(
-			m.common_confirm_title(),
-			m.calendar_cancel_day_confirm({ date: formatDay(date) }),
-			m.calendar_cancel_day(),
-			m.common_cancel()
-		);
-		if (ok) formEl?.requestSubmit();
-	}
 
 	// ── Calendar ────────────────────────────────────────────────────────────
 	const monthOf = (date: Date) => isoDate(date).slice(0, 7);
@@ -341,7 +353,7 @@
 	// update. The data-driven keys are kept in sync by the effect below.
 	let options = $state.raw(
 		untrack(() => ({
-			view: 'dayGridMonth',
+			view: wide.current ? 'dayGridMonth' : 'listMonth',
 			firstDay: 1 as const,
 			date: `${data.month}-01`,
 			locale: getLocale(),
@@ -387,7 +399,7 @@
 	});
 
 	$effect(() => {
-		const view = isPhone ? 'listMonth' : 'dayGridMonth';
+		const view = wide.current ? 'dayGridMonth' : 'listMonth';
 		untrack(() => {
 			if (options.view !== view) options = { ...options, view };
 		});
@@ -404,22 +416,33 @@
 	});
 
 	onMount(() => {
-		const query = window.matchMedia(PHONE_QUERY);
-		isPhone = query.matches;
-		const onChange = (event: MediaQueryListEvent) => (isPhone = event.matches);
-		query.addEventListener('change', onChange);
 		mounted = true;
-		return () => query.removeEventListener('change', onChange);
 	});
 
 	let addStartDefault = $derived(
 		data.today.startsWith(data.month) ? data.today : `${data.month}-01`
 	);
+
+	const touchButton = `${ui.touch} w-full md:w-auto`;
+	const fieldClass = 'flex min-w-0 flex-col gap-1.5';
+	const fieldLabel = 'text-sm font-medium';
+	const subHeading = 'text-base leading-snug font-bold';
+	const subSection = 'flex flex-col gap-3 border-t border-border pt-4';
+	const sheetClass =
+		'max-h-[90dvh] gap-3 rounded-t-lg px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]';
+	const dialogClass = 'flex max-h-[85dvh] flex-col gap-4 p-6 md:max-w-lg';
+	const titleClass = 'text-lg leading-snug font-semibold wrap-break-word';
 </script>
 
 <svelte:head>
 	<title>{m.calendar_heading()} — Sherab</title>
 </svelte:head>
+
+{#snippet spinner(key: string)}
+	{#if pending.is(key)}
+		<LoaderCircle class="animate-spin" aria-hidden="true" />
+	{/if}
+{/snippet}
 
 {#snippet eventContent({ event }: { event: ClickedEvent })}
 	{@const props = event.extendedProps as CalendarEventProps}
@@ -441,11 +464,12 @@
 
 {#snippet childAnswerList(sessionId: string)}
 	<!-- eslint-disable svelte/no-navigation-without-resolve -- childSessionsHref() builds on resolve() and only adds ?tab=. -->
-	<ul class="child-answers">
+	<ul class="flex flex-col gap-1" data-testid="child-answers">
 		{#each data.childAnswers[sessionId] ?? [] as entry (entry.childId)}
-			<li>
+			<li class="wrap-break-word">
 				<a
 					href={childSessionsHref(entry.childId)}
+					class="inline-flex min-h-11 items-center {ui.link}"
 					aria-label={m.calendar_child_answer_link_label({ name: entry.name })}>{entry.name}</a
 				>: <span class="leave-answer">{leaveLabel(entry.answer ?? undefined)}</span>
 			</li>
@@ -457,7 +481,7 @@
 {#snippet dayCellContent({ date }: { date: Date })}
 	{@const iso = isoDate(date)}
 	{@const isToday = iso === data.today}
-	{@const label = isPhone ? format(iso, { weekday: 'long' }) : num(date.getDate())}
+	{@const label = wide.current ? num(date.getDate()) : format(iso, { weekday: 'long' })}
 	{#if dayClickable(iso)}
 		<button
 			type="button"
@@ -477,26 +501,34 @@
 	{/if}
 {/snippet}
 
-<div class="page">
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.calendar_heading()}</p>
-			<h1 class="page-heading" aria-live="polite">{monthLabel}</h1>
+<div
+	data-ui="new"
+	data-page="calendar"
+	class={ui.page}
+	data-hydrated={mounted || undefined}
+	bind:this={pageRoot}
+>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.calendar_heading()}</p>
+			<h1 class={ui.heading} aria-live="polite">{monthLabel}</h1>
 		</div>
 		{#if data.isAdmin}
-			<ix-button
-				icon="add"
+			<Button
+				class="add-days-button {touchButton}"
+				data-testid="add-days-button"
+				aria-haspopup="dialog"
 				onclick={(event: MouseEvent) =>
 					openDay(addStartDefault, event.currentTarget as HTMLElement, '.add-days-button', true)}
-				class="add-days-button"
 			>
+				<Plus aria-hidden="true" />
 				{m.calendar_add_days_button()}
-			</ix-button>
+			</Button>
 		{/if}
 	</header>
 
 	{#if data.isAdmin}
-		<p class="muted hint-line">{m.calendar_admin_click_hint()}</p>
+		<p class="-mt-2 {ui.muted}">{m.calendar_admin_click_hint()}</p>
 	{/if}
 
 	{#if isParent && data.children.length >= 2}
@@ -520,19 +552,21 @@
 	{/if}
 
 	{#if isParent && data.children.length === 0 && !data.loadError}
-		<p class="muted parent-hint">{m.calendar_parent_no_children()}</p>
+		<p class={ui.muted} data-testid="parent-no-children">{m.calendar_parent_no_children()}</p>
 	{/if}
 
 	{#if data.loadError}
-		<p class="field-error" role="alert">{m.calendar_error_load()}</p>
+		<div class={ui.card} role="alert" data-testid="calendar-load-error">
+			<EmptyState header={m.calendar_error_load()} icon={Info} />
+		</div>
 	{:else}
 		{#if data.days.length === 0}
-			<div class="empty-month">
+			<div data-testid="calendar-empty">
 				<p>{m.calendar_empty()}</p>
-				{#if data.isAdmin}<p class="muted">{m.calendar_empty_admin_hint()}</p>{/if}
+				{#if data.isAdmin}<p class={ui.muted}>{m.calendar_empty_admin_hint()}</p>{/if}
 			</div>
 		{/if}
-		<div class="calendar-wrap" bind:this={calendarWrap}>
+		<div class="calendar-wrap {ui.card} p-2 md:p-4" bind:this={calendarWrap}>
 			{#if mounted}
 				<Calendar {plugins} {options} {eventContent} {dayCellContent} />
 			{/if}
@@ -540,42 +574,50 @@
 	{/if}
 
 	{#if data.canEdit && data.classSchedules.length > 0}
-		<section class="card schedules" aria-labelledby="schedules-heading">
-			<h2 id="schedules-heading">{m.calendar_schedules_heading()}</h2>
-			<p class="muted">{m.calendar_schedules_intro()}</p>
-			<ul class="row-list">
+		<section class={ui.card} aria-labelledby="schedules-heading" data-testid="schedules">
+			<h2 id="schedules-heading" class={ui.cardTitle}>{m.calendar_schedules_heading()}</h2>
+			<p class={ui.muted}>{m.calendar_schedules_intro()}</p>
+			<ul class="mt-2 {ui.rows}">
 				{#each data.classSchedules as cls (cls.id)}
 					{@const errors =
 						form && 'scheduleErrors' in form && form.classId === cls.id
 							? form.scheduleErrors
 							: undefined}
 					{@const open = expandedSchedules.has(cls.id)}
-					<li class="schedule-row">
-						<h3 class="schedule-heading">
+					<li class="py-2">
+						<h3>
 							<button
 								type="button"
-								class="schedule-toggle"
+								class="schedule-toggle group flex min-h-11 w-full cursor-pointer items-start gap-2 rounded-lg py-2 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 								aria-expanded={open}
 								aria-controls={openedSchedules.has(cls.id) ? `schedule-panel-${cls.id}` : undefined}
 								data-class-id={cls.id}
 								onclick={() => toggleSchedule(cls.id)}
 							>
-								<ix-icon class="schedule-chevron" name="chevron-right" size="16" aria-hidden="true"
-								></ix-icon>
-								<span class="schedule-toggle-text">
-									<span id="schedule-title-{cls.id}" class="row-title">{cls.name}</span>
-									<span class="schedule-summary muted">{scheduleSummary(cls)}</span>
+								<ChevronRight
+									class="mt-1 size-4 shrink-0 transition-transform group-aria-expanded:rotate-90"
+									aria-hidden="true"
+								/>
+								<span class="flex min-w-0 flex-wrap items-baseline gap-x-3">
+									<span
+										id="schedule-title-{cls.id}"
+										class="text-lg leading-snug font-bold wrap-break-word">{cls.name}</span
+									>
+									<span class="schedule-summary {ui.muted}" data-testid="schedule-summary"
+										>{scheduleSummary(cls)}</span
+									>
 								</span>
 							</button>
 						</h3>
 						{#if openedSchedules.has(cls.id)}
+							<!-- A display utility beats `hidden`, so it follows `open` too. -->
 							<form
 								id="schedule-panel-{cls.id}"
 								hidden={!open}
 								method="POST"
 								action="?/setClassSchedule"
 								use:enhance={pending.submit(`schedule:${cls.id}`, { reset: false })}
-								class="schedule-form"
+								class="schedule-form mt-3 flex-col gap-4 {open ? 'flex' : 'hidden'}"
 								data-class-id={cls.id}
 								aria-labelledby="schedule-title-{cls.id}"
 								novalidate
@@ -591,14 +633,18 @@
 									intervalWeeks={cls.intervalWeeks}
 									errors={errors ?? {}}
 								/>
-								<ix-button
-									type="submit"
-									variant="secondary"
-									loading={pending.is(`schedule:${cls.id}`) || undefined}
-									disabled={pending.busy || undefined}
-								>
-									{m.calendar_save()}
-								</ix-button>
+								<div>
+									<Button
+										type="submit"
+										variant="secondary"
+										class={touchButton}
+										aria-busy={pending.is(`schedule:${cls.id}`) || undefined}
+										disabled={pending.busy}
+									>
+										{@render spinner(`schedule:${cls.id}`)}
+										{m.calendar_save()}
+									</Button>
+								</div>
 							</form>
 						{/if}
 					</li>
@@ -608,713 +654,521 @@
 	{/if}
 </div>
 
-{#if mounted}
-	<!-- Session: edit (admin / the class's teachers) or read-only details. -->
-	<ix-modal bind:this={sessionModal} size="480" ondialogClose={onClosed} ondialogDismiss={onClosed}>
-		<!-- svelte-ignore a11y_unknown_aria_attribute -->
-		<ix-modal-header aria-label-close-icon-button={m.calendar_dialog_close()}>
-			{selected?.session.className ?? ''}
-		</ix-modal-header>
-		<ix-modal-content>
-			{#if sessionOpen && selected}
-				{@const { day, session } = selected}
-				<dl class="details">
-					<dt>{m.calendar_date_label()}</dt>
-					<dd><time datetime={day.date}>{formatDay(day.date)}</time></dd>
-					<dt>{m.calendar_time_label()}</dt>
-					<dd class="session-time" class:struck={session.status === 'cancelled'}>
-						{timeText(session)}
-					</dd>
-					{#if data.role === 'student' && session.status !== 'cancelled'}
-						<dt>{m.calendar_leave_label()}</dt>
-						<dd class="leave-answer">{leaveLabel(data.leaveAnswers[session.id])}</dd>
-					{/if}
-					{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
-						<dt>{m.calendar_children_answers_label()}</dt>
-						<dd>{@render childAnswerList(session.id)}</dd>
-					{/if}
-				</dl>
-				<p class="status">
-					{#if session.status === 'cancelled'}
-						<ix-pill variant="neutral">{m.calendar_status_cancelled()}</ix-pill>
-					{:else if session.status === 'unset'}
-						<ix-pill variant="neutral" outline>{m.calendar_status_unset()}</ix-pill>
-					{:else}
-						<ix-pill variant="success" outline>{m.calendar_status_scheduled()}</ix-pill>
-					{/if}
-					{#if session.extra}
-						<ix-pill variant="info" outline class="extra-pill">{m.calendar_extra_label()}</ix-pill>
-					{/if}
-				</p>
+<!-- The body of a sheet / dialog scrolls; its Close button stays in view. -->
+{#snippet dialogFooter(close: () => void)}
+	<div
+		class="flex shrink-0 flex-col-reverse gap-2 border-t border-border pt-3 md:flex-row md:justify-end"
+	>
+		<Button variant="outline" class={touchButton} onclick={close}>
+			{m.calendar_dialog_close()}
+		</Button>
+	</div>
+{/snippet}
 
-				{#if data.canEdit}
-					<form
-						method="POST"
-						action="?/updateSession"
-						use:enhance={pending.submit(`session:${session.id}`)}
-						class="actions inline-form"
-						novalidate
-					>
-						<input type="hidden" name="sessionId" value={session.id} />
-						<!-- iX fields (#66): empty means "use the class default", so both
-						     write empty explicitly (not iX's current time / 0). -->
-						<div class="field">
-							<ix-time-input
+{#snippet sessionBody()}
+	<div
+		class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 text-base"
+		data-testid="session-body"
+	>
+		{#if sessionOpen && selected}
+			{@const { day, session } = selected}
+			<dl class="details grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+				<dt class={ui.muted}>{m.calendar_date_label()}</dt>
+				<dd><time datetime={day.date}>{formatDay(day.date)}</time></dd>
+				<dt class={ui.muted}>{m.calendar_time_label()}</dt>
+				<dd
+					class="session-time tabular-nums"
+					class:line-through={session.status === 'cancelled'}
+					class:text-muted-foreground={session.status === 'cancelled'}
+				>
+					{timeText(session)}
+				</dd>
+				{#if data.role === 'student' && session.status !== 'cancelled'}
+					<dt class={ui.muted}>{m.calendar_leave_label()}</dt>
+					<dd class="leave-answer" data-testid="own-answer">
+						{leaveLabel(data.leaveAnswers[session.id])}
+					</dd>
+				{/if}
+				{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
+					<dt class={ui.muted}>{m.calendar_children_answers_label()}</dt>
+					<dd>{@render childAnswerList(session.id)}</dd>
+				{/if}
+			</dl>
+			<p class="flex flex-wrap gap-2" data-testid="session-status">
+				{#if session.status === 'cancelled'}
+					<Badge variant="secondary">{m.calendar_status_cancelled()}</Badge>
+				{:else if session.status === 'unset'}
+					<Badge variant="outline">{m.calendar_status_unset()}</Badge>
+				{:else}
+					<Badge variant="success-outline">{m.calendar_status_scheduled()}</Badge>
+				{/if}
+				{#if session.extra}
+					<Badge variant="info" data-testid="extra-badge">{m.calendar_extra_label()}</Badge>
+				{/if}
+			</p>
+
+			{#if data.canEdit}
+				<form
+					method="POST"
+					action="?/updateSession"
+					use:enhance={pending.submit(`session:${session.id}`)}
+					class="flex flex-col gap-3"
+					novalidate
+				>
+					<input type="hidden" name="sessionId" value={session.id} />
+					<!-- Empty means "use the class default" (#66). -->
+					<div class="grid gap-3 md:grid-cols-2">
+						<div class={fieldClass}>
+							<Label for="session-start" class={fieldLabel}>{m.calendar_start_time_label()}</Label>
+							<Input
 								id="session-start"
 								name="startTime"
-								label={m.calendar_start_time_label()}
-								format="HH:mm"
-								{@attach ixValue(session.startOverride ?? '')}
-								{@attach ixFieldError(sessionError ? 'session-error' : undefined, ['session-hint'])}
-							></ix-time-input>
+								type="time"
+								value={session.startOverride ?? ''}
+								aria-invalid={sessionError ? 'true' : undefined}
+								aria-describedby={sessionError ? 'session-hint session-error' : 'session-hint'}
+							/>
 						</div>
-						<div class="field">
-							<ix-number-input
+						<div class={fieldClass}>
+							<Label for="session-duration" class={fieldLabel}>{m.calendar_duration_label()}</Label>
+							<Input
 								id="session-duration"
 								name="durationMinutes"
-								label={m.calendar_duration_label()}
+								type="number"
+								inputmode="numeric"
 								min="15"
 								max="480"
 								step="5"
-								allow-empty-value-change
-								{@attach ixValue(durationValue(session.durationOverride))}
-								{@attach ixFieldError(sessionError ? 'session-error' : undefined, ['session-hint'])}
-							></ix-number-input>
+								value={minutesText(session.durationOverride)}
+								aria-invalid={sessionError ? 'true' : undefined}
+								aria-describedby={sessionError ? 'session-hint session-error' : 'session-hint'}
+							/>
 						</div>
-						<ix-button
-							type="submit"
-							variant="primary"
-							loading={pending.is(`session:${session.id}`) || undefined}
-							disabled={pending.busy || undefined}
-						>
-							{m.calendar_save()}
-						</ix-button>
-					</form>
-					<p id="session-hint" class="muted hint">{defaultHint(session.classId)}</p>
+					</div>
+					<p id="session-hint" class="text-sm {ui.muted}">{defaultHint(session.classId)}</p>
 					{#if sessionError}
-						<p id="session-error" class="field-error" role="alert">{sessionError}</p>
+						<p id="session-error" class={ui.error} role="alert">{sessionError}</p>
 					{/if}
-
-					<form
-						method="POST"
-						action="?/setSessionCancelled"
-						use:enhance={pending.submit(`cancel:${session.id}`)}
-						class="session-cancel"
-					>
-						<input type="hidden" name="sessionId" value={session.id} />
-						<input
-							type="hidden"
-							name="cancelled"
-							value={session.sessionCancelled ? 'false' : 'true'}
-						/>
-						<ix-button
+					<div>
+						<Button
 							type="submit"
-							variant={session.sessionCancelled ? 'tertiary' : 'danger-tertiary'}
-							icon={session.sessionCancelled ? 'undo' : 'cancel'}
-							loading={pending.is(`cancel:${session.id}`) || undefined}
-							disabled={pending.busy || day.cancelled || undefined}
+							class={touchButton}
+							aria-busy={pending.is(`session:${session.id}`) || undefined}
+							disabled={pending.busy}
 						>
-							{session.sessionCancelled
-								? m.calendar_restore_session()
-								: m.calendar_cancel_session()}
-						</ix-button>
-					</form>
-				{/if}
-			{/if}
-		</ix-modal-content>
-		<ix-modal-footer>
-			<ix-button variant="secondary" onclick={() => closeModal(sessionModal)}>
-				{m.calendar_dialog_close()}
-			</ix-button>
-		</ix-modal-footer>
-	</ix-modal>
+							{@render spinner(`session:${session.id}`)}
+							{m.calendar_save()}
+						</Button>
+					</div>
+				</form>
 
-	<!-- Day: admin adds class days or cancels / restores one; others read. -->
-	<ix-modal bind:this={dayModal} size="480" ondialogClose={onClosed} ondialogDismiss={onClosed}>
-		<!-- svelte-ignore a11y_unknown_aria_attribute -->
-		<ix-modal-header aria-label-close-icon-button={m.calendar_dialog_close()}>
-			{#if selectedDay}
-				{formatDay(selectedDay.date)}
-			{:else}
-				{m.calendar_add_days_heading()}
+				<form
+					method="POST"
+					action="?/setSessionCancelled"
+					use:enhance={pending.submit(`cancel:${session.id}`)}
+					class="border-t border-border pt-4"
+				>
+					<input type="hidden" name="sessionId" value={session.id} />
+					<input
+						type="hidden"
+						name="cancelled"
+						value={session.sessionCancelled ? 'false' : 'true'}
+					/>
+					<Button
+						type="submit"
+						variant={session.sessionCancelled ? 'outline' : 'destructive'}
+						class={touchButton}
+						aria-busy={pending.is(`cancel:${session.id}`) || undefined}
+						disabled={pending.busy || day.cancelled}
+					>
+						{#if pending.is(`cancel:${session.id}`)}
+							<LoaderCircle class="animate-spin" aria-hidden="true" />
+						{:else if session.sessionCancelled}
+							<Undo2 aria-hidden="true" />
+						{:else}
+							<Ban aria-hidden="true" />
+						{/if}
+						{session.sessionCancelled ? m.calendar_restore_session() : m.calendar_cancel_session()}
+					</Button>
+				</form>
 			{/if}
-		</ix-modal-header>
-		<ix-modal-content>
-			{#if dayOpen && selectedDate}
-				{#if selectedDay}
-					{#if selectedDay.cancelled}
-						<p class="status">
-							<ix-pill variant="neutral">{m.calendar_status_cancelled()}</ix-pill>
-						</p>
-					{/if}
-					{#if selectedDay.sessions.length === 0}
-						<p class="muted">{m.calendar_day_no_sessions()}</p>
-					{:else}
-						<ul class="day-sessions">
-							{#each selectedDay.sessions as session (session.id)}
-								<li class:struck={session.status === 'cancelled'}>
-									<span class="session-time">{timeText(session)}</span>
-									<span>{session.className}</span>
-									{#if session.extra}
-										<span class="extra-tag">({m.calendar_extra_label()})</span>
-									{/if}
-									{#if data.role === 'student' && session.status !== 'cancelled'}
-										<span class="extra-tag">· {leaveLabel(data.leaveAnswers[session.id])}</span>
-									{/if}
-									{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
-										{@render childAnswerList(session.id)}
-									{/if}
-									{#if session.status === 'cancelled'}
-										<span class="sr-only">, {m.calendar_status_cancelled()}</span>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					{/if}
-					{#if data.isAdmin}
-						{@const dayId = selectedDay.id}
-						{@const date = selectedDay.date}
-						<!-- #105: only a future day can be moved or deleted (the database enforces it). -->
-						{@const future = date > data.today}
-						<div class="actions">
+		{/if}
+	</div>
+	{@render dialogFooter(() => (sessionOpen = false))}
+{/snippet}
+
+{#snippet dayBody()}
+	<div
+		class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 text-base"
+		data-testid="day-body"
+	>
+		{#if dayOpen && selectedDate}
+			{#if selectedDay}
+				{#if selectedDay.cancelled}
+					<p><Badge variant="secondary">{m.calendar_status_cancelled()}</Badge></p>
+				{/if}
+				{#if selectedDay.sessions.length === 0}
+					<p class={ui.muted}>{m.calendar_day_no_sessions()}</p>
+				{:else}
+					<ul class="flex flex-col gap-2" data-testid="day-sessions">
+						{#each selectedDay.sessions as session (session.id)}
+							<li
+								class="flex flex-wrap gap-x-3 gap-y-1"
+								class:line-through={session.status === 'cancelled'}
+								class:text-muted-foreground={session.status === 'cancelled'}
+							>
+								<span class="tabular-nums">{timeText(session)}</span>
+								<span class="min-w-0 wrap-break-word">{session.className}</span>
+								{#if session.extra}
+									<span class={ui.muted}>({m.calendar_extra_label()})</span>
+								{/if}
+								{#if data.role === 'student' && session.status !== 'cancelled'}
+									<span class={ui.muted}>· {leaveLabel(data.leaveAnswers[session.id])}</span>
+								{/if}
+								{#if isParent && session.status !== 'cancelled' && data.childAnswers[session.id]?.length}
+									<div class="basis-full">{@render childAnswerList(session.id)}</div>
+								{/if}
+								{#if session.status === 'cancelled'}
+									<span class="sr-only">, {m.calendar_status_cancelled()}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if data.isAdmin}
+					{@const dayId = selectedDay.id}
+					{@const date = selectedDay.date}
+					<!-- #105: only a future day can be moved or deleted (the database enforces it). -->
+					{@const future = date > data.today}
+					<div class="flex flex-col gap-2 md:flex-row md:flex-wrap">
+						{#if selectedDay.cancelled}
 							<form
 								method="POST"
 								action="?/setClassDayCancelled"
 								use:enhance={pending.submit(`day:${dayId}`)}
 							>
 								<input type="hidden" name="dayId" value={dayId} />
-								<input
-									type="hidden"
-									name="cancelled"
-									value={selectedDay.cancelled ? 'false' : 'true'}
-								/>
-								{#if selectedDay.cancelled}
-									<ix-button
-										type="submit"
-										variant="secondary"
-										icon="undo"
-										loading={pending.is(`day:${dayId}`) || undefined}
-										disabled={pending.busy || undefined}
-									>
-										{m.calendar_restore_day()}
-									</ix-button>
-								{:else}
-									<ix-button
-										variant="danger-secondary"
-										icon="cancel"
-										loading={pending.is(`day:${dayId}`) || undefined}
-										disabled={pending.busy || undefined}
-										onclick={(event: MouseEvent) => cancelDay(event, date)}
-									>
-										{m.calendar_cancel_day()}
-									</ix-button>
-								{/if}
-							</form>
-							{#if future}
-								<form
-									method="POST"
-									action="?/deleteClassDay"
-									use:enhance={pending.submit(`delete:${dayId}`, {
-										confirm: confirmWith(
-											m.calendar_delete_day_confirm({ date: formatDay(date) }),
-											m.calendar_delete_day()
-										)
-									})}
+								<input type="hidden" name="cancelled" value="false" />
+								<Button
+									type="submit"
+									variant="outline"
+									class={touchButton}
+									aria-busy={pending.is(`day:${dayId}`) || undefined}
+									disabled={pending.busy}
 								>
-									<input type="hidden" name="dayId" value={dayId} />
-									<ix-button
-										type="submit"
-										variant="danger-tertiary"
-										icon="trashcan"
-										loading={pending.is(`delete:${dayId}`) || undefined}
-										disabled={pending.busy || undefined}
-									>
-										{m.calendar_delete_day()}
-									</ix-button>
-								</form>
-							{/if}
-						</div>
-						{#if future}
-							<section class="extra" aria-labelledby="move-heading">
-								<h3 id="move-heading">{m.calendar_move_day()}</h3>
-								<p id="move-intro" class="muted">{m.calendar_move_day_intro()}</p>
-								<form
-									method="POST"
-									action="?/moveClassDay"
-									use:enhance={pending.submit(`move:${dayId}`)}
-									novalidate
-								>
-									<input type="hidden" name="dayId" value={dayId} />
-									<div class="field">
-										<ix-date-input
-											id="move-date"
-											name="newDate"
-											label={m.calendar_move_day_label()}
-											format="yyyy-MM-dd"
-											min-date={tomorrow}
-											required
-											{@attach ixValue('')}
-											{@attach ixFieldError(undefined, ['move-intro'])}
-										></ix-date-input>
-									</div>
-									<ix-button
-										type="submit"
-										icon="calendar"
-										loading={pending.is(`move:${dayId}`) || undefined}
-										disabled={pending.busy || undefined}
-									>
-										{m.calendar_move_day()}
-									</ix-button>
-								</form>
-							</section>
-						{/if}
-					{/if}
-					{#if data.canEdit && data.classSchedules.length > 0 && !selectedDay.cancelled}
-						{@const dayId = selectedDay.id}
-						<section class="extra" aria-labelledby="extra-heading">
-							<h3 id="extra-heading">{m.calendar_extra_heading()}</h3>
-							{#if extraClasses.length === 0}
-								<p class="muted">{m.calendar_extra_none()}</p>
-							{:else}
-								<p id="extra-intro" class="muted">{m.calendar_extra_intro()}</p>
-								<form
-									method="POST"
-									action="?/addExtraSession"
-									use:enhance={pending.submit(`extra:${dayId}`)}
-									novalidate
-								>
-									<input type="hidden" name="dayId" value={dayId} />
-									<div class="field">
-										<!-- Remounted when the offered classes change (e.g. after an
-										     add): <ix-select> takes its form value only on load and on
-										     user picks, so it would keep posting a class no longer listed. -->
-										{#key extraClasses.map((c) => c.id).join(',')}
-											<ix-select
-												id="extra-class"
-												name="classId"
-												label={m.calendar_extra_class_label()}
-												required
-												{@attach ixValue(extraClasses[0].id)}
-												{@attach ixFieldError(extraError ? 'extra-error' : undefined)}
-											>
-												{#each extraClasses as cls (cls.id)}
-													<ix-select-item value={cls.id} label={cls.name}></ix-select-item>
-												{/each}
-											</ix-select>
-										{/key}
-									</div>
-									<div class="actions inline-form">
-										<div class="field">
-											<ix-time-input
-												id="extra-start"
-												name="startTime"
-												label={m.calendar_start_time_label()}
-												format="HH:mm"
-												{@attach ixValue('')}
-												{@attach ixFieldError(extraError ? 'extra-error' : undefined, [
-													'extra-intro'
-												])}
-											></ix-time-input>
-										</div>
-										<div class="field">
-											<ix-number-input
-												id="extra-duration"
-												name="durationMinutes"
-												label={m.calendar_duration_label()}
-												min="15"
-												max="480"
-												step="5"
-												allow-empty-value-change
-												{@attach ixValue(null)}
-												{@attach ixFieldError(extraError ? 'extra-error' : undefined, [
-													'extra-intro'
-												])}
-											></ix-number-input>
-										</div>
-									</div>
-									{#if extraError}
-										<p id="extra-error" class="field-error" role="alert">{extraError}</p>
+									{#if pending.is(`day:${dayId}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Undo2 aria-hidden="true" />
 									{/if}
-									<ix-button
+									{m.calendar_restore_day()}
+								</Button>
+							</form>
+						{:else}
+							<form
+								method="POST"
+								action="?/setClassDayCancelled"
+								use:enhance={pending.submit(`day:${dayId}`, {
+									confirm: confirm.with(
+										m.calendar_cancel_day_confirm({ date: formatDay(date) }),
+										m.calendar_cancel_day(),
+										{ destructive: true }
+									)
+								})}
+							>
+								<input type="hidden" name="dayId" value={dayId} />
+								<input type="hidden" name="cancelled" value="true" />
+								<Button
+									type="submit"
+									variant="destructive"
+									class={touchButton}
+									aria-haspopup="dialog"
+									aria-busy={pending.is(`day:${dayId}`) || undefined}
+									disabled={pending.busy}
+								>
+									{#if pending.is(`day:${dayId}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Ban aria-hidden="true" />
+									{/if}
+									{m.calendar_cancel_day()}
+								</Button>
+							</form>
+						{/if}
+						{#if future}
+							<form
+								method="POST"
+								action="?/deleteClassDay"
+								use:enhance={pending.submit(`delete:${dayId}`, {
+									confirm: confirm.with(
+										m.calendar_delete_day_confirm({ date: formatDay(date) }),
+										m.calendar_delete_day(),
+										{ destructive: true }
+									)
+								})}
+							>
+								<input type="hidden" name="dayId" value={dayId} />
+								<Button
+									type="submit"
+									variant="destructive"
+									class={touchButton}
+									aria-haspopup="dialog"
+									aria-busy={pending.is(`delete:${dayId}`) || undefined}
+									disabled={pending.busy}
+								>
+									{#if pending.is(`delete:${dayId}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Trash2 aria-hidden="true" />
+									{/if}
+									{m.calendar_delete_day()}
+								</Button>
+							</form>
+						{/if}
+					</div>
+					{#if future}
+						<section class={subSection} aria-labelledby="move-heading">
+							<h3 id="move-heading" class={subHeading}>{m.calendar_move_day()}</h3>
+							<p id="move-intro" class={ui.muted}>{m.calendar_move_day_intro()}</p>
+							<form
+								method="POST"
+								action="?/moveClassDay"
+								use:enhance={pending.submit(`move:${dayId}`)}
+								class="flex flex-col gap-3"
+								novalidate
+							>
+								<input type="hidden" name="dayId" value={dayId} />
+								<div class={fieldClass}>
+									<Label for="move-date" class={fieldLabel}>{m.calendar_move_day_label()}</Label>
+									<Input
+										id="move-date"
+										name="newDate"
+										type="date"
+										min={tomorrow}
+										required
+										aria-describedby="move-intro"
+									/>
+								</div>
+								<div>
+									<Button
 										type="submit"
-										icon="add"
-										loading={pending.is(`extra:${dayId}`) || undefined}
-										disabled={pending.busy || undefined}
+										class={touchButton}
+										aria-busy={pending.is(`move:${dayId}`) || undefined}
+										disabled={pending.busy}
 									>
-										{m.calendar_extra_submit()}
-									</ix-button>
-								</form>
-							{/if}
+										{#if pending.is(`move:${dayId}`)}
+											<LoaderCircle class="animate-spin" aria-hidden="true" />
+										{:else}
+											<CalendarArrowUp aria-hidden="true" />
+										{/if}
+										{m.calendar_move_day()}
+									</Button>
+								</div>
+							</form>
 						</section>
 					{/if}
-				{:else if data.isAdmin}
-					<p class="muted">{m.calendar_add_days_intro()}</p>
-					<form
-						method="POST"
-						action="?/addClassDays"
-						use:enhance={pending.submit('addDays')}
-						novalidate
-					>
-						<div class="field">
-							<ix-date-input
+				{/if}
+				{#if data.canEdit && data.classSchedules.length > 0 && !selectedDay.cancelled}
+					{@const dayId = selectedDay.id}
+					<section class={subSection} aria-labelledby="extra-heading">
+						<h3 id="extra-heading" class={subHeading}>{m.calendar_extra_heading()}</h3>
+						{#if extraClasses.length === 0}
+							<p class={ui.muted}>{m.calendar_extra_none()}</p>
+						{:else}
+							<p id="extra-intro" class={ui.muted}>{m.calendar_extra_intro()}</p>
+							<form
+								method="POST"
+								action="?/addExtraSession"
+								use:enhance={pending.submit(`extra:${dayId}`)}
+								class="flex flex-col gap-3"
+								novalidate
+							>
+								<input type="hidden" name="dayId" value={dayId} />
+								<div class={fieldClass}>
+									<Label for="extra-class" class={fieldLabel}
+										>{m.calendar_extra_class_label()}</Label
+									>
+									<NativeSelect.Root
+										id="extra-class"
+										name="classId"
+										class="w-full"
+										required
+										aria-invalid={extraError ? 'true' : undefined}
+										aria-describedby={extraError ? 'extra-error' : undefined}
+									>
+										{#each extraClasses as cls (cls.id)}
+											<NativeSelect.Option value={cls.id}>{cls.name}</NativeSelect.Option>
+										{/each}
+									</NativeSelect.Root>
+								</div>
+								<div class="grid gap-3 md:grid-cols-2">
+									<div class={fieldClass}>
+										<Label for="extra-start" class={fieldLabel}
+											>{m.calendar_start_time_label()}</Label
+										>
+										<Input
+											id="extra-start"
+											name="startTime"
+											type="time"
+											aria-invalid={extraError ? 'true' : undefined}
+											aria-describedby={extraError ? 'extra-intro extra-error' : 'extra-intro'}
+										/>
+									</div>
+									<div class={fieldClass}>
+										<Label for="extra-duration" class={fieldLabel}
+											>{m.calendar_duration_label()}</Label
+										>
+										<Input
+											id="extra-duration"
+											name="durationMinutes"
+											type="number"
+											inputmode="numeric"
+											min="15"
+											max="480"
+											step="5"
+											aria-invalid={extraError ? 'true' : undefined}
+											aria-describedby={extraError ? 'extra-intro extra-error' : 'extra-intro'}
+										/>
+									</div>
+								</div>
+								{#if extraError}
+									<p id="extra-error" class={ui.error} role="alert">{extraError}</p>
+								{/if}
+								<div>
+									<Button
+										type="submit"
+										class={touchButton}
+										aria-busy={pending.is(`extra:${dayId}`) || undefined}
+										disabled={pending.busy}
+									>
+										{#if pending.is(`extra:${dayId}`)}
+											<LoaderCircle class="animate-spin" aria-hidden="true" />
+										{:else}
+											<Plus aria-hidden="true" />
+										{/if}
+										{m.calendar_extra_submit()}
+									</Button>
+								</div>
+							</form>
+						{/if}
+					</section>
+				{/if}
+			{:else if data.isAdmin}
+				<p id="add-days-intro" class={ui.muted}>{m.calendar_add_days_intro()}</p>
+				<form
+					method="POST"
+					action="?/addClassDays"
+					use:enhance={pending.submit('addDays')}
+					class="flex flex-col gap-3"
+					novalidate
+				>
+					<div class="grid gap-3 md:grid-cols-2">
+						<div class={fieldClass}>
+							<Label for="add-start" class={fieldLabel}>{m.calendar_start_date_label()}</Label>
+							<Input
 								id="add-start"
 								name="startDate"
-								label={m.calendar_start_date_label()}
-								format="yyyy-MM-dd"
+								type="date"
 								required
-								{@attach ixValue(selectedDate)}
-								{@attach ixFieldError(addDaysError ? 'add-days-error' : undefined)}
-							></ix-date-input>
+								value={selectedDate}
+								aria-invalid={addDaysError ? 'true' : undefined}
+								aria-describedby={addDaysError ? 'add-days-error' : undefined}
+							/>
 						</div>
-						<div class="field">
-							<ix-date-input
+						<div class={fieldClass}>
+							<Label for="add-end" class={fieldLabel}>{m.calendar_end_date_label()}</Label>
+							<Input
 								id="add-end"
 								name="endDate"
-								label={m.calendar_end_date_label()}
-								format="yyyy-MM-dd"
-								{@attach ixValue('')}
-								{@attach ixFieldError(addDaysError ? 'add-days-error' : undefined)}
-							></ix-date-input>
+								type="date"
+								aria-invalid={addDaysError ? 'true' : undefined}
+								aria-describedby={addDaysError ? 'add-days-error' : undefined}
+							/>
 						</div>
-						{#if addDaysError}
-							<p id="add-days-error" class="field-error" role="alert">{addDaysError}</p>
-						{/if}
-						<ix-button
+					</div>
+					{#if addDaysError}
+						<p id="add-days-error" class={ui.error} role="alert">{addDaysError}</p>
+					{/if}
+					<div>
+						<Button
 							type="submit"
-							icon="add"
-							loading={pending.is('addDays') || undefined}
-							disabled={pending.busy || undefined}
+							class={touchButton}
+							aria-busy={pending.is('addDays') || undefined}
+							disabled={pending.busy}
 						>
+							{#if pending.is('addDays')}
+								<LoaderCircle class="animate-spin" aria-hidden="true" />
+							{:else}
+								<Plus aria-hidden="true" />
+							{/if}
 							{m.calendar_add_days_button()}
-						</ix-button>
-					</form>
-				{/if}
+						</Button>
+					</div>
+				</form>
 			{/if}
-		</ix-modal-content>
-		<ix-modal-footer>
-			<ix-button variant="secondary" onclick={() => closeModal(dayModal)}>
-				{m.calendar_dialog_close()}
-			</ix-button>
-		</ix-modal-footer>
-	</ix-modal>
-{/if}
+		{/if}
+	</div>
+	{@render dialogFooter(() => (dayOpen = false))}
+{/snippet}
 
-<style>
-	.hint-line {
-		margin: calc(-1 * var(--space-4)) 0 var(--space-4);
-		font-size: var(--theme-font-size-default);
-	}
+<!-- Session: edit (admin / the class's teachers) or read-only details. -->
+<Dialog.Root bind:open={sessionOpen}>
+	{#if dialogWide}
+		<Dialog.Content
+			data-testid="session-dialog"
+			closeLabel={m.calendar_dialog_close()}
+			class={dialogClass}
+			onCloseAutoFocus={returnFocus}
+		>
+			<Dialog.Header class="pr-10">
+				<Dialog.Title class={titleClass}>{selected?.session.className ?? ''}</Dialog.Title>
+			</Dialog.Header>
+			{@render sessionBody()}
+		</Dialog.Content>
+	{:else}
+		<Sheet.Content
+			side="bottom"
+			data-testid="session-dialog"
+			closeLabel={m.calendar_dialog_close()}
+			class={sheetClass}
+			onCloseAutoFocus={returnFocus}
+		>
+			<Sheet.Header class="p-0 pr-12">
+				<Sheet.Title class={titleClass}>{selected?.session.className ?? ''}</Sheet.Title>
+			</Sheet.Header>
+			{@render sessionBody()}
+		</Sheet.Content>
+	{/if}
+</Dialog.Root>
 
-	.inline-form {
-		align-items: flex-end;
-	}
-	.inline-form .field {
-		flex: 1 1 10rem;
-		margin: 0;
-	}
+<!-- Day: admin adds class days or cancels / restores one; others read. -->
+<Dialog.Root bind:open={dayOpen}>
+	{#if dialogWide}
+		<Dialog.Content
+			data-testid="day-dialog"
+			closeLabel={m.calendar_dialog_close()}
+			class={dialogClass}
+			onCloseAutoFocus={returnFocus}
+		>
+			<Dialog.Header class="pr-10">
+				<Dialog.Title class={titleClass}>{dayTitle}</Dialog.Title>
+			</Dialog.Header>
+			{@render dayBody()}
+		</Dialog.Content>
+	{:else}
+		<Sheet.Content
+			side="bottom"
+			data-testid="day-dialog"
+			closeLabel={m.calendar_dialog_close()}
+			class={sheetClass}
+			onCloseAutoFocus={returnFocus}
+		>
+			<Sheet.Header class="p-0 pr-12">
+				<Sheet.Title class={titleClass}>{dayTitle}</Sheet.Title>
+			</Sheet.Header>
+			{@render dayBody()}
+		</Sheet.Content>
+	{/if}
+</Dialog.Root>
 
-	.row-list {
-		list-style: none;
-		margin: var(--space-2) 0 0;
-		padding: 0;
-	}
-	.row-list > li {
-		padding: var(--space-3) 0;
-	}
-	.row-list > li + li {
-		border-top: 1px solid var(--theme-color-soft-bdr);
-	}
-	.row-title {
-		flex: 1 1 10rem;
-		font-weight: var(--theme-font-weight-bold);
-	}
-	.empty-month {
-		margin: 0 0 var(--space-3);
-	}
-	.empty-month p {
-		margin: 0;
-	}
-	.schedules {
-		margin-top: var(--space-6);
-	}
-	.schedule-heading {
-		margin: 0;
-		font-size: inherit;
-	}
-	/* The whole summary line is the disclosure button (#66). */
-	.schedule-toggle {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-2);
-		width: 100%;
-		min-height: 2.75rem;
-		padding: var(--space-1) 0;
-		border: 0;
-		background: none;
-		color: inherit;
-		font: inherit;
-		text-align: start;
-		cursor: pointer;
-	}
-	.schedule-toggle:focus-visible {
-		outline: 2px solid var(--theme-color-focus-bdr);
-		outline-offset: 2px;
-	}
-	.schedule-chevron {
-		flex: none;
-		margin-top: 0.3rem;
-		transition: transform 150ms ease;
-	}
-	.schedule-toggle[aria-expanded='true'] .schedule-chevron {
-		transform: rotate(90deg);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.schedule-chevron {
-			transition: none;
-		}
-	}
-	.schedule-toggle-text {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0 var(--space-3);
-	}
-	.schedule-toggle .row-title {
-		flex: 0 1 auto;
-		font-size: var(--theme-font-size-l);
-	}
-	.schedule-summary {
-		font-weight: normal;
-	}
-	.schedule-form {
-		margin-top: var(--space-3);
-	}
-	.extra {
-		margin-top: var(--space-6);
-		padding-top: var(--space-4);
-		border-top: 1px solid var(--theme-color-soft-bdr);
-	}
-	.extra h3 {
-		margin: 0 0 var(--space-2);
-		font-size: var(--theme-font-size-l);
-	}
-	.extra-tag {
-		color: var(--theme-color-soft-text);
-	}
-	.status .extra-pill {
-		margin-inline-start: var(--space-2);
-	}
-
-	.details {
-		display: grid;
-		grid-template-columns: max-content 1fr;
-		gap: var(--space-1) var(--space-3);
-		margin: 0 0 var(--space-3);
-	}
-	.details dt {
-		color: var(--theme-color-soft-text);
-	}
-	.details dd {
-		margin: 0;
-	}
-	.status {
-		margin: 0 0 var(--space-4);
-	}
-	.session-time {
-		font-variant-numeric: tabular-nums;
-	}
-	.struck {
-		text-decoration: line-through;
-		color: var(--theme-color-soft-text);
-	}
-	.hint {
-		margin: var(--space-2) 0 0;
-		font-size: var(--theme-font-size-s);
-	}
-	.session-cancel {
-		margin-top: var(--space-4);
-	}
-	.day-sessions {
-		margin: 0 0 var(--space-4);
-		padding: 0;
-		list-style: none;
-	}
-	.day-sessions li {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-3);
-		padding: var(--space-1) 0;
-	}
-	.day-sessions .child-answers {
-		flex-basis: 100%;
-	}
-	.child-answers {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.day-sessions .child-answers li {
-		display: block;
-		padding: 0;
-	}
-	.parent-hint {
-		margin: 0 0 var(--space-3);
-	}
-	/* ── @event-calendar/core, in the app's iX look ─────────────────────── */
-	.calendar-wrap {
-		min-width: 0;
-		/* Class palette (light schema; text on tint is at least 7:1). */
-		--chip-c0-bg: #dbeafe;
-		--chip-c0-fg: #1e3a8a;
-		--chip-c0-accent: #2563eb;
-		--chip-c1-bg: #dcfce7;
-		--chip-c1-fg: #14532d;
-		--chip-c1-accent: #16a34a;
-		--chip-c2-bg: #fef3c7;
-		--chip-c2-fg: #78350f;
-		--chip-c2-accent: #d97706;
-		--chip-c3-bg: #ede9fe;
-		--chip-c3-fg: #4c1d95;
-		--chip-c3-accent: #7c3aed;
-		--chip-c4-bg: #fce7f3;
-		--chip-c4-fg: #831843;
-		--chip-c4-accent: #db2777;
-		--chip-c5-bg: #ccfbf1;
-		--chip-c5-fg: #134e4a;
-		--chip-c5-accent: #0d9488;
-	}
-	.calendar-wrap :global(.ec) {
-		--ec-border-color: var(--theme-color-soft-bdr);
-		--ec-bg-color: var(--theme-color-1);
-		/* Today is the server's Berlin date (highlightedDates), not the browser's. */
-		--ec-today-bg-color: var(--ec-bg-color);
-		--ec-highlight-color: var(--theme-color-ghost-primary--hover);
-		--ec-button-bg-color: var(--theme-color-1);
-		--ec-button-text-color: var(--theme-color-std-text);
-		font-size: var(--theme-font-size-default);
-	}
-	.calendar-wrap :global(.ec-toolbar) {
-		margin-bottom: var(--space-3);
-	}
-	.calendar-wrap :global(.ec-button) {
-		min-height: 2rem;
-		min-width: 2rem;
-		cursor: pointer;
-	}
-	.calendar-wrap :global(.ec-button:focus-visible),
-	.calendar-wrap :global(.ec-event:focus-visible),
-	.calendar-wrap :global(.day-button:focus-visible) {
-		outline: 2px solid var(--theme-color-focus-bdr);
-		outline-offset: 1px;
-		z-index: 2;
-	}
-	.calendar-wrap :global(.ec-day-grid .ec-day) {
-		min-height: 6rem;
-	}
-
-	.calendar-wrap :global(.day-button) {
-		min-width: 1.75rem;
-		min-height: 1.75rem;
-		padding: 0 var(--space-1);
-		background: none;
-		border: 0;
-		border-radius: 999px;
-		color: inherit;
-		font: inherit;
-		cursor: pointer;
-	}
-	.calendar-wrap :global(.day-button:hover) {
-		background: var(--theme-color-ghost-primary--hover);
-	}
-	.calendar-wrap :global(.ec-day-grid .today-mark) {
-		display: inline-block;
-		min-width: 1.75rem;
-		line-height: 1.75rem;
-		text-align: center;
-		border-radius: 999px;
-		background: var(--theme-color-primary);
-		color: var(--theme-color-primary--contrast);
-		font-weight: var(--theme-font-weight-bold);
-	}
-	.calendar-wrap :global(.ec-list .today-mark) {
-		color: var(--theme-color-primary);
-		font-weight: var(--theme-font-weight-bold);
-	}
-
-	/* Chips: class colour tint with an accent edge; cancelled = grey, struck. */
-	.calendar-wrap :global(.ec-event.chip) {
-		cursor: pointer;
-	}
-	.calendar-wrap :global(.ec-day-grid .ec-event.chip) {
-		background: var(--chip-bg);
-		color: var(--chip-fg);
-		border-inline-start: 3px solid var(--chip-accent);
-		box-shadow: none;
-	}
-	.calendar-wrap :global(.ec-list .chip .ec-event-tag) {
-		background: var(--chip-accent);
-	}
-	.calendar-wrap :global(.chip-c0) {
-		--chip-bg: var(--chip-c0-bg);
-		--chip-fg: var(--chip-c0-fg);
-		--chip-accent: var(--chip-c0-accent);
-	}
-	.calendar-wrap :global(.chip-c1) {
-		--chip-bg: var(--chip-c1-bg);
-		--chip-fg: var(--chip-c1-fg);
-		--chip-accent: var(--chip-c1-accent);
-	}
-	.calendar-wrap :global(.chip-c2) {
-		--chip-bg: var(--chip-c2-bg);
-		--chip-fg: var(--chip-c2-fg);
-		--chip-accent: var(--chip-c2-accent);
-	}
-	.calendar-wrap :global(.chip-c3) {
-		--chip-bg: var(--chip-c3-bg);
-		--chip-fg: var(--chip-c3-fg);
-		--chip-accent: var(--chip-c3-accent);
-	}
-	.calendar-wrap :global(.chip-c4) {
-		--chip-bg: var(--chip-c4-bg);
-		--chip-fg: var(--chip-c4-fg);
-		--chip-accent: var(--chip-c4-accent);
-	}
-	.calendar-wrap :global(.chip-c5) {
-		--chip-bg: var(--chip-c5-bg);
-		--chip-fg: var(--chip-c5-fg);
-		--chip-accent: var(--chip-c5-accent);
-	}
-	.calendar-wrap :global(.chip-day) {
-		--chip-bg: var(--theme-color-1);
-		--chip-fg: var(--theme-color-soft-text);
-		--chip-accent: var(--theme-color-soft-bdr);
-	}
-	.calendar-wrap :global(.chip-cancelled) {
-		--chip-bg: #f1f5f9;
-		--chip-fg: #475569;
-		--chip-accent: #94a3b8;
-	}
-	.calendar-wrap :global(.chip-cancelled .chip-text) {
-		text-decoration: line-through;
-	}
-	.calendar-wrap :global(.ec-list .chip-cancelled .chip-text) {
-		color: var(--theme-color-soft-text);
-	}
-	.calendar-wrap :global(.chip-text) {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0 var(--space-1);
-		min-width: 0;
-		overflow: hidden;
-	}
-	.calendar-wrap :global(.chip-time) {
-		font-variant-numeric: tabular-nums;
-		font-weight: var(--theme-font-weight-bold);
-	}
-	.calendar-wrap :global(.chip-extra) {
-		font-style: italic;
-	}
-	.calendar-wrap :global(.chip-title) {
-		overflow-wrap: anywhere;
-	}
-</style>
+<ConfirmDialog {confirm} />

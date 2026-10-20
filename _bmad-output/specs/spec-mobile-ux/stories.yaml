@@ -59,6 +59,19 @@
     Admin uses these new versions too; check them inside the admin shell at
     1440px. The calendar keeps @event-calendar/core; restyle only.
 
+- id: "5b"
+  title: Calendar
+  description: >-
+    Migrate /calendar for every role: session and day dialogs as a bottom
+    sheet on phone and a dialog on tablet/desktop, native date/time/number
+    fields, @event-calendar/core restyled (not replaced). Split from story 5
+    at its scope gate. See SPEC.md CAP-2, CAP-3, CAP-4.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep the phone list view, one-dialog-at-a-time, focus return to the
+    chip or day, auto-close on success and stale-error filtering.
+    ScheduleFields moves here (user decision), not in story 8.
+
 - id: "6"
   title: Auth pages
   description: >-

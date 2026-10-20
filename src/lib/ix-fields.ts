@@ -139,14 +139,3 @@ export function ixValue(
 		})();
 	};
 }
-
-/**
- * <ix-number-input> value for a duration in minutes: a finite number, or
- * `null` (empty) for null, undefined, '', whitespace or anything non-numeric.
- */
-export function durationValue(minutes: number | string | null | undefined): number | null {
-	if (minutes === null || minutes === undefined) return null;
-	if (typeof minutes === 'string' && minutes.trim() === '') return null;
-	const n = Number(minutes);
-	return Number.isFinite(n) ? n : null;
-}

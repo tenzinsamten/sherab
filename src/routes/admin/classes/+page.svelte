@@ -155,18 +155,21 @@
 				/>
 			{/key}
 			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
-			{#key form}
-				<ScheduleFields
-					idPrefix="new-class"
-					weekdays={schedule.weekdays}
-					startTime={schedule.startTime}
-					durationMinutes={schedule.durationMinutes}
-					startsOn={schedule.startsOn}
-					endsOn={schedule.endsOn}
-					intervalWeeks={schedule.intervalWeeks}
-					errors={scheduleErrors}
-				/>
-			{/key}
+			<!-- New-UI fields (story 5b): spaced from the iX button below. -->
+			<div class="schedule-fields-wrap">
+				{#key form}
+					<ScheduleFields
+						idPrefix="new-class"
+						weekdays={schedule.weekdays}
+						startTime={schedule.startTime}
+						durationMinutes={schedule.durationMinutes}
+						startsOn={schedule.startsOn}
+						endsOn={schedule.endsOn}
+						intervalWeeks={schedule.intervalWeeks}
+						errors={scheduleErrors}
+					/>
+				{/key}
+			</div>
 			<ix-button
 				type="submit"
 				icon="add"
@@ -314,6 +317,9 @@
 </div>
 
 <style>
+	.schedule-fields-wrap {
+		margin-bottom: var(--space-4);
+	}
 	.schedule-heading {
 		margin: var(--space-2) 0 var(--space-2);
 		font-size: var(--theme-font-size-l);

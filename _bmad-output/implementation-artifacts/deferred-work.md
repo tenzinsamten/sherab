@@ -394,3 +394,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5-shared-pages.md`
   summary: Mark the viewer's own team row on `/leaderboard` (a student's team, a parent's child's team).
   evidence: Planned in story 5's matrix but the load (`leaderboard/+page.server.ts`) returns no own-team flag and story 5 forbids load changes; the old iX page never marked it either. User chose Defer at the step-3 matrix audit.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5b-calendar.md`
+  summary: Calendar action-error toasts (e.g. move day to its own date) may not be announced while the modal sheet/dialog makes the rest of the page inert.
+  evidence: Unverified (medium if true). Pre-existing with the old iX modal; settle with a VoiceOver/NVDA check, or render action errors inline in the dialog.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5b-calendar.md`
+  summary: When the day that opened the calendar's day dialog is moved or deleted, focus falls to the body on close instead of a sensible fallback.
+  evidence: Old `onClosed` and new `returnFocus` both give up when neither opener nor selector matches (phone list view drops the day); medium for keyboard and screen-reader users.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5b-calendar.md`
+  summary: Calendar focus return retries only tick + one animation frame before the re-rendered chip may exist.
+  evidence: Unverified (medium if true). e2e `toBeFocused()` passes locally; settle with a CPU-throttled trace on a slow device.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5b-calendar.md`
+  summary: `createCalendarFixture` picks a random year and its cleanup deletes every class day in that year, so it fails (attendance FK) when another test left data in the same year.
+  evidence: Story 5b verification rerun hit `attendance_records_class_session_fkey` in year 4405 ("7-4 Mixed" leftovers); ~49 of 6000 years are taken, so rare but real. Related: `src/lib/server/rls.spec.ts` leaves a "Dup 1" class that leaks into e2e runs after `npm test`.

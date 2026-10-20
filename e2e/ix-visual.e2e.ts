@@ -146,11 +146,10 @@ for (const viewport of VIEWPORTS) {
 			await signIn(page, admin);
 			await page.goto('/admin/classes');
 			// The class count and the list of all classes depend on what else is
-			// in the database, the schedule's start date on today's date; the
-			// rest of the create form and the page frame do not.
+			// in the database; the rest of the create form and the page frame do
+			// not. The schedule fields are new UI (story 5b), hidden like the shell.
 			await shoot(page, `admin-classes-${viewport.name}`, [
 				'.page-counter',
-				'ix-date-input',
 				'.page > section.card:last-of-type'
 			]);
 		});
