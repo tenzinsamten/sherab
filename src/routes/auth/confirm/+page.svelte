@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages.js';
-	import AuthCard from '$lib/components/AuthCard.svelte';
+	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import type { PageData } from './$types';
 
 	/**
@@ -20,8 +21,8 @@
 
 <AuthCard {title} subtitle={recovery ? m.confirm_recovery_body() : m.confirm_body()}>
 	<form method="POST">
-		<ix-button class="block" type="submit">
+		<Button type="submit" class={auth.submit}>
 			{recovery ? m.confirm_recovery_submit() : m.confirm_submit()}
-		</ix-button>
+		</Button>
 	</form>
 </AuthCard>

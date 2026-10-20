@@ -83,6 +83,20 @@
     Keep CredentialFields and PasswordInput behaviour and autocomplete
     attributes so password managers keep working on iOS.
 
+- id: "6b"
+  title: Join flow
+  description: >-
+    Migrate join and join pending, including JoinSteps (iX workflow steps)
+    as an accessible stepper and the guardian consent checkbox, onto the
+    new AuthCard. Split from story 6 at its scope gate. See SPEC.md CAP-3,
+    CAP-5.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep the client-only step 1 (validate_class_code RPC), focus on the new
+    step's first field, the class-code inline error plus toast, the disabled
+    submit until email and consent, and CredentialFields on join pending.
+    Remove the inline .auth-card markup story 6 left in both pages.
+
 - id: "7"
   title: Teacher class pages
   description: >-

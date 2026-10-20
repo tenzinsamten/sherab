@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { createCalendarFixture, openHelp, service, signIn, type CalendarFixture } from './fixtures';
 
 /**
- * iX fields on /join and /account (#66 B7b). Credential fields stay native
- * (see signIn); these cover the converted ones: typing reaches the Svelte
- * state behind them, and /account's display name still saves.
+ * iX fields on /join (#66 B7b; the join flow moves to the new UI in story
+ * 6b), the native fields of /register and /account (mobile-first stories 5
+ * and 6), the signed-out header, and the email-link pages (#89).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -52,6 +52,12 @@ function posted(body: string, name: string, value: string): boolean {
 
 async function waitForIx(page: Page) {
 	await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+	await page.waitForLoadState('networkidle');
+}
+
+/** An auth page (mobile-first story 6): its new-UI root is hydrated. */
+async function authReady(page: Page) {
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
@@ -230,13 +236,11 @@ test('join: an unknown class code marks the field invalid and stays on step 1', 
 	await expect(error).toHaveCount(0);
 });
 
-test('register: the iX display name is posted with the native email and passwords', async ({
-	page
-}) => {
+test('register: the display name is posted with the email and passwords', async ({ page }) => {
 	await page.goto('/register');
-	await waitForIx(page);
+	await authReady(page);
 	const name = `E2E Register ${fx.tag}`;
-	await typeInto(page, 'displayName', name);
+	await page.locator('#displayName').fill(name);
 	await page.locator('#email').fill(`e2e-register-${fx.tag}@example.test`);
 	await page.locator('#password').fill('secret-123');
 	await page.locator('#confirm').fill('secret-123');
@@ -247,7 +251,7 @@ test('register: the iX display name is posted with the native email and password
 
 test('register: each password field has its own show/hide button (#82)', async ({ page }) => {
 	await page.goto('/register');
-	await waitForIx(page);
+	await authReady(page);
 	const password = page.locator('#password');
 	const confirm = page.locator('#confirm');
 	await password.fill('secret-123');
@@ -321,29 +325,20 @@ test('account: the display name shows the saved one and saves a new one', async 
 
 test('login: the Sherab logo shows above the card title', async ({ page }) => {
 	await page.goto('/login');
-	const logo = page.locator('.auth-card-header img');
+	const logo = page.locator('main [data-auth-card] header img');
 	await expect(logo).toBeVisible();
 	await expect(logo).toHaveAttribute('alt', 'Sherab – ཤེས་རབ་');
 	await expect(logo).toHaveAttribute('src', /sherab-logo-blue/);
 });
 
-test('signed-out header: the Sherab logo is the home link and the name text is hidden', async ({
-	page
-}) => {
+test('signed-out header: the Sherab logo is the home link, no iX header', async ({ page }) => {
 	await page.goto('/login');
-	const header = page.locator('ix-application-header');
-	const logoLink = header.locator('a.header-logo');
+	await authReady(page);
+	await expect(page.locator('ix-application-header, ix-dropdown-button')).toHaveCount(0);
+	const header = page.getByTestId('public-header');
+	const logoLink = header.getByTestId('header-home');
 	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();
-	// Computed display of the name in iX's shadow root (a locator's
-	// toBeHidden also passes when it matches nothing).
-	await expect
-		.poll(() =>
-			header.evaluate((el) => {
-				const n = el.shadowRoot?.querySelector('.left-side .name');
-				return n ? getComputedStyle(n).display : 'missing';
-			})
-		)
-		.toBe('none');
+	await expect(header.getByTestId('language-menu')).toBeVisible();
 	await logoLink.click();
 	await expect(page).toHaveURL(/\/$/);
 });
@@ -428,8 +423,8 @@ test('email links: opening one only shows a button; pressing it confirms, on any
 	const password = `pw-${crypto.randomUUID()}`;
 	try {
 		await page.goto('/register');
-		await waitForIx(page);
-		await typeInto(page, 'displayName', 'E2E89 Parent');
+		await authReady(page);
+		await page.locator('#displayName').fill('E2E89 Parent');
 		await page.locator('#email').fill(email);
 		await page.locator('#password').fill(password);
 		await page.locator('#confirm').fill(password);
@@ -451,12 +446,12 @@ test('email links: opening one only shows a button; pressing it confirms, on any
 
 		const phone = await (await browser.newContext()).newPage();
 		await phone.goto(link);
-		await phone.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await authReady(phone);
 		await phone.getByRole('button', { name: 'Confirm my email' }).click();
 		await expect(phone).toHaveURL(/\/parent$/);
 
 		// Used now: a second press says so in the card and offers a new link.
-		await scanner.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await authReady(scanner);
 		await scanner.getByRole('button', { name: 'Confirm my email' }).click();
 		await expect(scanner).toHaveURL(/\/login\?error=confirm$/);
 		await expect(scanner.getByRole('alert')).toContainText('invalid or has expired');
@@ -465,14 +460,13 @@ test('email links: opening one only shows a button; pressing it confirms, on any
 		// The same for a reset-password mail.
 		const reset = await (await browser.newContext()).newPage();
 		await reset.goto('/forgot-password');
-		await reset.waitForFunction(() => customElements.get('ix-button') !== undefined);
-		await reset.waitForLoadState('networkidle');
+		await authReady(reset);
 		await reset.locator('#email').fill(email);
 		await reset.getByRole('button', { name: 'Send reset link' }).click();
 		const recoveryToken = await mailToken(email, 'recovery');
 		const other = await (await browser.newContext()).newPage();
 		await other.goto(`/auth/confirm?token_hash=${recoveryToken}&type=recovery`);
-		await other.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await authReady(other);
 		await expect(other.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
 		await other.getByRole('button', { name: 'Continue' }).click();
 		await expect(other).toHaveURL(/\/reset-password$/);
@@ -484,7 +478,7 @@ test('email links: opening one only shows a button; pressing it confirms, on any
 
 test('resend confirmation: the same answer for any address (#89)', async ({ page }) => {
 	await page.goto('/resend-confirmation');
-	await waitForIx(page);
+	await authReady(page);
 	await page.locator('#email').fill(`nobody-${fx.tag}@example.test`);
 	await page.getByRole('button', { name: 'Send link' }).click();
 	await expect(page.getByRole('status')).toContainText(

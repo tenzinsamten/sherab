@@ -7,19 +7,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getLocale, locales, setLocale } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages.js';
-	import {
-		dropdownButtonLabelRoom,
-		headerHomeLink,
-		routeIxLinks,
-		setupIx,
-		showToast
-	} from '$lib/ix';
+	import { routeIxLinks, setupIx, showToast } from '$lib/ix';
 	import AppHeader from '$lib/components/shell/AppHeader.svelte';
 	import BottomNav from '$lib/components/shell/BottomNav.svelte';
 	import HelpSheet from '$lib/components/shell/HelpSheet.svelte';
 	import PortalRoot from '$lib/components/shell/PortalRoot.svelte';
+	import PublicHeader from '$lib/components/shell/PublicHeader.svelte';
 	import SideNav from '$lib/components/shell/SideNav.svelte';
 	import NewBadgeDialog from '$lib/components/NewBadgeDialog.svelte';
 	import PageTour from '$lib/components/PageTour.svelte';
@@ -28,14 +22,6 @@
 	import { releasePush, syncPush } from '$lib/push-client';
 	import { roleHome } from '$lib/role-home';
 	import { tourFor } from '$lib/tours';
-	import flagTibet from '$lib/assets/flag-tibet.svg';
-	import logoWhite from '$lib/assets/sherab-logo-white.svg';
-
-	const localeFlags: Record<string, { emoji?: string; icon?: string; name: string }> = {
-		en: { emoji: '🇬🇧', name: 'English' },
-		de: { emoji: '🇩🇪', name: 'Deutsch' },
-		bo: { icon: flagTibet, name: 'བོད་སྐད།' }
-	};
 
 	let { children, data } = $props();
 
@@ -181,31 +167,9 @@
 	{/if}
 </svelte:head>
 
-{#snippet languageItems()}
-	{#each locales as locale (locale)}
-		{@const flag = localeFlags[locale]}
-		<!-- #79: writes the language cookie and reloads the page (the server
-		     picks names and messages from it). -->
-		<ix-dropdown-item
-			checked={getLocale() === locale || undefined}
-			lang={locale}
-			onclick={() => setLocale(locale)}
-		>
-			<span class="locale-option">
-				{#if flag?.icon}
-					<img src={flag.icon} alt="" width="18" height="12" />
-				{:else if flag?.emoji}
-					<span aria-hidden="true">{flag.emoji}</span>
-				{/if}
-				{flag?.name ?? locale}
-			</span>
-		</ix-dropdown-item>
-	{/each}
-{/snippet}
-
 {#if data.profile}
-	<!-- Story 2: the new shell. Only its chrome carries data-ui="new"; the
-	     page content inside <main> is still iX. -->
+	<!-- Story 2: the new shell. Its chrome carries data-ui="new"; a page
+	     inside <main> is iX until migrated, then has its own new-UI root. -->
 	<div class="flex min-h-dvh flex-col" data-app-shell>
 		<AppHeader
 			{homeHref}
@@ -213,7 +177,6 @@
 			roles={data.roles}
 			{role}
 			{roleNames}
-			{localeFlags}
 			showAccount={!unapprovedStudent}
 			showHelp={role === 'student'}
 			onAccount={() => void goto(resolve('/account'))}
@@ -266,29 +229,14 @@
 		<NewBadgeDialog badges={data.newBadges} userId={data.profile.id} />
 	{/if}
 {:else}
-	<!-- Signed out: no side menu, so the header stands alone -- inside
-	     <ix-application> it would always show a menu toggle on small screens. -->
-	<div class="app-public">
-		<ix-application-header name="Sherab" use:headerHomeLink={resolve('/')}>
-			<a slot="logo" class="header-logo" href={resolve('/')}>
-				<img src={logoWhite} alt={m.nav_logo_alt()} width="58" height="32" />
-			</a>
-			<!-- The "avatar" slot is the header's only right-hand slot that never
-			     collapses into the small-screen "more" overflow menu, so the
-			     language switch stays one tap away on phones. -->
-			<ix-dropdown-button
-				slot="ix-application-header-avatar"
-				enable-top-layer
-				variant="subtle-tertiary"
-				icon="globe"
-				label={localeFlags[getLocale()]?.name ?? getLocale()}
-				aria-label={m.footer_locale_label()}
-				use:dropdownButtonLabelRoom
-			>
-				{@render languageItems()}
-			</ix-dropdown-button>
-		</ix-application-header>
-		<main class="app-public-main">
+	<!-- Signed out (story 6): the header and the page, no navigation. The
+	     page is laid out edge to edge (viewport-fit=cover), so the page keeps
+	     clear of a landscape iPhone's notch and the home indicator. -->
+	<div class="flex min-h-dvh flex-col bg-muted" data-public-shell>
+		<PublicHeader homeHref={resolve('/')} />
+		<main
+			class="min-w-0 flex-1 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
+		>
 			{@render children()}
 		</main>
 	</div>

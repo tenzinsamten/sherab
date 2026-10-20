@@ -322,7 +322,8 @@ test('a pending student is sent to the pending page (#100); signed out, the sign
 	// every page but the pending page sends them there. (The database's own
 	// refusal of team_students() for a pending student is in rls.spec.ts.)
 	await page.goto('/login');
-	await ready(page);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+	await page.waitForLoadState('networkidle');
 	await page.locator('#email').fill(pendingStudent.email);
 	await page.locator('#password').fill(pendingStudent.password);
 	await page.getByRole('button', { name: 'Sign in' }).click();

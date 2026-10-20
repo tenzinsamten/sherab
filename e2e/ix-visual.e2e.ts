@@ -8,7 +8,7 @@ import { service, signIn, type TestUser } from './fixtures';
  * must not leak into iX pages).
  *
  * Story 2 (new app shell): each image is the page content only -- the
- * `.page` element (`.auth-page` signed out) -- not the viewport, so the
+ * `.page` element (`[data-auth-card]` signed out) -- not the viewport, so the
  * shell around it (header, navigation) is not part of the proof and can be
  * replaced. Text that depends on the database or the run (counters, lists)
  * is masked. Baselines are platform-specific (darwin).
@@ -16,6 +16,9 @@ import { service, signIn, type TestUser } from './fixtures';
  * Story 3 (parent pages): the parent dashboard is no longer an iX page, so
  * its shots are gone; the parent pages have their own checks in
  * parent-mobile.e2e.ts.
+ *
+ * Story 6 (auth pages): the login shots are of the new-UI card
+ * (`[data-auth-card]`), re-baselined on the new UI.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -78,12 +81,15 @@ async function settle(page: Page) {
  * state, so the image does not depend on which tests ran before: masking
  * alone is not enough, since a mask takes the size of what it covers.
  */
-async function normalize(page: Page) {
-	await page.evaluate(() => {
+async function normalize(page: Page, content: string) {
+	await page.evaluate((content) => {
 		// The new shell (story 2) is not part of the proof. A page taller than
 		// the viewport is shot while scrolled, and its sticky header and bottom
-		// bar would lie over the content: hidden, keeping their space.
+		// bar would lie over the content: hidden, keeping their space. A shot
+		// of a new-UI page (the login card, story 6) keeps that page.
+		const newPage = document.querySelector(content)?.matches('[data-ui="new"]') ?? false;
 		for (const chrome of document.querySelectorAll<HTMLElement>('[data-ui="new"]')) {
+			if (newPage && chrome.closest(content)) continue;
 			chrome.style.visibility = 'hidden';
 		}
 		// The admin class counter: one digit.
@@ -97,7 +103,7 @@ async function normalize(page: Page) {
 			list.replaceChildren();
 			list.style.height = '8rem';
 		}
-	});
+	}, content);
 }
 
 /**
@@ -116,7 +122,7 @@ async function fitHeight(page: Page, content: string) {
 
 async function shoot(page: Page, name: string, mask: string[] = [], content = '.page') {
 	await settle(page);
-	await normalize(page);
+	await normalize(page, content);
 	await fitHeight(page, content);
 	await settle(page);
 	await expect(page.locator(content)).toHaveScreenshot(`${name}.png`, {
@@ -133,7 +139,7 @@ for (const viewport of VIEWPORTS) {
 
 		test(`login (${viewport.name})`, async ({ page }) => {
 			await page.goto('/login');
-			await shoot(page, `login-${viewport.name}`, [], '.auth-page');
+			await shoot(page, `login-${viewport.name}`, [], '[data-auth-card]');
 		});
 
 		test(`teacher dashboard (${viewport.name})`, async ({ page }) => {

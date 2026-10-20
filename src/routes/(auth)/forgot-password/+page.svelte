@@ -2,7 +2,9 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
-	import AuthCard from '$lib/components/AuthCard.svelte';
+	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { showToast } from '$lib/ix';
 	import type { ActionData, PageData } from './$types';
 
@@ -21,10 +23,10 @@
 </svelte:head>
 
 <AuthCard title={m.forgot_heading()} subtitle={m.forgot_description()}>
-	<form method="POST" use:enhance>
-		<div class="field">
-			<label for="email">{m.forgot_email_label()}</label>
-			<input
+	<form method="POST" use:enhance class={auth.form}>
+		<div class={auth.field}>
+			<label for="email" class={auth.label}>{m.forgot_email_label()}</label>
+			<Input
 				id="email"
 				name="email"
 				type="text"
@@ -34,10 +36,10 @@
 				value={form?.email ?? ''}
 			/>
 		</div>
-		<ix-button class="block" type="submit">{m.forgot_submit()}</ix-button>
+		<Button type="submit" class={auth.submit}>{m.forgot_submit()}</Button>
 	</form>
 
 	{#snippet footer()}
-		<a href={resolve('/login')}>{m.forgot_back_to_login()}</a>
+		<a href={resolve('/login')} class={auth.link}>{m.forgot_back_to_login()}</a>
 	{/snippet}
 </AuthCard>

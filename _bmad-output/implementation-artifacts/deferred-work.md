@@ -406,3 +406,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/5b-calendar.md`
   summary: `createCalendarFixture` picks a random year and its cleanup deletes every class day in that year, so it fails (attendance FK) when another test left data in the same year.
   evidence: Story 5b verification rerun hit `attendance_records_class_session_fkey` in year 4405 ("7-4 Mixed" leftovers); ~49 of 6000 years are taken, so rare but real. Related: `src/lib/server/rls.spec.ts` leaves a "Dup 1" class that leaks into e2e runs after `npm test`.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6-auth-pages.md`
+  summary: Migrate the join flow (join, join/pending, JoinSteps stepper, guardian consent checkbox) to the new UI as story 6b.
+  evidence: Story 6's spec was ~2,400 tokens at the scope gate (limit 1,600); the user chose to split, and the join flow is the largest and riskiest independent part. Tracked as story 6b in spec-mobile-ux/stories.yaml.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6-auth-pages.md`
+  summary: New-UI page headings (`ui.heading` and AuthCard's h1) use `leading-tight`, which overrides Tibetan's `line-height: 2`, so bo headings are cramped.
+  evidence: tailwind.css's Tibetan rule says a `leading-*` utility still wins; `ui.heading` (classes.ts:16) carries `leading-tight` on every migrated page since story 3. Medium for bo users; fix once (e.g. a `:lang(bo)` override) rather than per page.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6-auth-pages.md`
+  summary: Register's submit button in-flight state (disabled + aria-busy) is not covered by any e2e test.
+  evidence: Unverified (medium if it regressed: double sign-up posts). Needs `page.route` delaying `?/register`; the old iX `loading` state was untested too.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6-auth-pages.md`
+  summary: A double tap on auth/confirm's button may post the one-time token twice and land a confirmed user on `/login?error=confirm`.
+  evidence: Unverified (medium if true); pre-existing with the old ix-button. Settle with an e2e that submits twice quickly; fix with a submit guard.

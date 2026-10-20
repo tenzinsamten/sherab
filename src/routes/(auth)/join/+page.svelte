@@ -4,7 +4,7 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import * as m from '$lib/paraglide/messages.js';
 	import { localizeName } from '$lib/localized-name';
-	import AuthCard from '$lib/components/AuthCard.svelte';
+	import logo from '$lib/assets/sherab-logo-blue.svg';
 	import JoinSteps from '$lib/components/JoinSteps.svelte';
 	import { showToast } from '$lib/ix';
 	import { ixFieldError } from '$lib/ix-fields';
@@ -84,120 +84,128 @@
 	<title>{m.join_heading()} — Sherab</title>
 </svelte:head>
 
-<AuthCard title={m.join_heading()}>
-	<!-- Not while the code is checked or the form is sent: going back would
-	     unmount the form mid-request. -->
-	<JoinSteps current={step} onselect={checkingCode || submitting ? undefined : goToStep} />
+<!-- Today's auth card, inlined until the join flow moves to the new UI
+     (story 6b): its iX elements must not sit inside AuthCard's new-UI root. -->
+<div class="auth-page">
+	<div class="auth-card">
+		<header class="auth-card-header">
+			<img src={logo} alt={m.nav_logo_alt()} width="180" height="100" />
+			<h1>{m.join_heading()}</h1>
+		</header>
+		<!-- Not while the code is checked or the form is sent: going back would
+		     unmount the form mid-request. -->
+		<JoinSteps current={step} onselect={checkingCode || submitting ? undefined : goToStep} />
 
-	{#if step === 1}
-		<!-- novalidate: checkClassCode checks the code, and iX's own validation
-		     would replace the error's aria-describedby (see $lib/ix-fields). -->
-		<form
-			novalidate
-			onsubmit={(event) => {
-				event.preventDefault();
-				checkClassCode();
-			}}
-		>
-			<div class="field">
-				<ix-input
-					id="classCode"
-					label={m.join_code_question()}
-					required
-					placeholder={m.join_code_placeholder()}
-					value={classCode}
-					onvalueChange={(event: CustomEvent<string>) => {
-						classCode = event.detail.toUpperCase();
-						classCodeError = null;
-					}}
-					{@attach ixFieldError(classCodeError ? 'classCode-error' : undefined)}
-				></ix-input>
-				{#if classCodeError}
-					<p id="classCode-error" class="field-error" role="alert">{classCodeError}</p>
-				{/if}
-			</div>
-			<ix-button
-				class="block"
-				type="submit"
-				loading={checkingCode || undefined}
-				disabled={checkingCode || undefined}
+		{#if step === 1}
+			<!-- novalidate: checkClassCode checks the code, and iX's own validation
+			     would replace the error's aria-describedby (see $lib/ix-fields). -->
+			<form
+				novalidate
+				onsubmit={(event) => {
+					event.preventDefault();
+					checkClassCode();
+				}}
 			>
-				{checkingCode ? m.join_checking() : m.join_continue()}
-			</ix-button>
-		</form>
-	{:else if step === 2 && resolvedClass}
-		<p>
-			<ix-pill variant="success"
-				>{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}</ix-pill
-			>
-		</p>
-		<div class="field">
-			<ix-input
-				id="registrationName"
-				label={m.join_name_label()}
-				required
-				value={registrationName}
-				onvalueChange={(event: CustomEvent<string>) => (registrationName = event.detail)}
-			></ix-input>
-		</div>
-		<p class="muted">{m.join_name_note()}</p>
-		<div class="actions">
-			<ix-button disabled={!registrationName.trim() || undefined} onclick={goToConsentStep}
-				>{m.join_continue()}</ix-button
-			>
-			<ix-button variant="secondary" onclick={goBack}>{m.join_back()}</ix-button>
-		</div>
-	{:else if step === 3 && resolvedClass}
-		<form
-			method="POST"
-			action="?/register"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					await update();
-					submitting = false;
-				};
-			}}
-		>
-			<input type="hidden" name="classId" value={resolvedClass.id} />
-			<input type="hidden" name="className" value={resolvedClass.name} />
-			<input type="hidden" name="classCode" value={classCode} />
-			<input type="hidden" name="registrationName" value={registrationName} />
-
-			<div class="field">
-				<ix-input
-					id="guardianEmail"
-					name="guardianEmail"
-					type="email"
-					label={m.join_guardian_email_label()}
-					required
-					value={guardianEmail}
-					onvalueChange={(event: CustomEvent<string>) => (guardianEmail = event.detail)}
-				></ix-input>
-			</div>
-			<p class="muted">{m.join_guardian_email_note()}</p>
-
-			<p class="muted">{m.join_consent_notice()}</p>
-			<div class="check-list" style="margin-bottom: var(--space-4);">
-				<ix-checkbox
-					name="guardianConsent"
-					required
-					label={m.join_consent_checkbox_label()}
-					checked={guardianConsent || undefined}
-					oncheckedChange={(event: CustomEvent<boolean>) => (guardianConsent = event.detail)}
-				></ix-checkbox>
-			</div>
-
-			<div class="actions">
+				<div class="field">
+					<ix-input
+						id="classCode"
+						label={m.join_code_question()}
+						required
+						placeholder={m.join_code_placeholder()}
+						value={classCode}
+						onvalueChange={(event: CustomEvent<string>) => {
+							classCode = event.detail.toUpperCase();
+							classCodeError = null;
+						}}
+						{@attach ixFieldError(classCodeError ? 'classCode-error' : undefined)}
+					></ix-input>
+					{#if classCodeError}
+						<p id="classCode-error" class="field-error" role="alert">{classCodeError}</p>
+					{/if}
+				</div>
 				<ix-button
+					class="block"
 					type="submit"
-					loading={submitting || undefined}
-					disabled={!guardianConsent || !guardianEmail.trim() || submitting || undefined}
+					loading={checkingCode || undefined}
+					disabled={checkingCode || undefined}
 				>
-					{m.join_submit()}
+					{checkingCode ? m.join_checking() : m.join_continue()}
 				</ix-button>
+			</form>
+		{:else if step === 2 && resolvedClass}
+			<p>
+				<ix-pill variant="success"
+					>{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}</ix-pill
+				>
+			</p>
+			<div class="field">
+				<ix-input
+					id="registrationName"
+					label={m.join_name_label()}
+					required
+					value={registrationName}
+					onvalueChange={(event: CustomEvent<string>) => (registrationName = event.detail)}
+				></ix-input>
+			</div>
+			<p class="muted">{m.join_name_note()}</p>
+			<div class="actions">
+				<ix-button disabled={!registrationName.trim() || undefined} onclick={goToConsentStep}
+					>{m.join_continue()}</ix-button
+				>
 				<ix-button variant="secondary" onclick={goBack}>{m.join_back()}</ix-button>
 			</div>
-		</form>
-	{/if}
-</AuthCard>
+		{:else if step === 3 && resolvedClass}
+			<form
+				method="POST"
+				action="?/register"
+				use:enhance={() => {
+					submitting = true;
+					return async ({ update }) => {
+						await update();
+						submitting = false;
+					};
+				}}
+			>
+				<input type="hidden" name="classId" value={resolvedClass.id} />
+				<input type="hidden" name="className" value={resolvedClass.name} />
+				<input type="hidden" name="classCode" value={classCode} />
+				<input type="hidden" name="registrationName" value={registrationName} />
+
+				<div class="field">
+					<ix-input
+						id="guardianEmail"
+						name="guardianEmail"
+						type="email"
+						label={m.join_guardian_email_label()}
+						required
+						value={guardianEmail}
+						onvalueChange={(event: CustomEvent<string>) => (guardianEmail = event.detail)}
+					></ix-input>
+				</div>
+				<p class="muted">{m.join_guardian_email_note()}</p>
+
+				<p class="muted">{m.join_consent_notice()}</p>
+				<div class="check-list" style="margin-bottom: var(--space-4);">
+					<ix-checkbox
+						name="guardianConsent"
+						required
+						label={m.join_consent_checkbox_label()}
+						checked={guardianConsent || undefined}
+						oncheckedChange={(event: CustomEvent<boolean>) => (guardianConsent = event.detail)}
+					></ix-checkbox>
+				</div>
+
+				<div class="actions">
+					<ix-button
+						type="submit"
+						loading={submitting || undefined}
+						disabled={!guardianConsent || !guardianEmail.trim() || submitting || undefined}
+					>
+						{m.join_submit()}
+					</ix-button>
+					<ix-button variant="secondary" onclick={goBack}>{m.join_back()}</ix-button>
+				</div>
+			</form>
+		{/if}
+	</div>
+</div>

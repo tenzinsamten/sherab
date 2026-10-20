@@ -325,9 +325,9 @@ export async function createCalendarFixture(): Promise<CalendarFixture> {
 
 export async function signIn(page: Page, user: TestUser) {
 	await page.goto('/login');
-	// Wait for hydration (which resets the fields) and for iX: the submit
-	// control is an <ix-button>, not a native submit button.
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	// Wait for hydration (which resets the fields): the page's new-UI root
+	// marks itself hydrated (mobile-first story 6).
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 	await page.locator('#email').fill(user.email);
 	await page.locator('#password').fill(user.password);

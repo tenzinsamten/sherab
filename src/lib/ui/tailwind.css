@@ -65,6 +65,16 @@
 /* Story 5b: the calendar and its schedule fields (also on admin/classes). */
 @source '../../routes/calendar/*.svelte';
 @source '../components/ScheduleFields.svelte';
+/* Story 6: the auth pages and the signed-out home, file by file (the join
+   pages stay iX until story 6b). */
+@source '../components/AuthCard.svelte';
+@source '../../routes/+page.svelte';
+@source '../../routes/(auth)/login/+page.svelte';
+@source '../../routes/(auth)/register/+page.svelte';
+@source '../../routes/(auth)/forgot-password/+page.svelte';
+@source '../../routes/(auth)/reset-password/+page.svelte';
+@source '../../routes/(auth)/resend-confirmation/+page.svelte';
+@source '../../routes/auth/confirm/+page.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

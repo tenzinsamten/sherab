@@ -1,12 +1,11 @@
 <script lang="ts">
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
-	import Globe from '@lucide/svelte/icons/globe';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import User from '@lucide/svelte/icons/user';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { initials } from '$lib/initials';
 	import * as m from '$lib/paraglide/messages.js';
-	import { getLocale, locales, setLocale } from '$lib/paraglide/runtime';
+	import LocaleMenu from './LocaleMenu.svelte';
 	import logoWhite from '$lib/assets/sherab-logo-white.svg';
 
 	/**
@@ -19,7 +18,6 @@
 		roles,
 		role,
 		roleNames,
-		localeFlags,
 		showAccount,
 		showHelp,
 		onAccount,
@@ -35,7 +33,6 @@
 		/** The active role. */
 		role: string | null | undefined;
 		roleNames: Record<string, () => string>;
-		localeFlags: Record<string, { emoji?: string; icon?: string; name: string }>;
 		/** #100: not for a student who is not approved yet. */
 		showAccount: boolean;
 		/** A student's Help is here instead of in the nav (stack.md). */
@@ -46,23 +43,12 @@
 		onSignOut: () => void;
 	} = $props();
 
-	let locale = $derived(getLocale());
 	let avatarInitials = $derived(initials(userName));
 
 	const itemClass = 'min-h-11 gap-2.5 px-2.5 py-2 text-base';
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- every href is resolve()d by the caller (src/lib/nav.ts, the layout). -->
-
-{#snippet localeLabel(code: string)}
-	{@const flag = localeFlags[code]}
-	{#if flag?.icon}
-		<img src={flag.icon} alt="" width="18" height="12" class="block shrink-0" />
-	{:else if flag?.emoji}
-		<span aria-hidden="true">{flag.emoji}</span>
-	{/if}
-	<span>{flag?.name ?? code}</span>
-{/snippet}
 
 <header
 	data-ui="new"
@@ -78,33 +64,7 @@
 	</a>
 
 	<div class="ml-auto flex items-center gap-1">
-		<!-- #79: picking a language writes the cookie and reloads the page
-		     (the server picks names and messages from it). -->
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				data-testid="language-menu"
-				aria-label="{m.footer_locale_label()} {localeFlags[locale]?.name ?? locale}"
-				class="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2 text-sm whitespace-nowrap hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-frame-foreground aria-expanded:bg-sidebar-accent"
-			>
-				<Globe class="size-5 shrink-0" aria-hidden="true" />
-				<span>{localeFlags[locale]?.name ?? locale}</span>
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" class="w-auto min-w-44">
-				<DropdownMenu.RadioGroup value={locale}>
-					{#each locales as code (code)}
-						<DropdownMenu.RadioItem
-							value={code}
-							lang={code}
-							closeOnSelect
-							class="{itemClass} pr-9"
-							onSelect={() => setLocale(code)}
-						>
-							{@render localeLabel(code)}
-						</DropdownMenu.RadioItem>
-					{/each}
-				</DropdownMenu.RadioGroup>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+		<LocaleMenu />
 
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger

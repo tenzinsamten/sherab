@@ -1288,7 +1288,7 @@ test('class members: Reset PIN shows the new PIN once; the student signs in with
 		// The old PIN no longer works; the new one does.
 		const login = async (password: string) => {
 			await studentPage.goto('/login');
-			await studentPage.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await studentPage.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 			await studentPage.waitForLoadState('networkidle');
 			await studentPage.locator('#email').fill(username);
 			await studentPage.locator('#password').fill(password);
