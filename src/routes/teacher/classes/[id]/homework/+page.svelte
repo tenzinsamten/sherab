@@ -1,17 +1,31 @@
 <script lang="ts">
+	import { onMount, untrack } from 'svelte';
+	import Plus from '@lucide/svelte/icons/plus';
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { formatDay, isoDay, num } from '$lib/format';
-	import { untrack } from 'svelte';
-	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
+	import Pager from '$lib/components/Pager.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
+	import { formatDay, isoDay, num } from '$lib/format';
+	import { showToast } from '$lib/ix';
+	import * as m from '$lib/paraglide/messages.js';
 	import type { SkillArea } from '$lib/supabase/database.types';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
+	/**
+	 * A class's homework list, mobile-first story 7b: Open / Archived / All
+	 * filter links, a card of stacked whole-row links, the shared pager.
+	 */
 	let { data }: PageProps = $props();
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	type Filter = 'open' | 'archived' | 'all';
 
@@ -85,76 +99,82 @@
 	<title>{m.homework_heading()} — {data.class.name} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<PageBreadcrumb
-		items={[
-			{ label: m.nav_dashboard(), href: resolve('/teacher') },
-			{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
-			{ label: m.homework_heading() }
-		]}
-	/>
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.homework_section_label()}</p>
-			<h1 class="page-heading">{m.homework_heading()}</h1>
-			<p class="page-subtitle">{data.class.name}</p>
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<div>
+		<PageBreadcrumb
+			items={[
+				{ label: m.nav_dashboard(), href: resolve('/teacher') },
+				{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
+				{ label: m.homework_heading() }
+			]}
+		/>
+	</div>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.homework_section_label()}</p>
+			<h1 class={ui.heading}>{m.homework_heading()}</h1>
+			<p class="{ui.subtitle} wrap-break-word">{data.class.name}</p>
 		</div>
-		<div class="actions">
-			<ix-button
-				icon="add"
-				href={resolve('/teacher/classes/[id]/homework/new', { id: data.class.id })}
-				data-tour="homework-create"
-			>
-				{m.homework_create_button()}
-			</ix-button>
-		</div>
+		<Button
+			href={resolve('/teacher/classes/[id]/homework/new', { id: data.class.id })}
+			class="{ui.touch} w-full gap-2 sm:w-auto"
+			data-tour="homework-create"
+		>
+			<Plus aria-hidden="true" />
+			{m.homework_create_button()}
+		</Button>
 	</header>
 
 	<nav
-		class="actions"
+		class="flex flex-wrap gap-2"
 		aria-label={m.homework_filter_label()}
-		style="margin-bottom: var(--space-4);"
 		data-tour="homework-filter"
 	>
 		{#each filters as f (f.value)}
-			<ix-button
-				variant={data.filter === f.value ? 'primary' : 'secondary'}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- pageHref() builds on resolve(). -->
+			<a
 				href={pageHref(f.value, 1)}
+				class="{ui.filter} {data.filter === f.value ? ui.filterCurrent : ui.filterOther}"
 				aria-current={data.filter === f.value ? 'page' : undefined}
 			>
 				{f.label}
-			</ix-button>
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 	</nav>
 
-	<section class="card">
+	<section class={ui.card}>
 		{#if data.items.length === 0}
-			<p class="muted" style="margin:0;">{emptyText}</p>
+			<p class={ui.muted}>{emptyText}</p>
 		{:else}
-			<ul class="homework-list">
-				{#each data.items as item (item.id)}
-					<li data-tour="homework-row">
+			<ul class={ui.rows}>
+				{#each data.items as item, i (item.id)}
+					<li data-testid="homework-row" data-tour={i === 0 ? 'homework-row' : undefined}>
 						<a
-							class="homework-row"
+							class="group flex min-h-11 min-w-0 flex-col justify-center gap-1 rounded-lg py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 							href={resolve('/teacher/classes/[id]/homework/[assignmentId]', {
 								id: data.class.id,
 								assignmentId: item.id
 							})}
 						>
-							<span class="homework-row-title">
-								<span lang={item.contentLanguage}>{item.title}</span>
+							<span class="flex flex-wrap items-center gap-2 text-lg font-bold">
+								<span
+									lang={item.contentLanguage}
+									class="min-w-0 wrap-break-word group-hover:underline group-focus-visible:underline"
+									data-testid="homework-row-title">{item.title}</span
+								>
 								{#if item.isRecurring}
-									<ix-pill variant="neutral" outline
-										><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
+									<Badge variant="outline"
+										><RepeatIcon /> {m.homework_recurring_badge_label()}</Badge
 									>
 								{/if}
 								{#if item.archived}
-									<ix-pill variant="neutral">{m.homework_archived_label()}</ix-pill>
+									<Badge variant="secondary">{m.homework_archived_label()}</Badge>
 								{:else if item.overdue}
-									<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill>
+									<Badge variant="alarm">{m.homework_overdue_label()}</Badge>
 								{/if}
 							</span>
-							<span class="muted homework-row-meta">
+							<span class="{ui.muted} wrap-break-word">
 								{skillLabel(item.skillArea)}
 								{#if item.nextDue}
 									· {m.homework_row_due({ date: isoDay(item.nextDue) })}
@@ -171,75 +191,5 @@
 		{/if}
 	</section>
 
-	{#if data.pageCount > 1}
-		<nav
-			class="pager"
-			aria-label={m.homework_pager_status({ page: num(data.page), total: num(data.pageCount) })}
-		>
-			<ix-button
-				variant="secondary"
-				disabled={data.page <= 1 || undefined}
-				href={data.page > 1 ? pageHref(data.filter, data.page - 1) : undefined}
-			>
-				{m.homework_pager_prev()}
-			</ix-button>
-			<span class="muted"
-				>{m.homework_pager_status({ page: num(data.page), total: num(data.pageCount) })}</span
-			>
-			<ix-button
-				variant="secondary"
-				disabled={data.page >= data.pageCount || undefined}
-				href={data.page < data.pageCount ? pageHref(data.filter, data.page + 1) : undefined}
-			>
-				{m.homework_pager_next()}
-			</ix-button>
-		</nav>
-	{/if}
+	<Pager page={data.page} pageCount={data.pageCount} hrefFor={(n) => pageHref(data.filter, n)} />
 </div>
-
-<style>
-	.homework-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.homework-list li + li {
-		border-top: 1px solid var(--theme-color-soft-bdr);
-	}
-
-	.homework-row {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-		padding: var(--space-3) 0;
-		color: inherit;
-		text-decoration: none;
-	}
-
-	.homework-row:hover .homework-row-title,
-	.homework-row:focus-visible .homework-row-title {
-		text-decoration: underline;
-	}
-
-	.homework-row-title {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		font-weight: 700;
-		font-size: var(--theme-font-size-l);
-	}
-
-	.homework-row-meta {
-		font-size: var(--theme-font-size-default);
-	}
-
-	.pager {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-3);
-		margin-top: var(--space-4);
-	}
-</style>

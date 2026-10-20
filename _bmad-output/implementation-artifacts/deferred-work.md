@@ -445,3 +445,7 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7-teacher-class-pages.md`
   summary: `src/lib/server/rls.spec.ts` 7-4/7-5 "Read: …" tests can time out at vitest's 5000ms default on a loaded machine.
   evidence: Seen once in story 7's full verification (2 timeouts), then 1558/1558 after a fresh reset; story 7 changed no server code. Also: rls.spec is not re-runnable without a reset (streak tests fail on leftover data).
+
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7b-teacher-homework-list.md`
+  summary: The teacher homework list ignores `data.loadError`, so a failed load shows the normal empty text ("No open homework.") instead of an error.
+  evidence: `src/routes/teacher/classes/[id]/homework/+page.server.ts:106` returns `loadError`; neither the pre-7b page nor the rebuilt one renders it (pre-existing). A teacher may think there is no homework and create duplicates.

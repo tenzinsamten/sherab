@@ -11,6 +11,7 @@ import { berlinToday, env, fixtureTeam, service, signIn, type TestUser } from '.
  * portrait), the dashboard also at 1440px, the tours at all three, plus
  * the fit check (no sideways scroll, ≥44px targets, no cut labels) in en,
  * de and bo.
+ * Story 7b adds the class's homework list (its own block at the end).
  *
  * Its own fixture: a teacher of class A (eight approved students, one
  * parent of students 0 and 1) and class B (student 0, no session); a
@@ -634,6 +635,36 @@ async function personContext(
 	return context;
 }
 
+/**
+ * Walks a started tour: each step highlights its target, settled on screen
+ * at this viewport, then Next; Done at the end.
+ */
+async function walkTour(
+	page: Page,
+	viewport: { width: number; height: number },
+	targets: string[]
+) {
+	const popover = page.locator('.driver-popover');
+	const highlighted = page.locator('.driver-active-element');
+	for (const [index, target] of targets.entries()) {
+		if (index > 0) await popover.getByRole('button', { name: 'Next' }).click();
+		await expect(highlighted).toHaveAttribute('data-tour', target);
+		await expect(popover).toContainText(`${index + 1} of ${targets.length}`);
+		// The target settles on screen after the page has scrolled to it.
+		await expect(async () => {
+			const b = await highlighted.boundingBox();
+			expect(b).not.toBeNull();
+			expect(b!.width).toBeGreaterThan(0);
+			expect(b!.x).toBeGreaterThanOrEqual(0);
+			expect(b!.y).toBeGreaterThanOrEqual(0);
+			expect(b!.x + b!.width).toBeLessThanOrEqual(viewport.width);
+			expect(b!.y + b!.height).toBeLessThanOrEqual(viewport.height);
+		}).toPass({ timeout: 5000 });
+	}
+	await popover.getByRole('button', { name: 'Done' }).click();
+	await expect(popover).toHaveCount(0);
+}
+
 for (const viewport of [...VIEWPORTS, DESKTOP]) {
 	test(`tours at ${viewport.width}px: every step of the dashboard and class tours is on screen`, async ({
 		browser
@@ -645,35 +676,19 @@ for (const viewport of [...VIEWPORTS, DESKTOP]) {
 		const context = await personContext(browser, viewport);
 		const page = await context.newPage();
 		const popover = page.locator('.driver-popover');
-		const highlighted = page.locator('.driver-active-element');
-		const walk = async (targets: string[]) => {
-			for (const [index, target] of targets.entries()) {
-				if (index > 0) await popover.getByRole('button', { name: 'Next' }).click();
-				await expect(highlighted).toHaveAttribute('data-tour', target);
-				await expect(popover).toContainText(`${index + 1} of ${targets.length}`);
-				// The target settles on screen after the page has scrolled to it.
-				await expect(async () => {
-					const b = await highlighted.boundingBox();
-					expect(b).not.toBeNull();
-					expect(b!.width).toBeGreaterThan(0);
-					expect(b!.x).toBeGreaterThanOrEqual(0);
-					expect(b!.y).toBeGreaterThanOrEqual(0);
-					expect(b!.x + b!.width).toBeLessThanOrEqual(viewport.width);
-					expect(b!.y + b!.height).toBeLessThanOrEqual(viewport.height);
-				}).toPass({ timeout: 5000 });
-			}
-			await popover.getByRole('button', { name: 'Done' }).click();
-			await expect(popover).toHaveCount(0);
-		};
 		try {
 			await signIn(page, teacher);
 			await expect(page).toHaveURL(/\/teacher$/);
 			await expect(popover).toBeVisible();
-			await walk(['teacher-class-card', 'teacher-class-code', 'teacher-class-open']);
+			await walkTour(page, viewport, [
+				'teacher-class-card',
+				'teacher-class-code',
+				'teacher-class-open'
+			]);
 
 			await page.goto(classPath());
 			await expect(popover).toBeVisible();
-			await walk([
+			await walkTour(page, viewport, [
 				'class-session',
 				'class-attendance-save',
 				'class-skills',
@@ -716,3 +731,298 @@ for (const locale of ['en', 'de', 'bo']) {
 		}
 	});
 }
+
+/*
+ * Story 7b: the class's homework list. Class B gets 12 open one-off
+ * homeworks (the newest overdue, one titled in Tibetan, one long), a weekly
+ * one and two archived ones (overdue before archiving), so Open has two
+ * pages; class A has none (the empty texts).
+ */
+test.describe('homework list', () => {
+	const hw = {
+		overdue: `TM hw overdue ${tag}`,
+		weekly: `TM hw weekly ${tag}`,
+		bo: `ཁ་ཏོན། ${tag}`,
+		long: `TM hw Hausaufgabenwiederholungsübungsblatt mit sehr langem Titel ${tag}`,
+		archived: [`TM hw archived 1 ${tag}`, `TM hw archived 2 ${tag}`]
+	};
+	const listPath = (key: 'a' | 'b' = 'b') => `${classPath(key)}/homework`;
+	const rows = (page: Page) => page.getByTestId('homework-row');
+	const rowFor = (page: Page, title: string) => rows(page).filter({ hasText: title });
+	const filterLink = (page: Page, name: RegExp) =>
+		page.getByRole('navigation', { name: 'Show' }).getByRole('link', { name });
+
+	async function oneOff(
+		title: string,
+		due: string,
+		opts: { archived?: boolean; language?: 'en' | 'bo' } = {}
+	) {
+		const classId = classes.b.id;
+		const assignment = check(
+			await service
+				.from('homework_assignments')
+				.insert({
+					class_id: classId,
+					title,
+					skill_area: 'language',
+					whole_class: false,
+					created_by: teacher.id,
+					content_language: opts.language ?? 'en'
+				})
+				.select('id')
+				.single(),
+			`create homework ${title}`
+		).id;
+		const instance = check(
+			await service
+				.from('homework_instances')
+				.insert({
+					assignment_id: assignment,
+					class_id: classId,
+					period_start: due,
+					due_date: due,
+					archived_at: opts.archived ? new Date().toISOString() : null
+				})
+				.select('id')
+				.single(),
+			`create instance ${title}`
+		).id;
+		check(
+			await service.from('homework_status_history').insert({
+				instance_id: instance,
+				class_id: classId,
+				student_id: students[0].id,
+				status: 'assigned',
+				recorded_by: teacher.id
+			}),
+			`assign ${title}`
+		);
+	}
+
+	test.beforeAll(async () => {
+		test.setTimeout(120_000);
+		// Oldest first (the list is newest first): the archived ones, the
+		// fillers (page 2), then the rows page 1 checks.
+		for (const title of hw.archived) await oneOff(title, lastWeek, { archived: true });
+		for (let i = 0; i < 8; i += 1) await oneOff(`TM hw filler ${i} ${tag}`, nextWeek);
+		await oneOff(hw.long, nextWeek);
+		await oneOff(hw.bo, nextWeek, { language: 'bo' });
+		check(
+			await service.from('homework_assignments').insert({
+				class_id: classes.b.id,
+				title: hw.weekly,
+				skill_area: 'song',
+				whole_class: true,
+				created_by: teacher.id,
+				recurrence_rule: { frequency: 'weekly' },
+				recurrence_start_date: today,
+				due_offset_days: 3
+			}),
+			'create weekly homework'
+		);
+		await oneOff(`TM hw open 11 ${tag}`, nextWeek);
+		await oneOff(hw.overdue, lastWeek);
+	});
+
+	for (const viewport of [...VIEWPORTS, DESKTOP]) {
+		test(`list (${viewport.name}): stacked rows, badges, meta, a row opens the homework`, async ({
+			browser
+		}) => {
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			try {
+				await openPage(page, listPath());
+				await expect(page.getByRole('heading', { level: 1, name: 'Homework' })).toBeVisible();
+				await expect(filterLink(page, /^Open \(13\)$/)).toHaveAttribute('aria-current', 'page');
+				await expect(rows(page)).toHaveCount(10);
+
+				const [first, second] = await Promise.all([
+					rows(page).nth(0).boundingBox(),
+					rows(page).nth(1).boundingBox()
+				]);
+				expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height - 1);
+				const link = (await rows(page).nth(0).getByRole('link').boundingBox())!;
+				expect(link.height).toBeGreaterThanOrEqual(43.5);
+
+				const overdue = rowFor(page, hw.overdue);
+				await expect(overdue.getByText('Overdue', { exact: true })).toBeVisible();
+				await expect(overdue).toContainText(`Language · Due ${lastWeek} · Done 0 / 1`);
+				const weekly = rowFor(page, hw.weekly);
+				await expect(weekly.getByText('Weekly', { exact: true })).toBeVisible();
+				await expect(weekly.getByText('Overdue', { exact: true })).toHaveCount(0);
+				await expect(
+					page
+						.getByTestId('homework-row-title')
+						.and(page.locator('[lang="bo"]'))
+						.filter({ hasText: hw.bo })
+				).toBeVisible();
+				await expect(rowFor(page, hw.long)).toBeVisible();
+				for (const target of ['homework-create', 'homework-filter', 'homework-row']) {
+					await expect(page.locator(`[data-tour="${target}"]`).first()).toBeVisible();
+				}
+				await expect(page.locator('[data-tour="homework-row"]')).toHaveCount(1);
+				const create = (await page.getByRole('link', { name: 'Create homework' }).boundingBox())!;
+				expect(create.height).toBeGreaterThanOrEqual(43.5);
+				// Full width on a phone, its own width on a desktop.
+				const header = (await page.locator('main > [data-ui="new"] > header').boundingBox())!;
+				if (viewport.width < 640) expect(create.width).toBeGreaterThanOrEqual(header.width - 1);
+				if (viewport.width >= 1280) expect(create.width).toBeLessThan(header.width / 2);
+				await expectFits(page);
+
+				await overdue.getByRole('link').click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}/[0-9a-f-]{36}$`));
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	for (const viewport of VIEWPORTS) {
+		test(`filters and pager (${viewport.name}): Archived, All, Next / Previous, the empty texts`, async ({
+			browser
+		}) => {
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			try {
+				await openPage(page, listPath());
+				// The pager: page 1 of 2, Previous a disabled button, Next a link.
+				const pager = page.getByRole('navigation', { name: 'Page 1 of 2' });
+				await expect(pager.getByRole('button', { name: 'Previous' })).toBeDisabled();
+				await expect(pager.getByRole('link', { name: 'Previous' })).toHaveCount(0);
+				const next = pager.getByRole('link', { name: 'Next' });
+				expect((await next.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+				await next.click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}\\?page=2$`));
+				await ready(page);
+				await expect(rows(page)).toHaveCount(3);
+				const pager2 = page.getByRole('navigation', { name: 'Page 2 of 2' });
+				await expect(pager2.getByRole('button', { name: 'Next' })).toBeDisabled();
+				await expectFits(page);
+				await pager2.getByRole('link', { name: 'Previous' }).click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}$`));
+				await ready(page);
+
+				await filterLink(page, /^Archived \(2\)$/).click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}\\?filter=archived$`));
+				await ready(page);
+				await expect(filterLink(page, /^Archived \(2\)$/)).toHaveAttribute('aria-current', 'page');
+				await expect(filterLink(page, /^Open \(13\)$/)).not.toHaveAttribute('aria-current');
+				await expect(rows(page)).toHaveCount(2);
+				for (const title of hw.archived) {
+					const archived = rowFor(page, title);
+					await expect(archived.getByText('Archived', { exact: true })).toBeVisible();
+					// Archived wins over overdue.
+					await expect(archived.getByText('Overdue', { exact: true })).toHaveCount(0);
+				}
+				// One page: no pager.
+				await expect(page.getByRole('navigation', { name: /^Page / })).toHaveCount(0);
+				await expectFits(page);
+
+				await filterLink(page, /^All \(15\)$/).click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}\\?filter=all$`));
+				await ready(page);
+				await expect(page.getByRole('navigation', { name: 'Page 1 of 2' })).toBeVisible();
+				await page
+					.getByRole('navigation', { name: 'Page 1 of 2' })
+					.getByRole('link', { name: 'Next' })
+					.click();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}\\?filter=all&page=2$`));
+
+				// Class A has no homework: each filter's empty text.
+				for (const [query, text] of [
+					['', 'No open homework.'],
+					['?filter=archived', 'No archived homework.'],
+					['?filter=all', 'No homework assigned yet.']
+				] as const) {
+					await openPage(page, `${listPath('a')}${query}`);
+					await expect(page.getByText(text, { exact: true })).toBeVisible();
+					await expect(rows(page)).toHaveCount(0);
+				}
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+			}
+		});
+
+		test(`created toasts (${viewport.name}): once, and the address loses its parameters`, async ({
+			browser
+		}) => {
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			try {
+				// Arrives as the create page's redirect does: an in-app navigation.
+				const arrive = async (query: string) => {
+					await openPage(page, listPath());
+					await page.evaluate((href) => {
+						const link = document.createElement('a');
+						link.href = href;
+						link.textContent = 'e2e arrive';
+						document.body.append(link);
+					}, `${listPath()}${query}`);
+					await page.getByRole('link', { name: 'e2e arrive' }).click();
+				};
+				await arrive('?created=weekly&visible=tomorrow');
+				const tomorrow = page.locator('ix-toast').filter({
+					hasText: 'Weekly homework created. Students will see it from tomorrow morning.'
+				});
+				await expect(tomorrow).toBeVisible();
+				await expect(tomorrow).toHaveCount(1);
+				await expect(page).toHaveURL(new RegExp(`${listPath()}$`));
+
+				await arrive('?created=weekly&visible=someday');
+				await expect(
+					page
+						.locator('ix-toast')
+						.filter({ hasText: 'Weekly homework created.' })
+						.filter({ hasNotText: 'Students' })
+				).toBeVisible();
+				await expect(page).toHaveURL(new RegExp(`${listPath()}$`));
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	for (const viewport of [...VIEWPORTS, DESKTOP]) {
+		test(`homework tour at ${viewport.width}px: all three steps on screen`, async ({ browser }) => {
+			check(
+				await service
+					.from('profiles')
+					.update({ tours_seen: ['teacher-home', 'teacher-class'] })
+					.eq('id', teacher.id),
+				'reset tours'
+			);
+			const context = await personContext(browser, viewport);
+			const page = await context.newPage();
+			try {
+				await signIn(page, teacher);
+				await page.goto(listPath());
+				await expect(page.locator('.driver-popover')).toBeVisible();
+				await walkTour(page, viewport, ['homework-create', 'homework-filter', 'homework-row']);
+			} finally {
+				await context.close();
+			}
+		});
+	}
+
+	for (const locale of ['en', 'de', 'bo']) {
+		test(`homework list at 375px in ${locale}: no sideways scroll, ≥44px targets, no cut labels`, async ({
+			browser
+		}) => {
+			const page = await teacherPage(browser, 375, 740);
+			try {
+				await page
+					.context()
+					.addCookies([
+						{ name: 'PARAGLIDE_LOCALE', value: locale, url: new URL(page.url()).origin }
+					]);
+				for (const query of ['', '?page=2', '?filter=archived']) {
+					await openPage(page, `${listPath()}${query}`);
+					await expect(page.locator('html')).toHaveAttribute('lang', locale);
+					await expectFits(page);
+				}
+				await openPage(page, `${listPath('a')}?filter=all`);
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+});

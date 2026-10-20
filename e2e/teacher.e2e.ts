@@ -1208,7 +1208,10 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 
 	// Teacher's list: the title carries the homework's language.
 	await expect(
-		page.locator('.homework-row-title span[lang="bo"]', { hasText: title })
+		page
+			.getByTestId('homework-row-title')
+			.and(page.locator('[lang="bo"]'))
+			.filter({ hasText: title })
 	).toBeVisible();
 
 	// A student of the class, in a fresh session with the English interface.
