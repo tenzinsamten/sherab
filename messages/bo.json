@@ -489,6 +489,7 @@
 	"join_step_name": "ཁྱེད་ཀྱི་མིང་།",
 	"join_step_consent": "ཕ་མའི་ཁས་ལེན།",
 	"join_step_waiting": "ཆོག་མཆན་སྒུག་བཞིན་པ།",
+	"join_step_label_done": "{label} བྱས་ཟིན།",
 	"join_name_label": "མིང་ཧྲིལ་པོ།",
 	"join_name_note": "ཆོག་མཆན་ཐོབ་རྗེས་མིང་འདོགས་གཞན་ཞིག་འདེམས་ཐུབ།",
 	"join_guardian_email_label": "སྐྱོང་སྡེའི་གློག་འཕྲིན།",

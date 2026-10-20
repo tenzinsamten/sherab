@@ -10,7 +10,8 @@ import { service, type TestUser } from './fixtures';
  * bo: no sideways scroll, every input and button at least 44×44px, labels
  * visible, the header not truncated.
  *
- * The join flow (/join, /join/pending) is story 6b and stays iX.
+ * Story 6b adds the join flow (/join, /join/pending): its matrix rows at
+ * both widths, and its pages (each join step) in the fit check.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -43,8 +44,43 @@ async function createParent(key: string): Promise<TestUser> {
 	return { id: data.user.id, email, password };
 }
 
+/** Story 6b: a class to join and an approved parent to name as guardian. */
+const joinClassName = `E2E Auth Join ${tag}`;
+const joinCode = `J${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+let joinClassId = '';
+let joinParent: TestUser;
+
+test.beforeAll(async () => {
+	const { data: cls, error } = await service
+		.from('classes')
+		.insert({ name: joinClassName, code: joinCode })
+		.select('id')
+		.single();
+	if (error || !cls) throw new Error(`create join class: ${error?.message}`);
+	joinClassId = cls.id;
+	joinParent = await createParent('guardian');
+	const { error: approveError } = await service
+		.from('parents')
+		.update({ status: 'approved' })
+		.eq('id', joinParent.id);
+	if (approveError) throw new Error(`approve parent: ${approveError.message}`);
+});
+
 test.afterAll(async () => {
 	const problems: string[] = [];
+	// Students registered through /join first: profiles.parent_id is ON
+	// DELETE RESTRICT, and a class with students cannot be deleted.
+	if (joinParent) {
+		const { data: students } = await service
+			.from('profiles')
+			.select('id')
+			.eq('role', 'student')
+			.eq('parent_id', joinParent.id);
+		for (const { id } of students ?? []) {
+			const { error } = await service.auth.admin.deleteUser(id);
+			if (error) problems.push(`delete student ${id}: ${error.message}`);
+		}
+	}
 	for (const email of registered) {
 		const { data } = await service.from('profiles').select('id').eq('email', email);
 		for (const row of data ?? []) userIds.push(row.id);
@@ -52,6 +88,10 @@ test.afterAll(async () => {
 	for (const id of userIds) {
 		const { error } = await service.auth.admin.deleteUser(id);
 		if (error && !/not found/i.test(error.message)) problems.push(`delete ${id}: ${error.message}`);
+	}
+	if (joinClassId) {
+		const { error } = await service.from('classes').delete().eq('id', joinClassId);
+		if (error) problems.push(`delete join class: ${error.message}`);
 	}
 	if (problems.length) throw new Error(problems.join('; '));
 });
@@ -99,7 +139,9 @@ async function expectFits(page: Page) {
 		];
 		for (const el of targets) {
 			if (!visible(el)) continue;
-			const box = el.getBoundingClientRect();
+			// A checkbox is tapped through its label row (story 6b's consent).
+			const target = el.matches('input[type="checkbox"]') ? (el.closest('label') ?? el) : el;
+			const box = target.getBoundingClientRect();
 			if (box.width < 43.5 || box.height < 43.5) small.push(describe(el, box));
 		}
 		for (const el of document.querySelectorAll('main a')) {
@@ -359,8 +401,221 @@ for (const v of VIEWPORTS) {
 	});
 }
 
+/** The join stepper's steps (story 6b). */
+const joinSteps = (page: Page) => page.getByTestId('join-steps').getByRole('listitem');
+const stepButtons = (page: Page) => page.getByTestId('join-steps').getByRole('button');
+
+/** The step (1-based) marked `aria-current="step"`; exactly one must be. */
+async function currentStep(page: Page): Promise<number> {
+	const marked = await joinSteps(page).evaluateAll((steps) =>
+		steps.flatMap((s, i) => (s.getAttribute('aria-current') === 'step' ? [i + 1] : []))
+	);
+	if (marked.length !== 1) throw new Error(`steps marked current: ${JSON.stringify(marked)}`);
+	return marked[0];
+}
+
+/** No step label is cut: each label's box stays inside its row's box. */
+async function expectStepsFit(page: Page) {
+	const cut = await page.getByTestId('join-steps').evaluate((root) =>
+		[...root.querySelectorAll('li')].flatMap((li) => {
+			const row = li.firstElementChild?.getBoundingClientRect();
+			const label = li.querySelector('[data-step-label]')?.getBoundingClientRect();
+			const inside =
+				row &&
+				label &&
+				label.width > 0 &&
+				label.left >= row.left - 0.5 &&
+				label.right <= row.right + 0.5 &&
+				label.top >= row.top - 0.5 &&
+				label.bottom <= row.bottom + 0.5;
+			return inside ? [] : [li.textContent?.trim() ?? ''];
+		})
+	);
+	expect(cut).toEqual([]);
+}
+
+/** /join to step 3 in any language (ids and form roles, not English names). */
+async function joinToStep3(page: Page, name: string) {
+	await open(page, '/join');
+	await page.locator('#classCode').fill(joinCode.toLowerCase());
+	await page.locator('main form button[type="submit"]').click();
+	await expect(page.locator('#registrationName')).toBeVisible();
+	await page.locator('#registrationName').fill(name);
+	// Step 2's first action is Continue (the steps above are no data-slot buttons).
+	await page.locator('main button[data-slot="button"]').first().click();
+	await expect(page.locator('#guardianEmail')).toBeVisible();
+}
+
+for (const v of VIEWPORTS) {
+	test.describe(`join at ${v.width}px`, () => {
+		test.use({ viewport: { width: v.width, height: v.height } });
+
+		test(`join step 1 (${v.name}): a lower-case code shows upper-cased; empty and unknown codes say so`, async ({
+			page
+		}) => {
+			await open(page, '/join');
+			await expect(page.locator('ix-button, ix-input, ix-checkbox, ix-workflow-steps')).toHaveCount(
+				0
+			);
+			const code = page.getByLabel('What is your class code?');
+			const cont = page.getByRole('button', { name: 'Continue' });
+
+			// Empty: the error under the field and a toast, still step 1.
+			await cont.click();
+			await expect(page.locator('#classCode-error')).toHaveText('Enter your class code.');
+			await expect(toast(page, 'Enter your class code.')).toBeVisible();
+			await expect(code).toHaveAttribute('aria-invalid', 'true');
+			await expect(code).toHaveAccessibleDescription('Enter your class code.');
+
+			// Unknown: the same, with its own message.
+			await code.fill('ZZZZZZ');
+			await expect(code).not.toHaveAttribute('aria-invalid');
+			await cont.click();
+			await expect(page.locator('#classCode-error')).toHaveText(
+				'No class has that code. Check it with your teacher.'
+			);
+			await expect(toast(page, 'No class has that code.')).toBeVisible();
+			await expect(code).toHaveAttribute('aria-invalid', 'true');
+			await expect.poll(() => currentStep(page)).toBe(1);
+
+			// Typed mid-string: upper-cased with the caret kept where it was.
+			await code.fill('');
+			await code.pressSequentially('abd');
+			await code.press('ArrowLeft');
+			await code.pressSequentially('c');
+			await expect(code).toHaveValue('ABCD');
+			expect(await code.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(3);
+
+			// Lower-case typed, shown upper-cased; step 2 with the class badge.
+			await code.fill('');
+			await code.pressSequentially(joinCode.toLowerCase());
+			await expect(code).toHaveValue(joinCode);
+			await cont.click();
+			await expect.poll(() => currentStep(page)).toBe(2);
+			await expect(
+				page.locator('main [data-slot="badge"]', { hasText: `${joinClassName} · ${joinCode}` })
+			).toBeVisible();
+			await expect(page.getByText('Step 2 of 4: Your name')).toBeAttached();
+			await expectFits(page);
+			await expectStepsFit(page);
+		});
+
+		test(`join step 2 (${v.name}): Continue waits for a name`, async ({ page }) => {
+			await open(page, '/join');
+			await page.getByLabel('What is your class code?').fill(joinCode);
+			await page.getByRole('button', { name: 'Continue' }).click();
+			const cont = page.getByRole('button', { name: 'Continue' });
+			await expect(cont).toBeDisabled();
+			await page.getByLabel('Full name').fill('   ');
+			await expect(cont).toBeDisabled();
+			await page.getByLabel('Full name').fill(`Auth Join ${v.name} ${tag}`);
+			await expect(cont).toBeEnabled();
+			await cont.click();
+			await expect.poll(() => currentStep(page)).toBe(3);
+		});
+
+		test(`join step 3 and pending (${v.name}): a server error toasts and keeps the email; success shows the credentials once`, async ({
+			page
+		}) => {
+			const name = `Auth Join ${v.name} ${tag}`;
+			await joinToStep3(page, name);
+			const email = page.getByLabel("Guardian's email");
+			const submit = page.getByRole('button', { name: 'Submit' });
+			await expect(submit).toBeDisabled();
+			const unknown = `nobody-join-${v.name}-${tag}@example.test`;
+			await email.fill(unknown);
+			await expect(submit).toBeDisabled();
+			await page.getByRole('checkbox').check();
+			await expect(submit).toBeEnabled();
+			await expectFits(page);
+			await expectStepsFit(page);
+
+			await submit.click();
+			await expect(toast(page, 'No parent account found.')).toBeVisible();
+			await expect(page).toHaveURL(/\/join$/);
+			await expect(email).toHaveValue(unknown);
+			await expect.poll(() => currentStep(page)).toBe(3);
+
+			await email.fill(joinParent.email);
+			await submit.click();
+			await expect(page).toHaveURL(/\/join\/pending$/);
+			await ready(page);
+			await expect.poll(() => currentStep(page)).toBe(4);
+			await expect(page.getByText('Step 4 of 4: Waiting for approval')).toBeAttached();
+			await expect(page.locator('main [data-slot="badge"]', { hasText: 'Pending' })).toBeVisible();
+			// The receipt keeps its row headers.
+			await expect(page.getByRole('rowheader', { name: 'Name' })).toBeVisible();
+			await expect(page.getByRole('cell', { name, exact: true })).toBeVisible();
+			await expect(page.getByRole('cell', { name: joinClassName, exact: true })).toBeVisible();
+			const credentials = page.getByTestId('join-credentials');
+			await expect(credentials.locator('.credential')).toHaveCount(2);
+			await expect(credentials).toContainText('shown here only once');
+			await expect(page.getByText(/You can sign in right away/)).toBeVisible();
+			await expect(page.getByRole('link', { name: 'Start over' })).toHaveAttribute(
+				'href',
+				/\/join$/
+			);
+			await expect(page.getByRole('link', { name: 'Go to sign in' })).toHaveAttribute(
+				'href',
+				/\/login$/
+			);
+			await expect(page.locator('ix-button, ix-pill, ix-workflow-steps')).toHaveCount(0);
+			await expectFits(page);
+			await expectStepsFit(page);
+		});
+
+		test(`join go back (${v.name}): a finished step goes back with focus in its field, not while sending`, async ({
+			page
+		}) => {
+			await joinToStep3(page, `Auth Back ${v.name} ${tag}`);
+			await page.getByLabel("Guardian's email").fill(`nobody-back-${v.name}-${tag}@example.test`);
+			await page.getByRole('checkbox').check();
+
+			// While the form is sent, no step can be picked.
+			let release: () => void = () => {};
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route('**/*?/register', async (route) => {
+				await held;
+				await route.continue();
+			});
+			await page.getByRole('button', { name: 'Submit' }).click();
+			await expect(page.getByRole('button', { name: 'Submit' })).toBeDisabled();
+			await expect(page.getByRole('button', { name: 'Submit' })).toHaveAttribute(
+				'aria-busy',
+				'true'
+			);
+			await expect(stepButtons(page)).toHaveCount(0);
+			await expect(joinSteps(page).nth(0).locator('[data-step-sr]')).toHaveText('Class code, done');
+			release();
+			await expect(toast(page, 'No parent account found.')).toBeVisible();
+			await page.unroute('**/*?/register');
+			await expect(stepButtons(page)).toHaveCount(2);
+
+			// Step 1 picked from step 3: the code kept, focus in its field.
+			await page.getByRole('button', { name: 'Class code, done' }).click();
+			await expect.poll(() => currentStep(page)).toBe(1);
+			const code = page.getByLabel('What is your class code?');
+			await expect(code).toBeFocused();
+			await expect(code).toHaveValue(joinCode);
+		});
+
+		test(`join pending (${v.name}): without credentials, no sign-in promise`, async ({ page }) => {
+			await open(page, '/join/pending');
+			await expect.poll(() => currentStep(page)).toBe(4);
+			await expect(page.locator('main [data-slot="badge"]', { hasText: 'Pending' })).toBeVisible();
+			await expect(page.getByTestId('join-credentials')).toHaveCount(0);
+			await expect(page.getByText(/If you have your username and PIN/)).toBeVisible();
+			await expect(page.getByText(/You can sign in right away/)).toHaveCount(0);
+			await expect(page.getByRole('link', { name: 'Start over' })).toBeVisible();
+			await expect(page.getByRole('link', { name: 'Go to sign in' })).toBeVisible();
+			await expectFits(page);
+			await expectStepsFit(page);
+		});
+	});
+}
+
 for (const locale of LOCALES) {
-	test(`every auth page at 375px in ${locale}: fits, 44px targets, labels, header not cut`, async ({
+	test(`every auth page at 375px (join also at 820px) in ${locale}: fits, 44px targets, labels, header not cut`, async ({
 		browser
 	}) => {
 		test.setTimeout(120_000);
@@ -382,6 +637,28 @@ for (const locale of LOCALES) {
 				await expect(page.locator('ix-button, ix-input, ix-application-header')).toHaveCount(0);
 				await expectFits(page);
 			}
+
+			// The join flow (story 6b): each step, at phone and iPad width.
+			for (const width of [375, 820]) {
+				await page.setViewportSize({ width, height: width === 375 ? 740 : 1180 });
+				await joinToStep3(page, `Auth Fit ${locale} ${tag}`);
+				await expect(page.locator('html')).toHaveAttribute('lang', locale);
+				await expectFits(page);
+				await expectStepsFit(page);
+				// Back to step 1 through the stepper, then step 2 again.
+				await stepButtons(page).first().click();
+				await expect(page.locator('#classCode')).toBeFocused();
+				await expectFits(page);
+				await expectStepsFit(page);
+				await page.locator('main form button[type="submit"]').click();
+				await expect(page.locator('#registrationName')).toBeVisible();
+				await expectFits(page);
+				await expectStepsFit(page);
+				await open(page, '/join/pending');
+				await expectFits(page);
+				await expectStepsFit(page);
+			}
+			await page.setViewportSize({ width: 375, height: 740 });
 
 			// /reset-password needs a recovery session (and shows in the signed-in shell).
 			const parent = await createParent(`fit-${locale}`);

@@ -489,6 +489,7 @@
 	"join_step_name": "Dein Name",
 	"join_step_consent": "Einwilligung der Eltern",
 	"join_step_waiting": "Warten auf Freigabe",
+	"join_step_label_done": "{label}, erledigt",
 	"join_name_label": "Vollständiger Name",
 	"join_name_note": "Einen Spitznamen kannst du später wählen, sobald du freigegeben bist.",
 	"join_guardian_email_label": "E-Mail der Erziehungsberechtigten",

@@ -10,8 +10,8 @@
 	 * One-time sign-in details (#41): each value copies on its own, and
 	 * "Copy both" copies them together as "Label: value" lines.
 	 * Its own `data-ui="new"` root (mobile-first story 5), so it also works
-	 * on the pages that are still iX (admin teachers, join pending,
-	 * EnrollmentPanel). `credential-fields` lines up CopyField's labels.
+	 * on the pages that are still iX (admin teachers, EnrollmentPanel).
+	 * `credential-fields` lines up CopyField's labels.
 	 */
 	let { fields }: { fields: { label: string; value: string }[] } = $props();
 

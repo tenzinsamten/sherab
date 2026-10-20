@@ -142,3 +142,26 @@
   invoke_dev_with: >-
     grep must find no ix- elements, @siemens/ix imports or $lib/ix imports
     in src/. Compare bundle size before and after and report it.
+
+- id: "11"
+  title: Navigation loading bar and busy screen
+  description: >-
+    Today a tap on a tab, link or page action shows no sign of loading, so a
+    slow server load feels stuck. Show a progress bar while SvelteKit
+    navigates (and while a page action that reloads data is running), and
+    block interaction with the page during that time so the user cannot tap
+    buttons or start another action. Requested by the user on 2026-10-20;
+    logged after story 10. This is new behaviour beyond the SPEC's
+    presentation-only scope, so its spec must record the user's decision.
+    Related: spec-navigation-latency (cutting the wait itself).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Use the app shell (+layout.svelte) and SvelteKit's `navigating` state,
+    not per-page code. Show the bar only after a short delay so fast
+    navigations don't flash. The busy overlay must not trap focus forever:
+    it clears on navigation end, error or abort, and keeps tours, toasts,
+    the bottom nav's active state and screen readers sane (announce
+    loading politely, set aria-busy). User decision (2026-10-20): the
+    bottom nav (side nav on desktop) and the browser/OS back button stay
+    usable during loading, so a slow navigation can be cancelled; only the
+    page content is blocked.

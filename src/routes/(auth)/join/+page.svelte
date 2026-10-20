@@ -1,13 +1,17 @@
 <script lang="ts">
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import * as m from '$lib/paraglide/messages.js';
 	import { localizeName } from '$lib/localized-name';
-	import logo from '$lib/assets/sherab-logo-blue.svg';
+	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
 	import JoinSteps from '$lib/components/JoinSteps.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { showToast } from '$lib/ix';
-	import { ixFieldError } from '$lib/ix-fields';
+	import { ui } from '$lib/ui/classes';
 
 	let step = $state<1 | 2 | 3>(1);
 
@@ -57,26 +61,35 @@
 		if (step > 1) step = (step - 1) as 1 | 2;
 	}
 
-	// A finished step picked in the workflow steps: go back to it (the typed
-	// values are kept in state) and move focus to that step's field, since
-	// the steps are rebuilt and the picked one is gone.
+	// A finished step picked in the stepper: go back to it (the typed values
+	// are kept in state) and move focus to that step's field, since the
+	// picked step button is gone once it is the current step.
 	const stepField: Record<1 | 2, string> = { 1: 'classCode', 2: 'registrationName' };
 	async function goToStep(target: 1 | 2 | 3 | 4) {
 		if (target >= step) return;
 		step = target as 1 | 2;
 		await tick();
-		const field = document.getElementById(stepField[step]) as
-			| (HTMLElement & {
-					componentOnReady?: () => Promise<unknown>;
-					getNativeInputElement?: () => Promise<HTMLElement>;
-			  })
-			| null;
-		if (!field) return;
-		await customElements.whenDefined(field.localName);
-		await field.componentOnReady?.();
-		// The host doesn't pass focus on: focus iX's own input.
-		const input = await field.getNativeInputElement?.().catch(() => null);
-		(input ?? field).focus();
+		document.getElementById(stepField[step])?.focus();
+	}
+
+	// Upper-cased as typed, but not mid-composition (Android keyboards,
+	// IMEs): rewriting the value then can drop or double characters, so the
+	// composed text is upper-cased once it ends.
+	function onClassCodeInput(event: Event & { currentTarget: HTMLInputElement }) {
+		if (event instanceof InputEvent && event.isComposing) return;
+		upperCaseClassCode(event.currentTarget);
+	}
+
+	function upperCaseClassCode(input: HTMLInputElement) {
+		const upper = input.value.toUpperCase();
+		if (input.value !== upper) {
+			// Shown upper-cased as typed, the caret where it was.
+			const { selectionStart, selectionEnd } = input;
+			input.value = upper;
+			input.setSelectionRange(selectionStart, selectionEnd);
+		}
+		classCode = upper;
+		classCodeError = null;
 	}
 </script>
 
@@ -84,128 +97,141 @@
 	<title>{m.join_heading()} — Sherab</title>
 </svelte:head>
 
-<!-- Today's auth card, inlined until the join flow moves to the new UI
-     (story 6b): its iX elements must not sit inside AuthCard's new-UI root. -->
-<div class="auth-page">
-	<div class="auth-card">
-		<header class="auth-card-header">
-			<img src={logo} alt={m.nav_logo_alt()} width="180" height="100" />
-			<h1>{m.join_heading()}</h1>
-		</header>
-		<!-- Not while the code is checked or the form is sent: going back would
-		     unmount the form mid-request. -->
-		<JoinSteps current={step} onselect={checkingCode || submitting ? undefined : goToStep} />
+<AuthCard title={m.join_heading()}>
+	<!-- Not while the code is checked or the form is sent: going back would
+	     unmount the form mid-request. -->
+	<JoinSteps current={step} onselect={checkingCode || submitting ? undefined : goToStep} />
 
-		{#if step === 1}
-			<!-- novalidate: checkClassCode checks the code, and iX's own validation
-			     would replace the error's aria-describedby (see $lib/ix-fields). -->
-			<form
-				novalidate
-				onsubmit={(event) => {
-					event.preventDefault();
-					checkClassCode();
-				}}
+	{#if step === 1}
+		<!-- novalidate: checkClassCode checks the code and shows its error
+		     under the field. The visible fields have no name: step 3's hidden
+		     fields carry the values. -->
+		<form
+			novalidate
+			class={auth.form}
+			onsubmit={(event) => {
+				event.preventDefault();
+				checkClassCode();
+			}}
+		>
+			<div class={auth.field}>
+				<label for="classCode" class={auth.label}>{m.join_code_question()}</label>
+				<Input
+					id="classCode"
+					required
+					autocapitalize="characters"
+					placeholder={m.join_code_placeholder()}
+					value={classCode}
+					autocomplete="off"
+					spellcheck="false"
+					oninput={onClassCodeInput}
+					oncompositionend={(event) => upperCaseClassCode(event.currentTarget)}
+					aria-invalid={classCodeError ? true : undefined}
+					aria-describedby={classCodeError ? 'classCode-error' : undefined}
+				/>
+				{#if classCodeError}
+					<p id="classCode-error" class={ui.error} role="alert">{classCodeError}</p>
+				{/if}
+			</div>
+			<Button
+				type="submit"
+				class={auth.submit}
+				disabled={checkingCode}
+				aria-busy={checkingCode || undefined}
 			>
-				<div class="field">
-					<ix-input
-						id="classCode"
-						label={m.join_code_question()}
-						required
-						placeholder={m.join_code_placeholder()}
-						value={classCode}
-						onvalueChange={(event: CustomEvent<string>) => {
-							classCode = event.detail.toUpperCase();
-							classCodeError = null;
-						}}
-						{@attach ixFieldError(classCodeError ? 'classCode-error' : undefined)}
-					></ix-input>
-					{#if classCodeError}
-						<p id="classCode-error" class="field-error" role="alert">{classCodeError}</p>
-					{/if}
-				</div>
-				<ix-button
-					class="block"
-					type="submit"
-					loading={checkingCode || undefined}
-					disabled={checkingCode || undefined}
-				>
-					{checkingCode ? m.join_checking() : m.join_continue()}
-				</ix-button>
-			</form>
-		{:else if step === 2 && resolvedClass}
+				{#if checkingCode}
+					<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+				{/if}
+				{checkingCode ? m.join_checking() : m.join_continue()}
+			</Button>
+		</form>
+	{:else if step === 2 && resolvedClass}
+		<div class={auth.form}>
 			<p>
-				<ix-pill variant="success"
-					>{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}</ix-pill
+				<Badge variant="success" class="px-3 py-1 text-sm"
+					>{m.join_class_confirmed({ name: resolvedClass.name, code: classCode })}</Badge
 				>
 			</p>
-			<div class="field">
-				<ix-input
-					id="registrationName"
-					label={m.join_name_label()}
-					required
-					value={registrationName}
-					onvalueChange={(event: CustomEvent<string>) => (registrationName = event.detail)}
-				></ix-input>
+			<div class={auth.field}>
+				<label for="registrationName" class={auth.label}>{m.join_name_label()}</label>
+				<Input id="registrationName" required autocomplete="off" bind:value={registrationName} />
+				<p class="text-sm {ui.muted}">{m.join_name_note()}</p>
 			</div>
-			<p class="muted">{m.join_name_note()}</p>
-			<div class="actions">
-				<ix-button disabled={!registrationName.trim() || undefined} onclick={goToConsentStep}
-					>{m.join_continue()}</ix-button
+			<div class="flex flex-col gap-2">
+				<Button class={auth.submit} disabled={!registrationName.trim()} onclick={goToConsentStep}
+					>{m.join_continue()}</Button
 				>
-				<ix-button variant="secondary" onclick={goBack}>{m.join_back()}</ix-button>
+				<Button variant="secondary" class="{ui.touch} w-full" onclick={goBack}
+					>{m.join_back()}</Button
+				>
 			</div>
-		{:else if step === 3 && resolvedClass}
-			<form
-				method="POST"
-				action="?/register"
-				use:enhance={() => {
-					submitting = true;
-					return async ({ update }) => {
-						await update();
-						submitting = false;
-					};
-				}}
+		</div>
+	{:else if step === 3 && resolvedClass}
+		<!-- novalidate: the server checks the email and consent, as before (no
+		     browser validation bubbles). -->
+		<form
+			method="POST"
+			action="?/register"
+			novalidate
+			class={auth.form}
+			use:enhance={() => {
+				submitting = true;
+				return async ({ update }) => {
+					await update();
+					submitting = false;
+				};
+			}}
+		>
+			<input type="hidden" name="classId" value={resolvedClass.id} />
+			<input type="hidden" name="className" value={resolvedClass.name} />
+			<input type="hidden" name="classCode" value={classCode} />
+			<input type="hidden" name="registrationName" value={registrationName} />
+
+			<div class={auth.field}>
+				<label for="guardianEmail" class={auth.label}>{m.join_guardian_email_label()}</label>
+				<Input
+					id="guardianEmail"
+					name="guardianEmail"
+					type="email"
+					required
+					autocomplete="off"
+					bind:value={guardianEmail}
+				/>
+				<p class="text-sm {ui.muted}">{m.join_guardian_email_note()}</p>
+			</div>
+
+			<p class="text-sm {ui.muted}">{m.join_consent_notice()}</p>
+			<label
+				for="guardianConsent"
+				class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-input px-3 py-2 has-checked:border-primary has-checked:bg-accent has-focus-visible:outline-2 has-focus-visible:outline-ring"
 			>
-				<input type="hidden" name="classId" value={resolvedClass.id} />
-				<input type="hidden" name="className" value={resolvedClass.name} />
-				<input type="hidden" name="classCode" value={classCode} />
-				<input type="hidden" name="registrationName" value={registrationName} />
+				<input
+					id="guardianConsent"
+					type="checkbox"
+					name="guardianConsent"
+					required
+					bind:checked={guardianConsent}
+					class="size-5 shrink-0 accent-primary"
+				/>
+				<span class="min-w-0 wrap-break-word">{m.join_consent_checkbox_label()}</span>
+			</label>
 
-				<div class="field">
-					<ix-input
-						id="guardianEmail"
-						name="guardianEmail"
-						type="email"
-						label={m.join_guardian_email_label()}
-						required
-						value={guardianEmail}
-						onvalueChange={(event: CustomEvent<string>) => (guardianEmail = event.detail)}
-					></ix-input>
-				</div>
-				<p class="muted">{m.join_guardian_email_note()}</p>
-
-				<p class="muted">{m.join_consent_notice()}</p>
-				<div class="check-list" style="margin-bottom: var(--space-4);">
-					<ix-checkbox
-						name="guardianConsent"
-						required
-						label={m.join_consent_checkbox_label()}
-						checked={guardianConsent || undefined}
-						oncheckedChange={(event: CustomEvent<boolean>) => (guardianConsent = event.detail)}
-					></ix-checkbox>
-				</div>
-
-				<div class="actions">
-					<ix-button
-						type="submit"
-						loading={submitting || undefined}
-						disabled={!guardianConsent || !guardianEmail.trim() || submitting || undefined}
-					>
-						{m.join_submit()}
-					</ix-button>
-					<ix-button variant="secondary" onclick={goBack}>{m.join_back()}</ix-button>
-				</div>
-			</form>
-		{/if}
-	</div>
-</div>
+			<div class="flex flex-col gap-2">
+				<Button
+					type="submit"
+					class={auth.submit}
+					disabled={!guardianConsent || !guardianEmail.trim() || submitting}
+					aria-busy={submitting || undefined}
+				>
+					{#if submitting}
+						<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+					{/if}
+					{m.join_submit()}
+				</Button>
+				<Button variant="secondary" class="{ui.touch} w-full" onclick={goBack}
+					>{m.join_back()}</Button
+				>
+			</div>
+		</form>
+	{/if}
+</AuthCard>

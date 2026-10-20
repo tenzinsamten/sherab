@@ -418,3 +418,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6-auth-pages.md`
   summary: A double tap on auth/confirm's button may post the one-time token twice and land a confirmed user on `/login?error=confirm`.
   evidence: Unverified (medium if true); pre-existing with the old ix-button. Settle with an e2e that submits twice quickly; fix with a submit guard.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6b-join-flow.md`
+  summary: On /join, focus falls to the page body after Continue, while sending, and after a server error toast; the guardian email gets no inline error.
+  evidence: Pre-existing (the iX page never moved focus forward either; story 6b kept "no change"). Medium for keyboard and screen-reader users.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6b-join-flow.md`
+  summary: Join step 2 (name) is not a form, so Enter / the phone keyboard's Go key does nothing there.
+  evidence: Pre-existing; steps 1 and 3 are forms. Low.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6b-join-flow.md`
+  summary: The join class code keeps surrounding spaces in the step-2 badge and the posted hidden `classCode`; only the RPC call trims it.
+  evidence: Pre-existing; trim once the code is accepted. Low.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/6b-join-flow.md`
+  summary: The class-code field stays editable while `validate_class_code` runs, so step 2 could show the old class with a newly typed code.
+  evidence: Unverified (medium if true); pre-existing. Settle with an e2e that edits the code while the RPC is held.

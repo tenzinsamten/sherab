@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { createCalendarFixture, openHelp, service, signIn, type CalendarFixture } from './fixtures';
 
 /**
- * iX fields on /join (#66 B7b; the join flow moves to the new UI in story
- * 6b), the native fields of /register and /account (mobile-first stories 5
- * and 6), the signed-out header, and the email-link pages (#89).
+ * The native fields of /join (#66 B7b; mobile-first story 6b), /register
+ * and /account (stories 5 and 6), the signed-out header, and the
+ * email-link pages (#89).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -18,11 +18,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
 	await fx?.cleanup();
 });
-
-/** Types into an <ix-input>'s native control (its shadow DOM <input>). */
-async function typeInto(page: Page, id: string, text: string) {
-	await page.locator(`#${id} input`).first().fill(text);
-}
 
 /**
  * Captures the next POST to `action` and aborts it, so a form's posted
@@ -50,11 +45,6 @@ function posted(body: string, name: string, value: string): boolean {
 	);
 }
 
-async function waitForIx(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
-	await page.waitForLoadState('networkidle');
-}
-
 /** An auth page (mobile-first story 6): its new-UI root is hydrated. */
 async function authReady(page: Page) {
 	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
@@ -72,18 +62,22 @@ test('join: class code is uppercased, name and guardian email unlock the next st
 	if (error || !cls?.code) throw new Error(`read class code: ${error?.message}`);
 
 	await page.goto('/join');
-	await waitForIx(page);
+	await authReady(page);
 
-	// Step 1: typed lowercase, held (and checked) as uppercase.
-	await typeInto(page, 'classCode', cls.code.toLowerCase());
-	await expect(page.locator('#classCode')).toHaveJSProperty('value', cls.code);
+	// Step 1: typed lowercase, shown (and checked) as uppercase.
+	const code = page.getByLabel('What is your class code?');
+	await code.pressSequentially(cls.code.toLowerCase());
+	await expect(code).toHaveValue(cls.code);
+	// The visible fields post nothing: the hidden fields of step 3 do.
+	await expect(code).not.toHaveAttribute('name');
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByText(`${fx.classA.name} · ${cls.code}`)).toBeVisible();
 
 	// Step 2: Continue stays disabled until a name is typed.
 	const next = page.getByRole('button', { name: 'Continue' });
 	await expect(next).toBeDisabled();
-	await typeInto(page, 'registrationName', `E2E Join ${fx.tag}`);
+	await page.getByLabel('Full name').fill(`E2E Join ${fx.tag}`);
+	await expect(page.getByLabel('Full name')).not.toHaveAttribute('name');
 	await expect(next).toBeEnabled();
 	await next.click();
 
@@ -92,34 +86,34 @@ test('join: class code is uppercased, name and guardian email unlock the next st
 		`E2E Join ${fx.tag}`
 	);
 	const submit = page.getByRole('button', { name: 'Submit' });
-	await typeInto(page, 'guardianEmail', `e2e-join-${fx.tag}@example.test`);
+	await page.getByLabel("Guardian's email").fill(`e2e-join-${fx.tag}@example.test`);
 	await expect(submit).toBeDisabled();
-	await page.getByRole('checkbox').click();
+	await page.getByRole('checkbox').check();
 	await expect(submit).toBeEnabled();
 
-	// The form-associated <ix-input> posts guardianEmail with the rest.
 	const body = await capturePost(page, 'register');
 	await submit.click();
 	const sent = await body();
 	expect(posted(sent, 'guardianEmail', `e2e-join-${fx.tag}@example.test`)).toBe(true);
+	expect(posted(sent, 'guardianConsent', 'on')).toBe(true);
 	expect(posted(sent, 'registrationName', `E2E Join ${fx.tag}`)).toBe(true);
+	expect(posted(sent, 'classId', fx.classA.id)).toBe(true);
+	expect(posted(sent, 'classCode', cls.code)).toBe(true);
 });
 
-/** The workflow step (1-based) whose inner element iX marks as current. */
+/** The stepper's steps (mobile-first story 6b: an ordered list). */
+const joinSteps = (page: Page) => page.getByTestId('join-steps').getByRole('listitem');
+
+/** The step (1-based) marked `aria-current="step"`; exactly one must be. */
 async function currentStep(page: Page): Promise<number> {
-	return page
-		.locator('ix-workflow-step')
-		.evaluateAll((steps) =>
-			steps.findIndex((s) => s.shadowRoot?.querySelector('[aria-current="step"]'))
-		)
-		.then((i) => {
-			// -1: iX's markup changed; fail loudly rather than report "step 0".
-			if (i < 0) throw new Error('no ix-workflow-step is marked aria-current="step"');
-			return i + 1;
-		});
+	const marked = await joinSteps(page).evaluateAll((steps) =>
+		steps.flatMap((s, i) => (s.getAttribute('aria-current') === 'step' ? [i + 1] : []))
+	);
+	if (marked.length !== 1) throw new Error(`steps marked current: ${JSON.stringify(marked)}`);
+	return marked[0];
 }
 
-test('join: workflow steps follow the flow, and a finished step goes back keeping values', async ({
+test('join: the steps follow the flow, and a finished step goes back keeping values', async ({
 	page
 }) => {
 	const { data: cls, error } = await service
@@ -130,110 +124,118 @@ test('join: workflow steps follow the flow, and a finished step goes back keepin
 	if (error || !cls?.code) throw new Error(`read class code: ${error?.message}`);
 
 	await page.goto('/join');
-	await waitForIx(page);
-	const steps = page.locator('ix-workflow-step');
-	// The steps' own (light DOM) labels; their shadow DOM adds icon names.
-	expect(await steps.evaluateAll((els) => els.map((el) => el.textContent?.trim()))).toEqual([
-		'Class code',
-		'Your name',
-		'Parent consent',
-		'Waiting for approval'
+	await authReady(page);
+	const steps = joinSteps(page);
+	// Numbered, in order (the number is a decoration hidden from screen readers).
+	await expect(steps).toHaveText([
+		/^1\s*Class code$/,
+		/^2\s*Your name$/,
+		/^3\s*Parent consent$/,
+		/^4\s*Waiting for approval$/
 	]);
 	await expect.poll(() => currentStep(page)).toBe(1);
 	await expect(page.getByText('Step 1 of 4: Class code')).toBeAttached();
-	// Vertical, so the steps fit the card: no sideways scrolling on a phone.
-	await expect(page.locator('ix-workflow-steps')).toHaveJSProperty('vertical', true);
 
-	// A later step is disabled and can't be picked.
-	await expect(steps.nth(1)).toHaveJSProperty('disabled', true);
-	await expect(steps.nth(2)).toHaveJSProperty('disabled', true);
-	await steps.nth(2).click({ force: true });
-	await expect.poll(() => currentStep(page)).toBe(1);
-	await expect(page.locator('#classCode')).toBeVisible();
+	// No step is a button yet: the current and later steps can't be picked.
+	await expect(page.getByTestId('join-steps').getByRole('button')).toHaveCount(0);
 
-	await typeInto(page, 'classCode', cls.code);
+	await page.getByLabel('What is your class code?').fill(cls.code);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect.poll(() => currentStep(page)).toBe(2);
-	await typeInto(page, 'registrationName', `E2E Steps ${fx.tag}`);
+	await expect(page.getByText('Step 2 of 4: Your name')).toBeAttached();
+	// Step 1 is done: a check mark and "done" for screen readers, not only colour.
+	await expect(steps.nth(0)).toHaveAttribute('data-state', 'done');
+	await expect(steps.nth(0).getByRole('button')).toHaveAccessibleName('Class code, done');
+	await expect(steps.nth(0).locator('svg')).toBeVisible();
+	await page.getByLabel('Full name').fill(`E2E Steps ${fx.tag}`);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect.poll(() => currentStep(page)).toBe(3);
 	await expect(page.getByText('Step 3 of 4: Parent consent')).toBeAttached();
+	await expect(page.getByTestId('join-steps').getByRole('button')).toHaveCount(2);
 	const email = `e2e-steps-${fx.tag}@example.test`;
-	await typeInto(page, 'guardianEmail', email);
-	await page.getByRole('checkbox').click();
+	await page.getByLabel("Guardian's email").fill(email);
+	await page.getByRole('checkbox').check();
 
-	// Back to step 1 by clicking it: focus moves to the code field, which
+	// Back to step 1 by picking it: focus moves to the code field, which
 	// still holds the typed code.
-	await steps.nth(0).click();
+	await page.getByRole('button', { name: 'Class code, done' }).click();
 	await expect.poll(() => currentStep(page)).toBe(1);
-	await expect(page.locator('#classCode input').first()).toBeFocused();
-	await expect(page.locator('#classCode')).toHaveJSProperty('value', cls.code);
+	const code = page.getByLabel('What is your class code?');
+	await expect(code).toBeFocused();
+	await expect(code).toHaveValue(cls.code);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect.poll(() => currentStep(page)).toBe(2);
-	await expect(page.locator('#registrationName')).toHaveJSProperty('value', `E2E Steps ${fx.tag}`);
+	await expect(page.getByLabel('Full name')).toHaveValue(`E2E Steps ${fx.tag}`);
 
 	// Continue to step 3 again: email and consent are still filled in.
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect.poll(() => currentStep(page)).toBe(3);
-	await expect(page.locator('#guardianEmail')).toHaveJSProperty('value', email);
+	await expect(page.getByLabel("Guardian's email")).toHaveValue(email);
 	await expect(page.getByRole('checkbox')).toBeChecked();
 	await expect(page.getByRole('button', { name: 'Submit' })).toBeEnabled();
 
+	// Picking step 2 focuses the name field.
+	await page.getByRole('button', { name: 'Your name, done' }).click();
+	await expect.poll(() => currentStep(page)).toBe(2);
+	await expect(page.getByLabel('Full name')).toBeFocused();
+
 	// The Back button still moves the steps too.
 	await page.getByRole('button', { name: 'Back' }).click();
-	await expect.poll(() => currentStep(page)).toBe(2);
-});
-
-test('join: on a phone-sized screen the steps fit without sideways scrolling', async ({ page }) => {
-	await page.setViewportSize({ width: 360, height: 740 });
-	await page.goto('/join');
-	await waitForIx(page);
-	await expect(page.locator('ix-workflow-step')).toHaveCount(4);
-	const overflow = await page.evaluate(
-		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
-	);
-	expect(overflow).toBeLessThanOrEqual(0);
+	await expect.poll(() => currentStep(page)).toBe(1);
 });
 
 test('join pending: the first three steps are done and "Waiting for approval" is current', async ({
 	page
 }) => {
 	await page.goto('/join/pending');
-	await waitForIx(page);
-	await expect(page.locator('ix-workflow-step')).toHaveCount(4);
+	await authReady(page);
+	await expect(joinSteps(page)).toHaveCount(4);
 	await expect.poll(() => currentStep(page)).toBe(4);
 	await expect(page.getByText('Step 4 of 4: Waiting for approval')).toBeAttached();
 	for (const i of [0, 1, 2]) {
-		await expect(page.locator('ix-workflow-step').nth(i)).toHaveAttribute('status', 'success');
+		await expect(joinSteps(page).nth(i)).toHaveAttribute('data-state', 'done');
 	}
+	// A done row that is no button is still read as "<label>, done": the
+	// visible label is hidden from screen readers, the one message is not.
+	const first = joinSteps(page).nth(0);
+	await expect(first.locator('[data-step-sr]')).toHaveText('Class code, done');
+	await expect(first.locator('[data-step-label] > [aria-hidden="true"]')).toHaveText('Class code');
+	// Nothing to go back to from here.
+	await expect(page.getByTestId('join-steps').getByRole('button')).toHaveCount(0);
 });
 
 test('join: an unknown class code marks the field invalid and stays on step 1', async ({
 	page
 }) => {
 	await page.goto('/join');
-	await waitForIx(page);
-	await typeInto(page, 'classCode', 'ZZZZZZZZ');
+	await authReady(page);
+	const code = page.getByLabel('What is your class code?');
+	await code.fill('ZZZZZZZZ');
 	await page.getByRole('button', { name: 'Continue' }).click();
-	await expect(page.locator('#classCode')).toHaveClass(/\bix-invalid\b/);
 	const error = page.locator('#classCode-error');
 	await expect(error).toHaveText('No class has that code. Check it with your teacher.');
 	await expect(error).toHaveAttribute('role', 'alert');
-	const native = page.locator('#classCode input').first();
-	await expect(native).toHaveAttribute('aria-invalid', 'true');
-	// Linked across the shadow root, which toHaveAccessibleDescription doesn't follow.
-	await expect
-		.poll(() =>
-			native.evaluate((el) =>
-				(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
-			)
-		)
-		.toBe('No class has that code. Check it with your teacher.');
+	await expect(code).toHaveAttribute('aria-invalid', 'true');
+	await expect(code).toHaveAccessibleDescription(
+		'No class has that code. Check it with your teacher.'
+	);
+	await expect(
+		page.locator('ix-toast').getByText('No class has that code. Check it with your teacher.')
+	).toBeVisible();
 	await expect(page.locator('#registrationName')).toHaveCount(0);
 	// Typing again clears the invalid state.
-	await typeInto(page, 'classCode', 'ZZZZZZZY');
-	await expect(page.locator('#classCode')).not.toHaveClass(/\bix-invalid\b/);
+	await code.fill('ZZZZZZZY');
+	await expect(code).not.toHaveAttribute('aria-invalid');
 	await expect(error).toHaveCount(0);
+});
+
+test('join: an empty class code says so under the field', async ({ page }) => {
+	await page.goto('/join');
+	await authReady(page);
+	await page.getByRole('button', { name: 'Continue' }).click();
+	await expect(page.locator('#classCode-error')).toHaveText('Enter your class code.');
+	await expect(page.getByLabel('What is your class code?')).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#registrationName')).toHaveCount(0);
 });
 
 test('register: the display name is posted with the email and passwords', async ({ page }) => {

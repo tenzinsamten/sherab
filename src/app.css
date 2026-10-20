@@ -383,65 +383,11 @@ code {
 	letter-spacing: 0.06em;
 }
 
-/* ── Auth pages: one centred card ─────────────────────────────────────── */
-.auth-page {
-	display: flex;
-	justify-content: center;
-	padding: var(--space-8) var(--space-4);
-}
-.auth-card {
-	width: 100%;
-	max-width: 28rem;
-	padding: 2.5rem var(--space-8);
-	background: var(--theme-color-1);
-	border: 1px solid var(--theme-color-soft-bdr);
-	border-radius: var(--theme-default-border-radius);
-	box-shadow: var(--theme-shadow-1);
-}
-.auth-card-header {
-	margin-bottom: var(--space-6);
-	text-align: center;
-}
-.auth-card-header img {
-	display: block;
-	width: 180px;
-	max-width: 100%;
-	height: auto;
-	margin: 0 auto var(--space-3);
-}
-.auth-card-header h1 {
-	margin: 0;
-	font-size: var(--theme-font-size-xl);
-}
-.auth-card-header p {
-	margin: var(--space-2) 0 0;
-	color: var(--theme-color-soft-text);
-}
-.auth-card ix-button.block {
-	display: block;
-	width: 100%;
-	/* Full-width primary actions get a taller, roomier target than iX's
-	   default 2rem button. */
-	height: 2.75rem;
-	--ix-button-padding: 0 var(--space-4);
-}
-.auth-card-footer {
-	margin-top: var(--space-4);
-	text-align: center;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: var(--space-2);
-}
-
 @media (max-width: 640px) {
 	.page {
 		padding: var(--space-4) var(--space-3) var(--space-6);
 	}
 	.card {
 		padding: var(--space-4);
-	}
-	.auth-card {
-		padding: var(--space-8) var(--space-6);
 	}
 }

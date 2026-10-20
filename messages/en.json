@@ -489,6 +489,7 @@
 	"join_step_name": "Your name",
 	"join_step_consent": "Parent consent",
 	"join_step_waiting": "Waiting for approval",
+	"join_step_label_done": "{label}, done",
 	"join_name_label": "Full name",
 	"join_name_note": "You can choose a nickname later, once you're approved.",
 	"join_guardian_email_label": "Guardian's email",

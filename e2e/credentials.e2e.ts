@@ -104,25 +104,23 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
-async function waitForIx(page: Page) {
-	await page.waitForFunction(
-		() =>
-			customElements.get('ix-input') !== undefined && customElements.get('ix-button') !== undefined
-	);
+/** A join page (mobile-first story 6b): its new-UI root is hydrated. */
+async function joinReady(page: Page) {
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
 /** Registers `name` through /join and returns what the confirmation screen shows. */
 async function register(page: Page, name: string) {
 	await page.goto('/join');
-	await waitForIx(page);
-	await page.locator('#classCode input').first().fill(classCode);
+	await joinReady(page);
+	await page.getByLabel('What is your class code?').fill(classCode);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByText(`${className} · ${classCode}`)).toBeVisible();
-	await page.locator('#registrationName input').first().fill(name);
+	await page.getByLabel('Full name').fill(name);
 	await page.getByRole('button', { name: 'Continue' }).click();
-	await page.locator('#guardianEmail input').first().fill(parent.email);
-	await page.getByRole('checkbox').click();
+	await page.getByLabel("Guardian's email").fill(parent.email);
+	await page.getByRole('checkbox').check();
 	await page.getByRole('button', { name: 'Submit' }).click();
 
 	await expect(page).toHaveURL(/\/join\/pending$/);
@@ -188,7 +186,7 @@ test('register: the screen shows the username and PIN once, and they sign the st
 	});
 
 	// The link on the screen leads to the login page.
-	await page.locator('ix-button', { hasText: 'Go to sign in' }).click();
+	await page.getByRole('link', { name: 'Go to sign in' }).click();
 	await expect(page).toHaveURL(/\/login$/);
 
 	await signInAsStudent(page, approved);
@@ -237,7 +235,7 @@ test('confirmation screen without its cookie: generic text, no username or PIN',
 	page
 }) => {
 	await page.goto('/join/pending');
-	await waitForIx(page);
+	await joinReady(page);
 	await expect(page.getByRole('heading', { name: 'Pending' })).toBeVisible();
 	await expect(page.locator('[data-testid="join-credentials"]')).toHaveCount(0);
 	await expect(page.locator('.credential')).toHaveCount(0);

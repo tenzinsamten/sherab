@@ -431,21 +431,21 @@ test('/join with an approved student\'s name, parent email and another class\'s 
 	expect(await studentsOfParent()).toEqual([{ id: studentId }]);
 
 	await page.goto('/join');
-	await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 
 	// A class the student is not in: the request for it was rejected in the
 	// test above (the file runs serially).
-	await page.locator('#classCode input').first().fill(classes.second.code);
+	await page.getByLabel('What is your class code?').fill(classes.second.code);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByText(`${secondName} · ${classes.second.code}`)).toBeVisible();
 
 	// Another case and extra spaces: still the same child.
-	await page.locator('#registrationName input').first().fill(`  ${studentName.toUpperCase()} `);
+	await page.getByLabel('Full name').fill(`  ${studentName.toUpperCase()} `);
 	await page.getByRole('button', { name: 'Continue' }).click();
 
-	await page.locator('#guardianEmail input').first().fill(teacherParent.email.toUpperCase());
-	await page.getByRole('checkbox').click();
+	await page.getByLabel("Guardian's email").fill(teacherParent.email.toUpperCase());
+	await page.getByRole('checkbox').check();
 	await page.getByRole('button', { name: 'Submit' }).click();
 
 	await expect(
