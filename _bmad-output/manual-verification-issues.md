@@ -2526,3 +2526,17 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   the class's teacher sees a parent's On leave for a coming session and for a leave period).
   Also seen: Senior Music Instrument class has no teacher in `class_teachers`, so no teacher
   sees its leave (only the admin). Not changed; for the admin to assign one.
+- 2026-10-21: #108 logged, not built. Asked (user, during mobile-first story 7c): "currently
+  the teachers tab has dashboard,calendar,Request, Leaderboard and Help. But as a teacher i
+  would like to have dashboard, classes, calendar, Request as main options and Leaderboard and
+  Help can be part of overflow menu". Today: `src/lib/nav.ts:125` gives the teacher Dashboard,
+  Calendar, Requests (count pill), Leaderboard, Help, as in `spec-mobile-ux/stack.md` (Primary
+  nav per role). The admin's phone/tablet bar already has the wanted shape: four tabs plus a
+  More sheet (`nav.ts:182-196`, `BottomNav.svelte`). There is no teacher classes list page:
+  `src/routes/teacher/classes/` holds only `[id]`; the dashboard shows the class cards. Likely
+  shape (for planning): teacher tabs Dashboard, Classes, Calendar, Requests, More (Leaderboard,
+  Help), reusing the admin More sheet; update `stack.md` and the shell and tour e2e tests.
+  Open for planning: what Classes opens (a new `/teacher/classes` list, or the dashboard's
+  class cards); whether the desktop side nav (≥80em) also moves Leaderboard and Help, or keeps
+  every item; whether Help stays reachable from the tours' "Show me around" path; where it
+  fits in the rollout (after story 7c, or with story 11). Nothing is changed yet.
