@@ -221,23 +221,14 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
-/**
- * Waits for hydration: a page on the new UI (the class page) marks its root
- * hydrated; on an iX page (the homework forms) the iX form components are
- * defined.
- */
+/** Waits for hydration: every page here marks its new-UI root hydrated. */
 async function open(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() => {
-		const root = document.querySelector('main > [data-ui="new"]');
-		return root
-			? root.hasAttribute('data-hydrated')
-			: customElements.get('ix-select') !== undefined;
-	});
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
-/** Picks `value` in a native select (the class page). */
+/** Picks `value` in a native select. */
 async function choose(page: Page, selectId: string, value: string) {
 	const select = page.locator(`#${selectId}`);
 	await select.selectOption(value);
@@ -250,14 +241,6 @@ const attendanceBox = (page: Page, student: { id: string }) =>
 /** The leave badge inside a student's attendance row. */
 const leaveBadge = (page: Page, student: { id: string }) =>
 	page.locator(`.attendance-row[data-student-id="${student.id}"] [data-testid="leave-badge"]`);
-
-/** Opens an <ix-select>'s list and picks the item with `value`. */
-async function pick(page: Page, selectId: string, value: string) {
-	const select = page.locator(`#${selectId}`);
-	await select.locator('input').first().click();
-	await select.locator(`ix-select-item[value="${value}"]`).click();
-	await expect(select).toHaveJSProperty('value', value);
-}
 
 function capturePosts(page: Page, action: string): URLSearchParams[] {
 	const posts: URLSearchParams[] = [];
@@ -651,14 +634,14 @@ test('homework create: one-off for a subset of two students', async ({ page }) =
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
-	await expect(page.locator('#skillArea')).toHaveJSProperty('value', 'language');
-	await pick(page, 'skillArea', 'song');
+	await page.locator('#title').fill(title);
+	await expect(page.locator('#skillArea')).toHaveValue('language');
+	await choose(page, 'skillArea', 'song');
 	// The content language starts as the interface language.
-	await expect(page.locator('#contentLanguage')).toHaveJSProperty('value', 'en');
+	await expect(page.locator('#contentLanguage')).toHaveValue('en');
 	await (await contentEditor(page, 'content')).fill('Practise the song');
-	await page.locator('#dueDate input').first().fill(`${year}-04-01`);
-	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-01`);
+	await page.locator('#dueDate').fill(`${year}-04-01`);
+	await expect(page.locator('#dueDate')).toHaveValue(`${year}-04-01`);
 
 	await page.getByRole('radio', { name: 'Specific students' }).click();
 	const box = (i: number) => page.getByRole('checkbox', { name: students[i].name });
@@ -725,7 +708,7 @@ test('homework create: weekly via the keyboard, students see the first week at o
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
+	await page.locator('#title').fill(title);
 	await (await contentEditor(page, 'content')).fill('Sing it every week');
 	// Arrow keys move the mode choice and swap the fields.
 	const once = page.getByRole('radio', { name: 'One-off' });
@@ -735,15 +718,15 @@ test('homework create: weekly via the keyboard, students see the first week at o
 	await expect(page.getByRole('radio', { name: 'Weekly, recurring' })).toBeChecked();
 	await expect(page.locator('#startDate')).toBeVisible();
 	await expect(page.locator('#dueDate')).toHaveCount(0);
-	await expect(page.locator('#dueOffsetDays')).toHaveJSProperty('value', 7);
+	await expect(page.locator('#dueOffsetDays')).toHaveValue('7');
 
 	// #96: the note at the start date says when students see the homework.
-	const note = page.locator('#startDate');
+	const note = page.locator('#startDate-note');
 	await expect(note).toContainText(
 		'Students see the homework from the start date. If that is today or earlier, they see it as soon as you create it.'
 	);
-	await page.locator('#startDate input').first().fill(today);
-	await expect(page.locator('#startDate')).toHaveJSProperty('value', today);
+	await page.locator('#startDate').fill(today);
+	await expect(page.locator('#startDate')).toHaveValue(today);
 	await expect(note).toContainText('Students will see this homework as soon as you create it.');
 	await page.getByRole('button', { name: 'Create assignment' }).click();
 	await page.waitForURL(/\/homework\?created=weekly&visible=now/);
@@ -800,20 +783,30 @@ test('homework create: weekly via the keyboard, students see the first week at o
 	await page.getByText('Edit', { exact: true }).click();
 	const titleField = page.locator(`#edit-title-${created!.id}`);
 	const offsetField = page.locator(`#edit-offset-${created!.id}`);
-	await expect(titleField).toHaveJSProperty('value', title);
-	await expect(offsetField).toHaveJSProperty('value', 7);
+	await expect(titleField).toHaveValue(title);
+	await expect(offsetField).toHaveValue('7');
 	const newTitle = `${title} edited`;
-	await titleField.locator('input').first().fill(newTitle);
-	await offsetField.locator('input').first().fill('3');
+	const languageField = page.locator(`#edit-language-${created!.id}`);
+	const linkField = page.locator('input[name="linkUrl"]').first();
+	await titleField.fill(newTitle);
+	await offsetField.fill('3');
+	await languageField.selectOption('de');
+	await linkField.fill('https://edited.example');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.locator('ix-toast').getByText('Assignment updated.')).toBeVisible();
 
 	expect(edits).toHaveLength(1);
 	expect(edits[0].get('title')).toBe(newTitle);
 	expect(edits[0].get('dueOffsetDays')).toBe('3');
+	expect(edits[0].get('contentLanguage')).toBe('de');
+	expect(edits[0].getAll('linkUrl')).toEqual(['https://edited.example']);
 	await expect(page.locator('h1')).toContainText(newTitle);
-	await expect(titleField).toHaveJSProperty('value', newTitle);
-	await expect(offsetField).toHaveJSProperty('value', 3);
+	// The saved values stay in the form (it posts with reset: false; a reset
+	// would bring back the language and link the page was first drawn with).
+	await expect(titleField).toHaveValue(newTitle);
+	await expect(offsetField).toHaveValue('3');
+	await expect(languageField).toHaveValue('de');
+	await expect(linkField).toHaveValue('https://edited.example');
 
 	const { data: saved } = await service
 		.from('homework_assignments')
@@ -831,27 +824,19 @@ test('homework create: weekly starting in the future says from when students see
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
+	await page.locator('#title').fill(title);
 	await (await contentEditor(page, 'content')).fill('Starts next week');
 	const once = page.getByRole('radio', { name: 'One-off' });
 	await once.focus();
 	await page.keyboard.press('ArrowDown');
 	await expect(page.getByRole('radio', { name: 'Weekly, recurring' })).toBeChecked();
 
-	await page.locator('#startDate input').first().fill(start);
-	await expect(page.locator('#startDate')).toHaveJSProperty('value', start);
-	await expect(page.locator('#startDate')).toContainText(
+	await page.locator('#startDate').fill(start);
+	await expect(page.locator('#startDate')).toHaveValue(start);
+	// The note is the field's description.
+	await expect(page.locator('#startDate')).toHaveAccessibleDescription(
 		`Students will see this homework from ${longDate(start)}, not before.`
 	);
-	// The note is the description of the real input (inside the shadow root).
-	expect(
-		await page.locator('#startDate').evaluate(async (host) => {
-			const input = await (
-				host as HTMLElement & { getNativeInputElement: () => Promise<HTMLElement> }
-			).getNativeInputElement();
-			return (input.ariaDescribedByElements ?? []).map((el) => el.textContent?.trim());
-		})
-	).toEqual([`Students will see this homework from ${longDate(start)}, not before.`]);
 
 	// One-off and back: the start date field comes back empty, and so does the note.
 	const weekly = page.getByRole('radio', { name: 'Weekly, recurring' });
@@ -861,13 +846,13 @@ test('homework create: weekly starting in the future says from when students see
 	await once.focus();
 	await page.keyboard.press('ArrowDown');
 	await expect(weekly).toBeChecked();
-	await expect(page.locator('#startDate')).not.toHaveJSProperty('value', start);
-	await expect(page.locator('#startDate')).toContainText(
+	await expect(page.locator('#startDate')).toHaveValue('');
+	await expect(page.locator('#startDate-note')).toHaveText(
 		'Students see the homework from the start date. If that is today or earlier, they see it as soon as you create it.'
 	);
-	await page.locator('#startDate input').first().fill(start);
-	await expect(page.locator('#startDate')).toHaveJSProperty('value', start);
-	await expect(page.locator('#startDate')).toContainText(
+	await page.locator('#startDate').fill(start);
+	await expect(page.locator('#startDate')).toHaveValue(start);
+	await expect(page.locator('#startDate-note')).toHaveText(
 		`Students will see this homework from ${longDate(start)}, not before.`
 	);
 	await page.getByRole('button', { name: 'Create assignment' }).click();
@@ -937,10 +922,10 @@ test('homework create: an empty subset shows the server error and keeps the type
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
+	await page.locator('#title').fill(title);
 	await (await contentEditor(page, 'content')).fill('Kept content');
-	await page.locator('#dueDate input').first().fill(`${year}-04-02`);
-	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-02`);
+	await page.locator('#dueDate').fill(`${year}-04-02`);
+	await expect(page.locator('#dueDate')).toHaveValue(`${year}-04-02`);
 	await page.getByRole('radio', { name: 'Specific students' }).click();
 	await expect(page.getByRole('checkbox', { name: students[0].name })).not.toBeChecked();
 
@@ -951,7 +936,7 @@ test('homework create: an empty subset shows the server error and keeps the type
 	expect(posts[0].get('targetMode')).toBe('subset');
 	expect(posts[0].getAll('studentIds')).toEqual([]);
 	await expect(page).toHaveURL(/\/homework\/new$/);
-	await expect(page.locator('#title')).toHaveJSProperty('value', title);
+	await expect(page.locator('#title')).toHaveValue(title);
 	await expect(page.locator('#content')).toHaveText('Kept content');
 	await expect(page.getByRole('radio', { name: 'Specific students' })).toBeChecked();
 
@@ -991,27 +976,46 @@ test('homework edit: a server error shows the toast and keeps the typed values',
 	const titleField = page.locator(`#edit-title-${created.id}`);
 	const contentField = await contentEditor(page, `edit-content-${created.id}`);
 	const offsetField = page.locator(`#edit-offset-${created.id}`);
-	await expect(titleField).toHaveJSProperty('value', title);
+	await expect(titleField).toHaveValue(title);
 	await expect(contentField).toHaveText('Original content');
-	await expect(offsetField).toHaveJSProperty('value', 5);
+	await expect(offsetField).toHaveValue('5');
 
-	// An offset over 365 is rejected by the server's editAssignment validation.
+	// An offset over 365: the browser stops it at the field (max 365), nothing posts.
 	const typedTitle = `${title} typed`;
-	await titleField.locator('input').first().fill(typedTitle);
+	await titleField.fill(typedTitle);
 	await contentField.fill('Typed content');
-	await offsetField.locator('input').first().fill('400');
-	await page.getByRole('button', { name: 'Save changes' }).click();
+	await offsetField.fill('400');
+	const save = page.getByRole('button', { name: 'Save changes' });
+	await save.click();
+	expect(await offsetField.evaluate((el: HTMLInputElement) => el.validity.rangeOverflow)).toBe(
+		true
+	);
+	expect(edits).toHaveLength(0);
+
+	// Past the browser (the post rewritten to 400), the server's editAssignment
+	// validation refuses it, and the form keeps what was typed.
+	const sent: string[] = [];
+	await page.route(/\?\/editAssignment/, (route) => {
+		const body = new URLSearchParams(route.request().postData() ?? '');
+		body.set('dueOffsetDays', '400');
+		sent.push(body.toString());
+		return route.continue({ postData: body.toString() });
+	});
+	await offsetField.fill('6');
+	await save.click();
 	await expect(
 		page.locator('ix-toast').getByText('Enter a valid due-date offset (0 to 365 days).')
 	).toBeVisible();
+	await page.unroute(/\?\/editAssignment/);
+	expect(sent).toHaveLength(1);
+	expect(new URLSearchParams(sent[0]).get('dueOffsetDays')).toBe('400');
 
 	expect(edits).toHaveLength(1);
 	expect(edits[0].get('title')).toBe(typedTitle);
 	expect(JSON.parse(edits[0].get('content') ?? 'null')).toEqual(textDoc('Typed content'));
-	expect(edits[0].get('dueOffsetDays')).toBe('400');
-	await expect(titleField).toHaveJSProperty('value', typedTitle);
+	await expect(titleField).toHaveValue(typedTitle);
 	await expect(contentField).toHaveText('Typed content');
-	await expect(offsetField).toHaveJSProperty('value', 400);
+	await expect(offsetField).toHaveValue('6');
 
 	const { data: saved } = await service
 		.from('homework_assignments')
@@ -1094,15 +1098,15 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	await page.getByText('Edit', { exact: true }).click();
 	const titleField = page.locator(`#edit-title-${id}`);
 	const contentField = await contentEditor(page, `edit-content-${id}`);
-	await expect(titleField).toHaveJSProperty('value', assignment!.title);
+	await expect(titleField).toHaveValue(assignment!.title);
 	await expect(contentField).toHaveText('Practise the song');
-	await titleField.locator('input').first().fill('Unsaved title');
+	await titleField.fill('Unsaved title');
 	await contentField.fill('Unsaved content');
 
 	await page.getByText('Student status', { exact: true }).first().click();
 	// #91: marking done cannot be undone, so it asks first; Cancel posts nothing.
 	const markDone = page.getByRole('button', { name: `Mark done for ${students[2].name}` });
-	const modal = page.locator('ix-modal');
+	const modal = page.getByTestId('confirm-dialog');
 	await markDone.click();
 	await expect(modal).toContainText(students[2].name);
 	await modal.getByRole('button', { name: 'Cancel' }).click();
@@ -1115,7 +1119,7 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 		0
 	);
 
-	await expect(titleField).toHaveJSProperty('value', 'Unsaved title');
+	await expect(titleField).toHaveValue('Unsaved title');
 	await expect(contentField).toHaveText('Unsaved content');
 	const { data: stored } = await service
 		.from('homework_assignments')
@@ -1125,20 +1129,44 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	expect(stored).toEqual({ title: assignment!.title });
 });
 
+test('homework create: the editor link panel takes the focus, and Enter applies the link without posting the form', async ({
+	page
+}) => {
+	const posts = capturePosts(page, 'createAssignment');
+	await signIn(page, teacher);
+	await open(page, `/teacher/classes/${classId}/homework/new`);
+
+	const area = await contentEditor(page, 'content');
+	await area.click();
+	await page.keyboard.type('Sherab');
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.getByRole('button', { name: 'Link', exact: true }).click();
+	const address = page.getByLabel('Web address');
+	await expect(address).toBeFocused();
+	await address.fill('example.org');
+	await address.press('Enter');
+
+	await expect(address).toHaveCount(0);
+	await expect(area.locator('a')).toHaveAttribute('href', 'https://example.org');
+	await expect(area.locator('a')).toHaveText('Sherab');
+	expect(posts).toHaveLength(0);
+	await expect(page).toHaveURL(/\/homework\/new$/);
+});
+
 test('homework create: content is required (#72)', async ({ page }) => {
 	const title = `E2E66T no content ${tag}`;
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
+	await page.locator('#title').fill(title);
 	await contentEditor(page, 'content');
-	await page.locator('#dueDate input').first().fill(`${year}-04-03`);
-	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-03`);
+	await page.locator('#dueDate').fill(`${year}-04-03`);
+	await expect(page.locator('#dueDate')).toHaveValue(`${year}-04-03`);
 	await page.getByRole('button', { name: 'Create assignment' }).click();
 	await expect(page.locator('ix-toast').getByText('Content is required.')).toBeVisible();
 
 	await expect(page).toHaveURL(/\/homework\/new$/);
-	await expect(page.locator('#title')).toHaveJSProperty('value', title);
+	await expect(page.locator('#title')).toHaveValue(title);
 	const { data } = await service
 		.from('homework_assignments')
 		.select('id')
@@ -1157,8 +1185,8 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 	await signIn(page, teacher);
 	await open(page, `/teacher/classes/${classId}/homework/new`);
 
-	await page.locator('#title input').first().fill(title);
-	await pick(page, 'contentLanguage', 'bo');
+	await page.locator('#title').fill(title);
+	await choose(page, 'contentLanguage', 'bo');
 	const area = await contentEditor(page, 'content');
 	// The editing area follows the chosen language.
 	await expect(page.locator('.rte-body')).toHaveAttribute('lang', 'bo');
@@ -1175,8 +1203,8 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 	await page.keyboard.type('དང་པོ།');
 	await page.keyboard.press('Enter');
 	await page.keyboard.type('གཉིས་པ།');
-	await page.locator('#dueDate input').first().fill(`${year}-04-04`);
-	await expect(page.locator('#dueDate')).toHaveJSProperty('value', `${year}-04-04`);
+	await page.locator('#dueDate').fill(`${year}-04-04`);
+	await expect(page.locator('#dueDate')).toHaveValue(`${year}-04-04`);
 
 	await page.getByRole('button', { name: 'Create assignment' }).click();
 	await page.waitForURL(/\/homework(\?|$)/);

@@ -105,11 +105,10 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// Tibetan, a bold first line, then a plain one.
 	const editor = page.locator('.rte-input');
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
-	const language = page.locator('ix-select[name="contentLanguage"]');
-	await expect(language).toHaveJSProperty('value', 'en');
-	await language.locator('input').first().click();
-	await language.locator('ix-select-item[value="bo"]').click();
-	await expect(language).toHaveJSProperty('value', 'bo');
+	const language = page.locator('select[name="contentLanguage"]');
+	await expect(language).toHaveValue('en');
+	await language.selectOption('bo');
+	await expect(language).toHaveValue('bo');
 	await editor.click();
 	const bold = page.getByRole('button', { name: 'Bold', exact: true });
 	await bold.click();
@@ -119,9 +118,8 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	await page.keyboard.type('Week 2: songs');
 	await page.getByRole('button', { name: 'Add link' }).click();
 	await page.getByRole('button', { name: 'Add link' }).click();
-	// iX fields: typing goes into the native <input> in their shadow DOM.
-	const urls = page.locator('ix-input[name="linkUrl"] input');
-	const labels = page.locator('ix-input[name="linkLabel"] input');
+	const urls = page.locator('input[name="linkUrl"]');
+	const labels = page.locator('input[name="linkLabel"]');
 	await expect(urls).toHaveCount(3);
 	await urls.nth(0).fill('https://a.example');
 	await labels.nth(0).fill('Alphabet');
@@ -186,24 +184,12 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	await expect(page.locator('ix-input[name="title"]').first()).toHaveJSProperty('value', 'Songs');
 	await expect(page.locator('.rte-input')).toHaveAttribute('contenteditable', 'true');
 	await expect(page.locator('.rte-input p')).toHaveText(['སློབ་ཚན་དང་པོ།', 'Week 2: songs']);
-	await expect(page.locator('ix-select[name="contentLanguage"]')).toHaveJSProperty('value', 'bo');
-	await expect(page.locator('ix-input[name="linkUrl"]')).toHaveCount(2);
-	await expect(page.locator('ix-input[name="linkUrl"]').nth(0)).toHaveJSProperty(
-		'value',
-		'https://a.example'
-	);
-	await expect(page.locator('ix-input[name="linkLabel"]').nth(0)).toHaveJSProperty(
-		'value',
-		'Alphabet'
-	);
-	await expect(page.locator('ix-input[name="linkUrl"]').nth(1)).toHaveJSProperty(
-		'value',
-		'https://c.example'
-	);
-	await expect(page.locator('ix-input[name="linkLabel"]').nth(1)).toHaveJSProperty(
-		'value',
-		'Songs'
-	);
+	await expect(page.locator('select[name="contentLanguage"]')).toHaveValue('bo');
+	await expect(page.locator('input[name="linkUrl"]')).toHaveCount(2);
+	await expect(page.locator('input[name="linkUrl"]').nth(0)).toHaveValue('https://a.example');
+	await expect(page.locator('input[name="linkLabel"]').nth(0)).toHaveValue('Alphabet');
+	await expect(page.locator('input[name="linkUrl"]').nth(1)).toHaveValue('https://c.example');
+	await expect(page.locator('input[name="linkLabel"]').nth(1)).toHaveValue('Songs');
 });
 
 test('syllabus add: with the current year taken, the first addable year is preselected and stored', async ({

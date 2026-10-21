@@ -449,3 +449,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7b-teacher-homework-list.md`
   summary: The teacher homework list ignores `data.loadError`, so a failed load shows the normal empty text ("No open homework.") instead of an error.
   evidence: `src/routes/teacher/classes/[id]/homework/+page.server.ts:106` returns `loadError`; neither the pre-7b page nor the rebuilt one renders it (pre-existing). A teacher may think there is no homework and create duplicates.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7c-teacher-homework-create-and-review.md`
+  summary: LinkRows labels every row's label field "Label (optional)" without the row number, so screen readers hear identical fields.
+  evidence: The URL field and Remove button carry `{i + 1}`, the label field does not; the iX version had the same gap (pre-existing).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7c-teacher-homework-create-and-review.md`
+  summary: The `createPending` doc comment in `src/lib/pending.svelte.ts` still describes iX `loading` and `confirmWith`.
+  evidence: Migrated pages use `aria-busy`, a LoaderCircle spinner and `confirm.with`/`confirm.ask`; the doc predates story 5.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7c-teacher-homework-create-and-review.md`
+  summary: Choosing "Specific students" in a class with no students shows an empty checklist with no explanation.
+  evidence: `homework/new/+page.svelte` renders `data.students` with no empty branch; the iX page did the same (pre-existing).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7c-teacher-homework-create-and-review.md`
+  summary: A homework copy with no students that is not whole-class opens an empty Student status list with no text.
+  evidence: The empty text shows only `&& assignment.wholeClass`, carried over unchanged from the iX page.

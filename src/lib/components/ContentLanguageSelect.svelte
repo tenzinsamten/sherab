@@ -1,13 +1,15 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages.js';
-	import { ixValue } from '$lib/ix-fields';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import { CONTENT_LANGUAGES, isContentLanguage, type ContentLanguage } from '$lib/rich-text';
 
 	/**
 	 * The language a homework is written in (#74), posted as
 	 * `contentLanguage`. It selects the font of the title and content for
 	 * every viewer; `value` is bound so the form can show that font while the
-	 * teacher types.
+	 * teacher types. Mobile-first story 7c: a native select in its own
+	 * `data-ui="new"` root, so it also works in the syllabus forms (still iX).
 	 */
 	let {
 		id,
@@ -20,26 +22,25 @@
 		if (language === 'de') return m.content_language_de();
 		return m.content_language_en();
 	}
-
-	// <ix-select> emits valueChange but doesn't change the bound state itself.
-	function pick(event: CustomEvent<string | string[]>) {
-		const picked = Array.isArray(event.detail) ? event.detail[0] : event.detail;
-		if (isContentLanguage(picked)) value = picked;
-	}
 </script>
 
 <!-- #101: `data-tour` is what the new-homework tour points at. -->
-<div class="field" data-tour="homework-language">
-	<ix-select
+<div data-ui="new" class="mb-4 flex min-w-0 flex-col gap-1.5" data-tour="homework-language">
+	<Label for={id}>{label}</Label>
+	<NativeSelect.Root
 		{id}
 		name="contentLanguage"
-		{label}
+		class="w-full"
 		required
-		onvalueChange={pick}
-		{@attach ixValue(value)}
+		bind:value={
+			() => value,
+			(picked) => {
+				if (isContentLanguage(picked)) value = picked;
+			}
+		}
 	>
 		{#each CONTENT_LANGUAGES as language (language)}
-			<ix-select-item value={language} label={languageLabel(language)}></ix-select-item>
+			<NativeSelect.Option value={language}>{languageLabel(language)}</NativeSelect.Option>
 		{/each}
-	</ix-select>
+	</NativeSelect.Root>
 </div>

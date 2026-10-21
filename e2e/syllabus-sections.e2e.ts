@@ -90,8 +90,8 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	await editor.click();
 	await page.keyboard.type('The first song');
-	await page.locator('ix-input[name="linkUrl"] input').fill('https://one.example');
-	await page.locator('ix-input[name="linkLabel"] input').fill('Song 1 video');
+	await page.locator('input[name="linkUrl"]').fill('https://one.example');
+	await page.locator('input[name="linkLabel"]').fill('Song 1 video');
 
 	// A cleared title is refused under its field and the form keeps what was typed.
 	await title.locator('input').fill('');
@@ -100,10 +100,7 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 		'Enter a title of up to 200 characters.'
 	);
 	await expect(editor).toHaveText('The first song');
-	await expect(page.locator('ix-input[name="linkUrl"]')).toHaveJSProperty(
-		'value',
-		'https://one.example'
-	);
+	await expect(page.locator('input[name="linkUrl"]')).toHaveValue('https://one.example');
 	await title.locator('input').fill('Song 1');
 	await page.getByRole('button', { name: 'Save section' }).click();
 	await expect(page.locator('ix-toast').getByText('Section saved.')).toBeVisible();
@@ -113,7 +110,7 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 	await page.locator('#section-title-new input').fill('Song 2');
 	await page.getByRole('button', { name: 'Add section' }).click();
 	await expect(title).toHaveJSProperty('value', 'Song 2');
-	await page.locator('ix-input[name="linkUrl"] input').fill('https://two.example');
+	await page.locator('input[name="linkUrl"]').fill('https://two.example');
 	await page.getByRole('button', { name: 'Save section' }).click();
 	await expect(titles(page)).toHaveText(['Song 1', 'Song 2']);
 	await expect(card(page, 'Song 1').getByRole('link', { name: 'Song 1 video' })).toHaveAttribute(

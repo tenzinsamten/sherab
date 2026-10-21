@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import type { Editor } from '@tiptap/core';
+	import Bold from '@lucide/svelte/icons/bold';
+	import Italic from '@lucide/svelte/icons/italic';
+	import Link from '@lucide/svelte/icons/link';
+	import List from '@lucide/svelte/icons/list';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import Underline from '@lucide/svelte/icons/underline';
 	import * as m from '$lib/paraglide/messages.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { ui } from '$lib/ui/classes';
 	import { isSafeHref, type ContentLanguage, type RichTextDoc } from '$lib/rich-text';
 
 	/**
@@ -10,6 +19,10 @@
 	 * `name` field, so the form stays a normal SvelteKit post; the server
 	 * checks it with parseContent(). `initial` is read once: later page data
 	 * must not replace what the teacher is typing.
+	 *
+	 * Mobile-first story 7c: its own `data-ui="new"` root, so it also works
+	 * in the syllabus forms, which are still iX. `rte-input` and `rte-body` stay
+	 * as the hooks tests find the editable area and its language by.
 	 */
 	let {
 		id,
@@ -27,6 +40,15 @@
 		initial?: RichTextDoc | null;
 		required?: boolean;
 	} = $props();
+
+	// The editable area is Tiptap's own node, so it is styled from its class
+	// list: the same look as RichText.svelte. No length limit: it grows.
+	const body =
+		'block min-h-48 p-3 outline-none whitespace-pre-wrap wrap-anywhere [&_p]:mb-2 [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-bold [&>:first-child]:mt-0 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:mb-1 [&_a]:text-primary [&_a]:underline';
+	// ≥44px (CAP-3); the pressed state is filled.
+	const tool =
+		'inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-transparent px-2 font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary [&_svg]:size-5';
+	const separator = 'mx-1 h-6 w-px bg-border';
 
 	const start = untrack(() => initial);
 	let host: HTMLDivElement;
@@ -71,7 +93,7 @@
 				editorProps: {
 					attributes: {
 						id,
-						class: 'rte-input',
+						class: `rte-input ${body}`,
 						role: 'textbox',
 						'aria-multiline': 'true',
 						'aria-labelledby': `${id}-label`,
@@ -155,47 +177,53 @@
 	}
 </script>
 
-<div class="rte">
-	<span class="rte-label" id={`${id}-label`}>{label}{required ? '*' : ''}</span>
-	<div class="rte-box">
-		<div class="rte-toolbar" role="toolbar" aria-label={m.rte_toolbar_label()}>
+<div data-ui="new" class="rte mb-4 flex min-w-0 flex-col gap-1.5">
+	<span class="text-sm font-medium" id={`${id}-label`}>{label}{required ? '*' : ''}</span>
+	<div
+		class="min-w-0 rounded-lg border border-input bg-background focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
+	>
+		<div
+			class="flex flex-wrap items-center gap-1 border-b border-border p-1"
+			role="toolbar"
+			aria-label={m.rte_toolbar_label()}
+		>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_bold()}
 				title={m.rte_bold()}
 				aria-pressed={active('bold')}
 				disabled={!editor}
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleBold().run()}
-				><ix-icon name="text-bold" size="16" aria-hidden="true"></ix-icon></button
+				><Bold aria-hidden="true" /></button
 			>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_italic()}
 				title={m.rte_italic()}
 				aria-pressed={active('italic')}
 				disabled={!editor}
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleItalic().run()}
-				><ix-icon name="text-italic" size="16" aria-hidden="true"></ix-icon></button
+				><Italic aria-hidden="true" /></button
 			>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_underline()}
 				title={m.rte_underline()}
 				aria-pressed={active('underline')}
 				disabled={!editor}
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleUnderline().run()}
-				><ix-icon name="text-underline" size="16" aria-hidden="true"></ix-icon></button
+				><Underline aria-hidden="true" /></button
 			>
-			<span class="rte-separator" aria-hidden="true"></span>
+			<span class={separator} aria-hidden="true"></span>
 			<button
 				type="button"
-				class="rte-tool rte-tool-text"
+				class={tool}
 				aria-label={m.rte_heading()}
 				title={m.rte_heading()}
 				aria-pressed={active('heading', { level: 2 })}
@@ -205,7 +233,7 @@
 			>
 			<button
 				type="button"
-				class="rte-tool rte-tool-text"
+				class={tool}
 				aria-label={m.rte_subheading()}
 				title={m.rte_subheading()}
 				aria-pressed={active('heading', { level: 3 })}
@@ -213,72 +241,72 @@
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H2</button
 			>
-			<span class="rte-separator" aria-hidden="true"></span>
+			<span class={separator} aria-hidden="true"></span>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_bullet_list()}
 				title={m.rte_bullet_list()}
 				aria-pressed={active('bulletList')}
 				disabled={!editor}
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleBulletList().run()}
-				><ix-icon name="list" size="16" aria-hidden="true"></ix-icon></button
+				><List aria-hidden="true" /></button
 			>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_numbered_list()}
 				title={m.rte_numbered_list()}
 				aria-pressed={active('orderedList')}
 				disabled={!editor}
 				onmousedown={keepSelection}
 				onclick={() => editor?.chain().focus().toggleOrderedList().run()}
-				><ix-icon name="list-sorted" size="16" aria-hidden="true"></ix-icon></button
+				><ListOrdered aria-hidden="true" /></button
 			>
-			<span class="rte-separator" aria-hidden="true"></span>
+			<span class={separator} aria-hidden="true"></span>
 			<button
 				type="button"
-				class="rte-tool"
+				class={tool}
 				aria-label={m.rte_link()}
 				title={m.rte_link()}
 				aria-pressed={active('link')}
 				aria-expanded={linkOpen}
 				disabled={!editor}
 				onmousedown={keepSelection}
-				onclick={() => (linkOpen ? closeLink() : openLink())}
-				><ix-icon name="link" size="16" aria-hidden="true"></ix-icon></button
+				onclick={() => (linkOpen ? closeLink() : openLink())}><Link aria-hidden="true" /></button
 			>
 		</div>
 
 		{#if linkOpen}
-			<div class="rte-link">
-				<label class="rte-link-label" for={`${id}-link`}>{m.rte_link_url_label()}</label>
-				<div class="rte-link-row">
+			<div class="flex flex-col gap-1.5 border-b border-border bg-muted p-2">
+				<label class="text-sm font-medium" for={`${id}-link`}>{m.rte_link_url_label()}</label>
+				<div class="flex flex-wrap items-center gap-2">
 					<!-- No `name`: this field is not part of the posted form. -->
-					<input
-						bind:this={linkInput}
+					<Input
+						bind:ref={linkInput}
 						bind:value={linkUrl}
 						id={`${id}-link`}
 						type="url"
 						inputmode="url"
 						placeholder="https://"
+						class="min-w-48 flex-1 bg-background"
 						aria-invalid={linkInvalid || undefined}
 						aria-describedby={linkInvalid ? `${id}-link-error` : undefined}
 						onkeydown={linkKeydown}
 					/>
-					<ix-button type="button" onclick={applyLink}>{m.rte_link_apply()}</ix-button>
+					<Button type="button" class={ui.touch} onclick={applyLink}>{m.rte_link_apply()}</Button>
 					{#if active('link')}
-						<ix-button type="button" variant="secondary" onclick={removeLink}
-							>{m.rte_link_remove()}</ix-button
+						<Button type="button" variant="outline" class={ui.touch} onclick={removeLink}
+							>{m.rte_link_remove()}</Button
 						>
 					{/if}
-					<ix-button type="button" variant="secondary" onclick={closeLink}
-						>{m.rte_link_cancel()}</ix-button
+					<Button type="button" variant="outline" class={ui.touch} onclick={closeLink}
+						>{m.rte_link_cancel()}</Button
 					>
 				</div>
 				{#if linkInvalid}
-					<p class="field-error" id={`${id}-link-error`}>{m.rte_link_invalid()}</p>
+					<p class={ui.error} id={`${id}-link-error`}>{m.rte_link_invalid()}</p>
 				{/if}
 			</div>
 		{/if}
@@ -287,170 +315,3 @@
 	</div>
 	<input type="hidden" {name} value={json} />
 </div>
-
-<style>
-	.rte {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-		margin-bottom: var(--space-4);
-	}
-
-	.rte-label {
-		color: var(--theme-color-soft-text);
-		font-size: var(--theme-font-size-default);
-	}
-
-	.rte-box {
-		background-color: var(--theme-input--background);
-		color: var(--theme-input--color);
-		border: 1px solid var(--theme-input--border-color);
-		border-radius: var(--theme-input--border-radius);
-	}
-
-	.rte-box:focus-within {
-		outline: 1px solid var(--theme-color-focus-bdr);
-		border-color: var(--theme-input--border-color--focus);
-	}
-
-	.rte-toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-1);
-		padding: var(--space-1);
-		border-bottom: 1px solid var(--theme-color-soft-bdr);
-	}
-
-	/* 2.25rem square: the same target size as the app's other small controls
-	   (WCAG 2.2 target size). */
-	.rte-tool {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 2.25rem;
-		height: 2.25rem;
-		padding: 0 var(--space-2);
-		background: transparent;
-		color: var(--theme-color-std-text);
-		border: 1px solid transparent;
-		border-radius: var(--theme-default-border-radius);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.rte-tool-text {
-		font-size: var(--theme-font-size-default);
-		font-weight: var(--theme-font-weight-bold);
-	}
-
-	.rte-tool:hover:not(:disabled) {
-		background: var(--theme-color-ghost--hover);
-	}
-
-	.rte-tool:focus-visible {
-		outline: 1px solid var(--theme-color-focus-bdr);
-		outline-offset: 1px;
-	}
-
-	.rte-tool[aria-pressed='true'] {
-		background: var(--theme-color-ghost-primary--active);
-		border-color: var(--theme-color-primary);
-		color: var(--theme-color-primary);
-	}
-
-	.rte-tool:disabled {
-		color: var(--theme-color-weak-text);
-		cursor: default;
-	}
-
-	.rte-separator {
-		width: 1px;
-		height: 1.5rem;
-		margin: 0 var(--space-1);
-		background: var(--theme-color-soft-bdr);
-	}
-
-	.rte-link {
-		padding: var(--space-2);
-		border-bottom: 1px solid var(--theme-color-soft-bdr);
-		background: var(--theme-color-1);
-	}
-
-	.rte-link-label {
-		display: block;
-		margin-bottom: var(--space-1);
-		color: var(--theme-color-soft-text);
-		font-size: var(--theme-font-size-default);
-	}
-
-	.rte-link-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
-	}
-
-	.rte-link-row input {
-		flex: 1;
-		min-width: 12rem;
-		min-height: 2.5rem;
-		padding: var(--space-1) var(--space-2);
-		background-color: var(--theme-input--background);
-		color: var(--theme-input--color);
-		border: 1px solid var(--theme-input--border-color);
-		border-radius: var(--theme-input--border-radius);
-		font: inherit;
-	}
-
-	.rte-link-row input[aria-invalid='true'] {
-		border-color: var(--theme-color-alarm);
-	}
-
-	.rte-link .field-error {
-		margin: var(--space-1) 0 0;
-	}
-
-	/* The editable area is created by Tiptap, so it is styled globally from
-	   this component's body. It has no length limit: it grows with the text. */
-	.rte-body :global(.rte-input) {
-		min-height: 12rem;
-		padding: var(--space-3);
-		outline: none;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
-	}
-
-	.rte-body :global(.rte-input p) {
-		margin: 0 0 var(--space-2);
-	}
-
-	.rte-body :global(.rte-input h2),
-	.rte-body :global(.rte-input h3) {
-		margin: var(--space-4) 0 var(--space-2);
-		font-weight: var(--theme-font-weight-bold);
-	}
-
-	.rte-body :global(.rte-input h2) {
-		font-size: var(--theme-font-size-xl);
-	}
-
-	.rte-body :global(.rte-input h3) {
-		font-size: var(--theme-font-size-l);
-	}
-
-	.rte-body :global(.rte-input > :first-child) {
-		margin-top: 0;
-	}
-
-	.rte-body :global(.rte-input ul),
-	.rte-body :global(.rte-input ol) {
-		margin: 0 0 var(--space-2);
-		padding-left: var(--space-6);
-	}
-
-	.rte-body :global(.rte-input a) {
-		color: var(--theme-color-primary);
-		text-decoration: underline;
-	}
-</style>

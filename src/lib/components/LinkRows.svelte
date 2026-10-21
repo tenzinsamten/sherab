@@ -1,11 +1,20 @@
 <script lang="ts">
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import * as m from '$lib/paraglide/messages.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { ui } from '$lib/ui/classes';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 
 	/**
 	 * Editable list of reference links: homework (#27) and class syllabus (#32). Each row submits a
 	 * `linkUrl` and a `linkLabel` field, read in order by parseReferenceLinks()
 	 * in $lib/server/homework-details.ts. A row with an empty URL is ignored.
+	 * Mobile-first story 7c: native fields in their own `data-ui="new"` root,
+	 * so they also work in the syllabus forms (still iX). `mb-4` spaces it
+	 * like the `.field`s around it there.
 	 */
 	let {
 		idPrefix,
@@ -40,60 +49,51 @@
 		rows = rows.filter((r) => r.key !== key);
 		if (rows.length === 0) addRow();
 	}
+
+	const field = 'flex min-w-0 flex-col gap-1.5';
 </script>
 
-<fieldset class="check-list" style="margin-bottom: var(--space-4);">
-	<legend>{legend}</legend>
+<fieldset data-ui="new" class="mb-4 flex min-w-0 flex-col gap-3">
+	<legend class="mb-2 text-sm font-medium">{legend}</legend>
 	{#each rows as row, i (row.key)}
-		<div class="link-row">
-			<div class="field" style="margin:0;">
-				<ix-input
+		<!-- Phone: the URL on its own line, then label and remove; wider: one line. -->
+		<div
+			class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-2 gap-y-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]"
+		>
+			<div class="{field} col-span-2 md:col-span-1">
+				<Label for="{idPrefix}-url-{row.key}">{m.homework_link_url_label()} {i + 1}</Label>
+				<Input
 					id="{idPrefix}-url-{row.key}"
 					name="linkUrl"
-					label="{m.homework_link_url_label()} {i + 1}"
-					max-length="2000"
+					type="text"
+					inputmode="url"
+					maxlength={2000}
 					value={row.url}
-					onvalueChange={(event: CustomEvent<string>) => (row.url = event.detail)}
-				></ix-input>
+					oninput={(event) => (row.url = event.currentTarget.value)}
+				/>
 			</div>
-			<div class="field" style="margin:0;">
-				<ix-input
+			<div class={field}>
+				<Label for="{idPrefix}-label-{row.key}">{m.homework_link_label_label()}</Label>
+				<Input
 					id="{idPrefix}-label-{row.key}"
 					name="linkLabel"
-					label={m.homework_link_label_label()}
-					max-length="100"
+					maxlength={100}
 					value={row.label}
-					onvalueChange={(event: CustomEvent<string>) => (row.label = event.detail)}
-				></ix-input>
+					oninput={(event) => (row.label = event.currentTarget.value)}
+				/>
 			</div>
-			<ix-icon-button
-				icon="trashcan"
-				variant="tertiary"
+			<Button
+				type="button"
+				variant="ghost"
+				class="size-11"
 				aria-label="{m.homework_link_remove()} {i + 1}"
-				onclick={() => removeRow(row.key)}
-			></ix-icon-button>
+				onclick={() => removeRow(row.key)}><Trash2 aria-hidden="true" /></Button
+			>
 		</div>
 	{/each}
 	{#if rows.length < max}
-		<ix-button variant="secondary" icon="add" onclick={addRow}>{m.homework_link_add()}</ix-button>
+		<Button type="button" variant="outline" class="{ui.touch} w-full md:w-fit" onclick={addRow}
+			><Plus aria-hidden="true" />{m.homework_link_add()}</Button
+		>
 	{/if}
 </fieldset>
-
-<style>
-	.link-row {
-		display: grid;
-		grid-template-columns: 2fr 1fr auto;
-		gap: var(--space-2);
-		align-items: end;
-		margin-bottom: var(--space-3);
-	}
-
-	@media (max-width: 40em) {
-		.link-row {
-			grid-template-columns: 1fr auto;
-		}
-		.link-row > :nth-child(2) {
-			grid-column: 1;
-		}
-	}
-</style>

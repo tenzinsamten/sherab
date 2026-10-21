@@ -11,7 +11,8 @@ import { berlinToday, env, fixtureTeam, service, signIn, type TestUser } from '.
  * portrait), the dashboard also at 1440px, the tours at all three, plus
  * the fit check (no sideways scroll, ≥44px targets, no cut labels) in en,
  * de and bo.
- * Story 7b adds the class's homework list (its own block at the end).
+ * Story 7b adds the class's homework list, story 7c the homework create
+ * and review pages (their own blocks at the end).
  *
  * Its own fixture: a teacher of class A (eight approved students, one
  * parent of students 0 and 1) and class B (student 0, no session); a
@@ -1019,6 +1020,520 @@ test.describe('homework list', () => {
 					await expectFits(page);
 				}
 				await openPage(page, `${listPath('a')}?filter=all`);
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+});
+
+/*
+ * Story 7c: homework create and review, in class A (after the list block,
+ * which needs class A without homework). The create tests post through the
+ * page; the review tests seed one copy due last week for students 0-2
+ * (student 1 done, so student 0 is overdue) and a weekly series.
+ */
+test.describe('homework create and review', () => {
+	const newPath = () => `${classPath()}/homework/new`;
+	const dialog = (page: Page) => page.getByTestId('confirm-dialog');
+
+	function capturePosts(page: Page, action: string): URLSearchParams[] {
+		const posts: URLSearchParams[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().includes(`?/${action}`)) {
+				posts.push(new URLSearchParams(r.postData() ?? ''));
+			}
+		});
+		return posts;
+	}
+
+	/** The content editor, once Tiptap has made it editable. */
+	async function editor(page: Page, id = 'content') {
+		const area = page.locator(`#${id}`);
+		await expect(area).toHaveAttribute('contenteditable', 'true');
+		return area;
+	}
+
+	/** A date as the English interface writes it in a sentence. */
+	const longDate = (date: string) =>
+		new Intl.DateTimeFormat('en', {
+			day: 'numeric',
+			month: 'long',
+			year: 'numeric',
+			timeZone: 'UTC'
+		}).format(new Date(`${date}T00:00:00Z`));
+
+	/** A copy of a new homework, due last week, for students 0-2; student 1 done. */
+	async function seedReview(title: string, opts: { weekly?: boolean } = {}) {
+		const classId = classes.a.id;
+		const assignment = check(
+			await service
+				.from('homework_assignments')
+				.insert({
+					class_id: classId,
+					title,
+					skill_area: 'song',
+					content: {
+						type: 'doc',
+						content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Sing it' }] }]
+					},
+					whole_class: Boolean(opts.weekly),
+					created_by: teacher.id,
+					...(opts.weekly
+						? {
+								recurrence_rule: { frequency: 'weekly' },
+								recurrence_start_date: lastWeek,
+								due_offset_days: 3
+							}
+						: {})
+				})
+				.select('id')
+				.single(),
+			`create homework ${title}`
+		).id;
+		const instance = check(
+			await service
+				.from('homework_instances')
+				.insert({
+					assignment_id: assignment,
+					class_id: classId,
+					period_start: lastWeek,
+					due_date: lastWeek
+				})
+				.select('id')
+				.single(),
+			`create instance ${title}`
+		).id;
+		for (const student of students.slice(0, 3)) {
+			check(
+				await service.from('homework_status_history').insert({
+					instance_id: instance,
+					class_id: classId,
+					student_id: student.id,
+					status: 'assigned',
+					recorded_by: teacher.id
+				}),
+				`assign ${title}`
+			);
+		}
+		check(
+			await service.from('homework_status_history').insert({
+				instance_id: instance,
+				class_id: classId,
+				student_id: students[1].id,
+				status: 'done',
+				recorded_by: teacher.id
+			}),
+			`done ${title}`
+		);
+		return { assignment, instance, path: `${classPath()}/homework/${assignment}` };
+	}
+
+	for (const viewport of VIEWPORTS) {
+		test(`create one-off (${viewport.name}): fields fit, links post in order, two students`, async ({
+			browser
+		}) => {
+			const title = `TM create once ${viewport.name} ${tag}`;
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			const created = capturePosts(page, 'createAssignment');
+			try {
+				await openPage(page, newPath());
+				await expect(
+					page.getByRole('heading', { level: 1, name: 'Create assignment' })
+				).toBeVisible();
+				for (const target of [
+					'homework-language',
+					'homework-schedule',
+					'homework-due',
+					'homework-target'
+				]) {
+					await expect(page.locator(`[data-tour="${target}"]`)).toBeVisible();
+				}
+				await expectFits(page);
+
+				await page.locator('#title').fill(title);
+				await expect(page.locator('#skillArea')).toHaveValue('language');
+				await page.locator('#skillArea').selectOption('dance');
+				await expect(page.locator('#contentLanguage')).toHaveValue('en');
+				await (await editor(page)).fill('Practise the steps');
+
+				// Links: three rows, the middle URL left empty.
+				const add = page.getByRole('button', { name: 'Add link' });
+				await add.click();
+				await add.click();
+				const urls = page.locator('input[name="linkUrl"]');
+				const labels = page.locator('input[name="linkLabel"]');
+				await expect(urls).toHaveCount(3);
+				await urls.nth(0).fill('https://a.example');
+				await labels.nth(0).fill('Alphabet');
+				await urls.nth(2).fill('https://c.example');
+				await expectFits(page);
+
+				await page.locator('#dueDate').fill(nextWeek);
+				await page.getByRole('radio', { name: 'Specific students' }).check();
+				await page.getByRole('checkbox', { name: students[2].name }).check();
+				await page.getByRole('checkbox', { name: students[3].name }).check();
+				const studentBox = (await page
+					.locator('label')
+					.filter({ has: page.getByRole('checkbox', { name: students[2].name }) })
+					.boundingBox())!;
+				expect(studentBox.height).toBeGreaterThanOrEqual(43.5);
+				await expectFits(page);
+
+				const submit = page.getByRole('button', { name: 'Create assignment' });
+				expect((await submit.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+				await submit.click();
+				await page.waitForURL(/\/homework(\?|$)/);
+				await expect(toast(page, 'Homework created for 2 student(s).')).toBeVisible();
+
+				expect(created).toHaveLength(1);
+				const posted = created[0];
+				expect(posted.get('title')).toBe(title);
+				expect(posted.get('skillArea')).toBe('dance');
+				expect(posted.get('contentLanguage')).toBe('en');
+				expect(posted.get('mode')).toBe('once');
+				expect(posted.get('dueDate')).toBe(nextWeek);
+				expect(posted.get('targetMode')).toBe('subset');
+				expect(posted.getAll('studentIds').sort()).toEqual([students[2].id, students[3].id].sort());
+				expect(posted.getAll('linkUrl')).toEqual(['https://a.example', '', 'https://c.example']);
+				expect(posted.getAll('linkLabel')).toEqual(['Alphabet', '', '']);
+				expect(posted.has('startDate')).toBe(false);
+				expect(posted.has('dueOffsetDays')).toBe(false);
+			} finally {
+				await page.context().close();
+			}
+		});
+
+		test(`create weekly (${viewport.name}): the start-date note, a mode switch empties it`, async ({
+			browser
+		}) => {
+			const title = `TM create weekly ${viewport.name} ${tag}`;
+			const start = plusDays(today, 6);
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			const created = capturePosts(page, 'createAssignment');
+			try {
+				await openPage(page, newPath());
+				await page.locator('#title').fill(title);
+				await (await editor(page)).fill('Every week');
+				await page.getByRole('radio', { name: 'Weekly, recurring' }).check();
+				await expect(page.locator('#dueDate')).toHaveCount(0);
+				await expect(page.locator('#dueOffsetDays')).toHaveValue('7');
+				const note = page.locator('#startDate-note');
+				await expect(note).toHaveText(
+					'Students see the homework from the start date. If that is today or earlier, they see it as soon as you create it.'
+				);
+				await page.locator('#startDate').fill(start);
+				const from = `Students will see this homework from ${longDate(start)}, not before.`;
+				await expect(note).toHaveText(from);
+				await expect(page.locator('#startDate')).toHaveAccessibleDescription(from);
+				await expectFits(page);
+
+				// One-off and back: the start date is empty again, and so is the note.
+				await page.getByRole('radio', { name: 'One-off' }).check();
+				await page.getByRole('radio', { name: 'Weekly, recurring' }).check();
+				await expect(page.locator('#startDate')).toHaveValue('');
+				await expect(note).toHaveText(/^Students see the homework from the start date\./);
+				await page.locator('#startDate').fill(start);
+				await expect(note).toHaveText(from);
+
+				await page.getByRole('button', { name: 'Create assignment' }).click();
+				await page.waitForURL(/\/homework(\?|$)/);
+				await expect(
+					toast(page, `Weekly homework created. Students will see it from ${longDate(start)}.`)
+				).toBeVisible();
+				expect(created).toHaveLength(1);
+				expect(created[0].get('mode')).toBe('weekly');
+				expect(created[0].get('startDate')).toBe(start);
+				expect(created[0].get('dueOffsetDays')).toBe('7');
+				expect(created[0].has('dueDate')).toBe(false);
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	test('create: an empty subset shows the server error and keeps what was typed', async ({
+		browser
+	}) => {
+		const title = `TM create empty ${tag}`;
+		const page = await teacherPage(browser, 375, 740);
+		try {
+			await openPage(page, newPath());
+			await page.locator('#title').fill(title);
+			await page.locator('#skillArea').selectOption('song');
+			await (await editor(page)).fill('Kept');
+			await page.locator('input[name="linkUrl"]').first().fill('https://kept.example');
+			await page.locator('#dueDate').fill(nextWeek);
+			await page.getByRole('radio', { name: 'Specific students' }).check();
+			await page.getByRole('button', { name: 'Create assignment' }).click();
+			await expect(toast(page, 'No students to assign this to.')).toBeVisible();
+			await expect(page).toHaveURL(/\/homework\/new$/);
+			await expect(page.locator('#title')).toHaveValue(title);
+			await expect(page.locator('#skillArea')).toHaveValue('song');
+			await expect(page.locator('#content')).toHaveText('Kept');
+			await expect(page.locator('input[name="linkUrl"]').first()).toHaveValue(
+				'https://kept.example'
+			);
+			await expect(page.locator('#dueDate')).toHaveValue(nextWeek);
+			await expect(page.getByRole('radio', { name: 'Specific students' })).toBeChecked();
+		} finally {
+			await page.context().close();
+		}
+	});
+
+	test('links: removing the last row leaves one blank row; at 10 rows Add is gone', async ({
+		browser
+	}) => {
+		const page = await teacherPage(browser, 375, 740);
+		try {
+			await openPage(page, newPath());
+			const urls = page.locator('input[name="linkUrl"]');
+			await urls.nth(0).fill('https://gone.example');
+			await page.getByRole('button', { name: 'Remove link 1' }).click();
+			await expect(urls).toHaveCount(1);
+			await expect(urls.nth(0)).toHaveValue('');
+			const add = page.getByRole('button', { name: 'Add link' });
+			for (let i = 1; i < 10; i += 1) await add.click();
+			await expect(urls).toHaveCount(10);
+			await expect(add).toHaveCount(0);
+		} finally {
+			await page.context().close();
+		}
+	});
+
+	for (const viewport of [...VIEWPORTS, DESKTOP]) {
+		test(`review (${viewport.name}): cards below 80em, a table above, every column there`, async ({
+			browser
+		}) => {
+			const { path } = await seedReview(`TM review ${viewport.name} ${tag}`);
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			try {
+				await openPage(page, path);
+				const copy = page.getByTestId('homework-instance');
+				await expect(copy).toHaveCount(1);
+				await expect(copy).toContainText(lastWeek);
+				await expect(copy).toContainText('1 / 3');
+				await expect(copy).toContainText('0 / 3');
+				await expect(copy.getByText('Overdue', { exact: true }).first()).toBeVisible();
+				const header = page.getByRole('columnheader', { name: 'Due' });
+				if (viewport.width < 1280) {
+					await expect(header).toBeHidden();
+					// The column names sit in front of the values on a card.
+					await expect(copy.getByText('Reviewed', { exact: true })).toBeVisible();
+				} else {
+					await expect(header).toBeVisible();
+				}
+				await page.getByText('Edit', { exact: true }).click();
+				await copy.getByText('Student status', { exact: true }).click();
+				await expect(page.getByTestId('homework-student')).toHaveCount(3);
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	for (const viewport of VIEWPORTS) {
+		test(`review actions (${viewport.name}): ask first, Cancel posts nothing, only the pressed button waits`, async ({
+			browser
+		}) => {
+			const { path } = await seedReview(`TM actions ${viewport.name} ${tag}`);
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			const done = capturePosts(page, 'markDone');
+			try {
+				await openPage(page, path);
+				await page.getByText('Student status', { exact: true }).click();
+				const markDone = page.getByRole('button', { name: `Mark done for ${students[0].name}` });
+				const other = page.getByRole('button', { name: `Mark done for ${students[2].name}` });
+
+				await markDone.click();
+				await expect(dialog(page)).toContainText(students[0].name);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(dialog(page)).toHaveCount(0);
+				expect(done).toHaveLength(0);
+
+				// Held at the network: the pressed button spins, the others wait.
+				let release!: () => void;
+				const held = new Promise<void>((resolve) => (release = resolve));
+				await page.route(/\?\/markDone/, async (route) => {
+					await held;
+					await route.continue();
+				});
+				await markDone.click();
+				await dialog(page).getByRole('button', { name: 'Mark done' }).click();
+				await expect(markDone).toHaveAttribute('aria-busy', 'true');
+				await expect(other).toBeDisabled();
+				await expect(other).not.toHaveAttribute('aria-busy');
+				release();
+				await expect(toast(page, 'Marked done.')).toBeVisible();
+				await expect(markDone).toHaveCount(0);
+				expect(done).toHaveLength(1);
+				expect(done[0].get('studentId')).toBe(students[0].id);
+				await page.unroute(/\?\/markDone/);
+
+				// Student 1 is done: Mark reviewed, then archive the copy (a red confirm).
+				await page.getByRole('button', { name: `Mark reviewed for ${students[1].name}` }).click();
+				await dialog(page).getByRole('button', { name: 'Mark reviewed' }).click();
+				await expect(toast(page, 'Marked reviewed.')).toBeVisible();
+				await page.getByRole('button', { name: 'Archive', exact: true }).click();
+				await expect(dialog(page)).toContainText(`Archive the homework due ${lastWeek}?`);
+				await dialog(page).getByRole('button', { name: 'Archive' }).click();
+				await expect(toast(page, 'Assignment archived.')).toBeVisible();
+				await expect(page.getByText('Archived', { exact: true }).first()).toBeVisible();
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	test('end series with "archive copies" ticked: the archive question, then archiveCopies=on', async ({
+		browser
+	}) => {
+		const { path } = await seedReview(`TM series ${tag}`, { weekly: true });
+		const page = await teacherPage(browser, 375, 740);
+		const ends = capturePosts(page, 'endSeries');
+		try {
+			await openPage(page, path);
+			await page.getByText('Edit', { exact: true }).click();
+			const tick = page.getByRole('checkbox', {
+				name: 'When ending, also archive the homework students already have from this series'
+			});
+			await tick.check();
+			await expectFits(page);
+			await page.getByRole('button', { name: 'End series' }).click();
+			await expect(dialog(page)).toContainText('End this series and archive its homework?');
+			await dialog(page).getByRole('button', { name: 'End series' }).click();
+			await expect(toast(page, 'Series ended and its homework archived.')).toBeVisible();
+			expect(ends).toHaveLength(1);
+			expect(ends[0].get('archiveCopies')).toBe('on');
+		} finally {
+			await page.context().close();
+		}
+	});
+
+	test('review without copies: the empty text', async ({ browser }) => {
+		const title = `TM no copies ${tag}`;
+		const id = check(
+			await service
+				.from('homework_assignments')
+				.insert({
+					class_id: classes.a.id,
+					title,
+					skill_area: 'dance',
+					whole_class: true,
+					created_by: teacher.id,
+					recurrence_rule: { frequency: 'weekly' },
+					recurrence_start_date: nextWeek,
+					due_offset_days: 3
+				})
+				.select('id')
+				.single(),
+			`create homework ${title}`
+		).id;
+		const page = await teacherPage(browser, 375, 740);
+		try {
+			await openPage(page, `${classPath()}/homework/${id}`);
+			await expect(
+				page.getByText(
+					'No instances generated yet — the schedule creates the first one automatically.'
+				)
+			).toBeVisible();
+			await expect(page.getByTestId('homework-instance')).toHaveCount(0);
+			await expectFits(page);
+		} finally {
+			await page.context().close();
+		}
+	});
+
+	test('end series when its copies cannot be archived: the warning toast', async ({ browser }) => {
+		const { path } = await seedReview(`TM series fail ${tag}`, { weekly: true });
+		const page = await teacherPage(browser, 375, 740);
+		try {
+			// The answer endSeries gives when archiving the copies fails
+			// (page.server.ts; its server side is in page.server.spec.ts):
+			// { success, action, archived: false, archiveFailed: true }, devalue-encoded.
+			await page.route(/\?\/endSeries/, (route) =>
+				route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						type: 'success',
+						status: 200,
+						data: JSON.stringify([
+							{ success: 1, action: 2, archived: 3, archiveFailed: 4 },
+							true,
+							'endSeries',
+							false,
+							true
+						])
+					})
+				})
+			);
+			await openPage(page, path);
+			await page.getByText('Edit', { exact: true }).click();
+			await page.getByRole('button', { name: 'End series' }).click();
+			await dialog(page).getByRole('button', { name: 'End series' }).click();
+			await expect(
+				toast(
+					page,
+					'The series was ended, but its homework could not be archived. Archive it below.'
+				)
+			).toBeVisible();
+		} finally {
+			await page.context().close();
+		}
+	});
+
+	for (const viewport of [...VIEWPORTS, DESKTOP]) {
+		test(`new-homework tour at ${viewport.width}px: all four steps on screen`, async ({
+			browser
+		}) => {
+			check(
+				await service
+					.from('profiles')
+					.update({ tours_seen: ['teacher-home', 'teacher-class', 'teacher-homework'] })
+					.eq('id', teacher.id),
+				'reset tours'
+			);
+			const context = await personContext(browser, viewport);
+			const page = await context.newPage();
+			try {
+				await signIn(page, teacher);
+				await page.goto(newPath());
+				await expect(page.locator('.driver-popover')).toBeVisible();
+				await walkTour(page, viewport, [
+					'homework-language',
+					'homework-schedule',
+					'homework-due',
+					'homework-target'
+				]);
+			} finally {
+				await context.close();
+			}
+		});
+	}
+
+	for (const locale of ['en', 'de', 'bo']) {
+		test(`homework create and review at 375px in ${locale}: no sideways scroll, ≥44px targets, no cut labels`, async ({
+			browser
+		}) => {
+			const { path } = await seedReview(`TM fit ${locale} ${tag}`, { weekly: true });
+			const page = await teacherPage(browser, 375, 740);
+			try {
+				await page
+					.context()
+					.addCookies([
+						{ name: 'PARAGLIDE_LOCALE', value: locale, url: new URL(page.url()).origin }
+					]);
+				await openPage(page, newPath());
+				await expect(page.locator('html')).toHaveAttribute('lang', locale);
+				await expectFits(page);
+				await page.locator('input[name="mode"][value="weekly"]').check();
+				await expectFits(page);
+				await openPage(page, path);
+				await page.locator('summary').first().click();
+				await page.locator('[data-testid="homework-instance"] summary').click();
 				await expectFits(page);
 			} finally {
 				await page.context().close();

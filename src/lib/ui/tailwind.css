@@ -85,6 +85,12 @@
 @source '../../routes/teacher/classes/*/students/*/badges/+page.svelte';
 /* Story 7b: the class's homework list (create, detail and review are 7c). */
 @source '../../routes/teacher/classes/*/homework/+page.svelte';
+/* Story 7c: homework create (`new`) and review, and their fields (also in the iX
+   syllabus forms until story 8). */
+@source '../../routes/teacher/classes/*/homework/*/+page.svelte';
+@source '../components/LinkRows.svelte';
+@source '../components/ContentLanguageSelect.svelte';
+@source '../components/RichTextEditor.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

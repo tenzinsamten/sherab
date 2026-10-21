@@ -1,29 +1,52 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { isoDay, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
-	import { confirmWith, showToast } from '$lib/ix';
+	import { createConfirm } from '$lib/confirm.svelte';
+	import { showToast } from '$lib/ix';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import RichText from '$lib/components/RichText.svelte';
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { createPending } from '$lib/pending.svelte';
-	import { ixValue } from '$lib/ix-fields';
 	import type { ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
+	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';
 
+	/**
+	 * One homework and its copies, mobile-first story 7c: the copies are
+	 * stacked cards below 80em and a table above, and every "Are you sure?"
+	 * is the shared ConfirmDialog.
+	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
+
 	const pending = createPending();
+	const confirm = createConfirm();
 	let assignment = $derived(data.assignment);
 	// The edit form's language (#74): starts as the saved one and, like the
 	// other edit fields, keeps the teacher's pick when the page data reloads.
 	let editLanguage = $state<ContentLanguage>(untrack(() => data.assignment.contentLanguage));
+	// The edit fields' saved values as plain strings: a reload after another
+	// action makes a new `assignment` but the same strings, so the fields keep
+	// what the teacher typed; a save changes them, so the fields show it.
+	let savedTitle = $derived(assignment.title);
+	let savedOffset = $derived(String(assignment.dueOffsetDays ?? 0));
 
 	// #103b: the teacher's choice, when ending a series, to also archive the
 	// homework students already have from it. Off unless ticked.
@@ -84,50 +107,75 @@
 				break;
 		}
 	});
+
+	const field = 'mb-4 flex min-w-0 flex-col gap-1.5';
+	const box = 'size-5 shrink-0 accent-primary';
+	// A <details> summary (the reset keeps it a list item, with its marker):
+	// the whole line is the ≥44px target.
+	const summary =
+		'min-h-11 cursor-pointer rounded-lg py-2.5 font-medium text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+	// The copies: a card each below 80em (WebKit needs the roles), a table above.
+	const table = 'block w-full min-w-0 xl:table xl:border-collapse';
+	const thead = 'hidden xl:table-header-group';
+	const th =
+		'border-b border-border px-3 py-2 text-left align-bottom text-sm font-medium text-muted-foreground';
+	const tbody =
+		'mb-3 flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4 xl:mb-0 xl:table-row-group xl:rounded-none xl:border-0 xl:border-b-2 xl:p-0';
+	const tr = 'flex min-w-0 flex-wrap gap-x-6 gap-y-2 xl:table-row';
+	const td = 'block min-w-0 wrap-break-word xl:table-cell xl:px-3 xl:py-3 xl:align-middle';
+	/** A column's name, shown in front of the value on a card only. */
+	const cellLabel = 'mr-1 text-sm text-muted-foreground xl:hidden';
+	const actionButton = `${ui.touch} w-full sm:w-auto`;
 </script>
 
 <svelte:head>
 	<title>{assignment.title} — {m.homework_heading()} — {data.class.name} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<PageBreadcrumb
-		items={[
-			{ label: m.nav_dashboard(), href: resolve('/teacher') },
-			{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
-			{
-				label: m.homework_heading(),
-				href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
-			},
-			{ label: assignment.title }
-		]}
-	/>
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.homework_section_label()} · {skillLabel(assignment.skillArea)}</p>
-			<h1 class="page-heading" style="display:flex; align-items:center; gap: var(--space-2);">
+{#snippet spinner(key: string)}
+	{#if pending.is(key)}
+		<LoaderCircle class="animate-spin" aria-hidden="true" />
+	{/if}
+{/snippet}
+
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<div>
+		<PageBreadcrumb
+			items={[
+				{ label: m.nav_dashboard(), href: resolve('/teacher') },
+				{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
+				{
+					label: m.homework_heading(),
+					href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
+				},
+				{ label: assignment.title }
+			]}
+		/>
+	</div>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.homework_section_label()} · {skillLabel(assignment.skillArea)}</p>
+			<h1 class="{ui.heading} flex flex-wrap items-center gap-2">
 				<span lang={assignment.contentLanguage}>{assignment.title}</span>
 				{#if assignment.isRecurring}
-					<ix-pill variant="neutral" outline
-						><RepeatIcon /> {m.homework_recurring_badge_label()}</ix-pill
-					>
+					<Badge variant="outline"><RepeatIcon /> {m.homework_recurring_badge_label()}</Badge>
 				{/if}
 			</h1>
-			<p class="page-subtitle">{data.class.name}</p>
+			<p class="{ui.subtitle} wrap-break-word">{data.class.name}</p>
 		</div>
 	</header>
 
-	<section class="card">
+	<section class="{ui.card} flex flex-col gap-3">
 		{#if assignment.content}
 			<RichText content={assignment.content} lang={assignment.contentLanguage} />
 		{/if}
 
 		{#if assignment.referenceLinks.length > 0}
-			<ul class="homework-links">
+			<ul class="list-disc pl-6">
 				{#each assignment.referenceLinks as link, i (i)}
-					<li>
+					<li class="wrap-anywhere">
 						<!-- eslint-disable svelte/no-navigation-without-resolve -- external teacher-supplied URL, not an internal route (Boundaries: no URL validation, opens externally). -->
-						<a href={link.url} target="_blank" rel="noopener noreferrer">
+						<a href={link.url} target="_blank" rel="noopener noreferrer" class={ui.link}>
 							{link.label ?? link.url}
 						</a>
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -137,33 +185,31 @@
 		{/if}
 
 		{#if seriesStatusLabel(assignment)}
-			<p
-				style="font-weight:700; font-size: var(--theme-font-size-default); margin: var(--space-1) 0;"
-			>
-				{seriesStatusLabel(assignment)}
-			</p>
+			<p class="font-bold">{seriesStatusLabel(assignment)}</p>
 		{/if}
 
-		<details style="margin: var(--space-2) 0;">
-			<summary>{m.homework_edit_heading()}</summary>
+		<details>
+			<summary class={summary}>{m.homework_edit_heading()}</summary>
+			<!-- reset: false: a reset would put back the values the page was
+			     first drawn with. Each field takes its value from the page data
+			     only when the saved value changes, so a reload after another
+			     action keeps unsaved edits and a save shows the saved values. -->
 			<form
 				method="POST"
 				action="?/editAssignment"
-				use:enhance={pending.submit('edit')}
-				style="margin-top: var(--space-3);"
+				use:enhance={pending.submit('edit', { reset: false })}
+				class="mt-3"
 			>
 				<input type="hidden" name="assignmentId" value={assignment.id} />
-				<!-- Values through ixValue: the form stays mounted, so a save shows the
-				     saved values, and a reload after another action keeps unsaved edits. -->
-				<div class="field">
-					<ix-input
+				<div class={field}>
+					<Label for={`edit-title-${assignment.id}`}>{m.homework_title_label()}</Label>
+					<Input
 						id={`edit-title-${assignment.id}`}
 						name="title"
-						label={m.homework_title_label()}
 						lang={editLanguage}
 						required
-						{@attach ixValue(assignment.title)}
-					></ix-input>
+						value={savedTitle}
+					/>
 				</div>
 				<ContentLanguageSelect id={`edit-language-${assignment.id}`} bind:value={editLanguage} />
 				<RichTextEditor
@@ -175,46 +221,56 @@
 				/>
 				<LinkRows idPrefix={`edit-${assignment.id}`} links={assignment.referenceLinks} />
 				{#if assignment.isRecurring}
-					<div class="field">
-						<ix-number-input
+					<div class={field}>
+						<Label for={`edit-offset-${assignment.id}`}>{m.homework_due_offset_label()}</Label>
+						<Input
 							id={`edit-offset-${assignment.id}`}
 							name="dueOffsetDays"
-							label={m.homework_due_offset_label()}
+							type="number"
+							inputmode="numeric"
 							min="0"
 							max="365"
 							step="1"
 							required
-							{@attach ixValue(assignment.dueOffsetDays ?? 0)}
-						></ix-number-input>
+							value={savedOffset}
+						/>
 					</div>
 				{/if}
-				<ix-button
-					variant="secondary"
+				<Button
+					variant="outline"
 					type="submit"
-					loading={pending.is('edit') || undefined}
-					disabled={pending.busy || undefined}>{m.homework_edit_submit()}</ix-button
+					class="{actionButton} gap-2"
+					aria-busy={pending.is('edit') || undefined}
+					disabled={pending.busy}
 				>
+					{@render spinner('edit')}
+					{m.homework_edit_submit()}
+				</Button>
 			</form>
 
 			{#if assignment.isRecurring && !isSeriesInactive(assignment)}
-				<div style="display:flex; gap: var(--space-2); margin-top: var(--space-3);">
+				<div class="mt-4 flex flex-col gap-2 sm:flex-row">
 					<form
 						method="POST"
 						action="?/pauseSeries"
 						use:enhance={pending.submit('pause', {
-							confirm: confirmWith(
+							confirm: confirm.with(
 								m.homework_series_pause_confirm(),
 								m.homework_series_pause_action()
 							)
 						})}
 					>
 						<input type="hidden" name="assignmentId" value={assignment.id} />
-						<ix-button
-							variant="secondary"
+						<Button
+							variant="outline"
 							type="submit"
-							loading={pending.is('pause') || undefined}
-							disabled={pending.busy || undefined}>{m.homework_series_pause_action()}</ix-button
+							class="{actionButton} gap-2"
+							aria-busy={pending.is('pause') || undefined}
+							disabled={pending.busy}
 						>
+							{@render spinner('pause')}
+							{m.homework_series_pause_action()}
+						</Button>
 					</form>
 					<form
 						method="POST"
@@ -222,165 +278,169 @@
 						use:enhance={pending.submit('end', {
 							// #103b: the question says what the tick will do.
 							confirm: () =>
-								confirmWith(
+								confirm.ask(
 									archiveCopiesOnEnd
 										? m.homework_series_end_archive_confirm()
 										: m.homework_series_end_confirm(),
-									m.homework_series_end_action()
-								)()
+									m.homework_series_end_action(),
+									{ destructive: true }
+								)
 						})}
 					>
 						<input type="hidden" name="assignmentId" value={assignment.id} />
 						{#if archiveCopiesOnEnd}
 							<input type="hidden" name="archiveCopies" value="on" />
 						{/if}
-						<ix-button
-							variant="secondary"
+						<Button
+							variant="destructive"
 							type="submit"
-							loading={pending.is('end') || undefined}
-							disabled={pending.busy || undefined}>{m.homework_series_end_action()}</ix-button
+							class="{actionButton} gap-2"
+							aria-busy={pending.is('end') || undefined}
+							disabled={pending.busy}
 						>
+							{@render spinner('end')}
+							{m.homework_series_end_action()}
+						</Button>
 					</form>
 				</div>
-				<ix-checkbox
-					style="margin-top: var(--space-2);"
-					label={m.homework_series_end_archive_label()}
-					checked={archiveCopiesOnEnd || undefined}
-					disabled={pending.busy || undefined}
-					oncheckedChange={(event: CustomEvent<boolean>) => (archiveCopiesOnEnd = event.detail)}
-				></ix-checkbox>
+				<label class="mt-2 flex min-h-11 cursor-pointer items-center gap-3">
+					<input
+						type="checkbox"
+						class={box}
+						bind:checked={archiveCopiesOnEnd}
+						disabled={pending.busy}
+					/>
+					<span>{m.homework_series_end_archive_label()}</span>
+				</label>
 			{/if}
 		</details>
 
 		{#if assignment.instances.length === 0}
-			<p
-				style="color: var(--theme-color-soft-text); font-size: var(--theme-font-size-default); margin: var(--space-2) 0 0 0;"
-			>
-				{m.homework_instances_empty()}
-			</p>
+			<p class={ui.muted}>{m.homework_instances_empty()}</p>
 		{:else}
-			<table style="margin-top: var(--space-2);">
-				<thead>
-					<tr>
-						<th>{m.homework_col_due()}</th>
-						<th>{m.homework_col_done()}</th>
-						<th>{m.homework_col_reviewed()}</th>
-						<th>{m.homework_col_status()}</th>
+			<!-- WebKit drops table semantics from a restyled table (cards below 80em): the roles keep them. -->
+			<!-- svelte-ignore a11y_no_redundant_roles -->
+			<table role="table" class={table}>
+				<thead role="rowgroup" class={thead}>
+					<tr role="row">
+						<th role="columnheader" class={th}>{m.homework_col_due()}</th>
+						<th role="columnheader" class={th}>{m.homework_col_done()}</th>
+						<th role="columnheader" class={th}>{m.homework_col_reviewed()}</th>
+						<th role="columnheader" class={th}>{m.homework_col_status()}</th>
 					</tr>
 				</thead>
-				<tbody>
-					{#each assignment.instances as instance (instance.id)}
-						<tr>
-							<td>{isoDay(instance.dueDate)}</td>
-							<td>{num(instance.doneCount)} / {num(instance.students.length)}</td>
-							<td>{num(instance.reviewedCount)} / {num(instance.students.length)}</td>
-							<td>
+				{#each assignment.instances as instance (instance.id)}
+					<!-- One group per copy: its numbers, then its students. -->
+					<tbody role="rowgroup" class={tbody} data-testid="homework-instance">
+						<tr role="row" class={tr}>
+							<td role="cell" class="{td} font-bold xl:font-normal">
+								<span class={cellLabel}>{m.homework_col_due()}</span>{isoDay(instance.dueDate)}
+							</td>
+							<td role="cell" class={td}>
+								<span class={cellLabel}>{m.homework_col_done()}</span>{num(instance.doneCount)} / {num(
+									instance.students.length
+								)}
+							</td>
+							<td role="cell" class={td}>
+								<span class={cellLabel}>{m.homework_col_reviewed()}</span>{num(
+									instance.reviewedCount
+								)} / {num(instance.students.length)}
+							</td>
+							<td role="cell" class="{td} empty:hidden">
 								{#if instance.archivedAt}
-									<ix-pill variant="neutral">{m.homework_archived_label()}</ix-pill>
+									<Badge variant="secondary">{m.homework_archived_label()}</Badge>
 								{:else if instance.students.some((s) => s.overdue)}
-									<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill>
+									<Badge variant="alarm">{m.homework_overdue_label()}</Badge>
 								{/if}
 							</td>
 						</tr>
-						<tr>
-							<td
-								colspan="4"
-								style="border-bottom: 2px solid var(--theme-color-soft-bdr); padding-top:0;"
-							>
+						<tr role="row" class="block xl:table-row">
+							<td role="cell" colspan="4" class="block min-w-0 xl:table-cell xl:px-3 xl:pb-3">
 								<details>
-									<summary>{m.homework_student_status_heading()}</summary>
+									<summary class={summary}>{m.homework_student_status_heading()}</summary>
 									{#if instance.students.length === 0 && assignment.wholeClass}
-										<p class="muted" style="margin: var(--space-2) 0 0 0;">
-											{m.homework_no_students_yet()}
-										</p>
+										<p class="mt-2 {ui.muted}">{m.homework_no_students_yet()}</p>
 									{/if}
-									<ul style="list-style:none; padding:0; margin: var(--space-2) 0 0 0;">
+									<ul class={ui.rows}>
 										{#each instance.students as student (student.studentId)}
 											<li
-												style="border-bottom: 1px solid var(--theme-color-soft-bdr); padding: var(--space-2) 0;"
+												class="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2"
+												data-testid="homework-student"
 											>
-												<div
-													style="display:flex; align-items:center; justify-content:space-between; gap: var(--space-2); flex-wrap:wrap;"
-												>
-													<span>
-														<strong>{student.displayName}</strong>
-														—
-														{#if student.reviewedAt}
-															{m.homework_status_reviewed()}
-														{:else if student.doneAt}
-															{m.homework_status_done()}
-														{:else}
-															{m.homework_status_assigned()}
-														{/if}
-														{#if student.overdue}
-															<ix-pill variant="alarm">{m.homework_overdue_label()}</ix-pill>
-														{/if}
-													</span>
-													{#if !instance.archivedAt}
-														<span style="display:flex; gap: var(--space-2);">
-															{#if !student.doneAt}
-																<form
-																	method="POST"
-																	action="?/markDone"
-																	use:enhance={pending.submit(
-																		`done:${instance.id}:${student.studentId}`,
-																		{
-																			confirm: confirmWith(
-																				m.homework_mark_done_confirm({ name: student.displayName }),
-																				m.homework_mark_done()
-																			)
-																		}
-																	)}
-																>
-																	<input type="hidden" name="instanceId" value={instance.id} />
-																	<input type="hidden" name="studentId" value={student.studentId} />
-																	<ix-button
-																		variant="secondary"
-																		type="submit"
-																		loading={pending.is(
-																			`done:${instance.id}:${student.studentId}`
-																		) || undefined}
-																		disabled={pending.busy || undefined}
-																		aria-label={m.homework_mark_done_for({
-																			name: student.displayName
-																		})}>{m.homework_mark_done()}</ix-button
-																	>
-																</form>
-															{/if}
-															{#if student.doneAt && !student.reviewedAt}
-																<form
-																	method="POST"
-																	action="?/markReviewed"
-																	use:enhance={pending.submit(
-																		`reviewed:${instance.id}:${student.studentId}`,
-																		{
-																			confirm: confirmWith(
-																				m.homework_mark_reviewed_confirm({
-																					name: student.displayName
-																				}),
-																				m.homework_mark_reviewed()
-																			)
-																		}
-																	)}
-																>
-																	<input type="hidden" name="instanceId" value={instance.id} />
-																	<input type="hidden" name="studentId" value={student.studentId} />
-																	<ix-button
-																		variant="secondary"
-																		type="submit"
-																		loading={pending.is(
-																			`reviewed:${instance.id}:${student.studentId}`
-																		) || undefined}
-																		disabled={pending.busy || undefined}
-																		aria-label={m.homework_mark_reviewed_for({
-																			name: student.displayName
-																		})}>{m.homework_mark_reviewed()}</ix-button
-																	>
-																</form>
-															{/if}
-														</span>
+												<span class="min-w-0 wrap-break-word">
+													<strong>{student.displayName}</strong>
+													—
+													{#if student.reviewedAt}
+														{m.homework_status_reviewed()}
+													{:else if student.doneAt}
+														{m.homework_status_done()}
+													{:else}
+														{m.homework_status_assigned()}
 													{/if}
-												</div>
+													{#if student.overdue}
+														<Badge variant="alarm">{m.homework_overdue_label()}</Badge>
+													{/if}
+												</span>
+												{#if !instance.archivedAt}
+													{#if !student.doneAt}
+														{@const key = `done:${instance.id}:${student.studentId}`}
+														<form
+															method="POST"
+															action="?/markDone"
+															class="w-full sm:w-auto"
+															use:enhance={pending.submit(key, {
+																confirm: confirm.with(
+																	m.homework_mark_done_confirm({ name: student.displayName }),
+																	m.homework_mark_done()
+																)
+															})}
+														>
+															<input type="hidden" name="instanceId" value={instance.id} />
+															<input type="hidden" name="studentId" value={student.studentId} />
+															<Button
+																variant="outline"
+																type="submit"
+																class="{actionButton} gap-2"
+																aria-busy={pending.is(key) || undefined}
+																disabled={pending.busy}
+																aria-label={m.homework_mark_done_for({ name: student.displayName })}
+															>
+																{@render spinner(key)}
+																{m.homework_mark_done()}
+															</Button>
+														</form>
+													{/if}
+													{#if student.doneAt && !student.reviewedAt}
+														{@const key = `reviewed:${instance.id}:${student.studentId}`}
+														<form
+															method="POST"
+															action="?/markReviewed"
+															class="w-full sm:w-auto"
+															use:enhance={pending.submit(key, {
+																confirm: confirm.with(
+																	m.homework_mark_reviewed_confirm({ name: student.displayName }),
+																	m.homework_mark_reviewed()
+																)
+															})}
+														>
+															<input type="hidden" name="instanceId" value={instance.id} />
+															<input type="hidden" name="studentId" value={student.studentId} />
+															<Button
+																variant="outline"
+																type="submit"
+																class="{actionButton} gap-2"
+																aria-busy={pending.is(key) || undefined}
+																disabled={pending.busy}
+																aria-label={m.homework_mark_reviewed_for({
+																	name: student.displayName
+																})}
+															>
+																{@render spinner(key)}
+																{m.homework_mark_reviewed()}
+															</Button>
+														</form>
+													{/if}
+												{/if}
 											</li>
 										{/each}
 									</ul>
@@ -388,38 +448,36 @@
 										<form
 											method="POST"
 											action="?/archiveInstance"
+											class="mt-3"
 											use:enhance={pending.submit(`archive:${instance.id}`, {
-												confirm: confirmWith(
+												confirm: confirm.with(
 													m.homework_archive_confirm({ date: isoDay(instance.dueDate) }),
-													m.homework_archive_action()
+													m.homework_archive_action(),
+													{ destructive: true }
 												)
 											})}
-											style="margin-top: var(--space-3);"
 										>
 											<input type="hidden" name="instanceId" value={instance.id} />
-											<ix-button
-												variant="secondary"
+											<Button
+												variant="destructive"
 												type="submit"
-												loading={pending.is(`archive:${instance.id}`) || undefined}
-												disabled={pending.busy || undefined}
-												>{m.homework_archive_action()}</ix-button
+												class="{actionButton} gap-2"
+												aria-busy={pending.is(`archive:${instance.id}`) || undefined}
+												disabled={pending.busy}
 											>
+												{@render spinner(`archive:${instance.id}`)}
+												{m.homework_archive_action()}
+											</Button>
 										</form>
 									{/if}
 								</details>
 							</td>
 						</tr>
-					{/each}
-				</tbody>
+					</tbody>
+				{/each}
 			</table>
 		{/if}
 	</section>
 </div>
 
-<style>
-	.homework-links {
-		margin: var(--space-1) 0;
-		padding-left: var(--space-4);
-		font-size: var(--theme-font-size-default);
-	}
-</style>
+<ConfirmDialog {confirm} />

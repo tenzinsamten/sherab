@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
@@ -9,13 +11,26 @@
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
-	import { ixValue } from '$lib/ix-fields';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import { createPending } from '$lib/pending.svelte';
 	import { readContentLanguage, type ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
+	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
 
+	/**
+	 * New homework for a class, mobile-first story 7c: native fields, radio
+	 * rows and student checkboxes, each ≥44px.
+	 */
 	let { data }: PageProps = $props();
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	const skillAreas: SkillArea[] = ['language', 'song', 'dance'];
 	// Language the homework is written in (#74): starts as the teacher's
@@ -27,27 +42,17 @@
 	// the root layout's form-error toast.
 	const pending = createPending();
 
-	// <ix-radio-group> emits valueChange but doesn't update its own `value`:
-	// the state here drives it (and which fields show).
-	function pickMode(event: CustomEvent<string>) {
-		if (event.detail !== 'once' && event.detail !== 'weekly') return;
-		assignmentMode = event.detail;
+	// The mode decides which fields show.
+	function pickMode(mode: 'once' | 'weekly') {
+		assignmentMode = mode;
 		// The start-date field is recreated empty when the mode changes.
 		startDate = '';
 	}
-	function pickTarget(event: CustomEvent<string>) {
-		if (event.detail === 'all' || event.detail === 'subset') targetMode = event.detail;
-	}
 
 	// #96: when students see a weekly homework depends on its start date --
-	// at once for today or earlier (Munich), else from that date. Shown as
-	// the field's own iX helper text, which iX links to the real input as its
-	// description. (ixFieldError's describedBy can't be used here: this form
-	// is not `novalidate`, so iX's validation would replace the link.)
+	// at once for today or earlier (Munich), else from that date. Shown under
+	// the field as its description.
 	let startDate = $state('');
-	function pickStartDate(event: CustomEvent<string | undefined>) {
-		startDate = event.detail ?? '';
-	}
 	let startDateNote = $derived(
 		!/^\d{4}-\d{2}-\d{2}$/.test(startDate)
 			? m.homework_start_date_note()
@@ -61,55 +66,54 @@
 		if (area === 'song') return m.roster_skill_song();
 		return m.roster_skill_dance();
 	}
+
+	const field = 'mb-4 flex min-w-0 flex-col gap-1.5';
+	const legend = 'mb-1.5 text-sm font-medium';
+	// A radio or checkbox row: the whole row is the ≥44px target.
+	const choice =
+		'flex min-h-11 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-input px-3 py-2 has-checked:border-primary has-checked:bg-accent has-focus-visible:outline-2 has-focus-visible:outline-ring';
+	const box = 'size-5 shrink-0 accent-primary';
 </script>
 
 <svelte:head>
 	<title>{m.homework_create_heading()} — {data.class.name} — Sherab</title>
 </svelte:head>
 
-<div class="page">
-	<PageBreadcrumb
-		items={[
-			{ label: m.nav_dashboard(), href: resolve('/teacher') },
-			{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
-			{
-				label: m.homework_heading(),
-				href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
-			},
-			{ label: m.breadcrumb_new_homework() }
-		]}
-	/>
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.homework_section_label()}</p>
-			<h1 class="page-heading">{m.homework_create_heading()}</h1>
-			<p class="page-subtitle">{data.class.name}</p>
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<div>
+		<PageBreadcrumb
+			items={[
+				{ label: m.nav_dashboard(), href: resolve('/teacher') },
+				{ label: data.class.name, href: resolve('/teacher/classes/[id]', { id: data.class.id }) },
+				{
+					label: m.homework_heading(),
+					href: resolve('/teacher/classes/[id]/homework', { id: data.class.id })
+				},
+				{ label: m.breadcrumb_new_homework() }
+			]}
+		/>
+	</div>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.homework_section_label()}</p>
+			<h1 class={ui.heading}>{m.homework_create_heading()}</h1>
+			<p class="{ui.subtitle} wrap-break-word">{data.class.name}</p>
 		</div>
 	</header>
 
-	<section class="card">
+	<section class={ui.card}>
 		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
-			<div class="field">
-				<ix-input
-					id="title"
-					name="title"
-					label={m.homework_title_label()}
-					lang={contentLanguage}
-					required
-				></ix-input>
+			<div class={field}>
+				<Label for="title">{m.homework_title_label()}</Label>
+				<Input id="title" name="title" lang={contentLanguage} required />
 			</div>
-			<div class="field">
-				<ix-select
-					id="skillArea"
-					name="skillArea"
-					label={m.homework_skill_area_label()}
-					required
-					{@attach ixValue(skillAreas[0])}
-				>
+			<div class={field}>
+				<Label for="skillArea">{m.homework_skill_area_label()}</Label>
+				<NativeSelect.Root id="skillArea" name="skillArea" class="w-full" required>
 					{#each skillAreas as area (area)}
-						<ix-select-item value={area} label={skillLabel(area)}></ix-select-item>
+						<NativeSelect.Option value={area}>{skillLabel(area)}</NativeSelect.Option>
 					{/each}
-				</ix-select>
+				</NativeSelect.Root>
 			</div>
 			<ContentLanguageSelect id="contentLanguage" bind:value={contentLanguage} />
 			<RichTextEditor
@@ -120,94 +124,104 @@
 			/>
 			<LinkRows idPrefix="create" />
 
-			<div class="field" data-tour="homework-schedule">
-				<ix-radio-group
-					id="mode"
-					label={m.homework_mode_legend()}
-					value={assignmentMode}
-					onvalueChange={pickMode}
-				>
-					<ix-radio name="mode" value="once" label={m.homework_mode_once()}></ix-radio>
-					<ix-radio name="mode" value="weekly" label={m.homework_mode_weekly()}></ix-radio>
-				</ix-radio-group>
-			</div>
+			<fieldset id="mode" class={field} data-tour="homework-schedule">
+				<legend class={legend}>{m.homework_mode_legend()}</legend>
+				<div class="flex flex-col gap-2 sm:flex-row">
+					{#each [{ value: 'once', label: m.homework_mode_once() }, { value: 'weekly', label: m.homework_mode_weekly() }] as const as option (option.value)}
+						<label class="{choice} flex-1">
+							<input
+								type="radio"
+								name="mode"
+								value={option.value}
+								checked={assignmentMode === option.value}
+								onchange={() => pickMode(option.value)}
+								class={box}
+							/>
+							<span>{option.label}</span>
+						</label>
+					{/each}
+				</div>
+			</fieldset>
 
 			{#if assignmentMode === 'once'}
-				<div class="field" data-tour="homework-due">
-					<ix-date-input
-						id="dueDate"
-						name="dueDate"
-						label={m.homework_due_date_label()}
-						format="yyyy-MM-dd"
-						required
-					></ix-date-input>
+				<div class={field} data-tour="homework-due">
+					<Label for="dueDate">{m.homework_due_date_label()}</Label>
+					<Input id="dueDate" name="dueDate" type="date" required />
 				</div>
 
-				<div class="field" data-tour="homework-target">
-					<ix-radio-group
-						id="targetMode"
-						label={m.homework_target_legend()}
-						value={targetMode}
-						onvalueChange={pickTarget}
-					>
-						<ix-radio name="targetMode" value="all" label={m.homework_target_all()}></ix-radio>
-						<ix-radio name="targetMode" value="subset" label={m.homework_target_subset()}
-						></ix-radio>
-					</ix-radio-group>
-				</div>
-				{#if targetMode === 'subset'}
-					<fieldset class="check-list student-list">
-						<legend class="sr-only">{m.homework_target_subset()}</legend>
-						{#each data.students as student (student.id)}
-							<ix-checkbox name="studentIds" value={student.id} label={student.displayName}
-							></ix-checkbox>
+				<fieldset id="targetMode" class={field} data-tour="homework-target">
+					<legend class={legend}>{m.homework_target_legend()}</legend>
+					<div class="flex flex-col gap-2 sm:flex-row">
+						{#each [{ value: 'all', label: m.homework_target_all() }, { value: 'subset', label: m.homework_target_subset() }] as const as option (option.value)}
+							<label class="{choice} flex-1">
+								<input
+									type="radio"
+									name="targetMode"
+									value={option.value}
+									checked={targetMode === option.value}
+									onchange={() => (targetMode = option.value)}
+									class={box}
+								/>
+								<span>{option.label}</span>
+							</label>
 						{/each}
+					</div>
+				</fieldset>
+				{#if targetMode === 'subset'}
+					<fieldset class={field}>
+						<legend class="sr-only">{m.homework_target_subset()}</legend>
+						<div class="grid gap-2 sm:grid-cols-2">
+							{#each data.students as student (student.id)}
+								<label class={choice}>
+									<input type="checkbox" name="studentIds" value={student.id} class={box} />
+									<span class="wrap-break-word">{student.displayName}</span>
+								</label>
+							{/each}
+						</div>
 					</fieldset>
 				{/if}
 			{:else}
-				<div class="field">
-					<ix-date-input
+				<div class={field}>
+					<Label for="startDate">{m.homework_start_date_label()}</Label>
+					<Input
 						id="startDate"
 						name="startDate"
-						label={m.homework_start_date_label()}
-						format="yyyy-MM-dd"
+						type="date"
 						required
-						helper-text={startDateNote}
-						onvalueChange={pickStartDate}
-					></ix-date-input>
+						aria-describedby="startDate-note"
+						value={startDate}
+						oninput={(event) => (startDate = event.currentTarget.value)}
+					/>
+					<p id="startDate-note" class="text-sm {ui.muted}" aria-live="polite">{startDateNote}</p>
 				</div>
-				<div class="field">
-					<ix-number-input
+				<div class={field}>
+					<Label for="dueOffsetDays">{m.homework_due_offset_label()}</Label>
+					<Input
 						id="dueOffsetDays"
 						name="dueOffsetDays"
-						label={m.homework_due_offset_label()}
+						type="number"
+						inputmode="numeric"
 						min="0"
 						max="365"
 						step="1"
 						required
-						{@attach ixValue(7)}
-					></ix-number-input>
+						value="7"
+					/>
 				</div>
-				<p style="color: var(--theme-color-soft-text); font-size: var(--theme-font-size-default);">
-					{m.homework_recurring_note()}
-				</p>
+				<p class="mb-4 {ui.muted}">{m.homework_recurring_note()}</p>
 			{/if}
 
-			<ix-button
+			<Button
 				type="submit"
-				loading={pending.is('create') || undefined}
-				disabled={pending.busy || undefined}>{m.homework_create_submit()}</ix-button
+				class="{ui.touch} w-full gap-2 sm:w-auto"
+				aria-busy={pending.is('create') || undefined}
+				disabled={pending.busy}
 			>
+				{#if pending.is('create')}
+					<LoaderCircle class="animate-spin" aria-hidden="true" />
+				{/if}
+				{m.homework_create_submit()}
+			</Button>
 		</form>
 	</section>
 </div>
-
-<style>
-	.student-list {
-		margin-bottom: var(--space-4);
-	}
-	/* Whole label row is the click target (WCAG 2.2 target size). */
-	.student-list ix-checkbox {
-		min-height: 2.25rem;
-	}
-</style>
