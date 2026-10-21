@@ -98,7 +98,7 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 
 	// A new syllabus has no sections (0038); adding one opens its form.
 	await expect(page.getByText('No sections yet.')).toBeVisible();
-	await page.locator('#section-title-new input').fill('Songs');
+	await page.locator('#section-title-new').fill('Songs');
 	await page.getByRole('button', { name: 'Add section' }).click();
 
 	// The section's description is rich text in a chosen language (#75):
@@ -181,7 +181,9 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// Reopened: title, text, language and both links, in order.
 	await openForm(page, page.url().replace(/\?.*$/, ''));
 	await page.getByRole('button', { name: 'Edit section' }).click();
-	await expect(page.locator('ix-input[name="title"]').first()).toHaveJSProperty('value', 'Songs');
+	await expect(
+		page.locator('form[action="?/updateSection"] input[name="title"]').first()
+	).toHaveValue('Songs');
 	await expect(page.locator('.rte-input')).toHaveAttribute('contenteditable', 'true');
 	await expect(page.locator('.rte-input p')).toHaveText(['སློབ་ཚན་དང་པོ།', 'Week 2: songs']);
 	await expect(page.locator('select[name="contentLanguage"]')).toHaveValue('bo');
@@ -210,7 +212,7 @@ test('syllabus add: with the current year taken, the first addable year is prese
 	});
 	await signIn(page, fx.admin);
 	await openForm(page, `/admin/classes/${fx.classC.id}/syllabus`);
-	await expect(page.locator('#schoolYear')).toHaveJSProperty('value', String(firstAddable));
+	await expect(page.locator('#schoolYear')).toHaveValue(String(firstAddable));
 	await page.getByRole('button', { name: 'Add syllabus' }).click();
 	await page.waitForURL(SYLLABUS_PAGE);
 
@@ -248,34 +250,29 @@ test('enrol: no student chosen sends nothing and marks the select; choosing one 
 	const select = page.locator('#enroll-student');
 	const submit = page.getByRole('button', { name: 'Add to class' });
 	await submit.click();
-	await expect(select).toHaveClass(/\bix-invalid\b/);
-	// Light-DOM message, announced and linked to the select's native input.
+	// The message under the select, announced and linked to it.
 	const error = page.locator('#enroll-student-error');
 	await expect(error).toHaveText('Choose a student to add.');
 	await expect(error).toHaveAttribute('role', 'alert');
-	const selectInput = select.locator('input').first();
-	await expect(selectInput).toHaveAttribute('aria-invalid', 'true');
-	await expect
-		.poll(() =>
-			selectInput.evaluate((el) =>
-				(el.ariaDescribedByElements ?? []).map((d) => d.textContent?.trim()).join(' ')
-			)
-		)
-		.toBe('Choose a student to add.');
+	await expect(select).toHaveAttribute('aria-invalid', 'true');
+	await expect(select).toHaveAttribute('aria-describedby', 'enroll-student-error');
 
 	expect(blocked).toEqual([]);
 
-	// Open the list and pick the fixture student.
+	// Pick the fixture student: each option keeps its label (name, username, classes).
 	allowEnroll = true;
-	await select.locator('input').first().click();
-	await page.locator(`ix-select-item[label*="Student ${fx.tag}"]`).click();
-	await expect(select).not.toHaveClass(/\bix-invalid\b/);
+	const option = select.locator('option', { hasText: `Student ${fx.tag}` });
+	await expect(option).toHaveCount(1);
+	await expect(option).toContainText(`(${fx.student.email.split('@')[0]}) — `);
+	await expect(option).toContainText(fx.classA.name);
+	await select.selectOption(fx.student.id);
+	await expect(select).not.toHaveAttribute('aria-invalid', 'true');
 	await expect(error).toHaveCount(0);
 	await submit.click();
 	await expect(page.locator('ix-toast').getByText('Student added to the class.')).toBeVisible();
 	expect(enrollPosts).toHaveLength(1);
 	expect(new URLSearchParams(enrollPosts[0]).get('studentId')).toBe(fx.student.id);
-	await expect(page.locator('.member-list')).toContainText(`Student ${fx.tag}`);
+	await expect(page.getByTestId('member-list')).toContainText(`Student ${fx.tag}`);
 
 	const { data: row } = await service
 		.from('class_enrollments')
@@ -288,19 +285,13 @@ test('enrol: no student chosen sends nothing and marks the select; choosing one 
 	// The select is empty again, and submitting it is blocked again.
 	allowEnroll = false;
 	const selectAfter = page.locator('#enroll-student');
-	// Focus moves to the remounted select, not <body>.
+	// Focus moves to the select, not <body>.
 	await expect(selectAfter).toBeFocused();
-	await expect(selectAfter).not.toHaveClass(/\bix-invalid\b/);
-	await expect
-		.poll(() =>
-			selectAfter.evaluate((el) => {
-				const v = (el as HTMLElement & { value?: unknown }).value;
-				return v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
-			})
-		)
-		.toBe(true);
+	await expect(selectAfter).not.toHaveAttribute('aria-invalid', 'true');
+	await expect(selectAfter).toHaveValue('');
 	await page.getByRole('button', { name: 'Add to class' }).click();
-	await expect(selectAfter).toHaveClass(/\bix-invalid\b/);
+	await expect(selectAfter).toHaveAttribute('aria-invalid', 'true');
+	await expect(error).toHaveText('Choose a student to add.');
 	expect(blocked).toEqual([]);
 	expect(enrollPosts).toHaveLength(1);
 });

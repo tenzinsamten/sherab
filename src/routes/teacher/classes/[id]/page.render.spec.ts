@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import Page from './+page.svelte';
 
-// EnrollmentPanel (still iX) reads the latest form result.
+// EnrollmentPanel reads the latest form result.
 vi.mock('$app/state', () => ({
 	page: { url: new URL('http://localhost/teacher/classes/c1'), form: null }
 }));
@@ -11,12 +11,25 @@ vi.mock('$app/state', () => ({
 /**
  * Mobile-first story 7: the class page as the server renders it (before
  * any script runs): the newest session picked, its marks ticked, the leave
- * badge inside the student's row, and EnrollmentPanel after the new root.
+ * badge inside the student's row, and EnrollmentPanel inside the new root
+ * (story 8).
  */
 const students = [
 	{ id: 's1', displayName: 'Ada' },
 	{ id: 's2', displayName: 'Bo' }
 ];
+
+/** Where the `<div` opened at `start` closes (its matching `</div>`). */
+function closingTag(html: string, start: number): number {
+	const tags = /<div[\s>]|<\/div>/g;
+	tags.lastIndex = start;
+	let depth = 0;
+	for (let match = tags.exec(html); match; match = tags.exec(html)) {
+		depth += match[0] === '</div>' ? -1 : 1;
+		if (depth === 0) return match.index;
+	}
+	return -1;
+}
 
 function data(overrides: Record<string, unknown> = {}) {
 	return {
@@ -69,15 +82,16 @@ describe('teacher class page (+page.svelte)', () => {
 		expect(row(body, 's1')).not.toContain('data-testid="leave-badge"');
 	});
 
-	it('renders the page in its new-UI root, and EnrollmentPanel after it', () => {
+	it('renders the page in its new-UI root, EnrollmentPanel last inside it, with no iX', () => {
 		const body = renderPage();
 		const root = body.indexOf('data-ui="new"');
-		const panel = body.indexOf('<section class="card"');
+		const panel = body.indexOf('data-testid="member-list"');
 		expect(root).toBeGreaterThanOrEqual(0);
-		// The page's own markup comes first and has no iX in it; the panel's iX card follows.
 		expect(body.indexOf('data-tour="class-skills"')).toBeGreaterThan(root);
 		expect(panel).toBeGreaterThan(body.indexOf('data-tour="class-skills"'));
-		expect(body.slice(root, panel)).not.toMatch(/<ix-/);
+		// Inside the root: the panel comes before the root's own closing tag.
+		expect(panel).toBeLessThan(closingTag(body, body.lastIndexOf('<div', root)));
+		expect(body).not.toMatch(/<ix-/);
 	});
 
 	it('without a markable session: the hint, and no save target for the tour', () => {

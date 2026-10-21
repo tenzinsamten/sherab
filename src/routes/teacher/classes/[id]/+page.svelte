@@ -29,8 +29,8 @@
 	 * A class as its teacher sees it, mobile-first story 7: the three class
 	 * cards, attendance (each student row is one tap target, the save button
 	 * stays above the bottom bar on a phone and tablet), the coming leave and
-	 * the collapsible skill rows. EnrollmentPanel is still iX and renders
-	 * after this page's new-UI root.
+	 * the collapsible skill rows, then the class members (EnrollmentPanel,
+	 * mobile-first story 8) inside the same new-UI root.
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -627,10 +627,7 @@
 			</section>
 		{/if}
 	</div>
-</div>
 
-<!-- Still iX (story 8): outside the new-UI root, lined up with it. -->
-<div class="-mx-4 pb-8 md:mx-auto md:max-w-5xl">
 	<EnrollmentPanel
 		className={data.class.name}
 		students={data.students}

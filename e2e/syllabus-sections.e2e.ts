@@ -34,10 +34,18 @@ test.afterAll(async () => {
 	await fx?.cleanup();
 });
 
-/** Waits for hydration and for the iX form components to be defined. */
+/**
+ * Waits for hydration: the teacher and student pages mark their new-UI root;
+ * the admin pages (still iX until story 9) are hydrated once the layout has
+ * defined iX.
+ */
 async function open(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+	await page.waitForFunction(() =>
+		document.querySelector('main > [data-ui="new"]')
+			? document.querySelector('main > [data-ui="new"][data-hydrated]') !== null
+			: customElements.get('ix-button') !== undefined
+	);
 	await page.waitForLoadState('networkidle');
 }
 
@@ -51,11 +59,10 @@ async function stored() {
 	return data ?? [];
 }
 
-const titles = (page: Page) => page.locator('h2.section-title');
+const titles = (page: Page) => page.getByTestId('section-title');
 const card = (page: Page, title: string) =>
 	page.locator('section[data-section-id]').filter({ has: page.getByText(title, { exact: true }) });
 const moveButton = (page: Page, title: string, direction: 'up' | 'down') =>
-	// iX moves the host's aria-label onto its inner button.
 	page.getByRole('button', { name: `Move “${title}” ${direction}`, exact: true });
 
 test('student: a syllabus with no sections shows the "no syllabus yet" text', async ({ page }) => {
@@ -80,12 +87,12 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 	expect(await stored()).toEqual([]);
 
 	// "Song 1": created last, opens for editing with its title, the add field cleared.
-	await page.locator('#section-title-new input').fill('Song 1');
+	await page.locator('#section-title-new').fill('Song 1');
 	await page.getByRole('button', { name: 'Add section' }).click();
-	const title = page.locator('form[action="?/updateSection"] ix-input[name="title"]');
-	await expect(title).toHaveJSProperty('value', 'Song 1');
+	const title = page.locator('form[action="?/updateSection"] input[name="title"]');
+	await expect(title).toHaveValue('Song 1');
 	await expect(page.locator('#section-title-new-error')).toHaveCount(0);
-	await expect(page.locator('#section-title-new')).toHaveJSProperty('value', '');
+	await expect(page.locator('#section-title-new')).toHaveValue('');
 	const editor = page.locator('.rte-input');
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	await editor.click();
@@ -94,22 +101,22 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 	await page.locator('input[name="linkLabel"]').fill('Song 1 video');
 
 	// A cleared title is refused under its field and the form keeps what was typed.
-	await title.locator('input').fill('');
+	await title.fill('');
 	await page.getByRole('button', { name: 'Save section' }).click();
 	await expect(page.locator('[id^="section-title-error-"]')).toHaveText(
 		'Enter a title of up to 200 characters.'
 	);
 	await expect(editor).toHaveText('The first song');
 	await expect(page.locator('input[name="linkUrl"]')).toHaveValue('https://one.example');
-	await title.locator('input').fill('Song 1');
+	await title.fill('Song 1');
 	await page.getByRole('button', { name: 'Save section' }).click();
 	await expect(page.locator('ix-toast').getByText('Section saved.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 1']);
 
 	// "Song 2", with its own link.
-	await page.locator('#section-title-new input').fill('Song 2');
+	await page.locator('#section-title-new').fill('Song 2');
 	await page.getByRole('button', { name: 'Add section' }).click();
-	await expect(title).toHaveJSProperty('value', 'Song 2');
+	await expect(title).toHaveValue('Song 2');
 	await page.locator('input[name="linkUrl"]').fill('https://two.example');
 	await page.getByRole('button', { name: 'Save section' }).click();
 	await expect(titles(page)).toHaveText(['Song 1', 'Song 2']);
@@ -139,7 +146,7 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 
 	// The year list counts the sections.
 	await open(page, `/teacher/classes/${fx.classA.id}/syllabus`);
-	await expect(page.locator('.syllabus-row')).toContainText('2 section(s)');
+	await expect(page.getByTestId('syllabus-row')).toContainText('2 section(s)');
 });
 
 test("admin: sees both sections in the teacher's order, moves one and back, and deletes a throwaway section", async ({
@@ -159,13 +166,13 @@ test("admin: sees both sections in the teacher's order, moves one and back, and 
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 2', 'Song 1']);
 
 	// A throwaway section, added and deleted as the admin.
-	await page.locator('#section-title-new input').fill('Throwaway');
+	await page.locator('#section-title-new').fill('Throwaway');
 	await page.getByRole('button', { name: 'Add section' }).click();
 	await expect(page.locator('ix-toast').getByText('Section added.')).toBeVisible();
 	await page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(titles(page)).toHaveText(['Song 2', 'Song 1', 'Throwaway']);
 	await card(page, 'Throwaway').getByRole('button', { name: 'Delete section' }).click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).click();
+	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
 	await expect(page.locator('ix-toast').getByText('Section deleted.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 2', 'Song 1']);
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 2', 'Song 1']);
@@ -206,14 +213,14 @@ test('teacher: deleting a section asks first and leaves the others in order', as
 	await expect(titles(page)).toHaveText(['Song 2', 'Song 1']);
 
 	await card(page, 'Song 2').getByRole('button', { name: 'Delete section' }).click();
-	const modal = page.locator('ix-modal');
+	const modal = page.getByTestId('confirm-dialog');
 	await expect(modal).toContainText('Delete the section “Song 2”?');
 	await modal.getByRole('button', { name: 'Cancel' }).click();
 	await expect(modal).toHaveCount(0);
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 2', 'Song 1']);
 
 	await card(page, 'Song 2').getByRole('button', { name: 'Delete section' }).click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).click();
+	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
 	await expect(page.locator('ix-toast').getByText('Section deleted.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 1']);
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 1']);

@@ -79,18 +79,25 @@
 @source '../../routes/(auth)/join/pending/+page.svelte';
 @source '../components/JoinSteps.svelte';
 /* Story 7: the teacher dashboard, the class page and a student's badges
-   (file by file: the class's homework and syllabus pages are still iX). */
+   (file by file: the class's homework and syllabus pages follow in 7b-8). */
 @source '../../routes/teacher/+page.svelte';
 @source '../../routes/teacher/classes/*/+page.svelte';
 @source '../../routes/teacher/classes/*/students/*/badges/+page.svelte';
 /* Story 7b: the class's homework list (create, detail and review are 7c). */
 @source '../../routes/teacher/classes/*/homework/+page.svelte';
-/* Story 7c: homework create (`new`) and review, and their fields (also in the iX
-   syllabus forms until story 8). */
+/* Story 7c: homework create (`new`) and review, and their fields (also in the
+   syllabus forms). */
 @source '../../routes/teacher/classes/*/homework/*/+page.svelte';
 @source '../components/LinkRows.svelte';
 @source '../components/ContentLanguageSelect.svelte';
 @source '../components/RichTextEditor.svelte';
+/* Story 8: the syllabus and class-member components (also on the admin
+   syllabus and students pages, still iX) and the teacher's syllabus pages. */
+@source '../components/SyllabusList.svelte';
+@source '../components/SyllabusForm.svelte';
+@source '../components/SyllabusDetail.svelte';
+@source '../components/EnrollmentPanel.svelte';
+@source '../../routes/teacher/classes/*/syllabus/**/*.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */

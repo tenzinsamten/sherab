@@ -1,13 +1,24 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { tick, untrack } from 'svelte';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import * as m from '$lib/paraglide/messages.js';
-	import { confirmAction, confirmWith, showToast } from '$lib/ix';
-	import { ixFieldError } from '$lib/ix-fields';
+	import { showToast } from '$lib/ix';
+	import { createConfirm } from '$lib/confirm.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { createPending } from '$lib/pending.svelte';
+	import { ui } from '$lib/ui/classes';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
+	import ConfirmDialog from './ConfirmDialog.svelte';
 	import RichText from './RichText.svelte';
 	import type { SyllabusFile } from '$lib/syllabus-files';
 	import SyllabusFiles from './SyllabusFiles.svelte';
@@ -23,6 +34,10 @@
 	 * `?/deleteFile`. `result` is the page's latest action
 	 * result (`form`): it opens a section that was just added or failed to
 	 * save, closes one that was saved, and carries a wrong title's message.
+	 * Mobile-first story 8: its own `data-ui="new"` root, so it also works on
+	 * the admin syllabus page, which is still iX. It owns the page's one
+	 * question dialog (`createConfirm` asks one question at a time) and
+	 * passes it to SyllabusFiles.
 	 */
 	type Section = {
 		id: string;
@@ -75,10 +90,9 @@
 	// The failed result whose form was cancelled: its title error is not shown
 	// again when that section is reopened.
 	let cancelledResult = $state.raw<Result>(null);
-	// Bumped after each add: <ix-input> takes no part in a form reset.
-	let addKey = $state(0);
 
 	const pending = createPending();
+	const confirm = createConfirm();
 	let deleteForm: HTMLFormElement | undefined = $state();
 
 	function setEditing(id: string, on: boolean) {
@@ -96,10 +110,7 @@
 		untrack(() => {
 			const id = opened(r);
 			if (id) setEditing(id, true);
-			if (r.action === 'sectionAdded') {
-				addKey += 1;
-				showToast('success', m.syllabus_section_added());
-			}
+			if (r.action === 'sectionAdded') showToast('success', m.syllabus_section_added());
 			if (r.action === 'sectionSaved' && r.sectionId) {
 				setEditing(r.sectionId, false);
 				showToast('success', m.syllabus_section_saved());
@@ -116,12 +127,14 @@
 
 	let addTitleError = $derived(result?.titleError && !result.sectionId ? result.titleError : '');
 
+	const actionButton = `${ui.touch} w-full gap-2 sm:w-auto`;
+
 	async function deleteSyllabus() {
-		const ok = await confirmAction(
-			m.common_confirm_title(),
+		if (pending.busy) return;
+		const ok = await confirm.ask(
 			m.syllabus_delete_confirm({ year: formatSchoolYear(syllabus.schoolYear) }),
 			m.common_delete(),
-			m.common_cancel()
+			{ destructive: true }
 		);
 		if (!ok) return;
 		await tick();
@@ -129,190 +142,201 @@
 	}
 </script>
 
-{#if syllabus.sections.length === 0}
-	<section class="card">
-		<p class="muted" style="margin:0;">{m.syllabus_section_none()}</p>
-	</section>
-{/if}
+<div data-ui="new" class="flex min-w-0 flex-col gap-4 md:gap-6">
+	{#if syllabus.sections.length === 0}
+		<section class={ui.card}>
+			<p class={ui.muted}>{m.syllabus_section_none()}</p>
+		</section>
+	{/if}
 
-{#each syllabus.sections as section, i (section.id)}
-	<section class="card" data-section-id={section.id}>
-		{#if editingIds.includes(section.id)}
-			<SyllabusForm
-				{section}
-				titleError={result?.titleError &&
-				result.sectionId === section.id &&
-				result !== cancelledResult
-					? result.titleError
-					: undefined}
-				{pending}
-				oncancel={() => {
-					cancelledResult = result;
-					setEditing(section.id, false);
-				}}
-			/>
-		{:else}
-			<div class="section-head">
-				<h2 class="section-title" lang={section.contentLanguage}>{section.title}</h2>
-				<div class="section-moves">
-					{#each ['up', 'down'] as const as direction (direction)}
-						<form
-							method="POST"
-							action="?/moveSection"
-							use:enhance={pending.submit(`${direction}:${section.id}`, { reset: false })}
-						>
-							<input type="hidden" name="sectionId" value={section.id} />
-							<input type="hidden" name="direction" value={direction} />
-							<ix-icon-button
-								type="submit"
-								icon={direction === 'up' ? 'arrow-up' : 'arrow-down'}
-								variant="tertiary"
-								aria-label={direction === 'up'
-									? m.syllabus_section_move_up({ title: section.title })
-									: m.syllabus_section_move_down({ title: section.title })}
-								loading={pending.is(`${direction}:${section.id}`) || undefined}
-								disabled={(direction === 'up' ? i === 0 : i === syllabus.sections.length - 1) ||
-									pending.busy ||
-									undefined}
-							></ix-icon-button>
-						</form>
-					{/each}
-				</div>
-			</div>
-			{#if section.content}
-				<RichText content={section.content} lang={section.contentLanguage} />
-			{/if}
-			<TextWithLinks
-				links={section.links}
-				empty={section.content || section.files.length > 0 ? '' : m.syllabus_section_empty()}
-			/>
-			<SyllabusFiles
-				files={section.files}
-				sectionId={section.id}
-				{pending}
-				error={result?.fileError && result.fileSectionId === section.id
-					? { fileId: result.fileId ?? null, message: result.fileError }
-					: null}
-			/>
-			<div class="actions" style="margin-top: var(--space-4);">
-				<ix-button
-					icon="pen"
-					disabled={pending.busy || undefined}
-					onclick={() => setEditing(section.id, true)}>{m.syllabus_section_edit()}</ix-button
-				>
-				<form
-					method="POST"
-					action="?/deleteSection"
-					use:enhance={pending.submit(`delete:${section.id}`, {
-						reset: false,
-						confirm: confirmWith(
-							m.syllabus_section_delete_confirm({ title: section.title }),
-							m.common_delete()
-						)
-					})}
-				>
-					<input type="hidden" name="sectionId" value={section.id} />
-					<ix-button
-						type="submit"
-						variant="danger-secondary"
-						icon="trashcan"
-						loading={pending.is(`delete:${section.id}`) || undefined}
-						disabled={pending.busy || undefined}>{m.syllabus_section_delete()}</ix-button
+	{#each syllabus.sections as section, i (section.id)}
+		<section class={ui.card} data-section-id={section.id}>
+			{#if editingIds.includes(section.id)}
+				<SyllabusForm
+					{section}
+					titleError={result?.titleError &&
+					result.sectionId === section.id &&
+					result !== cancelledResult
+						? result.titleError
+						: undefined}
+					{pending}
+					oncancel={() => {
+						cancelledResult = result;
+						setEditing(section.id, false);
+					}}
+				/>
+			{:else}
+				<!-- A long title wraps beside the move buttons instead of pushing them out. -->
+				<div class="mb-3 flex min-w-0 items-start justify-between gap-2">
+					<h2
+						class="min-w-0 pt-2 text-lg leading-snug font-bold wrap-anywhere"
+						lang={section.contentLanguage}
+						data-testid="section-title"
 					>
-				</form>
-			</div>
-		{/if}
-	</section>
-{/each}
+						{section.title}
+					</h2>
+					<div class="flex flex-none gap-1">
+						{#each ['up', 'down'] as const as direction (direction)}
+							<form
+								method="POST"
+								action="?/moveSection"
+								use:enhance={pending.submit(`${direction}:${section.id}`, { reset: false })}
+							>
+								<input type="hidden" name="sectionId" value={section.id} />
+								<input type="hidden" name="direction" value={direction} />
+								<Button
+									type="submit"
+									variant="ghost"
+									class="size-11"
+									aria-label={direction === 'up'
+										? m.syllabus_section_move_up({ title: section.title })
+										: m.syllabus_section_move_down({ title: section.title })}
+									aria-busy={pending.is(`${direction}:${section.id}`) || undefined}
+									disabled={(direction === 'up' ? i === 0 : i === syllabus.sections.length - 1) ||
+										pending.busy}
+								>
+									{#if pending.is(`${direction}:${section.id}`)}
+										<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+									{:else if direction === 'up'}
+										<ArrowUp class="size-5" aria-hidden="true" />
+									{:else}
+										<ArrowDown class="size-5" aria-hidden="true" />
+									{/if}
+								</Button>
+							</form>
+						{/each}
+					</div>
+				</div>
+				{#if section.content}
+					<RichText content={section.content} lang={section.contentLanguage} />
+				{/if}
+				<TextWithLinks
+					links={section.links}
+					empty={section.content || section.files.length > 0 ? '' : m.syllabus_section_empty()}
+				/>
+				<SyllabusFiles
+					files={section.files}
+					sectionId={section.id}
+					{pending}
+					{confirm}
+					error={result?.fileError && result.fileSectionId === section.id
+						? { fileId: result.fileId ?? null, message: result.fileError }
+						: null}
+				/>
+				<div class="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row">
+					<Button
+						variant="outline"
+						class={actionButton}
+						disabled={pending.busy}
+						data-testid="section-edit"
+						onclick={() => setEditing(section.id, true)}
+					>
+						<Pencil aria-hidden="true" />
+						{m.syllabus_section_edit()}
+					</Button>
+					<form
+						method="POST"
+						action="?/deleteSection"
+						use:enhance={pending.submit(`delete:${section.id}`, {
+							reset: false,
+							// Read when asked: the action is set up once, the title may have been edited since.
+							confirm: () =>
+								confirm.ask(
+									m.syllabus_section_delete_confirm({ title: section.title }),
+									m.common_delete(),
+									{ destructive: true }
+								)
+						})}
+					>
+						<input type="hidden" name="sectionId" value={section.id} />
+						<Button
+							type="submit"
+							variant="destructive"
+							class={actionButton}
+							aria-busy={pending.is(`delete:${section.id}`) || undefined}
+							disabled={pending.busy}
+						>
+							{#if pending.is(`delete:${section.id}`)}
+								<LoaderCircle class="animate-spin" aria-hidden="true" />
+							{:else}
+								<Trash2 aria-hidden="true" />
+							{/if}
+							{m.syllabus_section_delete()}
+						</Button>
+					</form>
+				</div>
+			{/if}
+		</section>
+	{/each}
 
-<section class="card">
-	<h2>{m.syllabus_section_add_heading()}</h2>
-	<!-- novalidate: the server checks the title; its message is linked to the field. -->
-	<form
-		method="POST"
-		action="?/addSection"
-		novalidate
-		use:enhance={pending.submit('add', { reset: false })}
-		class="actions add-form"
-	>
-		<div class="field add-title">
-			{#key addKey}
-				<ix-input
+	<section class={ui.card}>
+		<h2 class={ui.cardTitle}>{m.syllabus_section_add_heading()}</h2>
+		<!-- novalidate: the server checks the title; its message is linked to the
+		     field. A successful add resets the form, so the field is empty again. -->
+		<form
+			method="POST"
+			action="?/addSection"
+			novalidate
+			use:enhance={pending.submit('add')}
+			class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start"
+		>
+			<div class="flex min-w-0 flex-col gap-1.5 sm:flex-1">
+				<Label for="section-title-new">{m.syllabus_section_title_label()}</Label>
+				<Input
 					id="section-title-new"
 					name="title"
-					label={m.syllabus_section_title_label()}
-					max-length="200"
+					maxlength={200}
 					required
-					{@attach ixFieldError(addTitleError ? 'section-title-new-error' : undefined)}
-				></ix-input>
-			{/key}
-			{#if addTitleError}
-				<p id="section-title-new-error" class="field-error" role="alert">{addTitleError}</p>
+					aria-invalid={addTitleError ? 'true' : undefined}
+					aria-describedby={addTitleError ? 'section-title-new-error' : undefined}
+				/>
+				{#if addTitleError}
+					<p id="section-title-new-error" class={ui.error} role="alert">{addTitleError}</p>
+				{/if}
+			</div>
+			<!-- Level with the input, which sits under its label. -->
+			<Button
+				type="submit"
+				class="{actionButton} sm:mt-6.5"
+				aria-busy={pending.is('add') || undefined}
+				disabled={pending.busy}
+			>
+				{#if pending.is('add')}
+					<LoaderCircle class="animate-spin" aria-hidden="true" />
+				{:else}
+					<Plus aria-hidden="true" />
+				{/if}
+				{m.syllabus_section_add_submit()}
+			</Button>
+		</form>
+	</section>
+
+	<section class={ui.card}>
+		<Button
+			variant="destructive"
+			class={actionButton}
+			aria-busy={pending.is('delete') || undefined}
+			disabled={pending.busy}
+			onclick={deleteSyllabus}
+		>
+			{#if pending.is('delete')}
+				<LoaderCircle class="animate-spin" aria-hidden="true" />
+			{:else}
+				<Trash2 aria-hidden="true" />
 			{/if}
-		</div>
-		<ix-button
-			type="submit"
-			icon="add"
-			loading={pending.is('add') || undefined}
-			disabled={pending.busy || undefined}>{m.syllabus_section_add_submit()}</ix-button
-		>
+			{m.syllabus_delete()}
+		</Button>
+	</section>
+
+	<form
+		bind:this={deleteForm}
+		method="POST"
+		action="?/delete"
+		use:enhance={pending.submit('delete')}
+		hidden
+	>
+		<input type="hidden" name="syllabusId" value={syllabus.id} />
 	</form>
-</section>
+</div>
 
-<section class="card">
-	<div class="actions">
-		<ix-button
-			variant="danger-secondary"
-			icon="trashcan"
-			loading={pending.is('delete') || undefined}
-			disabled={pending.busy || undefined}
-			onclick={deleteSyllabus}>{m.syllabus_delete()}</ix-button
-		>
-	</div>
-</section>
-
-<form
-	bind:this={deleteForm}
-	method="POST"
-	action="?/delete"
-	use:enhance={pending.submit('delete')}
-	hidden
->
-	<input type="hidden" name="syllabusId" value={syllabus.id} />
-</form>
-
-<style>
-	.section-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--space-2);
-	}
-
-	/* A long title wraps beside the move buttons instead of pushing them out. */
-	.section-title {
-		margin-top: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-
-	.section-moves {
-		display: flex;
-		flex: none;
-		gap: var(--space-1);
-	}
-
-	.add-form {
-		align-items: flex-start;
-	}
-
-	.add-title {
-		flex: 1 1 16rem;
-		margin: 0;
-	}
-
-	/* Level with the input, which sits under its label. */
-	.add-form > ix-button {
-		margin-top: 1.5rem;
-	}
-</style>
+<ConfirmDialog {confirm} />

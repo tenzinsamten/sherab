@@ -311,7 +311,7 @@ test('phone: a deep trail collapses into "…" without sideways scroll, and a co
 		const trail = document
 			.querySelector('[data-testid="page-breadcrumb"]')!
 			.getBoundingClientRect();
-		const pageEl = document.querySelector('.page')!;
+		const pageEl = document.querySelector('main > [data-ui="new"]')!;
 		return {
 			trailInside: trail.right <= window.innerWidth + 0.5,
 			noPageScroll: pageEl.scrollWidth <= pageEl.clientWidth,

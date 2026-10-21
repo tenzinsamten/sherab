@@ -461,3 +461,6 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/7c-teacher-homework-create-and-review.md`
   summary: A homework copy with no students that is not whole-class opens an empty Student status list with no text.
   evidence: The empty text shows only `&& assignment.wholeClass`, carried over unchanged from the iX page.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/8-syllabus-enrollment-and-schedule-components.md`
+  summary: `PageTour.svelte`'s comment still says the pages' dialogs are `<ix-modal>`; the teacher class page now uses ConfirmDialog.
+  evidence: Pre-existing wording; story 8 moved EnrollmentPanel's confirms to ConfirmDialog (see also the 7c `pending.svelte.ts` entry).

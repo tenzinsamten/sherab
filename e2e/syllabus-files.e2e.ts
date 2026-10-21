@@ -154,17 +154,26 @@ test.afterAll(async () => {
 	await fx?.cleanup();
 });
 
-/** Waits for hydration and for the iX form components to be defined. */
+/**
+ * Waits for hydration: the teacher and student pages mark their new-UI root;
+ * the admin pages (still iX until story 9) are hydrated once the layout has
+ * defined iX.
+ */
 async function open(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.waitForFunction(() =>
+		document.querySelector('main > [data-ui="new"]')
+			? document.querySelector('main > [data-ui="new"][data-hydrated]') !== null
+			: customElements.get('ix-button') !== undefined
+	);
 	await page.waitForLoadState('networkidle');
 }
 
 const card = (page: Page, title: string) =>
 	page.locator('section[data-section-id]').filter({ has: page.getByText(title, { exact: true }) });
-const files = (page: Page) => card(page, 'Song 1').locator('li.file');
-const names = (page: Page) => files(page).locator('.file-name');
+const files = (page: Page) => card(page, 'Song 1').locator('li[data-file-id]');
+const names = (page: Page) => files(page).getByTestId('file-name');
+const dialog = (page: Page) => page.getByTestId('confirm-dialog');
 /** The file actions the page posts to from now on (`uploadFile`, `replaceFile`), in order. */
 function recordPosts(page: Page): string[] {
 	const posts: string[] = [];
@@ -232,7 +241,7 @@ test('teacher: wrong files are refused with a message; two PDFs are listed with 
 	await expect(error).toHaveCount(0);
 	await upload(page, pdf('གཞས་ཚིག.pdf'));
 	await expect(names(page)).toHaveText(['Song 1 lyrics.pdf', 'གཞས་ཚིག.pdf']);
-	await expect(files(page).locator('.file-size')).toHaveText(['300 KB', '2 KB']);
+	await expect(files(page).getByTestId('file-size')).toHaveText(['300 KB', '2 KB']);
 	await expect(section.getByText('No description or links yet.')).toHaveCount(0);
 
 	// Stored under the class and section, never under the file's name.
@@ -300,7 +309,7 @@ test('teacher on a phone (390 px): the upload control and the file list fit with
 		.nth(2)
 		.getByRole('button', { name: /^Remove/ })
 		.click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Remove' }).click();
+	await dialog(page).getByRole('button', { name: 'Remove' }).click();
 	await expect(names(page)).toHaveCount(2);
 	expect(await objects(fx.classA.id, sectionId)).not.toContain(long.object_path);
 });
@@ -320,11 +329,11 @@ test('admin: sees and opens the files; replacing keeps the place with the new na
 
 	// Invalid: the old file stays, with the message at that file.
 	await replaceInput.setInputFiles(docx);
-	await expect(first.locator('.file-error')).toHaveText('PDF files only.');
+	await expect(first.getByTestId('file-error')).toHaveText('PDF files only.');
 	// Over 1 MB: refused in the browser, nothing is posted.
 	const posted = recordPosts(page);
 	await replaceInput.setInputFiles(pdf('big.pdf', MB + 1));
-	await expect(first.locator('.file-error')).toHaveText(
+	await expect(first.getByTestId('file-error')).toHaveText(
 		'The file is too large. A PDF can be up to 1.0 MB.'
 	);
 	expect(posted).toEqual([]);
@@ -335,8 +344,8 @@ test('admin: sees and opens the files; replacing keeps the place with the new na
 	await replaceInput.setInputFiles(pdf('Lyrics v2.pdf', 4096));
 	await expect(toast(page, 'File replaced.')).toBeVisible();
 	await expect(names(page)).toHaveText(['Lyrics v2.pdf', 'གཞས་ཚིག.pdf']);
-	await expect(files(page).locator('.file-size')).toHaveText(['4 KB', '2 KB']);
-	await expect(first.locator('.file-error')).toHaveCount(0);
+	await expect(files(page).getByTestId('file-size')).toHaveText(['4 KB', '2 KB']);
+	await expect(first.getByTestId('file-error')).toHaveCount(0);
 	const after = await rows();
 	expect(after[0]).toMatchObject({
 		id: before[0].id,
@@ -597,7 +606,7 @@ test('teacher: removing a file asks first; cancelled, nothing happens; confirmed
 	const target = before[4];
 
 	await files(page).nth(4).getByRole('button', { name: 'Remove “Five again.pdf”' }).click();
-	const modal = page.locator('ix-modal');
+	const modal = dialog(page);
 	await expect(modal).toContainText('Remove the file “Five again.pdf”?');
 	await modal.getByRole('button', { name: 'Cancel' }).click();
 	await expect(modal).toHaveCount(0);
@@ -605,7 +614,7 @@ test('teacher: removing a file asks first; cancelled, nothing happens; confirmed
 	expect(await objects(fx.classA.id, sectionId)).toContain(target.object_path);
 
 	await files(page).nth(4).getByRole('button', { name: 'Remove “Five again.pdf”' }).click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Remove' }).click();
+	await dialog(page).getByRole('button', { name: 'Remove' }).click();
 	await expect(toast(page, 'File removed.')).toBeVisible();
 	await expect(names(page)).toHaveCount(4);
 	expect(await rows()).toEqual(before.slice(0, 4));
@@ -630,7 +639,7 @@ test('deleting a section, a syllabus or a class removes their stored files from 
 	await open(page, teacherPath);
 	expect(await objects(fx.classA.id, sectionId)).toHaveLength(4);
 	await card(page, 'Song 1').getByRole('button', { name: 'Delete section' }).click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).click();
+	await dialog(page).getByRole('button', { name: 'Delete' }).click();
 	await expect(toast(page, 'Section deleted.')).toBeVisible();
 	expect(await objects(fx.classA.id, sectionId)).toEqual([]);
 	expect(await rows()).toEqual([]);
@@ -639,7 +648,7 @@ test('deleting a section, a syllabus or a class removes their stored files from 
 
 	// Syllabus, by the teacher: its remaining section's file goes with it.
 	await page.getByRole('button', { name: 'Delete syllabus' }).click();
-	await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).click();
+	await dialog(page).getByRole('button', { name: 'Delete' }).click();
 	// The list page shows the toast and drops `?deleted=` from the address.
 	await expect(page).toHaveURL(
 		new RegExp(`/teacher/classes/${fx.classA.id}/syllabus(\\?deleted=\\d+)?$`)

@@ -16,8 +16,8 @@ import type { SubmitFunction } from '@sveltejs/kit';
  * which a reset would return to their server-rendered state).
  * The reset only clears native fields: iX fields (<ix-input>, <ix-select>,
  * ...) have no formResetCallback and ignore it, so forms that must clear
- * them remount with {#key} after a success (EnrollmentPanel's add form, and
- * the create form's ScheduleFields in admin/classes/+page.svelte).
+ * them remount with {#key} after a success (the create form's ScheduleFields
+ * in admin/classes/+page.svelte).
  * `confirm` (#91) asks before posting, for a press that cannot be undone:
  * the form is only submitted when it resolves true (see confirmWith in ix.ts).
  */

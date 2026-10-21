@@ -4,7 +4,13 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
 	import Download from '@lucide/svelte/icons/download';
-	import { confirmWith } from '$lib/ix';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Upload from '@lucide/svelte/icons/upload';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import type { Confirm } from '$lib/confirm.svelte';
 	import { ui } from '$lib/ui/classes';
 	import type { createPending } from '$lib/pending.svelte';
 	import {
@@ -28,17 +34,24 @@
 	 * to `?/uploadFile`, `?/replaceFile` and `?/deleteFile`. The upload field
 	 * is hidden once the section has 5 files. `error` is the server's message
 	 * about a chosen file: for the upload field (`fileId` null) or for the
-	 * file that was to be replaced.
+	 * file that was to be replaced. `confirm` is the page's question dialog
+	 * (SyllabusDetail's), which Remove asks first.
+	 *
+	 * Mobile-first story 4 moved the read-only half, story 8 the edit half:
+	 * each in its own `data-ui="new"` root, so it also works on the admin
+	 * syllabus page, which is still iX.
 	 */
 	let {
 		files,
 		sectionId,
 		pending,
+		confirm,
 		error = null
 	}: {
 		files: SyllabusFile[];
 		sectionId: string;
 		pending?: ReturnType<typeof createPending>;
+		confirm?: Confirm;
 		error?: { fileId: string | null; message: string } | null;
 	} = $props();
 
@@ -66,14 +79,23 @@
 		};
 	}
 
-	/** Remove: `pending.submit` with the question, clearing a message left by an earlier file. */
-	function submitRemove(file: SyllabusFile): SubmitFunction {
-		const inner = pending?.submit(`remove:${file.id}`, {
+	/**
+	 * Remove: `pending.submit` with the question, clearing a message left by
+	 * an earlier file. The action is set up once, so the question reads the
+	 * file's name when it is asked: a replaced file keeps its id, not its name.
+	 */
+	function submitRemove(current: () => SyllabusFile): SubmitFunction {
+		const inner = pending?.submit(`remove:${current().id}`, {
 			reset: false,
-			confirm: confirmWith(
-				m.syllabus_file_delete_confirm({ name: file.name }),
-				m.syllabus_file_delete()
-			)
+			// Without the page's dialog Remove never posts unasked.
+			confirm: () =>
+				confirm
+					? confirm.ask(
+							m.syllabus_file_delete_confirm({ name: current().name }),
+							m.syllabus_file_delete(),
+							{ destructive: true }
+						)
+					: Promise.resolve(false)
 		});
 		return (input) => {
 			localError = null;
@@ -94,6 +116,8 @@
 		input.click();
 	}
 
+	const fileButton = `${ui.touch} gap-2`;
+
 	/** Replace: choosing a file posts it at once. */
 	function chosen(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
@@ -102,9 +126,7 @@
 </script>
 
 {#if !pending}
-	<!-- Read-only (the student's class page): on the new component system
-	     with its own data-ui="new" root (mobile-first story 4). The edit
-	     controls below stay iX until the syllabus pages move (story 8). -->
+	<!-- Read-only (the student's class page). -->
 	{#if files.length > 0}
 		<div data-ui="new" class="mt-3 min-w-0">
 			<ul class="divide-y divide-border" aria-label={m.syllabus_file_heading()}>
@@ -142,32 +164,42 @@
 		</div>
 	{/if}
 {:else}
-	<!-- With `pending` (teacher and admin): iX, as before. -->
-	<div class="files">
-		<h3 class="files-heading">{m.syllabus_file_heading()}</h3>
+	<!-- With `pending` (teacher and admin): Replace, Remove and the upload field. -->
+	<div data-ui="new" class="mt-3 flex min-w-0 flex-col gap-2">
+		<h3 class="text-base font-bold">{m.syllabus_file_heading()}</h3>
 		{#if files.length > 0}
-			<ul class="file-list" aria-label={m.syllabus_file_heading()}>
+			<ul class={ui.rows} aria-label={m.syllabus_file_heading()}>
 				{#each files as file (file.id)}
-					<li class="file" data-file-id={file.id}>
-						<span class="file-main">
+					<!-- Name and size first; the buttons wrap under them on a narrow screen. -->
+					<li
+						class="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1"
+						data-file-id={file.id}
+					>
+						<span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+							<!-- A long name without spaces breaks instead of widening the page. -->
 							<a
-								class="file-name"
+								class="{ui.link} inline-flex min-h-11 min-w-0 items-center wrap-anywhere"
 								href={resolve('/files/syllabus/[fileId]', { fileId: file.id })}
 								target="_blank"
-								rel="noopener noreferrer">{file.name}</a
+								rel="noopener noreferrer"
+								data-testid="file-name">{file.name}</a
 							>
-							<span class="muted file-size">{formatFileSize(file.size)}</span>
+							<span class="text-sm whitespace-nowrap text-muted-foreground" data-testid="file-size"
+								>{formatFileSize(file.size)}</span
+							>
 						</span>
-						<span class="actions file-actions">
+						<span class="flex min-w-0 flex-wrap items-center gap-2">
 							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() plus the endpoint's own ?download. -->
 							<a
-								class="file-download"
+								class="{ui.link} inline-flex min-h-11 items-center gap-1.5 px-1"
 								href="{resolve('/files/syllabus/[fileId]', { fileId: file.id })}?download"
 								download={file.name}
 								data-sveltekit-reload
 								aria-label={m.syllabus_file_download_label({ name: file.name })}
-								>{m.syllabus_file_download()}</a
 							>
+								<Download class="size-4 shrink-0" aria-hidden="true" />
+								{m.syllabus_file_download()}
+							</a>
 							<form
 								method="POST"
 								action="?/replaceFile"
@@ -185,28 +217,46 @@
 									aria-hidden="true"
 									onchange={chosen}
 								/>
-								<ix-button
-									variant="tertiary"
+								<Button
+									variant="ghost"
+									class={fileButton}
 									aria-label={m.syllabus_file_replace_label({ name: file.name })}
-									loading={pending.is(`replace:${file.id}`) || undefined}
-									disabled={pending.busy || undefined}
-									onclick={pick}>{m.syllabus_file_replace()}</ix-button
+									aria-busy={pending.is(`replace:${file.id}`) || undefined}
+									disabled={pending.busy}
+									onclick={pick}
 								>
+									{#if pending.is(`replace:${file.id}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Upload aria-hidden="true" />
+									{/if}
+									{m.syllabus_file_replace()}
+								</Button>
 							</form>
-							<form method="POST" action="?/deleteFile" use:enhance={submitRemove(file)}>
+							<form method="POST" action="?/deleteFile" use:enhance={submitRemove(() => file)}>
 								<input type="hidden" name="sectionId" value={sectionId} />
 								<input type="hidden" name="fileId" value={file.id} />
-								<ix-button
+								<Button
 									type="submit"
-									variant="tertiary"
+									variant="ghost"
+									class="{fileButton} text-destructive hover:bg-destructive/10"
 									aria-label={m.syllabus_file_delete_label({ name: file.name })}
-									loading={pending.is(`remove:${file.id}`) || undefined}
-									disabled={pending.busy || undefined}>{m.syllabus_file_delete()}</ix-button
+									aria-busy={pending.is(`remove:${file.id}`) || undefined}
+									disabled={pending.busy}
 								>
+									{#if pending.is(`remove:${file.id}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Trash2 aria-hidden="true" />
+									{/if}
+									{m.syllabus_file_delete()}
+								</Button>
 							</form>
 						</span>
 						{#if shown && shown.fileId === file.id}
-							<p class="field-error file-error" role="alert">{shown.message}</p>
+							<p class="{ui.error} basis-full" role="alert" data-testid="file-error">
+								{shown.message}
+							</p>
 						{/if}
 					</li>
 				{/each}
@@ -218,120 +268,46 @@
 				method="POST"
 				action="?/uploadFile"
 				enctype="multipart/form-data"
-				class="upload"
+				class="mt-1 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start"
 				use:enhance={submitFile(`upload:${sectionId}`, null)}
 			>
 				<input type="hidden" name="sectionId" value={sectionId} />
-				<div class="field upload-field">
-					<label for="section-file-{sectionId}">{m.syllabus_file_upload_label()}</label>
-					<input
+				<div class="flex min-w-0 flex-col gap-1.5 sm:flex-1">
+					<Label for="section-file-{sectionId}">{m.syllabus_file_upload_label()}</Label>
+					<Input
 						id="section-file-{sectionId}"
 						type="file"
 						name="file"
 						accept="application/pdf,.pdf"
+						class="py-2.5"
 						aria-describedby="section-file-hint-{sectionId}{uploadError ? ` ${uploadErrorId}` : ''}"
 						aria-invalid={uploadError ? 'true' : undefined}
 					/>
-					<p id="section-file-hint-{sectionId}" class="muted upload-hint">
+					<p id="section-file-hint-{sectionId}" class="text-sm {ui.muted}">
 						{m.syllabus_file_upload_hint({ size: maxFileSizeText(), count: maxFilesText() })}
 					</p>
 					{#if uploadError}
-						<p id={uploadErrorId} class="field-error" role="alert">{uploadError}</p>
+						<p id={uploadErrorId} class={ui.error} role="alert">{uploadError}</p>
 					{/if}
 				</div>
-				<ix-button
+				<!-- Level with the input, which sits under its label. -->
+				<Button
 					type="submit"
-					variant="secondary"
-					loading={pending.is(`upload:${sectionId}`) || undefined}
-					disabled={pending.busy || undefined}>{m.syllabus_file_upload_submit()}</ix-button
+					variant="outline"
+					class="{fileButton} w-full sm:mt-6.5 sm:w-auto"
+					aria-busy={pending.is(`upload:${sectionId}`) || undefined}
+					disabled={pending.busy}
 				>
+					{#if pending.is(`upload:${sectionId}`)}
+						<LoaderCircle class="animate-spin" aria-hidden="true" />
+					{:else}
+						<Upload aria-hidden="true" />
+					{/if}
+					{m.syllabus_file_upload_submit()}
+				</Button>
 			</form>
 		{:else}
-			<p class="muted upload-hint">{m.syllabus_file_limit_reached({ count: maxFilesText() })}</p>
+			<p class="text-sm {ui.muted}">{m.syllabus_file_limit_reached({ count: maxFilesText() })}</p>
 		{/if}
 	</div>
 {/if}
-
-<style>
-	.files {
-		margin-top: var(--space-3);
-	}
-
-	.files-heading {
-		margin: 0 0 var(--space-2);
-		font-size: var(--theme-font-size-l);
-	}
-
-	.file-list {
-		list-style: none;
-		margin: 0 0 var(--space-2);
-		padding: 0;
-	}
-
-	/* Name and size first; the buttons wrap under them on a narrow screen. */
-	.file {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-1) var(--space-3);
-		padding: var(--space-1) 0;
-	}
-
-	.file + .file {
-		border-top: 1px solid var(--theme-color-soft-bdr);
-	}
-
-	.file-main {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: var(--space-1) var(--space-2);
-		min-width: 0;
-	}
-
-	/* A long name without spaces breaks instead of widening the page. */
-	.file-name {
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-
-	.file-size {
-		white-space: nowrap;
-	}
-
-	.file-error {
-		flex-basis: 100%;
-		margin: 0;
-	}
-
-	.upload {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		gap: var(--space-2);
-		margin-top: var(--space-3);
-	}
-
-	.upload-field {
-		flex: 1 1 14rem;
-		min-width: 0;
-		margin: 0;
-	}
-
-	.upload-field input[type='file'] {
-		width: 100%;
-		max-width: 100%;
-		min-width: 0;
-	}
-
-	.upload-hint {
-		margin: 0;
-		font-size: var(--theme-font-size-s);
-	}
-
-	/* Level with the input, which sits under its label. */
-	.upload > ix-button {
-		margin-top: 1.5rem;
-	}
-</style>

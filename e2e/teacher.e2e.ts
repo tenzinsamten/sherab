@@ -1296,21 +1296,21 @@ test('class members: Reset PIN shows the new PIN once; the student signs in with
 		const posts = capturePosts(page, 'resetPin');
 		await signIn(page, teacher);
 		await open(page, `/teacher/classes/${classId}`);
-		const row = page.locator('.member-list li').filter({ hasText: student.name });
+		const row = page.getByTestId('member-list').locator('li').filter({ hasText: student.name });
 
 		// Cancelling the confirmation sends nothing.
 		await row.getByRole('button', { name: 'Reset PIN' }).click();
-		const dialog = page.locator('ix-modal');
+		const dialog = page.getByTestId('confirm-dialog');
 		await expect(dialog).toContainText(`Give ${student.name} a new PIN?`);
 		await dialog.getByRole('button', { name: 'Cancel' }).click();
 		await expect(dialog).toHaveCount(0);
 		expect(posts).toHaveLength(0);
 
 		await row.getByRole('button', { name: 'Reset PIN' }).click();
-		await page.locator('ix-modal').getByRole('button', { name: 'Reset PIN' }).click();
+		await dialog.getByRole('button', { name: 'Reset PIN' }).click();
 
 		// Shown once, with the username, each with its copy button.
-		const bar = page.locator('ix-message-bar.pin-credential');
+		const bar = page.getByTestId('pin-credential');
 		await expect(bar).toContainText(`New PIN for ${student.name}`);
 		await expect(bar).toBeInViewport();
 		const fields = bar.locator('.copy-field');
@@ -1327,7 +1327,7 @@ test('class members: Reset PIN shows the new PIN once; the student signs in with
 
 		// Gone after a reload: it is not stored anywhere.
 		await open(page, `/teacher/classes/${classId}`);
-		await expect(page.locator('ix-message-bar.pin-credential')).toHaveCount(0);
+		await expect(page.getByTestId('pin-credential')).toHaveCount(0);
 		await expect(page.locator('body')).not.toContainText(pin);
 
 		// The student's open session has ended.

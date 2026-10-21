@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
+import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
 import { berlinToday, env, fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
 /**
@@ -12,7 +13,8 @@ import { berlinToday, env, fixtureTeam, service, signIn, type TestUser } from '.
  * the fit check (no sideways scroll, ≥44px targets, no cut labels) in en,
  * de and bo.
  * Story 7b adds the class's homework list, story 7c the homework create
- * and review pages (their own blocks at the end).
+ * and review pages, story 8 the syllabus pages and the class members
+ * (their own blocks at the end).
  *
  * Its own fixture: a teacher of class A (eight approved students, one
  * parent of students 0 and 1) and class B (student 0, no session); a
@@ -49,6 +51,7 @@ const students: { id: string; name: string }[] = [];
 
 let teacher: TestUser;
 let loneTeacher: TestUser;
+let admin: TestUser;
 let parentId: string | undefined;
 const userIds: string[] = [];
 const createdDays: string[] = [];
@@ -59,7 +62,7 @@ function check<T>(result: { data: T; error: { message: string } | null }, what: 
 	return result.data;
 }
 
-async function createUser(role: 'teacher' | 'student' | 'parent', key: string) {
+async function createUser(role: 'admin' | 'teacher' | 'student' | 'parent', key: string) {
 	const domain = role === 'student' ? 'students.internal.invalid' : 'example.test';
 	const email = `e2e-tm-${key}-${tag}@${domain}`;
 	const password = crypto.randomUUID();
@@ -122,6 +125,7 @@ test.beforeAll(async () => {
 	try {
 		teacher = await createUser('teacher', 'teacher');
 		loneTeacher = await createUser('teacher', 'lone');
+		admin = await createUser('admin', 'admin');
 		for (const key of ['a', 'b'] as const) {
 			const code = `M${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
 			const row = check(
@@ -269,17 +273,18 @@ async function teacherPage(browser: Browser, width: number, height: number, who 
 
 /**
  * No sideways scroll; every visible button, link and attendance row in the
- * page's new-UI root is at least 44×44px; no link, button, row or select
+ * page's new-UI root (or in each root `rootSelector` matches) is at least 44×44px; no link, button, row or select
  * label is cut (its text overflows nowhere).
  */
-async function expectFits(page: Page) {
-	const result = await page.evaluate(() => {
+async function expectFits(page: Page, rootSelector = 'main > [data-ui="new"]') {
+	const result = await page.evaluate((rootSelector) => {
 		const doc = document.documentElement;
-		const root = document.querySelector('main > [data-ui="new"]')!;
+		const roots = [...document.querySelectorAll(rootSelector)];
+		if (roots.length === 0) throw new Error(`no ${rootSelector}`);
 		const shown = (selector: string) =>
-			[...root.querySelectorAll<HTMLElement>(selector)].filter(
-				(el) => el.getClientRects().length > 0
-			);
+			roots
+				.flatMap((root) => [...root.querySelectorAll<HTMLElement>(selector)])
+				.filter((el) => el.getClientRects().length > 0);
 		const label = (el: HTMLElement) => el.textContent?.trim() || el.getAttribute('aria-label');
 		const small = shown(
 			'button, [data-slot="button"], [data-slot="breadcrumb-link"], a, .attendance-row'
@@ -291,7 +296,7 @@ async function expectFits(page: Page) {
 			.filter((el) => el.scrollWidth > el.clientWidth + 1)
 			.map((el) => `${label(el)}: ${el.scrollWidth} > ${el.clientWidth}`);
 		return { scrollWidth: doc.scrollWidth, width: doc.clientWidth, small, cut };
-	});
+	}, rootSelector);
 	expect(result.scrollWidth).toBeLessThanOrEqual(result.width);
 	expect(result.small).toEqual([]);
 	expect(result.cut).toEqual([]);
@@ -1537,6 +1542,450 @@ test.describe('homework create and review', () => {
 				await expectFits(page);
 			} finally {
 				await page.context().close();
+			}
+		});
+	}
+});
+
+/**
+ * Story 8: the syllabus pages (list and one syllabus, with sections and
+ * files) and the class members on the new UI, on class B (student 0 only,
+ * no syllabus). One test per matrix row at 375 and 820px, the admin hosts
+ * (still iX) at 1440px, and the fit check in en, de and bo.
+ */
+test.describe('syllabus and class members', () => {
+	const BUCKET = 'syllabus-files';
+	const MB = 1_048_576;
+	const year = currentSchoolYear();
+	const syllabusList = () => `${classPath('b')}/syllabus`;
+	const dialog = (page: Page) => page.getByTestId('confirm-dialog');
+	const confirmButton = (page: Page, name: string) =>
+		dialog(page).getByRole('button', { name, exact: true });
+	const titles = (page: Page) => page.getByTestId('section-title');
+	const card = (page: Page, title: string) =>
+		page
+			.locator('section[data-section-id]')
+			.filter({ has: page.getByText(title, { exact: true }) });
+	const members = (page: Page) => page.getByTestId('member-list');
+	const memberRow = (page: Page, student: { name: string }) =>
+		members(page).locator('li').filter({ hasText: student.name });
+
+	/** A file whose content starts like a PDF, `size` bytes long. */
+	function pdf(name: string, size = 2048) {
+		const buffer = Buffer.alloc(size);
+		buffer.write('%PDF-1.7\n');
+		return { name, mimeType: 'application/pdf', buffer };
+	}
+
+	function capturePosts(page: Page, action: string): URLSearchParams[] {
+		const posts: URLSearchParams[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().endsWith(`?/${action}`)) {
+				posts.push(new URLSearchParams(r.postData() ?? ''));
+			}
+		});
+		return posts;
+	}
+
+	/** Every stored object of class B, then its syllabi (sections and file rows cascade). */
+	async function clearSyllabi() {
+		const folders = check(await service.storage.from(BUCKET).list(classes.b.id), 'list folders');
+		for (const folder of folders ?? []) {
+			const listed = check(
+				await service.storage.from(BUCKET).list(`${classes.b.id}/${folder.name}`),
+				'list objects'
+			);
+			const paths = (listed ?? []).map((o) => `${classes.b.id}/${folder.name}/${o.name}`);
+			if (paths.length) await service.storage.from(BUCKET).remove(paths);
+		}
+		check(
+			await service.from('class_syllabi').delete().eq('class_id', classes.b.id),
+			'delete syllabi'
+		);
+	}
+
+	/** A current-year syllabus for class B with one section holding one PDF. */
+	async function seedSyllabus(sectionTitle: string, fileName = 'Lyrics and notes.pdf') {
+		await clearSyllabi();
+		const syllabusId = check(
+			await service
+				.from('class_syllabi')
+				.insert({ class_id: classes.b.id, school_year: year })
+				.select('id')
+				.single(),
+			'create syllabus'
+		).id;
+		const sectionId = check(
+			await service
+				.from('class_syllabus_sections')
+				.insert({ syllabus_id: syllabusId, position: 1, title: sectionTitle })
+				.select('id')
+				.single(),
+			'create section'
+		).id;
+		const path = `${classes.b.id}/${sectionId}/${crypto.randomUUID()}.pdf`;
+		check(
+			await service.storage
+				.from(BUCKET)
+				.upload(path, pdf('x').buffer, { contentType: 'application/pdf' }),
+			'store object'
+		);
+		check(
+			await service.from('class_syllabus_section_files').insert({
+				section_id: sectionId,
+				object_path: path,
+				file_name: fileName,
+				size_bytes: 2048
+			}),
+			'record file'
+		);
+		return `${syllabusList()}/${syllabusId}`;
+	}
+
+	/** The admin pages are still iX: hydrated once the layout has defined iX. */
+	async function openAdminPage(page: Page, path: string) {
+		await page.goto(path);
+		await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await page.waitForLoadState('networkidle');
+	}
+
+	test.afterAll(async () => {
+		await clearSyllabi();
+	});
+
+	for (const viewport of VIEWPORTS) {
+		test(`syllabus (${viewport.name}): add a syllabus, its sections and files, then delete it`, async ({
+			browser
+		}) => {
+			test.setTimeout(120_000);
+			await clearSyllabi();
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			const creates = capturePosts(page, 'create');
+			const moves = capturePosts(page, 'moveSection');
+			const uploads = capturePosts(page, 'uploadFile');
+			const replaces = capturePosts(page, 'replaceFile');
+			try {
+				// Add syllabus: the current year preselected, lands on its page.
+				await openPage(page, syllabusList());
+				await expect(page.locator('#schoolYear')).toHaveValue(String(year));
+				await expectFits(page);
+				await page.getByRole('button', { name: 'Add syllabus' }).click();
+				await page.waitForURL(/\/syllabus\/[0-9a-f-]{36}$/);
+				await ready(page);
+				expect(creates.map((p) => p.get('schoolYear'))).toEqual([String(year)]);
+				await expect(page.getByRole('heading', { level: 1 })).toContainText(
+					`Syllabus ${formatSchoolYear(year)}`
+				);
+				await expect(page.getByRole('heading', { level: 1 })).toContainText('Current');
+				await expect(page.getByText('No sections yet.')).toBeVisible();
+				await expectFits(page);
+
+				// Sections: an empty title is refused under its field.
+				const addField = page.locator('#section-title-new');
+				await page.getByRole('button', { name: 'Add section' }).click();
+				await expect(page.locator('#section-title-new-error')).toHaveText(
+					'Enter a title of up to 200 characters.'
+				);
+				await expect(addField).toHaveAttribute('aria-invalid', 'true');
+				await expect(titles(page)).toHaveCount(0);
+
+				// Add opens its form and clears the add field; Save closes it.
+				await addField.fill('Song 1');
+				await page.getByRole('button', { name: 'Add section' }).click();
+				await expect(toast(page, 'Section added.')).toBeVisible();
+				const title = page.locator('form[action="?/updateSection"] input[name="title"]');
+				await expect(title).toHaveValue('Song 1');
+				await expect(addField).toHaveValue('');
+				await expect(page.locator('#section-title-new-error')).toHaveCount(0);
+				await expectFits(page);
+				await page.getByRole('button', { name: 'Save section' }).click();
+				await expect(toast(page, 'Section saved.')).toBeVisible();
+				await expect(title).toHaveCount(0);
+				await expect(titles(page)).toHaveText(['Song 1']);
+
+				await addField.fill('Song 2');
+				await page.getByRole('button', { name: 'Add section' }).click();
+				await expect(title).toHaveValue('Song 2');
+				await page.getByRole('button', { name: 'Cancel' }).click();
+				await expect(titles(page)).toHaveText(['Song 1', 'Song 2']);
+
+				// Edit opens the form; Cancel closes it unsaved.
+				await card(page, 'Song 1').getByRole('button', { name: 'Edit section' }).click();
+				await expect(title).toHaveValue('Song 1');
+				await page.getByRole('button', { name: 'Cancel' }).click();
+				await expect(title).toHaveCount(0);
+
+				// Move posts its direction.
+				await page.getByRole('button', { name: 'Move “Song 1” down', exact: true }).click();
+				await expect(titles(page)).toHaveText(['Song 2', 'Song 1']);
+				expect(moves.map((p) => p.get('direction'))).toEqual(['down']);
+
+				// Files: upload lists it; a long name wraps without sideways scroll.
+				const song1 = card(page, 'Song 1');
+				const fileInput = song1.locator('form[action="?/uploadFile"] input[type="file"]');
+				const longName = `${'Tashi_delek_'.repeat(8)}.pdf`;
+				await fileInput.setInputFiles(pdf(longName));
+				await song1.getByRole('button', { name: 'Upload' }).click();
+				await expect(toast(page, 'File uploaded.')).toBeVisible();
+				await expect(song1.getByTestId('file-name')).toHaveText([longName]);
+				await expectFits(page);
+
+				// Over 1 MB: refused before sending.
+				await fileInput.setInputFiles(pdf('big.pdf', MB + 1));
+				await song1.getByRole('button', { name: 'Upload' }).click();
+				await expect(song1.getByRole('alert')).toHaveText(
+					'The file is too large. A PDF can be up to 1.0 MB.'
+				);
+				expect(uploads).toHaveLength(1);
+
+				// Replace posts when a file is chosen.
+				await song1
+					.locator('form[action="?/replaceFile"] input[type="file"]')
+					.setInputFiles(pdf('Lyrics v2.pdf', 4096));
+				await expect(toast(page, 'File replaced.')).toBeVisible();
+				await expect(song1.getByTestId('file-name')).toHaveText(['Lyrics v2.pdf']);
+				expect(replaces).toHaveLength(1);
+
+				// Remove asks (red); Cancel keeps the file.
+				const remove = song1.getByRole('button', { name: 'Remove “Lyrics v2.pdf”' });
+				await remove.click();
+				await expect(dialog(page)).toContainText('Remove the file “Lyrics v2.pdf”?');
+				await expect(confirmButton(page, 'Remove')).toHaveClass(/text-destructive/);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(dialog(page)).toHaveCount(0);
+				await expect(song1.getByTestId('file-name')).toHaveCount(1);
+				await remove.click();
+				await confirmButton(page, 'Remove').click();
+				await expect(toast(page, 'File removed.')).toBeVisible();
+				await expect(song1.getByTestId('file-name')).toHaveCount(0);
+
+				// Delete section asks (red).
+				await card(page, 'Song 2').getByRole('button', { name: 'Delete section' }).click();
+				await expect(dialog(page)).toContainText('Delete the section “Song 2”?');
+				await expect(confirmButton(page, 'Delete')).toHaveClass(/text-destructive/);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(titles(page)).toHaveText(['Song 2', 'Song 1']);
+				await card(page, 'Song 2').getByRole('button', { name: 'Delete section' }).click();
+				await confirmButton(page, 'Delete').click();
+				await expect(toast(page, 'Section deleted.')).toBeVisible();
+				await expect(titles(page)).toHaveText(['Song 1']);
+
+				// Delete syllabus: Cancel does nothing; confirmed, the list shows the toast once.
+				const deletes = capturePosts(page, 'delete');
+				await page.getByRole('button', { name: 'Delete syllabus' }).click();
+				await expect(dialog(page)).toContainText(
+					`Delete the ${formatSchoolYear(year)} syllabus and all its sections?`
+				);
+				await expect(confirmButton(page, 'Delete')).toHaveClass(/text-destructive/);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(dialog(page)).toHaveCount(0);
+				expect(deletes).toHaveLength(0);
+				await page.getByRole('button', { name: 'Delete syllabus' }).click();
+				await confirmButton(page, 'Delete').click();
+				await expect(page).toHaveURL(new RegExp(`${syllabusList()}$`));
+				await expect(toast(page, `Syllabus ${formatSchoolYear(year)} deleted.`)).toBeVisible();
+				await expect(
+					page.locator('ix-toast').getByText(`Syllabus ${formatSchoolYear(year)} deleted.`)
+				).toHaveCount(1);
+				expect(deletes).toHaveLength(1);
+				await expect(page.getByTestId('syllabus-row')).toHaveCount(0);
+			} finally {
+				await page.context().close();
+			}
+		});
+
+		test(`class members (${viewport.name}): enrol, remove and Reset PIN`, async ({ browser }) => {
+			const student = viewport.name === 'phone' ? students[5] : students[6];
+			const page = await teacherPage(browser, viewport.width, viewport.height);
+			const enrolls = capturePosts(page, 'enroll');
+			const unenrolls = capturePosts(page, 'unenroll');
+			const pins = capturePosts(page, 'resetPin');
+			try {
+				await openPage(page, classPath('b'));
+				await expect(memberRow(page, students[0])).toHaveCount(1);
+				await expectFits(page);
+
+				// Nothing picked: the error under the select, nothing posted.
+				const select = page.locator('#enroll-student');
+				await page.getByRole('button', { name: 'Add to class' }).click();
+				await expect(page.locator('#enroll-student-error')).toHaveText('Choose a student to add.');
+				await expect(select).toHaveAttribute('aria-invalid', 'true');
+				expect(enrolls).toHaveLength(0);
+
+				// Picked and added: toast, the select cleared and focused.
+				await select.selectOption(student.id);
+				await expect(page.locator('#enroll-student-error')).toHaveCount(0);
+				await page.getByRole('button', { name: 'Add to class' }).click();
+				await expect(toast(page, 'Student added to the class.')).toBeVisible();
+				expect(enrolls.map((p) => p.get('studentId'))).toEqual([student.id]);
+				await expect(memberRow(page, student)).toHaveCount(1);
+				await expect(select).toHaveValue('');
+				await expect(select).toBeFocused();
+				await expectFits(page);
+
+				// Remove asks (red); Cancel sends nothing.
+				const removeButton = memberRow(page, student).getByRole('button', {
+					name: 'Remove from class'
+				});
+				await removeButton.click();
+				await expect(dialog(page)).toContainText(`Remove ${student.name} from ${names.b}?`);
+				await expect(confirmButton(page, 'Remove from class')).toHaveClass(/text-destructive/);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(dialog(page)).toHaveCount(0);
+				expect(unenrolls).toHaveLength(0);
+				await removeButton.click();
+				await confirmButton(page, 'Remove from class').click();
+				await expect(toast(page, 'Student removed from the class.')).toBeVisible();
+				expect(unenrolls.map((p) => p.get('studentId'))).toEqual([student.id]);
+				await expect(memberRow(page, student)).toHaveCount(0);
+
+				// Reset PIN: Cancel sends nothing; confirmed, the PIN box scrolls into view.
+				const pinButton = memberRow(page, students[0]).getByRole('button', { name: 'Reset PIN' });
+				await pinButton.click();
+				await expect(dialog(page)).toContainText(`Give ${students[0].name} a new PIN?`);
+				await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+				await expect(dialog(page)).toHaveCount(0);
+				expect(pins).toHaveLength(0);
+				await page.mouse.wheel(0, 2000);
+				await pinButton.click();
+				await confirmButton(page, 'Reset PIN').click();
+				const box = page.getByTestId('pin-credential');
+				await expect(box).toContainText(`New PIN for ${students[0].name}`);
+				await expect(box).toBeInViewport();
+				await expect(box.getByRole('button', { name: 'Copy PIN' })).toBeVisible();
+				expect(pins.map((p) => p.get('studentId'))).toEqual([students[0].id]);
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+				// A failure between enrol and remove must not leave the student in class B.
+				check(
+					await service
+						.from('class_enrollments')
+						.delete()
+						.eq('class_id', classes.b.id)
+						.eq('student_id', student.id),
+					'unenroll student'
+				);
+			}
+		});
+	}
+
+	test('admin hosts (desktop, still iX): sections, a file and enrolment work as before', async ({
+		browser
+	}) => {
+		test.setTimeout(120_000);
+		const teacherPath = await seedSyllabus('Admin song');
+		const adminPath = teacherPath.replace(/^\/teacher\//, '/admin/');
+		const context = await browser.newContext({ viewport: DESKTOP });
+		const page = await context.newPage();
+		try {
+			await signIn(page, admin);
+			await openAdminPage(page, adminPath);
+			await expect(titles(page)).toHaveText(['Admin song']);
+
+			// Add, save and delete a section.
+			await page.locator('#section-title-new').fill('Admin extra');
+			await page.getByRole('button', { name: 'Add section' }).click();
+			await expect(toast(page, 'Section added.')).toBeVisible();
+			await expect(page.locator('#section-title-new')).toHaveValue('');
+			await page.getByRole('button', { name: 'Save section' }).click();
+			await expect(toast(page, 'Section saved.')).toBeVisible();
+			await expect(titles(page)).toHaveText(['Admin song', 'Admin extra']);
+			await card(page, 'Admin extra').getByRole('button', { name: 'Delete section' }).click();
+			await confirmButton(page, 'Delete').click();
+			await expect(toast(page, 'Section deleted.')).toBeVisible();
+			await expect(titles(page)).toHaveText(['Admin song']);
+
+			// Upload a file.
+			const section = card(page, 'Admin song');
+			await section
+				.locator('form[action="?/uploadFile"] input[type="file"]')
+				.setInputFiles(pdf('Admin.pdf'));
+			await section.getByRole('button', { name: 'Upload' }).click();
+			await expect(toast(page, 'File uploaded.')).toBeVisible();
+			await expect(section.getByTestId('file-name')).toHaveText([
+				'Lyrics and notes.pdf',
+				'Admin.pdf'
+			]);
+
+			// Enrol a student and remove them again.
+			await openAdminPage(page, `/admin/classes/${classes.b.id}/students`);
+			await page.locator('#enroll-student').selectOption(students[7].id);
+			await page.getByRole('button', { name: 'Add to class' }).click();
+			await expect(toast(page, 'Student added to the class.')).toBeVisible();
+			await expect(memberRow(page, students[7])).toHaveCount(1);
+			await memberRow(page, students[7]).getByRole('button', { name: 'Remove from class' }).click();
+			await confirmButton(page, 'Remove from class').click();
+			await expect(toast(page, 'Student removed from the class.')).toBeVisible();
+			await expect(memberRow(page, students[7])).toHaveCount(0);
+		} finally {
+			await context.close();
+			await clearSyllabi();
+		}
+	});
+
+	for (const locale of ['en', 'de', 'bo']) {
+		test(`syllabus and members at 375px in ${locale}: no sideways scroll, ≥44px targets, no cut labels`, async ({
+			browser
+		}) => {
+			const path = await seedSyllabus(
+				// Words, then a long run without spaces (the heading breaks it anywhere).
+				`Fit ${locale} Lied Lied ${'Liederbuch'.repeat(10)}`
+			);
+			const page = await teacherPage(browser, 375, 740);
+			try {
+				await page
+					.context()
+					.addCookies([
+						{ name: 'PARAGLIDE_LOCALE', value: locale, url: new URL(page.url()).origin }
+					]);
+				await openPage(page, syllabusList());
+				await expect(page.locator('html')).toHaveAttribute('lang', locale);
+				await expectFits(page);
+				await openPage(page, path);
+				await expectFits(page);
+				await page.getByTestId('section-edit').click();
+				await expect(page.locator('form[action="?/updateSection"]')).toBeVisible();
+				await expectFits(page);
+				await openPage(page, classPath('b'));
+				await expectFits(page);
+			} finally {
+				await page.context().close();
+				await clearSyllabi();
+			}
+		});
+	}
+	/** The components' own top-level new-UI roots on an admin page (still iX around them). */
+	const adminRoots = 'main [data-ui="new"]:not([data-ui="new"] [data-ui="new"])';
+
+	for (const viewport of VIEWPORTS) {
+		test(`admin hosts (${viewport.name}, still iX): the syllabus list and page and the members fit`, async ({
+			browser
+		}) => {
+			const longName = `${'Tashi_delek_'.repeat(10)}.pdf`;
+			const teacherPath = await seedSyllabus(`Admin ${'Liederbuch'.repeat(10)}`, longName);
+			const adminPath = teacherPath.replace(/^\/teacher\//, '/admin/');
+			const context = await browser.newContext({ viewport });
+			const page = await context.newPage();
+			try {
+				await signIn(page, admin);
+				await openAdminPage(page, `/admin/classes/${classes.b.id}/syllabus`);
+				await expect(page.getByTestId('syllabus-row')).toHaveCount(1);
+				await expectFits(page, adminRoots);
+
+				await openAdminPage(page, adminPath);
+				await expect(page.getByTestId('file-name')).toHaveText([longName]);
+				await expectFits(page, adminRoots);
+				await page.getByTestId('section-edit').click();
+				await expect(page.locator('form[action="?/updateSection"]')).toBeVisible();
+				await expectFits(page, adminRoots);
+
+				await openAdminPage(page, `/admin/classes/${classes.b.id}/students`);
+				await expect(memberRow(page, students[0])).toHaveCount(1);
+				await expectFits(page, adminRoots);
+			} finally {
+				await context.close();
+				await clearSyllabi();
 			}
 		});
 	}
