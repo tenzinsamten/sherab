@@ -34,18 +34,10 @@ test.afterAll(async () => {
 	await fx?.cleanup();
 });
 
-/**
- * Waits for hydration: the teacher and student pages mark their new-UI root;
- * the admin pages (still iX until story 9) are hydrated once the layout has
- * defined iX.
- */
+/** Waits for hydration: the teacher, student and admin pages mark their new-UI root. */
 async function open(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() =>
-		document.querySelector('main > [data-ui="new"]')
-			? document.querySelector('main > [data-ui="new"][data-hydrated]') !== null
-			: customElements.get('ix-button') !== undefined
-	);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 

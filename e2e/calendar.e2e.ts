@@ -763,7 +763,7 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 		try {
 			await signIn(page, fx.admin);
 			await page.goto('/admin/classes');
-			await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 			await page.waitForLoadState('networkidle');
 
 			// Defaults: Sunday only, From = today (Berlin), no Until.
@@ -777,25 +777,24 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 				if (checked) await expect(box).toBeChecked();
 				else await expect(box).not.toBeChecked();
 			}
-			// ScheduleFields' native fields (story 5b) inside the iX page.
+			// ScheduleFields' native fields (story 5b).
 			await expect(page.locator('#new-class-from')).toHaveValue(berlinToday());
 			await expect(page.locator('#new-class-until')).toHaveValue('');
 			// Time and duration unset.
 			await expect(page.locator('#new-class-start')).toHaveValue('');
 			await expect(page.locator('#new-class-duration')).toHaveValue('');
 
-			await page.locator('#name input').first().fill(name);
+			await page.locator('#name').fill(name);
 			// #76: the Tibetan name is required too.
-			await page.locator('#name-bo input').first().fill(`${name} bo`);
+			await page.locator('#name-bo').fill(`${name} bo`);
 			await page.getByRole('checkbox', { name: 'Wed', exact: true }).check();
 			await page.locator('#new-class-start').fill('10:00');
 			await page.locator('#new-class-duration').fill('90');
 			await page.locator('#new-class-until').fill(`${fx.year}-12-20`);
 			// Badge detail CAP-1: the subject is required.
 			const subject = page.locator('#new-class-subject');
-			await subject.locator('input').first().click();
-			await subject.locator('ix-select-item[value="dance"]').click();
-			await expect(subject).toHaveJSProperty('value', 'dance');
+			await subject.selectOption('dance');
+			await expect(subject).toHaveValue('dance');
 			await page.getByRole('button', { name: 'Create class' }).click();
 
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
@@ -803,6 +802,9 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await expect(
 				page.getByRole('cell', { name: `${name} ${name} bo`, exact: true })
 			).toBeVisible();
+			// Story 9: the new row's class code is copyable.
+			const newRow = page.getByTestId('class-row').filter({ hasText: name });
+			await expect(newRow.getByRole('button', { name: 'Copy Code' })).toBeVisible();
 			const { data } = await service
 				.from('classes')
 				.select(
@@ -819,7 +821,10 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 				badge_subject: 'dance'
 			});
 			// The form is back to the defaults for the next class.
-			await expect(page.locator('#name')).toHaveJSProperty('value', '');
+			await expect(page.locator('#name')).toHaveValue('');
+			await expect(page.locator('#new-class-subject')).toHaveValue('');
+			await expect(page.locator('#name-bo')).toHaveValue('');
+			await expect(page.locator('#new-class-until')).toHaveValue('');
 			await expect(page.getByRole('checkbox', { name: 'Wed', exact: true })).not.toBeChecked();
 			await expect(page.getByRole('checkbox', { name: 'Sun', exact: true })).toBeChecked();
 		} finally {
@@ -840,19 +845,18 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 		try {
 			await signIn(page, fx.admin);
 			await page.goto('/admin/classes');
-			await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 			await page.waitForLoadState('networkidle');
 			await expect(page.locator('#new-class-start')).toHaveValue('');
 			await expect(page.locator('#new-class-duration')).toHaveValue('');
 
-			await page.locator('#name input').first().fill(name);
+			await page.locator('#name').fill(name);
 			// #76: the Tibetan name is required too.
-			await page.locator('#name-bo input').first().fill(`${name} bo`);
+			await page.locator('#name-bo').fill(`${name} bo`);
 			// Badge detail CAP-1: the subject is required.
 			const subject = page.locator('#new-class-subject');
-			await subject.locator('input').first().click();
-			await subject.locator('ix-select-item[value="language"]').click();
-			await expect(subject).toHaveJSProperty('value', 'language');
+			await subject.selectOption('language');
+			await expect(subject).toHaveValue('language');
 			await page.getByRole('button', { name: 'Create class' }).click();
 			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
 
@@ -878,7 +882,7 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 	});
 });
 
-test.describe('admin class form: schedule errors inside the iX page (story 5b)', () => {
+test.describe('admin class form: schedule errors (story 5b)', () => {
 	test.use({ viewport: WIDE });
 
 	test('no weekday and "Until" before "From": errors under the fields, values kept, nothing created', async ({
@@ -888,15 +892,14 @@ test.describe('admin class form: schedule errors inside the iX page (story 5b)',
 		try {
 			await signIn(page, fx.admin);
 			await page.goto('/admin/classes');
-			await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+			await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 			await page.waitForLoadState('networkidle');
 
-			await page.locator('#name input').first().fill(name);
-			await page.locator('#name-bo input').first().fill(`${name} bo`);
+			await page.locator('#name').fill(name);
+			await page.locator('#name-bo').fill(`${name} bo`);
 			const subject = page.locator('#new-class-subject');
-			await subject.locator('input').first().click();
-			await subject.locator('ix-select-item[value="language"]').click();
-			await expect(subject).toHaveJSProperty('value', 'language');
+			await subject.selectOption('language');
+			await expect(subject).toHaveValue('language');
 
 			const sunday = page.getByRole('checkbox', { name: 'Sun', exact: true });
 			await sunday.uncheck();

@@ -464,3 +464,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/8-syllabus-enrollment-and-schedule-components.md`
   summary: `PageTour.svelte`'s comment still says the pages' dialogs are `<ix-modal>`; the teacher class page now uses ConfirmDialog.
   evidence: Pre-existing wording; story 8 moved EnrollmentPanel's confirms to ConfirmDialog (see also the 7c `pending.svelte.ts` entry).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9-admin-pages.md`
+  summary: Migrate `/admin/teachers` to the new UI (story 9b): native fields and class checkbox list, promote/reset/remove confirms, one-time password outcome box.
+  evidence: Split at story 9's token gate (~2,400 tokens); teachers shares no code with the other admin pages and has its own e2e (`forms.e2e.ts` teachers, `parent-access.e2e.ts:166-235`).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9-admin-pages.md`
+  summary: Admin class and team rows give every Edit and Delete button the same accessible name, so screen-reader users can't tell rows apart.
+  evidence: Pre-existing in the iX pages; a row-named sr-only label (e.g. "Delete {name}") needs new message keys.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9-admin-pages.md`
+  summary: The inline edit rows on /admin/classes and /admin/teams don't move focus in on open or back to Edit on Cancel/Save.
+  evidence: Pre-existing in the iX pages; focus drops to body when the edit row unmounts.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9-admin-pages.md`
+  summary: No test covers the empty-roster state on /admin/classes/[id]/students.
+  evidence: No spec or e2e searches for `roster_empty`; the admin-students visits all use classes with students.

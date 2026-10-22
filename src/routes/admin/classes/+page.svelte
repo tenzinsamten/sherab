@@ -1,24 +1,50 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onMount } from 'svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { enhance } from '$app/forms';
 	import { formatInstant, num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
-	import CopyField from '$lib/components/CopyField.svelte';
-	import { confirmAction, showToast } from '$lib/ix';
+	import { showToast } from '$lib/ix';
+	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import CopyField from '$lib/components/CopyField.svelte';
 	import ScheduleFields from '$lib/components/ScheduleFields.svelte';
 	import LocalizedNameFields from '$lib/components/LocalizedNameFields.svelte';
 	import BadgeSubjectSelect from '$lib/components/BadgeSubjectSelect.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { badgeSubjectLabel, isBadgeSubject } from '$lib/badge-subject';
 	import { otherNames } from '$lib/localized-name';
+	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';
 
+	/**
+	 * The admin's classes: create one (names, badge subject, schedule), and
+	 * per class edit its names and subject inline (#76), open its students
+	 * and syllabi, copy its code, and delete it while nobody is enrolled or
+	 * pending.
+	 * Mobile-first story 9: stacked cards below 80em and a full table from
+	 * 80em (the Requests pattern); in a card each value carries its column's
+	 * name. Delete asks in the new alert dialog. The name and subject fields
+	 * are native, so a successful create clears them with the form reset (no
+	 * remount); the schedule fields keep their remount (see below).
+	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	type ClassRow = (typeof data.classes)[number];
 
 	const pending = createPending();
+	const confirm = createConfirm();
+
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 
 	// #76: the class being edited (one row at a time).
 	let editingId = $state<string | null>(null);
@@ -109,223 +135,278 @@
 		form && 'scheduleErrors' in form && form.scheduleErrors ? form.scheduleErrors : {}
 	);
 
-	let deleteForm: HTMLFormElement | undefined = $state();
-	let deleteTarget = $state({ id: '', name: '' });
-
-	async function deleteClass(cls: ClassRow) {
-		const ok = await confirmAction(
-			m.common_confirm_title(),
-			m.classes_delete_confirm({ name: cls.label }),
-			m.common_delete(),
-			m.common_cancel()
-		);
-		if (!ok) return;
-		deleteTarget = { id: cls.id, name: cls.label };
-		await tick(); // hidden inputs pick up deleteTarget before submitting
-		deleteForm?.requestSubmit();
-	}
+	// One markup for both layouts: stacked cards below 80em, a table from 80em
+	// (copied from /requests).
+	const table = 'block w-full min-w-0 xl:table xl:border-collapse';
+	const thead = 'hidden xl:table-header-group';
+	const th =
+		'border-b border-border px-3 py-2 text-left align-bottom text-sm font-medium text-muted-foreground';
+	const tbody = 'flex min-w-0 flex-col gap-3 xl:table-row-group';
+	const tr =
+		'flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4 xl:table-row xl:rounded-none xl:border-0 xl:border-b xl:p-0';
+	const td = 'block min-w-0 wrap-break-word xl:table-cell xl:px-3 xl:py-3 xl:align-middle';
+	const tdActions = `${td} xl:w-px xl:text-right`;
+	const actions = 'flex min-w-0 flex-wrap gap-2 xl:flex-nowrap xl:justify-end';
+	/** A form or button holding one row action: full width in a card, its own width in the table. */
+	const actionItem = 'min-w-0 flex-1 basis-32 xl:flex-none xl:basis-auto';
+	const actionButton = `${ui.touch} w-full gap-2 xl:w-auto`;
+	/** A value's column name, shown in a card only (the table has its header). */
+	const cardLabel = `${ui.label} mb-1 xl:hidden`;
+	const cellLink = `${ui.link} inline-flex min-h-11 min-w-11 items-center`;
+	const formButton = `${ui.touch} gap-2`;
 </script>
 
 <svelte:head>
 	<title>{m.classes_heading()} — Sherab Admin</title>
 </svelte:head>
 
-<div class="page">
-	<header class="page-header">
-		<div>
-			<p class="page-kicker">{m.classes_section_label()}</p>
-			<h1 class="page-heading">{m.classes_heading()}</h1>
+{#snippet spinner(key: string)}
+	{#if pending.is(key)}
+		<LoaderCircle class="animate-spin" aria-hidden="true" />
+	{/if}
+{/snippet}
+
+<div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
+	<header class={ui.header}>
+		<div class="min-w-0">
+			<p class={ui.kicker}>{m.classes_section_label()}</p>
+			<h1 class={ui.heading}>{m.classes_heading()}</h1>
 		</div>
-		<span class="page-counter">{num(data.classes.length)}</span>
+		<Badge variant="secondary" class="min-h-7 px-3 text-sm" data-testid="page-counter">
+			{num(data.classes.length)}
+		</Badge>
 	</header>
 
-	<section class="card">
-		<h2>{m.classes_create_heading()}</h2>
-		<form method="POST" action="?/create" use:enhance={pending.submit('create')} novalidate>
-			<!-- Remounted after a successful create only: <ix-input> doesn't take
-			     part in form reset. A failed create keeps the names (echoed back). -->
-			{#key createResult?.success ? createResult : null}
-				<LocalizedNameFields label={m.classes_name_label()} values={createdNames} />
-			{/key}
-			{#key createResult}
-				<BadgeSubjectSelect
-					id="new-class-subject"
-					value={createdSubject}
-					error={createSubjectError}
+	<section class="{ui.card} flex flex-col gap-4" data-testid="class-create">
+		<h2 class={ui.cardTitle}>{m.classes_create_heading()}</h2>
+		<form
+			method="POST"
+			action="?/create"
+			class="flex min-w-0 flex-col gap-4"
+			use:enhance={pending.submit('create')}
+			novalidate
+		>
+			<LocalizedNameFields label={m.classes_name_label()} values={createdNames} />
+			<BadgeSubjectSelect
+				id="new-class-subject"
+				value={createdSubject}
+				error={createSubjectError}
+			/>
+			<h3 class="text-lg leading-snug font-bold">{m.classes_schedule_heading()}</h3>
+			<!-- Remounted on each result, as before story 9: the schedule's defaults
+			     are not empty (Sunday, from today), so they come from the props
+			     rather than from the form reset. -->
+			{#key form}
+				<ScheduleFields
+					idPrefix="new-class"
+					weekdays={schedule.weekdays}
+					startTime={schedule.startTime}
+					durationMinutes={schedule.durationMinutes}
+					startsOn={schedule.startsOn}
+					endsOn={schedule.endsOn}
+					intervalWeeks={schedule.intervalWeeks}
+					errors={scheduleErrors}
 				/>
 			{/key}
-			<h3 class="schedule-heading">{m.classes_schedule_heading()}</h3>
-			<!-- New-UI fields (story 5b): spaced from the iX button below. -->
-			<div class="schedule-fields-wrap">
-				{#key form}
-					<ScheduleFields
-						idPrefix="new-class"
-						weekdays={schedule.weekdays}
-						startTime={schedule.startTime}
-						durationMinutes={schedule.durationMinutes}
-						startsOn={schedule.startsOn}
-						endsOn={schedule.endsOn}
-						intervalWeeks={schedule.intervalWeeks}
-						errors={scheduleErrors}
-					/>
-				{/key}
+			<div>
+				<Button
+					type="submit"
+					class="{formButton} w-full sm:w-auto"
+					aria-busy={pending.is('create') || undefined}
+					disabled={pending.busy}
+				>
+					{#if pending.is('create')}
+						<LoaderCircle class="animate-spin" aria-hidden="true" />
+					{:else}
+						<Plus aria-hidden="true" />
+					{/if}
+					{m.classes_create_submit()}
+				</Button>
 			</div>
-			<ix-button
-				type="submit"
-				icon="add"
-				loading={pending.is('create') || undefined}
-				disabled={pending.busy || undefined}>{m.classes_create_submit()}</ix-button
-			>
 		</form>
 	</section>
 
-	<section class="card">
-		<h2>{m.classes_all_heading()}</h2>
+	<section class="{ui.card} flex flex-col gap-3" data-testid="class-list">
+		<h2 class={ui.cardTitle}>{m.classes_all_heading()}</h2>
 		{#if data.classes.length === 0}
-			<p class="muted">{m.classes_empty()}</p>
+			<p class={ui.muted}>{m.classes_empty()}</p>
 		{:else}
-			<div class="table-wrap">
-				<table>
-					<thead>
-						<tr>
-							<th>{m.classes_col_name()}</th>
-							<th>{m.classes_col_subject()}</th>
-							<th>{m.classes_col_code()}</th>
-							<th>{m.classes_col_students()}</th>
-							<th>{m.classes_col_syllabi()}</th>
-							<th>{m.classes_col_created()}</th>
-							<th><span class="sr-only">{m.classes_col_actions()}</span></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each data.classes as cls (cls.id)}
-							<tr>
-								<td>
-									{cls.label}
-									{#each otherNames(cls) as other (other.lang)}
-										<span class="muted other-name" lang={other.lang}>{other.name}</span>
-									{/each}
-								</td>
-								<td>
-									{#if isBadgeSubject(cls.badge_subject)}
-										{badgeSubjectLabel(cls.badge_subject)}
-									{:else}
-										<ix-pill variant="warning">{m.badge_subject_not_set()}</ix-pill>
-									{/if}
-								</td>
-								<td><CopyField label={m.classes_col_code()} value={cls.code} hideLabel /></td>
-								<td>
-									<span class="actions">
-										<a href={resolve('/admin/classes/[id]/students', { id: cls.id })}>
-											{m.classes_students_summary({ approved: num(cls.approvedCount) })}
-										</a>
-										{#if cls.pendingCount > 0}
-											<ix-pill variant="warning">
-												{m.classes_pending_summary({ pending: num(cls.pendingCount) })}
-											</ix-pill>
-										{/if}
-									</span>
-								</td>
-								<td>
-									<a href={resolve('/admin/classes/[id]/syllabus', { id: cls.id })}>
-										{cls.syllabusCount} · {m.classes_syllabi_open()}
+			<!-- WebKit drops table semantics from a restyled table (cards below 80em): the roles keep them. -->
+			<!-- svelte-ignore a11y_no_redundant_roles -->
+			<table role="table" class={table}>
+				<thead role="rowgroup" class={thead}>
+					<tr role="row">
+						<th role="columnheader" class={th}>{m.classes_col_name()}</th>
+						<th role="columnheader" class={th}>{m.classes_col_subject()}</th>
+						<th role="columnheader" class={th}>{m.classes_col_code()}</th>
+						<th role="columnheader" class={th}>{m.classes_col_students()}</th>
+						<th role="columnheader" class={th}>{m.classes_col_syllabi()}</th>
+						<th role="columnheader" class={th}>{m.classes_col_created()}</th>
+						<th role="columnheader" class={th}
+							><span class="sr-only">{m.classes_col_actions()}</span></th
+						>
+					</tr>
+				</thead>
+				<tbody role="rowgroup" class={tbody}>
+					{#each data.classes as cls (cls.id)}
+						<tr role="row" class={tr} data-testid="class-row" data-class-id={cls.id}>
+							<td role="cell" class="{td} font-semibold xl:font-normal">
+								{cls.label}
+								{#each otherNames(cls) as other (other.lang)}
+									<span class="block text-base font-normal {ui.muted}" lang={other.lang}
+										>{other.name}</span
+									>
+								{/each}
+							</td>
+							<td role="cell" class={td}>
+								<p class={cardLabel}>{m.classes_col_subject()}</p>
+								{#if isBadgeSubject(cls.badge_subject)}
+									{badgeSubjectLabel(cls.badge_subject)}
+								{:else}
+									<Badge variant="warning">{m.badge_subject_not_set()}</Badge>
+								{/if}
+							</td>
+							<td role="cell" class={td}>
+								<p class={cardLabel} aria-hidden="true">{m.classes_col_code()}</p>
+								<CopyField label={m.classes_col_code()} value={cls.code} hideLabel />
+							</td>
+							<td role="cell" class={td}>
+								<p class={cardLabel}>{m.classes_col_students()}</p>
+								<span class="flex min-w-0 flex-wrap items-center gap-2">
+									<a
+										href={resolve('/admin/classes/[id]/students', { id: cls.id })}
+										class={cellLink}
+									>
+										{m.classes_students_summary({ approved: num(cls.approvedCount) })}
 									</a>
-								</td>
-								<td class="muted">{formatInstant(cls.created_at)}</td>
-								<td>
-									<div class="actions" style="justify-content:flex-end;">
-										<ix-button
-											variant="tertiary"
-											icon="pen"
-											disabled={pending.busy || undefined}
+									{#if cls.pendingCount > 0}
+										<Badge variant="warning">
+											{m.classes_pending_summary({ pending: num(cls.pendingCount) })}
+										</Badge>
+									{/if}
+								</span>
+							</td>
+							<td role="cell" class={td}>
+								<p class={cardLabel}>{m.classes_col_syllabi()}</p>
+								<a href={resolve('/admin/classes/[id]/syllabus', { id: cls.id })} class={cellLink}>
+									{cls.syllabusCount} · {m.classes_syllabi_open()}
+								</a>
+							</td>
+							<td role="cell" class="{td} {ui.muted}">
+								<p class={cardLabel}>{m.classes_col_created()}</p>
+								<span>{formatInstant(cls.created_at)}</span>
+							</td>
+							<td role="cell" class={tdActions}>
+								<div class={actions}>
+									<div class={actionItem}>
+										<Button
+											variant="outline"
+											class={actionButton}
+											aria-expanded={editingId === cls.id}
+											disabled={pending.busy}
 											onclick={() => (editingId = editingId === cls.id ? null : cls.id)}
 										>
+											<Pencil aria-hidden="true" />
 											{m.classes_edit()}
-										</ix-button>
-										{#if cls.approvedCount === 0 && cls.pendingCount === 0}
-											<ix-button
-												variant="danger-tertiary"
-												icon="trashcan"
-												loading={pending.is(`delete:${cls.id}`) || undefined}
-												disabled={pending.busy || undefined}
-												onclick={() => deleteClass(cls)}
-											>
-												{m.common_delete()}
-											</ix-button>
-										{/if}
+										</Button>
 									</div>
-								</td>
-							</tr>
-							{#if editingId === cls.id}
-								<tr>
-									<td colspan="7">
+									{#if cls.approvedCount === 0 && cls.pendingCount === 0}
 										<form
 											method="POST"
-											action="?/rename"
-											use:enhance={pending.submit(`rename:${cls.id}`)}
-											novalidate
+											action="?/delete"
+											class={actionItem}
+											use:enhance={pending.submit(`delete:${cls.id}`, {
+												// Asked at submit time (`use:enhance` keeps the options it
+												// mounted with): the name as renamed in place.
+												confirm: () =>
+													confirm.ask(
+														m.classes_delete_confirm({ name: cls.label }),
+														m.common_delete(),
+														{
+															destructive: true
+														}
+													)
+											})}
 										>
 											<input type="hidden" name="classId" value={cls.id} />
-											<fieldset>
-												<legend>{m.classes_edit_title({ name: cls.label })}</legend>
-												<LocalizedNameFields
-													label={m.classes_name_label()}
-													idPrefix="edit-{cls.id}-"
-													values={editValues(cls)}
-												/>
-												<BadgeSubjectSelect
-													id="edit-{cls.id}-subject"
-													value={editValues(cls).badgeSubject}
-													error={editSubjectError(cls)}
-												/>
-											</fieldset>
-											<div class="actions">
-												<ix-button
-													type="submit"
-													loading={pending.is(`rename:${cls.id}`) || undefined}
-													disabled={pending.busy || undefined}>{m.classes_save()}</ix-button
-												>
-												<ix-button
-													variant="secondary"
-													disabled={pending.busy || undefined}
-													onclick={() => (editingId = null)}
-												>
-													{m.common_cancel()}
-												</ix-button>
-											</div>
+											<input type="hidden" name="className" value={cls.label} />
+											<Button
+												type="submit"
+												variant="destructive"
+												class={actionButton}
+												aria-busy={pending.is(`delete:${cls.id}`) || undefined}
+												disabled={pending.busy}
+											>
+												{#if pending.is(`delete:${cls.id}`)}
+													<LoaderCircle class="animate-spin" aria-hidden="true" />
+												{:else}
+													<Trash2 aria-hidden="true" />
+												{/if}
+												{m.common_delete()}
+											</Button>
 										</form>
-									</td>
-								</tr>
-							{/if}
-						{/each}
-					</tbody>
-				</table>
-			</div>
+									{/if}
+								</div>
+							</td>
+						</tr>
+						{#if editingId === cls.id}
+							<tr
+								role="row"
+								class="{tr} -mt-1 border-primary xl:border-primary"
+								data-testid="class-edit-row"
+							>
+								<td role="cell" colspan="7" class="{td} xl:py-4">
+									<form
+										method="POST"
+										action="?/rename"
+										class="flex min-w-0 flex-col gap-4"
+										use:enhance={pending.submit(`rename:${cls.id}`)}
+										novalidate
+									>
+										<input type="hidden" name="classId" value={cls.id} />
+										<fieldset class="flex min-w-0 flex-col gap-4">
+											<legend class="mb-3 font-bold wrap-break-word">
+												{m.classes_edit_title({ name: cls.label })}
+											</legend>
+											<LocalizedNameFields
+												label={m.classes_name_label()}
+												idPrefix="edit-{cls.id}-"
+												values={editValues(cls)}
+											/>
+											<BadgeSubjectSelect
+												id="edit-{cls.id}-subject"
+												value={editValues(cls).badgeSubject}
+												error={editSubjectError(cls)}
+											/>
+										</fieldset>
+										<div class="flex min-w-0 flex-wrap gap-2">
+											<Button
+												type="submit"
+												class="{formButton} flex-1 sm:flex-none"
+												aria-busy={pending.is(`rename:${cls.id}`) || undefined}
+												disabled={pending.busy}
+											>
+												{@render spinner(`rename:${cls.id}`)}
+												{m.classes_save()}
+											</Button>
+											<Button
+												variant="outline"
+												class="{formButton} flex-1 sm:flex-none"
+												disabled={pending.busy}
+												onclick={() => (editingId = null)}
+											>
+												{m.common_cancel()}
+											</Button>
+										</div>
+									</form>
+								</td>
+							</tr>
+						{/if}
+					{/each}
+				</tbody>
+			</table>
 		{/if}
 	</section>
 
-	<form
-		bind:this={deleteForm}
-		method="POST"
-		action="?/delete"
-		use:enhance={pending.submit(() => `delete:${deleteTarget.id}`)}
-		hidden
-	>
-		<input type="hidden" name="classId" value={deleteTarget.id} />
-		<input type="hidden" name="className" value={deleteTarget.name} />
-	</form>
+	<ConfirmDialog {confirm} />
 </div>
-
-<style>
-	.schedule-fields-wrap {
-		margin-bottom: var(--space-4);
-	}
-	.schedule-heading {
-		margin: var(--space-2) 0 var(--space-2);
-		font-size: var(--theme-font-size-l);
-	}
-	.other-name {
-		display: block;
-		font-size: var(--theme-font-size-default);
-	}
-</style>

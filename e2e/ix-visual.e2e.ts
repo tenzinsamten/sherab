@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import { service, signIn, type TestUser } from './fixtures';
 
 /**
  * Mobile-first redesign, story 1: screenshot baselines of the iX pages,
@@ -22,6 +21,10 @@ import { service, signIn, type TestUser } from './fixtures';
  *
  * Story 7 (teacher class pages): the teacher dashboard is no longer an iX
  * page, so its shots are gone; it has its own checks in teacher-mobile.e2e.ts.
+ *
+ * Story 9 (admin pages): the admin classes page is no longer an iX page, so
+ * its shots are gone too; the admin pages have their own checks in
+ * teacher-mobile.e2e.ts ("admin pages"). Only the login shots are left.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -29,39 +32,6 @@ test.skip(
 	process.platform !== 'darwin',
 	'Baselines exist for darwin only; another platform would write unverified ones.'
 );
-
-const tag = crypto.randomUUID().slice(0, 8);
-const userIds: string[] = [];
-
-let admin: TestUser;
-
-async function createUser(role: 'admin'): Promise<TestUser> {
-	const email = `e2e-ixvis-${role}-${tag}@example.test`;
-	const password = crypto.randomUUID();
-	const { data, error } = await service.auth.admin.createUser({
-		email,
-		password,
-		email_confirm: true,
-		app_metadata: { role },
-		user_metadata: { display_name: `Visual ${role}` }
-	});
-	if (error || !data.user) throw new Error(`create ${role}: ${error?.message}`);
-	userIds.push(data.user.id);
-	return { id: data.user.id, email, password };
-}
-
-test.beforeAll(async () => {
-	admin = await createUser('admin');
-});
-
-test.afterAll(async () => {
-	const problems: string[] = [];
-	for (const id of userIds) {
-		const { error } = await service.auth.admin.deleteUser(id);
-		if (error) problems.push(`delete user ${id}: ${error.message}`);
-	}
-	if (problems.length) throw new Error(problems.join('; '));
-});
 
 const VIEWPORTS = [
 	{ name: 'phone', width: 375, height: 812 },
@@ -77,11 +47,7 @@ async function settle(page: Page) {
 	await page.waitForTimeout(500);
 }
 
-/**
- * Puts what other test files leave behind in the shared database into a fixed
- * state, so the image does not depend on which tests ran before: masking
- * alone is not enough, since a mask takes the size of what it covers.
- */
+/** Hides the new shell around the shot content (it is not part of the proof). */
 async function normalize(page: Page, content: string) {
 	await page.evaluate((content) => {
 		// The new shell (story 2) is not part of the proof. A page taller than
@@ -92,17 +58,6 @@ async function normalize(page: Page, content: string) {
 		for (const chrome of document.querySelectorAll<HTMLElement>('[data-ui="new"]')) {
 			if (newPage && chrome.closest(content)) continue;
 			chrome.style.visibility = 'hidden';
-		}
-		// The admin class counter: one digit.
-		for (const counter of document.querySelectorAll('.page-counter')) counter.textContent = '0';
-		// The admin list of all classes: empty, at a fixed height (it stays masked).
-		const list =
-			location.pathname === '/admin/classes'
-				? document.querySelector<HTMLElement>('.page > section.card:last-of-type')
-				: null;
-		if (list) {
-			list.replaceChildren();
-			list.style.height = '8rem';
 		}
 	}, content);
 }
@@ -141,18 +96,6 @@ for (const viewport of VIEWPORTS) {
 		test(`login (${viewport.name})`, async ({ page }) => {
 			await page.goto('/login');
 			await shoot(page, `login-${viewport.name}`, [], '[data-auth-card]');
-		});
-
-		test(`admin classes (${viewport.name})`, async ({ page }) => {
-			await signIn(page, admin);
-			await page.goto('/admin/classes');
-			// The class count and the list of all classes depend on what else is
-			// in the database; the rest of the create form and the page frame do
-			// not. The schedule fields are new UI (story 5b), hidden like the shell.
-			await shoot(page, `admin-classes-${viewport.name}`, [
-				'.page-counter',
-				'.page > section.card:last-of-type'
-			]);
 		});
 	});
 }

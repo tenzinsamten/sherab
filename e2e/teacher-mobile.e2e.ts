@@ -1551,7 +1551,7 @@ test.describe('homework create and review', () => {
  * Story 8: the syllabus pages (list and one syllabus, with sections and
  * files) and the class members on the new UI, on class B (student 0 only,
  * no syllabus). One test per matrix row at 375 and 820px, the admin hosts
- * (still iX) at 1440px, and the fit check in en, de and bo.
+ * at 1440px (on the new UI since story 9), and the fit check in en, de and bo.
  */
 test.describe('syllabus and class members', () => {
 	const BUCKET = 'syllabus-files';
@@ -1640,13 +1640,6 @@ test.describe('syllabus and class members', () => {
 			'record file'
 		);
 		return `${syllabusList()}/${syllabusId}`;
-	}
-
-	/** The admin pages are still iX: hydrated once the layout has defined iX. */
-	async function openAdminPage(page: Page, path: string) {
-		await page.goto(path);
-		await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
-		await page.waitForLoadState('networkidle');
 	}
 
 	test.afterAll(async () => {
@@ -1870,7 +1863,7 @@ test.describe('syllabus and class members', () => {
 		});
 	}
 
-	test('admin hosts (desktop, still iX): sections, a file and enrolment work as before', async ({
+	test('admin hosts (desktop): sections, a file and enrolment work as before', async ({
 		browser
 	}) => {
 		test.setTimeout(120_000);
@@ -1880,7 +1873,7 @@ test.describe('syllabus and class members', () => {
 		const page = await context.newPage();
 		try {
 			await signIn(page, admin);
-			await openAdminPage(page, adminPath);
+			await openPage(page, adminPath);
 			await expect(titles(page)).toHaveText(['Admin song']);
 
 			// Add, save and delete a section.
@@ -1909,7 +1902,7 @@ test.describe('syllabus and class members', () => {
 			]);
 
 			// Enrol a student and remove them again.
-			await openAdminPage(page, `/admin/classes/${classes.b.id}/students`);
+			await openPage(page, `/admin/classes/${classes.b.id}/students`);
 			await page.locator('#enroll-student').selectOption(students[7].id);
 			await page.getByRole('button', { name: 'Add to class' }).click();
 			await expect(toast(page, 'Student added to the class.')).toBeVisible();
@@ -1955,11 +1948,8 @@ test.describe('syllabus and class members', () => {
 			}
 		});
 	}
-	/** The components' own top-level new-UI roots on an admin page (still iX around them). */
-	const adminRoots = 'main [data-ui="new"]:not([data-ui="new"] [data-ui="new"])';
-
 	for (const viewport of VIEWPORTS) {
-		test(`admin hosts (${viewport.name}, still iX): the syllabus list and page and the members fit`, async ({
+		test(`admin hosts (${viewport.name}): the syllabus list and page and the members fit`, async ({
 			browser
 		}) => {
 			const longName = `${'Tashi_delek_'.repeat(10)}.pdf`;
@@ -1969,24 +1959,281 @@ test.describe('syllabus and class members', () => {
 			const page = await context.newPage();
 			try {
 				await signIn(page, admin);
-				await openAdminPage(page, `/admin/classes/${classes.b.id}/syllabus`);
+				await openPage(page, `/admin/classes/${classes.b.id}/syllabus`);
 				await expect(page.getByTestId('syllabus-row')).toHaveCount(1);
-				await expectFits(page, adminRoots);
+				await expectFits(page);
 
-				await openAdminPage(page, adminPath);
+				await openPage(page, adminPath);
 				await expect(page.getByTestId('file-name')).toHaveText([longName]);
-				await expectFits(page, adminRoots);
+				await expectFits(page);
 				await page.getByTestId('section-edit').click();
 				await expect(page.locator('form[action="?/updateSection"]')).toBeVisible();
-				await expectFits(page, adminRoots);
+				await expectFits(page);
 
-				await openAdminPage(page, `/admin/classes/${classes.b.id}/students`);
+				await openPage(page, `/admin/classes/${classes.b.id}/students`);
 				await expect(memberRow(page, students[0])).toHaveCount(1);
-				await expectFits(page, adminRoots);
+				await expectFits(page);
 			} finally {
 				await context.close();
 				await clearSyllabi();
 			}
 		});
 	}
+});
+
+/**
+ * Story 9: the admin pages (dashboard, classes, teams, parents) on the new
+ * UI. Rows are cards below 80em and a full table with the side nav from
+ * 80em; no iX inside `main`; every row action is reachable; the fit check
+ * (no sideways scroll, ≥44px targets, no cut labels) at 375, 820 and
+ * 1440px in en, de and bo. A class and a team without members
+ * are made here, to be edited and deleted.
+ */
+test.describe('admin pages', () => {
+	const ADMIN_PAGES = ['/admin', '/admin/classes', '/admin/teams', '/admin/parents'];
+	const dialog = (page: Page) => page.getByTestId('confirm-dialog');
+
+	function capturePosts(page: Page, action: string): URLSearchParams[] {
+		const posts: URLSearchParams[] = [];
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && r.url().endsWith(`?/${action}`)) {
+				posts.push(new URLSearchParams(r.postData() ?? ''));
+			}
+		});
+		return posts;
+	}
+
+	/** The `ix-*` elements inside `main` (none on a migrated page). */
+	async function ixInMain(page: Page) {
+		return page.evaluate(
+			() =>
+				[...document.querySelectorAll('main *')].filter((el) =>
+					el.tagName.toLowerCase().startsWith('ix-')
+				).length
+		);
+	}
+
+	async function makeClass(name: string) {
+		return check(
+			await service
+				.from('classes')
+				.insert({
+					name,
+					name_bo: `${name} bo`,
+					code: `A${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+					badge_subject: 'dance'
+				})
+				.select('id')
+				.single(),
+			'create class'
+		);
+	}
+
+	async function makeTeam(name: string) {
+		return check(
+			await service
+				.from('teams')
+				.insert({ name, name_bo: `${name} bo` })
+				.select('id')
+				.single(),
+			'create team'
+		);
+	}
+
+	for (const viewport of [...VIEWPORTS, DESKTOP]) {
+		test(`admin pages at ${viewport.width}px: ${viewport === DESKTOP ? 'tables and side nav' : 'cards'}, no iX, everything fits`, async ({
+			browser
+		}) => {
+			const page = await teacherPage(browser, viewport.width, viewport.height, admin);
+			try {
+				for (const path of ADMIN_PAGES) {
+					await openPage(page, path);
+					expect(await ixInMain(page), path).toBe(0);
+					await expect(page.getByTestId('side-nav')).toBeVisible({
+						visible: viewport === DESKTOP
+					});
+					if (path !== '/admin') {
+						const head = page.locator('main thead').first();
+						await expect(head).toBeVisible({ visible: viewport === DESKTOP });
+					}
+					await expectFits(page);
+				}
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
+
+	for (const locale of ['de', 'bo']) {
+		for (const viewport of [...VIEWPORTS, DESKTOP]) {
+			test(`admin pages at ${viewport.width}px in ${locale}: no sideways scroll, ≥44px targets, no cut labels`, async ({
+				browser
+			}) => {
+				const page = await teacherPage(browser, viewport.width, viewport.height, admin);
+				try {
+					await page
+						.context()
+						.addCookies([
+							{ name: 'PARAGLIDE_LOCALE', value: locale, url: new URL(page.url()).origin }
+						]);
+					for (const path of ADMIN_PAGES) {
+						await openPage(page, path);
+						await expect(page.locator('html')).toHaveAttribute('lang', locale);
+						if (path !== '/admin') {
+							await expect(page.locator('main thead').first()).toBeVisible({
+								visible: viewport === DESKTOP
+							});
+						}
+						await expectFits(page);
+					}
+				} finally {
+					await page.context().close();
+				}
+			});
+		}
+	}
+
+	test('classes at 820px: a card keeps every action; edit, cancel, save, and delete in the red dialog', async ({
+		browser
+	}) => {
+		const name = `TM admin class ${tag}`;
+		const renamed = `TM admin class renamed ${tag}`;
+		const cls = await makeClass(name);
+		const page = await teacherPage(browser, 820, 1180, admin);
+		const renames = capturePosts(page, 'rename');
+		const deletes = capturePosts(page, 'delete');
+		try {
+			await openPage(page, '/admin/classes');
+			const card = page.locator(`[data-testid="class-row"][data-class-id="${cls.id}"]`);
+			await expect(card).toBeVisible();
+			await expect(card.getByRole('button', { name: 'Edit class' })).toBeVisible();
+			await expect(card.getByRole('button', { name: 'Delete' })).toBeVisible();
+			await expect(card.getByRole('link', { name: '0 enrolled' })).toBeVisible();
+			await expect(card.getByRole('button', { name: /^Copy/ })).toBeVisible();
+			// A class with students has no Delete (class A has eight).
+			const withStudents = page.locator(
+				`[data-testid="class-row"][data-class-id="${classes.a.id}"]`
+			);
+			await expect(withStudents.getByRole('button', { name: 'Edit class' })).toBeVisible();
+			await expect(withStudents.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+
+			// Cancel: nothing posted, the form closes.
+			await card.getByRole('button', { name: 'Edit class' }).click();
+			const form = page.locator('form[action="?/rename"]');
+			await expect(form.locator('input[name="name"]')).toHaveValue(name);
+			await expect(form.locator(`#edit-${cls.id}-subject`)).toHaveValue('dance');
+			await form.getByRole('button', { name: 'Cancel' }).click();
+			await expect(form).toHaveCount(0);
+			expect(renames).toHaveLength(0);
+
+			// No subject ("Not set"): the error is under the field, the form stays open.
+			await card.getByRole('button', { name: 'Edit class' }).click();
+			const subject = form.locator(`#edit-${cls.id}-subject`);
+			await subject.selectOption('');
+			await form.getByRole('button', { name: 'Save', exact: true }).click();
+			const subjectError = form.locator(`#edit-${cls.id}-subject-error`);
+			await expect(subjectError).toHaveText('Choose the badge subject.');
+			await expect(subject).toHaveAttribute('aria-invalid', 'true');
+			await expect(subject).toHaveAttribute('aria-describedby', `edit-${cls.id}-subject-error`);
+			expect(renames).toHaveLength(1);
+
+			// Save: the row shows the new name.
+			await subject.selectOption('dance');
+			await form.locator('input[name="name"]').fill(renamed);
+			await expectFits(page);
+			await form.getByRole('button', { name: 'Save', exact: true }).click();
+			await expect(toast(page, `“${renamed}” saved.`)).toBeVisible();
+			await expect(form).toHaveCount(0);
+			await expect(card).toContainText(renamed);
+			expect(renames).toHaveLength(2);
+
+			// Delete: Cancel posts nothing; Delete (red) removes the row. The
+			// question names the class as renamed above, not its old name.
+			await card.getByRole('button', { name: 'Delete' }).click();
+			await expect(dialog(page)).toContainText(`Delete class “${renamed}”?`);
+			const confirmDelete = dialog(page).getByRole('button', { name: 'Delete', exact: true });
+			await expect(confirmDelete).toHaveClass(/text-destructive/);
+			await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+			await expect(dialog(page)).toHaveCount(0);
+			expect(deletes).toHaveLength(0);
+			await card.getByRole('button', { name: 'Delete' }).click();
+			await confirmDelete.click();
+			await expect(toast(page, `Class “${renamed}” deleted.`)).toBeVisible();
+			await expect(card).toHaveCount(0);
+			expect(deletes).toHaveLength(1);
+			expect(deletes[0].get('classId')).toBe(cls.id);
+		} finally {
+			await page.context().close();
+			await service.from('classes').delete().eq('id', cls.id);
+		}
+	});
+
+	test('teams at 375px: create clears the form; a card keeps every action; rename and delete', async ({
+		browser
+	}) => {
+		const name = `TM admin team ${tag}`;
+		const created = `TM admin new team ${tag}`;
+		const existing = await makeTeam(name);
+		const page = await teacherPage(browser, 375, 740, admin);
+		const renames = capturePosts(page, 'rename');
+		const deletes = capturePosts(page, 'delete');
+		try {
+			await openPage(page, '/admin/teams');
+			// Create: toast, the row appears, the fields are empty again.
+			await page.locator('#name').fill(created);
+			await page.locator('#name-bo').fill(`${created} bo`);
+			await page.getByRole('button', { name: 'Create team' }).click();
+			await expect(toast(page, `Team "${created}" created.`)).toBeVisible();
+			await expect(page.getByTestId('team-row').filter({ hasText: created })).toHaveCount(1);
+			await expect(page.locator('#name')).toHaveValue('');
+			await expect(page.locator('#name-bo')).toHaveValue('');
+
+			const card = page.locator(`[data-testid="team-row"][data-team-id="${existing.id}"]`);
+			const link = card.getByRole('link', { name, exact: true });
+			await expect(link).toHaveAttribute('title', `Students of team ${name}`);
+			await expect(card.getByRole('button', { name: 'Edit names' })).toBeVisible();
+			await expect(card.getByRole('button', { name: 'Delete' })).toBeVisible();
+			await expectFits(page);
+			// A team with members (the fixture's team) has no Delete.
+			const withMembers = page.locator(
+				`[data-testid="team-row"][data-team-id="${await team.id()}"]`
+			);
+			await expect(withMembers.getByRole('button', { name: 'Edit names' })).toBeVisible();
+			await expect(withMembers.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+
+			// Cancel: nothing posted, the form closes.
+			await card.getByRole('button', { name: 'Edit names' }).click();
+			const form = page.locator('form[action="?/rename"]');
+			await expect(form.locator('input[name="name"]')).toHaveValue(name);
+			await form.getByRole('button', { name: 'Cancel' }).click();
+			await expect(form).toHaveCount(0);
+			expect(renames).toHaveLength(0);
+
+			await card.getByRole('button', { name: 'Edit names' }).click();
+			await form.locator('input[name="nameDe"]').fill(`${name} de`);
+			await form.getByRole('button', { name: 'Save names' }).click();
+			await expect(toast(page, `Names of “${name}” saved.`)).toBeVisible();
+			await expect(form).toHaveCount(0);
+			await expect(card.locator('[lang="de"]')).toHaveText(`${name} de`);
+			expect(renames).toHaveLength(1);
+
+			// Delete: Cancel posts nothing; Delete (red) removes the row.
+			await card.getByRole('button', { name: 'Delete' }).click();
+			const confirmDelete = dialog(page).getByRole('button', { name: 'Delete', exact: true });
+			await expect(confirmDelete).toHaveClass(/text-destructive/);
+			await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+			await expect(dialog(page)).toHaveCount(0);
+			expect(deletes).toHaveLength(0);
+			await expect(card).toHaveCount(1);
+			await card.getByRole('button', { name: 'Delete' }).click();
+			await confirmDelete.click();
+			await expect(toast(page, `Team “${name}” deleted.`)).toBeVisible();
+			await expect(card).toHaveCount(0);
+			expect(deletes).toHaveLength(1);
+			expect(deletes[0].get('teamId')).toBe(existing.id);
+		} finally {
+			await page.context().close();
+			await service.from('teams').delete().in('name', [name, created]);
+		}
+	});
 });

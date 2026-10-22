@@ -74,10 +74,10 @@ test.afterAll(async () => {
 /** A syllabus's own page: where adding a syllabus lands. */
 const SYLLABUS_PAGE = /\/syllabus\/[0-9a-f-]{36}$/;
 
-/** Waits for hydration and for the iX form components to be defined. */
+/** Waits for the page's new-UI root to be hydrated (mobile-first story 9: the admin pages). */
 async function openForm(page: Page, path: string) {
 	await page.goto(path);
-	await page.waitForFunction(() => customElements.get('ix-select') !== undefined);
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
 
@@ -302,30 +302,40 @@ test('admin team create: the name field is empty again after a create (#66 B8a)'
 	const name = `E2E66 Team ${fx.tag}`;
 	try {
 		await signIn(page, fx.admin);
-		await page.goto('/admin/teams');
-		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
-		await page.waitForLoadState('networkidle');
+		await openForm(page, '/admin/teams');
 
+		// Story 9 matrix "Create team": a missing name keeps the error toast and
+		// saves nothing.
 		const field = page.locator('#name');
-		await field.locator('input').first().fill(name);
+		await field.fill(name);
+		await page.getByRole('button', { name: 'Create team' }).click();
+		await expect(
+			page.locator('ix-toast').getByText('The Tibetan team name is required.')
+		).toBeVisible();
+		await expect(field).toHaveValue(name);
+		const { data: notSaved } = await service.from('teams').select('id').eq('name', name);
+		expect(notSaved).toEqual([]);
+
+		await field.fill(name);
 		// #76: the Tibetan name is required too.
-		await page.locator('#name-bo input').first().fill(`${name} bo`);
-		await expect(field).toHaveJSProperty('value', name);
+		await page.locator('#name-bo').fill(`${name} bo`);
+		await expect(field).toHaveValue(name);
 		await page.getByRole('button', { name: 'Create team' }).click();
 		await expect(page.locator('ix-toast').getByText(`Team "${name}" created.`)).toBeVisible();
 		// #76: the cell shows the name and, under it, the names in the other languages.
 		const cell = page.getByRole('cell', { name: `${name} ${name} bo`, exact: true });
 		await expect(cell).toBeVisible();
 		await expect(cell.locator('[lang="bo"]')).toHaveText(`${name} bo`);
-		await expect(page.locator('#name')).toHaveJSProperty('value', '');
+		await expect(page.locator('#name')).toHaveValue('');
+		await expect(page.locator('#name-bo')).toHaveValue('');
 
 		// A duplicate name fails: the toast shows and the name is kept.
-		await page.locator('#name input').first().fill(name);
+		await page.locator('#name').fill(name);
 		// #76: the Tibetan name is required too.
-		await page.locator('#name-bo input').first().fill(`${name} bo`);
+		await page.locator('#name-bo').fill(`${name} bo`);
 		await page.getByRole('button', { name: 'Create team' }).click();
 		await expect(page.locator('ix-toast').getByText(/already/i)).toBeVisible();
-		await expect(page.locator('#name')).toHaveJSProperty('value', name);
+		await expect(page.locator('#name')).toHaveValue(name);
 	} finally {
 		await service.from('teams').delete().eq('name', name);
 	}
@@ -342,24 +352,22 @@ test('admin team names: edit the names, and each interface language shows its ow
 	if (insertError) throw new Error(`create team: ${insertError.message}`);
 	try {
 		await signIn(page, fx.admin);
-		await page.goto('/admin/teams');
-		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
-		await page.waitForLoadState('networkidle');
+		await openForm(page, '/admin/teams');
 
 		const row = page.locator('tr').filter({ hasText: name });
 		await row.getByRole('button', { name: 'Edit names' }).click();
 		const form = page.locator('form[action="?/rename"]');
-		await expect(form.locator('ix-input[name="name"]')).toHaveJSProperty('value', name);
+		await expect(form.locator('input[name="name"]')).toHaveValue(name);
 
 		// Tibetan is required: saving without it fails and keeps the form open.
-		await form.locator('ix-input[name="nameDe"] input').first().fill(german);
+		await form.locator('input[name="nameDe"]').fill(german);
 		await form.getByRole('button', { name: 'Save names' }).click();
 		await expect(
 			page.locator('ix-toast').getByText('The Tibetan team name is required.')
 		).toBeVisible();
-		await expect(form.locator('ix-input[name="nameDe"]')).toHaveJSProperty('value', german);
+		await expect(form.locator('input[name="nameDe"]')).toHaveValue(german);
 
-		await form.locator('ix-input[name="nameBo"] input').first().fill(tibetan);
+		await form.locator('input[name="nameBo"]').fill(tibetan);
 		await form.getByRole('button', { name: 'Save names' }).click();
 		await expect(page.locator('ix-toast').getByText(`Names of “${name}” saved.`)).toBeVisible();
 		await expect(form).toHaveCount(0);
@@ -386,7 +394,7 @@ test('admin team names: edit the names, and each interface language shows its ow
 			tibetanRow.getByText(/^ཕྱི་ལོ་ [༠-༩]{4} ཟླ་ [༠-༩]{1,2} ཚེས་ [༠-༩]{1,2}$/)
 		).toBeVisible();
 		await expect(tibetanRow.getByRole('cell', { name: '༠', exact: true })).toBeVisible();
-		await expect(page.locator('.page-counter')).toHaveText(/^[༠-༩]+$/);
+		await expect(page.getByTestId('page-counter')).toHaveText(/^[༠-༩]+$/);
 
 		// #79: a locale link sets the language and lands on the plain address;
 		// the language then holds across in-app navigation.
@@ -450,17 +458,15 @@ test('admin class edit: opens with its badge subject and a names-only save keeps
 	if (insertError || !cls) throw new Error(`create class: ${insertError?.message}`);
 	try {
 		await signIn(page, fx.admin);
-		await page.goto('/admin/classes');
-		await page.waitForFunction(() => customElements.get('ix-select') !== undefined);
-		await page.waitForLoadState('networkidle');
+		await openForm(page, '/admin/classes');
 
 		const row = page.locator('tr').filter({ hasText: name });
 		await expect(row.getByRole('cell', { name: 'Dance & song', exact: true })).toBeVisible();
 		await row.getByRole('button', { name: 'Edit class' }).click();
 		const form = page.locator('form[action="?/rename"]');
-		await expect(form.locator(`#edit-${cls.id}-subject`)).toHaveJSProperty('value', 'dance');
+		await expect(form.locator(`#edit-${cls.id}-subject`)).toHaveValue('dance');
 
-		await form.locator('ix-input[name="name"] input').first().fill(renamed);
+		await form.locator('input[name="name"]').fill(renamed);
 		await form.getByRole('button', { name: 'Save', exact: true }).click();
 		await expect(page.locator('ix-toast').getByText(`“${renamed}” saved.`)).toBeVisible();
 		await expect(form).toHaveCount(0);
@@ -578,36 +584,64 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 	if (insertError) throw new Error(`create class: ${insertError.message}`);
 	try {
 		await signIn(page, fx.admin);
-		await page.goto('/admin/classes');
-		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
-		await page.waitForLoadState('networkidle');
+		await openForm(page, '/admin/classes');
+
+		// Story 9 matrix "Create class": no English name and no subject. The
+		// name keeps the error toast, the subject's error is under its field,
+		// and nothing is saved.
+		const tibetanOnly = `E2E66 bo only ${fx.tag}`;
+		await page.locator('#name-bo').fill(tibetanOnly);
+		await page.getByRole('button', { name: 'Create class' }).click();
+		await expect(page.locator('ix-toast').getByText('Class name is required.')).toBeVisible();
+		const subjectError = page.locator('#new-class-subject-error');
+		await expect(subjectError).toHaveText('Choose the badge subject.');
+		await expect(subjectError).toHaveAttribute('role', 'alert');
+		await expect(page.locator('#new-class-subject')).toHaveAttribute('aria-invalid', 'true');
+		await expect(page.locator('#new-class-subject')).toHaveAttribute(
+			'aria-describedby',
+			'new-class-subject-error'
+		);
+		await expect(page.locator('#name-bo')).toHaveValue(tibetanOnly);
+		const { data: notSaved } = await service
+			.from('classes')
+			.select('id')
+			.eq('name_bo', tibetanOnly);
+		expect(notSaved).toEqual([]);
 
 		// An existing name: the create fails and the name stays.
 		const field = page.locator('#name');
-		await field.locator('input').first().fill(typed);
+		await field.fill(typed);
 		// #76: the Tibetan name is required too.
-		await page.locator('#name-bo input').first().fill(`${typed} bo`);
+		await page.locator('#name-bo').fill(`${typed} bo`);
 		// Badge detail CAP-1: the subject is required.
 		const subject = page.locator('#new-class-subject');
-		await subject.locator('input').first().click();
-		await subject.locator('ix-select-item[value="language"]').click();
-		await expect(subject).toHaveJSProperty('value', 'language');
+		await subject.selectOption('language');
+		await expect(subject).toHaveValue('language');
 		await page.getByRole('button', { name: 'Create class' }).click();
 		await expect(page.locator('ix-toast').getByText(/already exists/)).toBeVisible();
-		await expect(field).toHaveJSProperty('value', typed);
+		await expect(field).toHaveValue(typed);
+		await expect(subject).toHaveValue('language');
+		// A subject picked: its error is gone.
+		await expect(subjectError).toHaveCount(0);
+		await expect(subject).not.toHaveAttribute('aria-invalid', 'true');
 
 		// A half-typed name survives deleting another class.
-		await field.locator('input').first().fill('Half typed');
-		await expect(field).toHaveJSProperty('value', 'Half typed');
+		await field.fill('Half typed');
+		await expect(field).toHaveValue('Half typed');
 		await page
 			.locator('tr')
 			.filter({ hasText: throwaway })
 			.getByRole('button', { name: 'Delete' })
 			.click();
-		await page.locator('ix-modal').getByRole('button', { name: 'Delete' }).last().click();
+		// The new alert dialog (mobile-first story 9), its Delete red.
+		const confirmDelete = page
+			.getByTestId('confirm-dialog')
+			.getByRole('button', { name: 'Delete', exact: true });
+		await expect(confirmDelete).toHaveClass(/text-destructive/);
+		await confirmDelete.click();
 		await expect(page.locator('ix-toast').getByText(`Class “${throwaway}” deleted.`)).toBeVisible();
 		await expect(page.getByRole('cell', { name: throwaway, exact: true })).toHaveCount(0);
-		await expect(page.locator('#name')).toHaveJSProperty('value', 'Half typed');
+		await expect(page.locator('#name')).toHaveValue('Half typed');
 	} finally {
 		await service.from('classes').delete().eq('name', throwaway);
 	}

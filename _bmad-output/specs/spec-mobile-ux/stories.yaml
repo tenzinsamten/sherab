@@ -157,6 +157,19 @@
     Every admin action that exists today must stay reachable; the admin e2e
     tests are the regression net.
 
+- id: "9b"
+  title: Admin teachers page
+  description: >-
+    Migrate /admin/teachers: create form with native fields and a class
+    checkbox list, edit classes, reset password and remove, the promote
+    flow, and the one-time password as the Requests outcome box. Split
+    from story 9 at its scope gate. See SPEC.md CAP-8.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Keep the promotable -> confirm -> promote=1 resubmit and the
+    also-a-parent remove message. forms.e2e and parent-access.e2e are the
+    regression net.
+
 - id: "10"
   title: Remove iX and final regression
   description: >-

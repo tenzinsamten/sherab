@@ -98,6 +98,14 @@
 @source '../components/SyllabusDetail.svelte';
 @source '../components/EnrollmentPanel.svelte';
 @source '../../routes/teacher/classes/*/syllabus/**/*.svelte';
+/* Story 9: the admin pages (not /admin/teachers, story 9b) and the admin's
+   name and badge-subject fields. */
+@source '../../routes/admin/+page.svelte';
+@source '../../routes/admin/classes/**/*.svelte';
+@source '../../routes/admin/parents/*.svelte';
+@source '../../routes/admin/teams/*.svelte';
+@source '../components/LocalizedNameFields.svelte';
+@source '../components/BadgeSubjectSelect.svelte';
 
 /* Sherab theme, mapped from today's iX classic light theme and the Sherab
    overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */
