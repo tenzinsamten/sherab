@@ -3,6 +3,7 @@ import { currentSchoolYear, selectableSchoolYears } from '../src/lib/school-year
 import {
 	createCalendarFixture,
 	fixtureTeam,
+	renderedFonts,
 	service,
 	signIn,
 	type CalendarFixture
@@ -174,7 +175,7 @@ test('link rows: a blank middle row is skipped, rows 1 and 3 save and reopen in 
 	// Saved: shown formatted, in the Tibetan font under the English interface.
 	const shown = page.locator('.rich-text');
 	await expect(shown).toHaveAttribute('lang', 'bo');
-	await expect(shown).toHaveCSS('font-family', /Atisha/);
+	expect(await renderedFonts(shown.locator('p strong'))).toContain('Atisha');
 	await expect(shown.locator('p strong')).toHaveText('སློབ་ཚན་དང་པོ།');
 	await expect(shown.locator('p').nth(1)).toHaveText('Week 2: songs');
 

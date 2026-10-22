@@ -6,6 +6,7 @@ import {
 	env,
 	fixtureTeam,
 	isoWeekday,
+	renderedFonts,
 	service,
 	signIn,
 	type TestUser
@@ -1263,16 +1264,16 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 		await expect(studentPage.locator('html')).toHaveAttribute('lang', 'en');
 		const heading = studentPage.locator('h1 span[lang="bo"]');
 		await expect(heading).toHaveText(title);
-		await expect(heading).toHaveCSS('font-family', /Atisha/);
+		expect(await renderedFonts(heading)).toContain('Atisha');
 
 		const content = studentPage.locator('.rich-text');
 		await expect(content).toHaveAttribute('lang', 'bo');
-		await expect(content).toHaveCSS('font-family', /Atisha/);
+		expect(await renderedFonts(content)).toContain('Atisha');
 		await expect(content.locator('p strong')).toHaveText('གལ་ཆེན།');
 		await expect(content.locator('p').nth(1)).toHaveText(long);
 		await expect(content.locator('ul > li')).toHaveText(['དང་པོ།', 'གཉིས་པ།']);
-		// The page around it keeps the interface's font.
-		await expect(studentPage.getByTestId('homework-meta')).not.toHaveCSS('font-family', /Atisha/);
+		// The page around it keeps the interface's (system) font.
+		expect(await renderedFonts(studentPage.getByTestId('homework-meta'))).not.toContain('Atisha');
 		// Atisha draws Tibetan 1.36x (#78, #85). (Its alias under iX's family
 		// name went with iX in mobile-first story 10.)
 		const faces = await studentPage.evaluate(async () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
 
 /**
@@ -393,4 +393,35 @@ export async function openHelp(page: Page) {
 	await mainNav(page).getByRole('button', { name: 'Help' }).click();
 	await expect(helpSheet(page)).toBeVisible();
 	return helpSheet(page);
+}
+
+/**
+ * The fonts Chrome actually drew the element's own text with (CDP; text in
+ * child elements is not counted, so point it at the element holding the
+ * text). Every font
+ * stack starts with Atisha, which only covers the Tibetan block, so the
+ * computed `font-family` no longer tells Tibetan from Latin text; this
+ * does. Waits for the fonts to load first, so a face still downloading is
+ * not reported as its fallback. Chromium only.
+ */
+export async function renderedFonts(locator: Locator): Promise<string[]> {
+	const page = locator.page();
+	await page.evaluate(() => document.fonts.ready.then(() => undefined));
+	const mark = crypto.randomUUID();
+	await locator.evaluate((element, value) => element.setAttribute('data-font-probe', value), mark);
+	const session = await page.context().newCDPSession(page);
+	try {
+		await session.send('DOM.enable');
+		await session.send('CSS.enable');
+		const { root } = await session.send('DOM.getDocument', { depth: -1 });
+		const { nodeId } = await session.send('DOM.querySelector', {
+			nodeId: root.nodeId,
+			selector: `[data-font-probe="${mark}"]`
+		});
+		const { fonts } = await session.send('CSS.getPlatformFontsForNode', { nodeId });
+		return fonts.map((font) => font.familyName);
+	} finally {
+		await session.detach();
+		await locator.evaluate((element) => element.removeAttribute('data-font-probe')).catch(() => {});
+	}
 }

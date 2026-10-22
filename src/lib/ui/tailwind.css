@@ -112,14 +112,18 @@
 /* Sherab theme, mapped from the iX classic light theme and the Sherab
    overrides src/app.css held until story 10 (primary blue, navy frame, 0.25rem radius). */
 :root {
-	/* iX's system font stack (iX names `Siemens Sans` first but ships no face
-	   for it, so users see system-ui). */
+	/* Atisha first, then iX's system font stack. Atisha (src/app.css
+	   @font-face) covers the Tibetan block only, so Tibetan characters are
+	   drawn in it in any interface language (#78: e.g. a Tibetan class name
+	   under the English one, Tibetan text in a toast), while Latin text and
+	   digits fall through to the system stack. */
 	--sherab-font-sans:
-		system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', 'Liberation Sans',
-		Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-	/* Atisha (src/app.css @font-face) covers the Tibetan block only, so Latin
-	   text and digits inside Tibetan fall back to the system stack. */
-	--sherab-font-bo: 'Atisha', var(--sherab-font-sans);
+		'Atisha', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+		'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+		'Noto Color Emoji';
+	/* The Tibetan interface uses the same stack; it is a token of its own
+	   because the `bo` rules pair it with the taller line height. */
+	--sherab-font-bo: var(--sherab-font-sans);
 
 	--radius: 0.25rem;
 
@@ -275,11 +279,12 @@
 	}
 }
 
-/* Tibetan: Atisha wherever the language is `bo` -- the new root under a
-   Tibetan interface, or an element marked `lang='bo'` inside a root -- and
-   back to the system stack for an element in another language inside a
-   Tibetan root (homework keeps the language it was written in, #74).
-   Tibetan needs the taller line (#78, #85). Only on the root and on those
+/* Tibetan: the taller line (#78, #85) wherever the language is `bo` -- the
+   new root under a Tibetan interface, or an element marked `lang='bo'`
+   inside a root -- and the Latin line back for an element in another
+   language inside a Tibetan root (homework keeps the language it was
+   written in, #74). Both font tokens lead with Atisha, which covers only the
+   Tibetan block, so the font is the same either way. Only on the root and on those
    two kinds of nested elements, so everything else inherits (and a `font-*`
    or `leading-*` utility still wins). Specific enough to beat app.css's
    `[lang='bo'] ...` rules; see reset.css for the `:not(#__)`. */

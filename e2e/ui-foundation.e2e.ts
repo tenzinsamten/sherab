@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { renderedFonts } from './fixtures';
 
 /**
  * Mobile-first redesign, story 1: the new component system (Tailwind +
@@ -22,33 +23,6 @@ function style(locator: Locator, property: string) {
 		(element, name) => getComputedStyle(element).getPropertyValue(name),
 		property
 	);
-}
-
-/** The fonts Chrome actually drew the element's text with. */
-async function renderedFonts(page: Page, locator: Locator): Promise<string[]> {
-	const testId = await locator.getAttribute('data-testid');
-	const scope = await locator.evaluate((element) =>
-		element.closest('[data-testid^="preview-"]')?.getAttribute('data-testid')
-	);
-	if (!testId || !scope) {
-		throw new Error(
-			`renderedFonts needs a data-testid inside a preview section (got ${testId}, ${scope})`
-		);
-	}
-	const session = await page.context().newCDPSession(page);
-	try {
-		await session.send('DOM.enable');
-		await session.send('CSS.enable');
-		const { root } = await session.send('DOM.getDocument', { depth: -1 });
-		const { nodeId } = await session.send('DOM.querySelector', {
-			nodeId: root.nodeId,
-			selector: `[data-testid="${scope}"] [data-testid="${testId}"]`
-		});
-		const { fonts } = await session.send('CSS.getPlatformFontsForNode', { nodeId });
-		return fonts.map((font) => font.familyName);
-	} finally {
-		await session.detach();
-	}
 }
 
 test.describe('/dev/ui', () => {
@@ -111,11 +85,10 @@ test.describe('/dev/ui', () => {
 
 	test('Tibetan text uses Atisha and the label is not clipped', async ({ page }) => {
 		const root = page.getByTestId('preview-bo');
-		expect(await style(root, 'font-family')).toMatch(/^Atisha,/);
-		expect(await renderedFonts(page, root.getByTestId('plain-heading'))).toContain('Atisha');
+		expect(await renderedFonts(root.getByTestId('plain-heading'))).toContain('Atisha');
 
 		const button = root.getByTestId('button-default');
-		expect(await renderedFonts(page, button)).toContain('Atisha');
+		expect(await renderedFonts(button)).toContain('Atisha');
 		const fits = await button.evaluate(
 			(element) =>
 				element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth
@@ -125,18 +98,24 @@ test.describe('/dev/ui', () => {
 		// Nested languages: Tibetan inside the English root, English inside the
 		// Tibetan root.
 		const boInEn = page.getByTestId('preview-en').getByTestId('nested-lang');
-		expect(await style(boInEn, 'font-family')).toMatch(/^Atisha,/);
+		expect(await renderedFonts(boInEn)).toContain('Atisha');
 		expect(await style(boInEn, 'line-height')).toBe(
 			`${2 * parseFloat(await style(boInEn, 'font-size'))}px`
 		);
+		// Atisha leads every stack, but its unicode-range keeps Latin text on
+		// the system fonts: English inside the Tibetan root is not drawn in it
+		// and gets the shorter line back.
 		const enInBo = root.getByTestId('nested-lang');
-		expect(await style(enInBo, 'font-family')).toMatch(/^system-ui,/);
+		expect(await renderedFonts(enInBo)).not.toContain('Atisha');
 		expect(await style(enInBo, 'line-height')).toBe(
 			`${1.5 * parseFloat(await style(enInBo, 'font-size'))}px`
 		);
 
-		// English inside the page stays on the system stack.
+		// English page text stays on the system fonts; Tibetan with no `lang`
+		// of its own in the English root is drawn in Atisha (#78).
 		const en = page.getByTestId('preview-en');
-		expect(await style(en, 'font-family')).not.toContain('Atisha');
+		expect(await style(en, 'font-family')).toMatch(/^Atisha, system-ui,/);
+		expect(await renderedFonts(en.getByTestId('plain-heading'))).not.toContain('Atisha');
+		expect(await renderedFonts(en.getByTestId('untagged-bo'))).toContain('Atisha');
 	});
 });

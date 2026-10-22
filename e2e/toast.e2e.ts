@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
-import { service, signIn, type TestUser } from './fixtures';
+import { renderedFonts, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Mobile-first story 10: the app-wide toast (Sonner behind showToast), one
@@ -162,18 +162,12 @@ test('Tibetan interface at 375px: the toast is drawn in Atisha with the taller l
 		const toast = toasts(page);
 		await expect(toast).toHaveCount(1);
 		await expect(toast).toHaveAttribute('data-type', 'success');
-		const font = await toast.evaluate((el) => {
-			const title = el.querySelector('[data-title]')!;
-			const style = getComputedStyle(title);
-			return {
-				toastFamily: getComputedStyle(el).fontFamily,
-				titleFamily: style.fontFamily,
-				size: parseFloat(style.fontSize),
-				lineHeight: style.lineHeight
-			};
+		const title = toast.locator('[data-title]');
+		const font = await title.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return { size: parseFloat(style.fontSize), lineHeight: style.lineHeight };
 		});
-		expect(font.toastFamily).toMatch(/^Atisha,/);
-		expect(font.titleFamily).toMatch(/^Atisha,/);
+		expect(await renderedFonts(title)).toContain('Atisha');
 		expect(font.lineHeight).toBe(`${2 * font.size}px`);
 	} finally {
 		await page.context().close();

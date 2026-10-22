@@ -497,3 +497,9 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/11-navigation-loading-bar-and-busy-screen.md`
   summary: No e2e covers the loading bar and busy `<main>` in the signed-out public shell, or at desktop width with the side nav staying usable while `<main>` is inert.
   evidence: Every test in `e2e/nav-progress.e2e.ts` signs in as a teacher at 375px; deleting the public `<main>`'s `aria-busy`/`inert`/fade bindings, or moving `NavProgress` into the signed-in branch, fails no test.
+- source_spec: `_bmad-output/implementation-artifacts/spec-atisha-tibetan-font-fallback.md`
+  summary: Tibetan text without `lang="bo"` in the en/de interface (a class or team name, a button or badge label) is now drawn in Atisha at 1.36x inside a 1.5 line height, and may clip in `truncate`/`overflow-hidden` rows.
+  evidence: Unverified (maybe-false, medium if true): it was #78's behaviour before the redesign, but no test checks clipping outside a Tibetan root. To settle it, screenshot a class list, team list and badge with a Tibetan name at 375px in en and check `scrollHeight <= clientHeight` on truncated rows.
+- source_spec: `_bmad-output/implementation-artifacts/spec-atisha-tibetan-font-fallback.md`
+  summary: Tibetan class and team names rendered in the en/de interface carry no `lang="bo"`, so screen readers read them with English or German pronunciation.
+  evidence: Pre-existing markup (names are rendered as plain text next to the English name); the font fix makes the text look right but does not mark its language.

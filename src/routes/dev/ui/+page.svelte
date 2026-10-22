@@ -52,6 +52,9 @@
 		<!-- Nested language: Tibetan inside English, English inside Tibetan. -->
 		{#if sample.lang === 'en'}
 			<h3 lang="bo" data-testid="nested-lang">ཤེས་རབ།</h3>
+			<!-- Tibetan with no `lang` of its own (a class or team name in an
+			     English interface): still drawn in Atisha (#78). -->
+			<p data-testid="untagged-bo">ཤེས་རབ།</p>
 		{:else}
 			<p lang="en" data-testid="nested-lang">Written in English</p>
 		{/if}

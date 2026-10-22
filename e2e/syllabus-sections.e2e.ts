@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { currentSchoolYear } from '../src/lib/school-year';
-import { createCalendarFixture, service, signIn, type CalendarFixture } from './fixtures';
+import {
+	createCalendarFixture,
+	renderedFonts,
+	service,
+	signIn,
+	type CalendarFixture
+} from './fixtures';
 
 /**
  * Syllabus sections (0038): a teacher adds two sections to a syllabus,
@@ -189,14 +195,17 @@ test('student: sections in order with text and links; an English section keeps i
 	await expect(page.locator('html')).toHaveAttribute('lang', 'bo');
 	const english = page.getByTestId('syllabus-section').nth(1);
 	await expect(english.locator('.rich-text')).toHaveAttribute('lang', 'en');
-	await expect(english.locator('.rich-text')).not.toHaveCSS('font-family', /Atisha/);
+	expect(await renderedFonts(english.locator('.rich-text'))).not.toContain('Atisha');
 	await expect(english.locator('h3')).toHaveAttribute('lang', 'en');
-	await expect(english.locator('h3')).not.toHaveCSS('font-family', /Atisha/);
-	// The interface around it is in the Tibetan font.
-	await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveCSS(
-		'font-family',
-		/Atisha/
-	);
+	expect(await renderedFonts(english.locator('h3'))).not.toContain('Atisha');
+	// The interface around it is Tibetan: the page root has the taller line.
+	const pageRoot = page.locator('main > [data-ui="new"]').first();
+	expect(
+		await pageRoot.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return parseFloat(style.lineHeight) / parseFloat(style.fontSize);
+		})
+	).toBe(2);
 });
 
 test('teacher: deleting a section asks first and leaves the others in order', async ({ page }) => {
