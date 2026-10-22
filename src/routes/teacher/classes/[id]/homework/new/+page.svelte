@@ -19,13 +19,22 @@
 	import { readContentLanguage, type ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import { ui } from '$lib/ui/classes';
-	import type { PageProps } from './$types';
+	import {
+		MAX_FILES_PER_HOMEWORK,
+		MAX_HOMEWORK_FILE_BYTES,
+		homeworkFileLimitMessage,
+		homeworkFileTooLargeMessage,
+		maxHomeworkFileSizeText,
+		maxHomeworkFilesText
+	} from '$lib/homework-files';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
 	 * New homework for a class, mobile-first story 7c: native fields, radio
 	 * rows and student checkboxes, each ≥44px.
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	let hydrated = $state(false);
 	onMount(() => {
@@ -41,6 +50,38 @@
 	// Success redirects to the list, which shows the toast; errors come from
 	// the root layout's form-error toast.
 	const pending = createPending();
+
+	// #110: the optional PDF files. The server checks them before it creates
+	// anything (a refused file returns the form as typed; the files are
+	// chosen again). Too many or too large is refused here first, so a large
+	// post is not sent for nothing.
+	let localFileError = $state('');
+	let serverFileError = $derived(
+		form && 'fileError' in form && typeof form.fileError === 'string' ? form.fileError : ''
+	);
+	// A new answer from the server replaces the local message.
+	$effect(() => {
+		if (form) localFileError = '';
+	});
+	let fileError = $derived(localFileError || serverFileError);
+
+	const create = pending.submit('create');
+	const submitCreate: SubmitFunction = (input) => {
+		localFileError = '';
+		const chosen = input.formData
+			.getAll('files')
+			.filter((entry): entry is File => entry instanceof File && entry.size > 0);
+		if (chosen.length > MAX_FILES_PER_HOMEWORK) {
+			localFileError = homeworkFileLimitMessage();
+		} else if (chosen.some((file) => file.size > MAX_HOMEWORK_FILE_BYTES)) {
+			localFileError = homeworkFileTooLargeMessage();
+		}
+		if (localFileError) {
+			document.getElementById('files')?.focus();
+			return input.cancel();
+		}
+		return create(input);
+	};
 
 	// The mode decides which fields show.
 	function pickMode(mode: 'once' | 'weekly') {
@@ -102,7 +143,12 @@
 	</header>
 
 	<section class={ui.card}>
-		<form method="POST" action="?/createAssignment" use:enhance={pending.submit('create')}>
+		<form
+			method="POST"
+			action="?/createAssignment"
+			enctype="multipart/form-data"
+			use:enhance={submitCreate}
+		>
 			<div class={field}>
 				<Label for="title">{m.homework_title_label()}</Label>
 				<Input id="title" name="title" lang={contentLanguage} required />
@@ -123,6 +169,31 @@
 				required
 			/>
 			<LinkRows idPrefix="create" />
+
+			<div class={field}>
+				<Label for="files">{m.homework_file_create_label()}</Label>
+				<Input
+					id="files"
+					type="file"
+					name="files"
+					accept="application/pdf,.pdf"
+					multiple
+					class="py-2.5"
+					aria-describedby="files-hint{fileError ? ' files-error' : ''}"
+					aria-invalid={fileError ? 'true' : undefined}
+				/>
+				<p id="files-hint" class="text-sm {ui.muted}">
+					{m.homework_file_create_hint({
+						size: maxHomeworkFileSizeText(),
+						count: maxHomeworkFilesText()
+					})}
+				</p>
+				{#if fileError}
+					<p id="files-error" class={ui.error} role="alert" data-testid="file-error">
+						{fileError}
+					</p>
+				{/if}
+			</div>
 
 			<fieldset id="mode" class={field} data-tour="homework-schedule">
 				<legend class={legend}>{m.homework_mode_legend()}</legend>

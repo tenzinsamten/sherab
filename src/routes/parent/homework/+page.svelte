@@ -4,6 +4,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatDay as formatIsoDay } from '$lib/format';
 	import ChildPicker from '$lib/components/ChildPicker.svelte';
+	import HomeworkFiles from '$lib/components/HomeworkFiles.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
@@ -81,6 +82,9 @@
 			</h2>
 			<p class="mb-1 {ui.muted}">{m.parent_homework_intro()}</p>
 
+			{#if data.filesError}
+				<p class={ui.muted} role="alert">{m.load_error_generic()}</p>
+			{/if}
 			{#each data.failedChildren as child (child.id)}
 				<p class={ui.muted} role="alert">
 					{m.parent_homework_child_error({ name: child.name })}
@@ -128,6 +132,11 @@
 									{/each}
 								</ul>
 							{/if}
+							<!-- #110: the homework's PDF files. -->
+							<HomeworkFiles
+								files={item.files}
+								label={m.homework_file_list_label({ title: item.title })}
+							/>
 						</li>
 					{/each}
 				</ul>

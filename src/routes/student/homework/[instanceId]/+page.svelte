@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import HomeworkFiles from '$lib/components/HomeworkFiles.svelte';
 	import MarkDoneForm from '$lib/components/MarkDoneForm.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
@@ -108,8 +109,10 @@
 		{/if}
 		<TextWithLinks
 			links={data.item.referenceLinks}
-			empty={data.item.content ? '' : m.student_homework_no_details()}
+			empty={data.item.content || data.files.length > 0 ? '' : m.student_homework_no_details()}
 		/>
+		<!-- #110: the homework's PDF files, the same on every copy. -->
+		<HomeworkFiles files={data.files} />
 
 		<div
 			class="flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between"

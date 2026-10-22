@@ -2,7 +2,15 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
 import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
-import { berlinToday, env, fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import {
+	berlinToday,
+	env,
+	fixtureTeam,
+	postedFields,
+	service,
+	signIn,
+	type TestUser
+} from './fixtures';
 
 /**
  * Mobile-first redesign, story 7 (teacher class pages): the teacher
@@ -1047,7 +1055,7 @@ test.describe('homework create and review', () => {
 		const posts: URLSearchParams[] = [];
 		page.on('request', (r) => {
 			if (r.method() === 'POST' && r.url().includes(`?/${action}`)) {
-				posts.push(new URLSearchParams(r.postData() ?? ''));
+				posts.push(postedFields(r));
 			}
 		});
 		return posts;

@@ -33,6 +33,7 @@ describe('student homework detail (+page.svelte)', () => {
 						referenceLinks: []
 					},
 					className: 'Class A',
+					files: [],
 					archived: true,
 					loadError: false
 				}
@@ -45,5 +46,40 @@ describe('student homework detail (+page.svelte)', () => {
 		expect(body).not.toMatch(
 			new RegExp(`<button[^>]*>[\\s\\S]*?${m.student_homework_mark_done()}`)
 		);
+	});
+
+	it("#110: lists the homework's PDF files with an open link and a Download link", () => {
+		const { body } = render(Page, {
+			props: {
+				params: { instanceId: 'i1' },
+				form: null,
+				data: {
+					item: {
+						instanceId: 'i1',
+						classId: 'c1',
+						title: 'Read page 4',
+						contentLanguage: 'en',
+						skillArea: 'language',
+						dueDate: '2026-10-20',
+						status: 'assigned',
+						overdue: false,
+						isRecurring: false,
+						content: null,
+						referenceLinks: []
+					},
+					className: 'Class A',
+					files: [{ id: 'f1', name: 'Worksheet.pdf', size: 300 * 1024 }],
+					archived: false,
+					loadError: false
+				}
+			} as never
+		});
+
+		expect(body).toContain('href="/files/homework/f1"');
+		expect(body).toContain('href="/files/homework/f1?download"');
+		expect(body).toContain('Worksheet.pdf');
+		expect(body).toContain('300 KB');
+		// Files are details enough: no "no details" line.
+		expect(body).not.toContain(m.student_homework_no_details());
 	});
 });

@@ -63,7 +63,8 @@
 
 	// The create page redirects here with ?created=<count>[&failed=<n>], or
 	// ?created=weekly&visible=<now|tomorrow|YYYY-MM-DD> (#96: when students
-	// see the first week).
+	// see the first week). #110: plus a `notAttached` name per PDF file that
+	// was chosen on the create form but could not be attached.
 	// Show the toast once, then drop the params so a refresh doesn't repeat it.
 	$effect(() => {
 		const created = page.url.searchParams.get('created');
@@ -85,7 +86,18 @@
 			else if (created === '0') showToast('success', m.homework_created_empty());
 			else showToast('success', m.homework_created_count({ count: num(created) }));
 
+			const notAttached = page.url.searchParams.getAll('notAttached');
+			if (notAttached.length > 0) {
+				showToast(
+					'warning',
+					m.homework_file_not_attached({
+						names: notAttached.map((name) => `“${name}”`).join(', ')
+					})
+				);
+			}
+
 			const url = new URL(page.url);
+			url.searchParams.delete('notAttached');
 			url.searchParams.delete('created');
 			url.searchParams.delete('failed');
 			url.searchParams.delete('visible');

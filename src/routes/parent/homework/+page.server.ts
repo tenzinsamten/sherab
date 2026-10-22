@@ -1,6 +1,8 @@
 import { localizedName, type LocalizedNames } from '$lib/localized-name';
 import { redirect } from '@sveltejs/kit';
 import { todayInBerlin } from '$lib/berlin-date';
+import type { HomeworkFile } from '$lib/homework-files';
+import { loadHomeworkFiles } from '$lib/server/homework-files';
 import { loadStudentHomework, type StudentHomeworkItem } from '$lib/server/student-homework';
 import type { PageServerLoad } from './$types';
 
@@ -10,8 +12,16 @@ export type HomeworkChild = { id: string; name: string };
 /** One open homework row on the shared page: the item, its child and class name. */
 export type ParentHomeworkItem = Pick<
 	StudentHomeworkItem,
-	'instanceId' | 'title' | 'contentLanguage' | 'dueDate' | 'overdue' | 'referenceLinks'
+	| 'instanceId'
+	| 'assignmentId'
+	| 'title'
+	| 'contentLanguage'
+	| 'dueDate'
+	| 'overdue'
+	| 'referenceLinks'
 > & {
+	/** #110: the homework's PDF files (the parent of a targeted child may open them). */
+	files: HomeworkFile[];
 	childId: string;
 	childName: string;
 	/** null: the class name could not be read. */
@@ -64,11 +74,13 @@ async function loadChildOpen(
 			childId: child.id,
 			childName: child.name,
 			instanceId: item.instanceId,
+			assignmentId: item.assignmentId,
 			title: item.title,
 			contentLanguage: item.contentLanguage,
 			dueDate: item.dueDate,
 			overdue: item.overdue,
 			referenceLinks: item.referenceLinks,
+			files: [],
 			className: classNames.get(item.classId) ?? null
 		})),
 		error: Boolean(enrollmentsError || classesResult.error || open.error)
@@ -110,12 +122,21 @@ export const load: PageServerLoad = async ({ url, parent, locals: { supabase } }
 		console.error('parent homework: child homework failed', { childId: c.id });
 	}
 
+	// #110: every listed homework's PDF files, in one read.
+	const items = results.flatMap((r) => r.items).sort(compareParentHomework);
+	const homeworkFiles = await loadHomeworkFiles(
+		supabase,
+		items.map((item) => item.assignmentId)
+	);
+	for (const item of items) item.files = homeworkFiles.files.get(item.assignmentId) ?? [];
+
 	return {
 		children,
 		selectedChild,
 		inView,
-		items: results.flatMap((r) => r.items).sort(compareParentHomework),
+		items,
 		failedChildren,
-		loadError: Boolean(linkedError)
+		loadError: Boolean(linkedError),
+		filesError: homeworkFiles.error
 	};
 };

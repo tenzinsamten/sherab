@@ -9,6 +9,7 @@ import {
 	parseReferenceLinks
 } from '$lib/server/homework-details';
 import { loadClassRoster, studentDisplayName } from '$lib/server/enrollments';
+import { deleteFile, loadHomeworkFiles, replaceFile, uploadFile } from '$lib/server/homework-files';
 import {
 	ASSIGNMENT_COLUMNS,
 	buildAssignmentViews,
@@ -17,7 +18,7 @@ import {
 } from '$lib/server/homework-view';
 import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
 import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
-import type { Actions, PageServerLoad } from './$types';
+import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 /** One homework assignment with its instances and student statuses (#33). */
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -48,9 +49,11 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		HOMEWORK_MESSAGES
 	);
 
-	const [roster, details] = await Promise.all([
+	const [roster, details, homeworkFiles] = await Promise.all([
 		loadClassRoster(supabase, params.id),
-		fetchInstancesAndHistory(supabase, [assignmentRow.id])
+		fetchInstancesAndHistory(supabase, [assignmentRow.id]),
+		// #110: the homework's PDF files, shared by all its copies.
+		loadHomeworkFiles(supabase, [assignmentRow.id])
 	]);
 
 	// Names: the roster, plus anyone who did this homework before leaving the
@@ -83,12 +86,28 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	return {
 		class: cls,
 		assignment,
+		files: homeworkFiles.files.get(assignmentRow.id) ?? [],
 		today,
-		loadError: Boolean(roster.error || details.error)
+		loadError: Boolean(roster.error || details.error || homeworkFiles.error)
 	};
 };
 
+/** The file actions' shared context (#110): the route's class and homework. */
+async function fileContext({
+	request,
+	params,
+	locals: { supabase, safeGetSession }
+}: RequestEvent) {
+	const { user } = await safeGetSession();
+	return { request, classId: params.id, assignmentId: params.assignmentId, supabase, user };
+}
+
 export const actions: Actions = {
+	// #110: the homework's PDF files (see $lib/server/homework-files.ts).
+	uploadFile: async (event) => uploadFile(await fileContext(event)),
+	replaceFile: async (event) => replaceFile(await fileContext(event)),
+	deleteFile: async (event) => deleteFile(await fileContext(event)),
+
 	markDone: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {

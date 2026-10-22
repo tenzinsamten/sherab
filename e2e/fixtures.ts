@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, type Request as PostedRequest } from '@playwright/test';
 import type { Database } from '../src/lib/supabase/database.types';
 
 /**
@@ -438,4 +438,28 @@ export async function renderedFonts(locator: Locator): Promise<string[]> {
 		await session.detach();
 		await locator.evaluate((element) => element.removeAttribute('data-font-probe')).catch(() => {});
 	}
+}
+
+/**
+ * The text fields of a posted form as URLSearchParams, whether it was sent
+ * url-encoded or as multipart/form-data (#110: the create-homework form
+ * carries files). File parts are left out.
+ */
+export function postedFields(request: PostedRequest): URLSearchParams {
+	const type = request.headers()['content-type'] ?? '';
+	const boundary = /boundary=(?:"([^"]+)"|([^;]+))/.exec(type);
+	if (!type.startsWith('multipart/form-data') || !boundary) {
+		return new URLSearchParams(request.postData() ?? '');
+	}
+	const body = (request.postDataBuffer() ?? Buffer.alloc(0)).toString('utf8');
+	const fields = new URLSearchParams();
+	for (const part of body.split(`--${boundary[1] ?? boundary[2]}`)) {
+		const split = part.indexOf('\r\n\r\n');
+		if (split < 0) continue;
+		const head = part.slice(0, split);
+		const name = /name="([^"]*)"/.exec(head)?.[1];
+		if (!name || /filename=/.test(head)) continue;
+		fields.append(name, part.slice(split + 4).replace(/\r\n$/, ''));
+	}
+	return fields;
 }

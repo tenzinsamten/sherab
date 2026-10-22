@@ -4,6 +4,7 @@ import {
 	isClassCodeCollision,
 	UNIQUE_VIOLATION_CODE
 } from '$lib/server/class-code';
+import { removeStoredFiles as removeStoredHomeworkFiles } from '$lib/server/homework-files';
 import { removeStoredFiles } from '$lib/server/syllabus-files';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import { todayInBerlin } from '$lib/berlin-date';
@@ -264,8 +265,19 @@ export const actions: Actions = {
 
 		// The class's syllabus files (0039): deleting the class cascades to
 		// their rows but cannot reach the storage bucket.
-		const files = await removeStoredFiles(supabase, { classId });
-		if (!files.ok) return fail(400, { error: m.syllabus_file_error_storage() });
+		// When some files are already gone before a later step fails, the
+		// message says so; the plain storage message only when nothing was removed.
+		const stopped = (removed: number) =>
+			fail(400, {
+				error:
+					removed > 0 ? m.syllabus_file_error_delete_unfinished() : m.syllabus_file_error_storage()
+			});
+		const syllabusFiles = await removeStoredFiles(supabase, { classId });
+		if (!syllabusFiles.ok) return stopped(syllabusFiles.removed);
+		// #110: and its homework files (0053), the same way.
+		const homeworkFiles = await removeStoredHomeworkFiles(supabase, { classId });
+		if (!homeworkFiles.ok) return stopped(syllabusFiles.removed + homeworkFiles.removed);
+		const files = { removed: syllabusFiles.removed + homeworkFiles.removed };
 
 		const { data: deleted, error } = await supabase
 			.from('classes')

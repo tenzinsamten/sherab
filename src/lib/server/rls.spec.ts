@@ -32,6 +32,13 @@ import {
 	removeStoredFiles,
 	signedFileUrl
 } from './syllabus-files';
+import {
+	HOMEWORK_FILES_BUCKET,
+	HOMEWORK_FILE_LIMIT_ERROR_CODE,
+	loadHomeworkFiles,
+	removeStoredFiles as removeStoredHomeworkFiles,
+	signedFileUrl as signedHomeworkFileUrl
+} from './homework-files';
 import type { Database } from './../supabase/database.types';
 
 const adminClient = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -16696,5 +16703,477 @@ describe.skipIf(!reachable)('#105 class day move and delete (requires local Supa
 		expect(await sessionOn(otherClass, movedId)).toBeNull();
 		// An unmoved matching future day does get one.
 		expect(await sessionOn(otherClass, plainSaturday)).not.toBeNull();
+	});
+});
+
+/**
+ * #110 (0053): PDF files on a homework. The table's policies and the storage
+ * bucket's, against the local bucket, as each kind of caller: the class's
+ * teacher and the admin change them; the students the homework is set for
+ * and their approved parents read them; nobody else. Also the app's own
+ * removal and signed-link helpers with real clients, and a weekly series'
+ * next copy showing the series' files.
+ */
+describe.skipIf(!reachable)('0053 homework files (requires local Supabase)', () => {
+	type SignedIn = Awaited<ReturnType<typeof createSignedInUser>>;
+	type Client = ReturnType<typeof anonClient>;
+	let admin: SignedIn;
+	let teacher: SignedIn;
+	let otherTeacher: SignedIn;
+	let targeted: { id: string; client: Client };
+	let untargeted: { id: string; client: Client };
+	let outsider: Client;
+	let targetedParent: Client;
+	let untargetedParent: Client;
+	const signedOut = anonClient();
+	let classId: string;
+	let otherClassId: string;
+	let otherAssignmentId: string;
+
+	const name = (label: string) => `0053 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	const bucket = (client: Client | typeof adminClient) =>
+		client.storage.from(HOMEWORK_FILES_BUCKET);
+	const pathIn = (cls: string, assignment: string) =>
+		`${cls}/${assignment}/${crypto.randomUUID()}.pdf`;
+
+	function pdfBytes(size = 2048): ArrayBuffer {
+		const bytes = new Uint8Array(size);
+		bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
+		return bytes.buffer;
+	}
+
+	const put = (
+		client: Client,
+		path: string,
+		body: ArrayBuffer = pdfBytes(),
+		type = 'application/pdf'
+	) => bucket(client).upload(path, body, { contentType: type, upsert: false });
+
+	const record = (
+		client: Client | typeof adminClient,
+		assignment: string,
+		path: string,
+		fileName = 'Worksheet.pdf'
+	) =>
+		client
+			.from('homework_assignment_files')
+			.insert({
+				assignment_id: assignment,
+				object_path: path,
+				file_name: fileName,
+				size_bytes: 2048
+			})
+			.select('id');
+
+	/** A stored file made by the service role: object and row. */
+	async function stored(cls: string, assignment: string, fileName = 'Worksheet.pdf') {
+		const path = pathIn(cls, assignment);
+		const { error } = await bucket(adminClient).upload(path, pdfBytes(), {
+			contentType: 'application/pdf'
+		});
+		if (error) throw new Error(`Failed to store object: ${error.message}`);
+		const { data, error: rowError } = await record(adminClient, assignment, path, fileName);
+		if (rowError || !data) throw new Error(`Failed to record file: ${rowError?.message}`);
+		return { id: data[0].id, path };
+	}
+
+	const objectExists = async (path: string) =>
+		(await bucket(adminClient).exists(path)).data === true;
+
+	async function makeClass(label: string, teacherId: string) {
+		const { data, error } = await adminClient
+			.from('classes')
+			.insert({ name: name(label), code: `H${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create class: ${error?.message}`);
+		const { error: assignError } = await adminClient
+			.from('class_teachers')
+			.insert({ class_id: data.id, teacher_id: teacherId });
+		if (assignError) throw new Error(`Failed to assign teacher: ${assignError.message}`);
+		return data.id;
+	}
+
+	/** A one-off homework in `forClass`, set for `students` only. */
+	async function oneOff(forClass: string, createdBy: string, students: string[]) {
+		const { data, error } = await adminClient
+			.from('homework_assignments')
+			.insert({
+				class_id: forClass,
+				title: name('Homework'),
+				skill_area: 'language',
+				whole_class: false,
+				created_by: createdBy
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(`Failed to create homework: ${error?.message}`);
+		const due = todayInBerlin();
+		const { data: instance, error: instanceError } = await adminClient
+			.from('homework_instances')
+			.insert({ assignment_id: data.id, class_id: forClass, period_start: due, due_date: due })
+			.select('id')
+			.single();
+		if (instanceError || !instance) {
+			throw new Error(`Failed to create copy: ${instanceError?.message}`);
+		}
+		for (const studentId of students) {
+			const { error: historyError } = await adminClient.from('homework_status_history').insert({
+				instance_id: instance.id,
+				student_id: studentId,
+				class_id: forClass,
+				status: 'assigned',
+				recorded_by: createdBy
+			});
+			if (historyError) throw new Error(`Failed to assign: ${historyError.message}`);
+		}
+		return data.id;
+	}
+
+	async function signIn(email: string, password: string) {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	/** An approved student enrolled in `forClass`, signed in; `guardianEmail` links a parent. */
+	async function student(forClass: string, guardianEmail?: string) {
+		const { id, error } = await signUpStudent({
+			classId: forClass,
+			registrationName: name('Student'),
+			guardianEmail
+		});
+		if (error || !id) throw new Error(`Failed to register student: ${error?.message}`);
+		const { error: approveError } = await adminClient
+			.from('profiles')
+			// #99: an approval needs a team; the fixture team, so this block
+			// does not depend on teams left by earlier blocks.
+			.update({
+				status: 'approved',
+				display_name: name('Student'),
+				team_id: await fixtureTeamId()
+			})
+			.eq('id', id);
+		if (approveError) throw new Error(`Failed to approve student: ${approveError.message}`);
+		const password = crypto.randomUUID();
+		const { data } = await adminClient.auth.admin.updateUserById(id, { password });
+		return { id, client: await signIn(data.user!.email!, password) };
+	}
+
+	beforeAll(async () => {
+		admin = await createSignedInUser('admin');
+		teacher = await createSignedInUser('teacher');
+		otherTeacher = await createSignedInUser('teacher');
+		classId = await makeClass('Class', teacher.id);
+		otherClassId = await makeClass('Other', otherTeacher.id);
+		const guardian = await createApprovedParent();
+		const otherGuardian = await createApprovedParent();
+		targeted = await student(classId, guardian.email);
+		untargeted = await student(classId, otherGuardian.email);
+		targetedParent = await signIn(guardian.email, guardian.password);
+		untargetedParent = await signIn(otherGuardian.email, otherGuardian.password);
+		outsider = (await student(otherClassId)).client;
+		otherAssignmentId = await oneOff(otherClassId, otherTeacher.id, []);
+	}, 60000);
+
+	afterAll(async () => {
+		// Leave no objects of these classes in the local bucket.
+		for (const cls of [classId, otherClassId]) {
+			const { data: folders } = await bucket(adminClient).list(cls);
+			for (const folder of folders ?? []) {
+				const { data: objects } = await bucket(adminClient).list(`${cls}/${folder.name}`);
+				const paths = (objects ?? []).map((o) => `${cls}/${folder.name}/${o.name}`);
+				if (paths.length) await bucket(adminClient).remove(paths);
+			}
+		}
+	});
+
+	it('the bucket is private, 5 MB, PDF only', async () => {
+		const { data, error } = await adminClient.storage.getBucket(HOMEWORK_FILES_BUCKET);
+		expect(error).toBeNull();
+		expect(data).toMatchObject({
+			public: false,
+			file_size_limit: 5242880,
+			allowed_mime_types: ['application/pdf']
+		});
+	});
+
+	it("the class's teacher and the admin upload and record files; they, the targeted student and that student's parent read them", async () => {
+		const assignmentId = await oneOff(classId, teacher.id, [targeted.id]);
+		const teacherPath = pathIn(classId, assignmentId);
+		const adminPath = pathIn(classId, assignmentId);
+		expect((await put(teacher.client, teacherPath)).error).toBeNull();
+		expect((await put(admin.client, adminPath)).error).toBeNull();
+		const first = await record(teacher.client, assignmentId, teacherPath, 'Worksheet 1.pdf');
+		const second = await record(admin.client, assignmentId, adminPath, 'གཞས་ཚིག.pdf');
+		expect(first.error ?? second.error).toBeNull();
+
+		for (const [who, client] of [
+			['teacher', teacher.client],
+			['admin', admin.client],
+			['targeted student', targeted.client],
+			['parent of the targeted student', targetedParent]
+		] as const) {
+			const rows = await client
+				.from('homework_assignment_files')
+				.select('file_name')
+				.eq('assignment_id', assignmentId)
+				.order('created_at');
+			expect(rows.data, who).toEqual([
+				{ file_name: 'Worksheet 1.pdf' },
+				{ file_name: 'གཞས་ཚིག.pdf' }
+			]);
+
+			const download = await bucket(client).download(teacherPath);
+			expect(download.error, who).toBeNull();
+			expect(await download.data!.slice(0, 5).text(), who).toBe('%PDF-');
+
+			const url = await signedHomeworkFileUrl(client as never, first.data![0].id, false);
+			expect(url, who).toContain(`/object/sign/${HOMEWORK_FILES_BUCKET}/${teacherPath}?token=`);
+			const response = await fetch(url!);
+			expect(response.status, who).toBe(200);
+			expect(response.headers.get('content-type'), who).toBe('application/pdf');
+			await response.arrayBuffer();
+		}
+	});
+
+	it("another class's teacher, a student it is not set for, the parent of an untargeted child, a student of another class and a signed-out visitor see no row and get no object or link", async () => {
+		const assignmentId = await oneOff(classId, teacher.id, [targeted.id]);
+		const file = await stored(classId, assignmentId);
+		for (const [who, client] of [
+			['other teacher', otherTeacher.client],
+			['student not set the homework', untargeted.client],
+			['parent of an untargeted child', untargetedParent],
+			['student of another class', outsider],
+			['signed out', signedOut]
+		] as const) {
+			const rows = await client
+				.from('homework_assignment_files')
+				.select('id')
+				.eq('assignment_id', assignmentId);
+			expect(rows.data ?? [], who).toEqual([]);
+
+			const download = await bucket(client).download(file.path);
+			expect(download.error, who).not.toBeNull();
+			expect(download.data, who).toBeNull();
+
+			const signed = await bucket(client).createSignedUrl(file.path, 60);
+			expect(signed.error, who).not.toBeNull();
+			expect(signed.data?.signedUrl, who).toBeUndefined();
+
+			const listed = await bucket(client).list(`${classId}/${assignmentId}`);
+			expect(listed.data ?? [], who).toEqual([]);
+
+			expect(await signedHomeworkFileUrl(client as never, file.id, false), who).toBeNull();
+		}
+
+		// No public address, and a guessed signed address without a token, work.
+		const base = `${PUBLIC_SUPABASE_URL}/storage/v1/object`;
+		for (const url of [
+			`${base}/public/${HOMEWORK_FILES_BUCKET}/${file.path}`,
+			`${base}/${HOMEWORK_FILES_BUCKET}/${file.path}`,
+			`${base}/sign/${HOMEWORK_FILES_BUCKET}/${file.path}?token=guess`
+		]) {
+			const response = await fetch(url);
+			expect(response.status, url).toBeGreaterThanOrEqual(400);
+			expect(await response.text()).not.toContain('%PDF-');
+		}
+	});
+
+	it('students, parents, other teachers and signed-out visitors cannot upload, record, change or remove a file', async () => {
+		const assignmentId = await oneOff(classId, teacher.id, [targeted.id]);
+		const existing = await stored(classId, assignmentId);
+		for (const [who, client] of [
+			['targeted student', targeted.client],
+			['parent of the targeted student', targetedParent],
+			['other teacher', otherTeacher.client],
+			['signed out', signedOut]
+		] as const) {
+			const path = pathIn(classId, assignmentId);
+			expect((await put(client, path)).error, who).not.toBeNull();
+			expect(await objectExists(path), who).toBe(false);
+
+			const inserted = await record(client, assignmentId, pathIn(classId, assignmentId));
+			expect(inserted.error, who).not.toBeNull();
+
+			const renamed = await client
+				.from('homework_assignment_files')
+				.update({ file_name: 'hijacked.pdf' })
+				.eq('id', existing.id)
+				.select('id');
+			expect(renamed.data ?? [], who).toEqual([]);
+
+			const deleted = await client
+				.from('homework_assignment_files')
+				.delete()
+				.eq('id', existing.id)
+				.select('id');
+			expect(deleted.data ?? [], who).toEqual([]);
+
+			const removed = await bucket(client).remove([existing.path]);
+			expect(removed.data ?? [], who).toEqual([]);
+		}
+		expect(await objectExists(existing.path)).toBe(true);
+		const { data } = await adminClient
+			.from('homework_assignment_files')
+			.select('file_name')
+			.eq('id', existing.id);
+		expect(data).toEqual([{ file_name: 'Worksheet.pdf' }]);
+	});
+
+	it('the bucket refuses a file over 5 MB and a file that is not declared a PDF', async () => {
+		const assignmentId = await oneOff(classId, teacher.id, []);
+		const big = pathIn(classId, assignmentId);
+		expect((await put(teacher.client, big, pdfBytes(5242881))).error).not.toBeNull();
+		expect(await objectExists(big)).toBe(false);
+
+		const exact = pathIn(classId, assignmentId);
+		expect((await put(teacher.client, exact, pdfBytes(5242880))).error).toBeNull();
+		await bucket(adminClient).remove([exact]);
+
+		const image = pathIn(classId, assignmentId);
+		expect((await put(teacher.client, image, pdfBytes(), 'image/png')).error).not.toBeNull();
+		expect(await objectExists(image)).toBe(false);
+	});
+
+	it("a teacher uploads only into a homework's folder of their own class, and a row only points into its own homework's folder", async () => {
+		const assignmentId = await oneOff(classId, teacher.id, []);
+		for (const path of [
+			pathIn(otherClassId, otherAssignmentId),
+			pathIn(classId, otherAssignmentId),
+			pathIn(classId, crypto.randomUUID()),
+			`${classId}/${assignmentId}/Worksheet.pdf`,
+			`${classId}/${assignmentId}/${crypto.randomUUID()}.docx`,
+			`${classId}/${crypto.randomUUID()}.pdf`
+		]) {
+			expect((await put(teacher.client, path)).error, path).not.toBeNull();
+			expect(await objectExists(path), path).toBe(false);
+		}
+		// A row of this homework pointing at another homework's folder.
+		const otherHomework = await oneOff(classId, teacher.id, []);
+		const misplaced = await record(teacher.client, assignmentId, pathIn(classId, otherHomework));
+		expect(misplaced.error).not.toBeNull();
+		// A file of another class's homework: refused.
+		const foreign = await record(
+			teacher.client,
+			otherAssignmentId,
+			pathIn(otherClassId, otherAssignmentId)
+		);
+		expect(foreign.error).not.toBeNull();
+	});
+
+	it("the class's teacher cannot point a file at another homework's or class's folder, nor move it to another homework", async () => {
+		const assignmentId = await oneOff(classId, teacher.id, []);
+		const otherHomework = await oneOff(classId, teacher.id, []);
+		const file = await stored(classId, assignmentId);
+		const read = async () =>
+			(
+				await adminClient
+					.from('homework_assignment_files')
+					.select('assignment_id, object_path')
+					.eq('id', file.id)
+					.single()
+			).data;
+		const before = await read();
+
+		for (const [what, values] of [
+			["another homework's folder", { object_path: pathIn(classId, otherHomework) }],
+			["another class's folder", { object_path: pathIn(otherClassId, otherAssignmentId) }],
+			['another homework', { assignment_id: otherHomework }]
+		] as const) {
+			const { data, error } = await teacher.client
+				.from('homework_assignment_files')
+				.update(values)
+				.eq('id', file.id)
+				.select('id');
+			expect(error, what).not.toBeNull();
+			expect(data ?? [], what).toEqual([]);
+		}
+		expect(await read()).toEqual(before);
+		expect(before).toEqual({ assignment_id: assignmentId, object_path: file.path });
+	});
+
+	it('a homework holds at most 2 files (HF001)', async () => {
+		const assignmentId = await oneOff(classId, teacher.id, []);
+		await stored(classId, assignmentId);
+		await stored(classId, assignmentId);
+		const third = await record(teacher.client, assignmentId, pathIn(classId, assignmentId));
+		expect(third.error?.code).toBe(HOMEWORK_FILE_LIMIT_ERROR_CODE);
+	});
+
+	it('archiving a copy keeps the files', async () => {
+		const assignmentId = await oneOff(classId, teacher.id, [targeted.id]);
+		const file = await stored(classId, assignmentId);
+		const { error } = await teacher.client
+			.from('homework_instances')
+			.update({ archived_at: new Date().toISOString(), archived_by: teacher.id })
+			.eq('assignment_id', assignmentId);
+		expect(error).toBeNull();
+		const rows = await targeted.client
+			.from('homework_assignment_files')
+			.select('id')
+			.eq('assignment_id', assignmentId);
+		expect(rows.data).toEqual([{ id: file.id }]);
+		expect(await objectExists(file.path)).toBe(true);
+	});
+
+	it("a weekly series' next copy, made by the nightly job, shows the series' two files to a targeted student", async () => {
+		const today = todayInBerlin();
+		const d = new Date(`${today}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() - 7);
+		const startDate = d.toISOString().slice(0, 10);
+		const { data: series, error } = await teacher.client
+			.from('homework_assignments')
+			.insert({
+				class_id: classId,
+				title: name('Weekly'),
+				skill_area: 'song',
+				created_by: teacher.id,
+				recurrence_rule: { frequency: 'weekly' },
+				recurrence_start_date: startDate,
+				due_offset_days: 7
+			})
+			.select('id')
+			.single();
+		expect(error).toBeNull();
+		const generateUpTo = (day: string) =>
+			adminClient.rpc('generate_recurring_homework_for_series', {
+				p_assignment_id: series!.id,
+				p_today: day
+			});
+		// The first week, then the files, then the next week by the job.
+		expect((await generateUpTo(startDate)).data).toBe(1);
+		await stored(classId, series!.id, 'Lyrics.pdf');
+		await stored(classId, series!.id, 'Chords.pdf');
+		expect((await generateUpTo(today)).data).toBe(1);
+
+		const { data: copies } = await targeted.client
+			.from('homework_instances')
+			.select('id, assignment_id, period_start')
+			.eq('assignment_id', series!.id)
+			.order('period_start');
+		expect(copies?.map((c) => c.period_start)).toEqual([startDate, today]);
+		const { files } = await loadHomeworkFiles(targeted.client as never, [copies![1].assignment_id]);
+		expect(files.get(series!.id)?.map((f) => f.name)).toEqual(['Lyrics.pdf', 'Chords.pdf']);
+	});
+
+	it("deleting the class: the app's removal leaves no object of the class in the bucket", async () => {
+		const doomedClass = await makeClass('Doomed', teacher.id);
+		const assignmentId = await oneOff(doomedClass, teacher.id, []);
+		const a = await stored(doomedClass, assignmentId);
+		const b = await stored(doomedClass, assignmentId);
+
+		// A teacher of the class may remove; the admin is who deletes a class.
+		const result = await removeStoredHomeworkFiles(admin.client as never, {
+			classId: doomedClass
+		});
+		expect(result).toEqual({ ok: true, removed: 2 });
+		expect(await objectExists(a.path)).toBe(false);
+		expect(await objectExists(b.path)).toBe(false);
+		const { error } = await admin.client.from('classes').delete().eq('id', doomedClass);
+		expect(error).toBeNull();
+		const { data: left } = await bucket(adminClient).list(doomedClass);
+		expect(left ?? []).toEqual([]);
 	});
 });

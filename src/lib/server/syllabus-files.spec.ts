@@ -94,7 +94,8 @@ describe('formatFileSize', () => {
 		expect(formatFileSize(10, 'en')).toBe('1 KB');
 		// Between 1,000,000 and 1,048,575 bytes it is still KB, never "1.0 MB" early.
 		expect(formatFileSize(1_000_000, 'en')).toBe('977 KB');
-		expect(formatFileSize(MAX_FILE_BYTES - 1, 'en')).toBe('1024 KB');
+		// #110 review: what would round to 1024 KB is shown as 1.0 MB.
+		expect(formatFileSize(MAX_FILE_BYTES - 1, 'en')).toBe('1.0 MB');
 		expect(formatFileSize(MAX_FILE_BYTES, 'en')).toBe('1.0 MB');
 		expect(formatFileSize(MAX_FILE_BYTES, 'de')).toBe('1,0 MB');
 		expect(formatFileSize(300 * 1024, 'de')).toBe('300 KB');

@@ -10,6 +10,7 @@ import {
 	parseNonNegativeInt,
 	parseReferenceLinks
 } from '$lib/server/homework-details';
+import { attachCreatedFiles, readCreateFiles, readCreateForm } from '$lib/server/homework-files';
 import { announceHomework } from '$lib/server/push';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { SkillArea } from '$lib/supabase/database.types';
@@ -53,7 +54,10 @@ export const actions: Actions = {
 		}
 
 		const classId = params.id;
-		const formData = await request.formData();
+		// #110: the form may carry PDF files, so it is read with a size cap.
+		const form = await readCreateForm(request);
+		if ('refused' in form) return form.refused;
+		const { formData } = form;
 		const mode = String(formData.get('mode') ?? 'once');
 		const title = String(formData.get('title') ?? '').trim();
 		const skillArea = String(formData.get('skillArea') ?? '');
@@ -87,6 +91,34 @@ export const actions: Actions = {
 				action: 'createAssignment' as const
 			});
 		}
+
+		// #110: the files are checked before anything is created. A refused
+		// file creates nothing; the page keeps what was typed and shows the
+		// message at the file field (and as the usual error toast).
+		const files = await readCreateFiles(formData);
+		if (!files.ok) {
+			return fail(400, {
+				error: files.message,
+				fileError: files.message,
+				action: 'createAssignment' as const
+			});
+		}
+		/**
+		 * Attaches the checked files once the homework exists. The homework
+		 * stays whatever happens; the names of files that were not attached
+		 * go to the list page, which says to add them on the homework page.
+		 */
+		const attachFiles = async (assignmentId: string) => {
+			if (files.files.length === 0) return '';
+			const notAttached = await attachCreatedFiles(
+				supabase,
+				user,
+				classId,
+				assignmentId,
+				files.files
+			);
+			return notAttached.map((name) => `&notAttached=${encodeURIComponent(name)}`).join('');
+		};
 
 		// Recurring case (Story 3-2, #96). Only the series is inserted here;
 		// the students' copies are made by the database: at once, below, for
@@ -138,7 +170,7 @@ export const actions: Actions = {
 				});
 			}
 
-			const list = `/teacher/classes/${classId}/homework?created=weekly`;
+			const list = `/teacher/classes/${classId}/homework?created=weekly${await attachFiles(series.id)}`;
 
 			// A start date in the future (Munich): nothing to create yet. The
 			// nightly job makes the first week on that date.
@@ -310,6 +342,11 @@ export const actions: Actions = {
 			});
 		}
 
+		// #110: only now, after every rollback above: a homework that is
+		// deleted again never has files (their objects would stay behind).
+		// Before the announcement, so a student who opens it sees the files.
+		const notAttached = await attachFiles(assignment.id);
+
 		// #92: tell the students and their parents. Sent from a request of its
 		// own (started by the database), so it neither delays nor can fail this
 		// one.
@@ -319,6 +356,9 @@ export const actions: Actions = {
 
 		const created = targetIds.length - failedStudentIds.length;
 		const failed = failedStudentIds.length > 0 ? `&failed=${failedStudentIds.length}` : '';
-		throw redirect(303, `/teacher/classes/${classId}/homework?created=${created}${failed}`);
+		throw redirect(
+			303,
+			`/teacher/classes/${classId}/homework?created=${created}${failed}${notAttached}`
+		);
 	}
 };

@@ -6,6 +6,7 @@ import {
 	env,
 	fixtureTeam,
 	isoWeekday,
+	postedFields,
 	renderedFonts,
 	service,
 	signIn,
@@ -247,7 +248,7 @@ function capturePosts(page: Page, action: string): URLSearchParams[] {
 	const posts: URLSearchParams[] = [];
 	page.on('request', (r) => {
 		if (r.method() === 'POST' && r.url().includes(`?/${action}`)) {
-			posts.push(new URLSearchParams(r.postData() ?? ''));
+			posts.push(postedFields(r));
 		}
 	});
 	return posts;

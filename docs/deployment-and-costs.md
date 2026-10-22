@@ -130,9 +130,11 @@ losing a day of data, or a pause during the holidays, would be a real problem fo
 
 ## 4. File upload
 
-Since 2026-10-08 the app has one kind of file upload: **PDF files on a syllabus section**
-(issue #95, migration `0039_syllabus_section_files.sql`). The rest of this section is the cost
-discussion from 2026-10-06, which led to it, and still applies to anything added later.
+Since 2026-10-08 the app has file upload for **PDF files on a syllabus section** (issue #95,
+migration `0039_syllabus_section_files.sql`), and since 2026-10-22 for **PDF files on a
+homework** (issue #110, migration `0053_homework_files.sql`, see "Homework files" below). The
+rest of this section is the cost discussion from 2026-10-06, which led to them, and still
+applies to anything added later.
 
 ### What exists
 
@@ -206,6 +208,56 @@ Written down, **not tried**. Deploy an app version without the feature first, th
 
 3. Remove the row for `0039` from `supabase_migrations.schema_migrations`, or a later
    `db push` will not apply the file again.
+
+### Homework files (#110)
+
+The same build as the syllabus files, with its own bucket, table and limits.
+
+- **Who:** the admin and a class's teachers attach files on the create-homework form or on the
+  homework's page, replace and remove them. The students the homework is set for and their
+  approved parents open and download them. Other students of the class, other classes,
+  parents of other children and signed-out visitors get nothing. Nobody else uploads.
+- **Limits:** PDF only, at most 5 MB (5,242,880 bytes) per file, at most 2 files per homework.
+  Checked by the app's server (content must start like a PDF), the bucket (size, type) and the
+  database (count, SQLSTATE `HF001`).
+- **Where:** private bucket `homework-files`, objects `<class id>/<homework id>/<random id>.pdf`,
+  rows in `homework_assignment_files`. The files belong to the homework, not to one copy, so
+  every week of a weekly homework shows the same files. Archiving a copy keeps them.
+- **Access:** `/files/homework/<file id>`, the same 60-second signed link as for syllabus files.
+- **Worker memory:** a file post on the homework page may be up to about 5.1 MB; the create
+  form, which may carry 2 files and the homework's text, up to about 11.1 MB. A larger post is
+  refused without being kept. While a post is read the app holds it more than once (the
+  received pieces, the joined bytes, then the parsed form and the checked file), so the peak is
+  roughly three times the post size: about 15 MB for the homework page and about 33 MB for the
+  create form. That stays under the Worker's 128 MB memory limit.
+- **Downloads:** a full 5 MB file opened by 30 students and their parents is about 0.3 GB of
+  the monthly 5 GB allowance.
+- **Deleting:** removing a file or deleting a class removes the stored objects first. Homework
+  is never deleted on its own in the app.
+- **Space:** at most 10 MB per homework. 50 homeworks full to the limit would be 0.5 GB of the
+  free plan's 1 GB, together with the syllabus files. Teachers' real files are expected to be
+  far below the limit; watch the Storage usage in the dashboard.
+- **Push:** `supabase db push` for migration 0053 creates the bucket, table and rules (same
+  open point as 0039 about the hosted `postgres` role). Then deploy the app. Afterwards the
+  bucket `homework-files` is listed as private, 5 MB, `application/pdf`. Objects whose row is
+  gone (expected: 0 rows):
+
+  ```sql
+  select o.name
+  from storage.objects o
+  where o.bucket_id = 'homework-files'
+    and not exists (
+      select 1 from public.homework_assignment_files f
+      where f.object_path = o.name
+    );
+  ```
+
+- **Undoing 0053** (not tried): deploy an app without the feature, empty and delete the bucket
+  `homework-files` in the dashboard, then drop the policies `homework_files_select`,
+  `homework_files_insert_admin_or_teacher` and `homework_files_delete_admin_or_teacher` on
+  `storage.objects`, the table `public.homework_assignment_files`, the functions
+  `public.homework_assignment_files_limit()` and `public.homework_file_path_id(text, integer)`,
+  and the `0053` row in `supabase_migrations.schema_migrations`.
 
 ### What the free plan allows
 

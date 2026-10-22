@@ -9,6 +9,7 @@
 	import { showToast } from '$lib/toast';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
+	import HomeworkFiles from '$lib/components/HomeworkFiles.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
@@ -47,6 +48,14 @@
 	// what the teacher typed; a save changes them, so the fields show it.
 	let savedTitle = $derived(assignment.title);
 	let savedOffset = $derived(String(assignment.dueOffsetDays ?? 0));
+
+	// #110: the server's message about a chosen file, for the upload field
+	// (fileId null) or the file that was to be replaced.
+	let fileError = $derived(
+		form && 'fileError' in form && typeof form.fileError === 'string'
+			? { fileId: ('fileId' in form ? form.fileId : null) ?? null, message: form.fileError }
+			: null
+	);
 
 	// #103b: the teacher's choice, when ending a series, to also archive the
 	// homework students already have from it. Off unless ticked.
@@ -89,6 +98,15 @@
 				break;
 			case 'editAssignment':
 				showToast('success', m.homework_edit_success());
+				break;
+			case 'fileUploaded':
+				showToast('success', m.homework_file_uploaded());
+				break;
+			case 'fileReplaced':
+				showToast('success', m.homework_file_replaced());
+				break;
+			case 'fileDeleted':
+				showToast('success', m.homework_file_deleted());
 				break;
 			case 'pauseSeries':
 				showToast('success', m.homework_series_paused_success());
@@ -183,6 +201,9 @@
 				{/each}
 			</ul>
 		{/if}
+
+		<!-- #110: the homework's PDF files, managed here (not in the edit form). -->
+		<HomeworkFiles files={data.files} {pending} {confirm} error={fileError} />
 
 		{#if seriesStatusLabel(assignment)}
 			<p class="font-bold">{seriesStatusLabel(assignment)}</p>

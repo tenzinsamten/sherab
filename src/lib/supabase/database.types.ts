@@ -624,6 +624,47 @@ export type Database = {
 					}
 				];
 			};
+			homework_assignment_files: {
+				Row: {
+					assignment_id: string;
+					created_at: string;
+					created_by: string | null;
+					file_name: string;
+					id: string;
+					object_path: string;
+					size_bytes: number;
+					updated_at: string;
+				};
+				Insert: {
+					assignment_id: string;
+					created_at?: string;
+					created_by?: string | null;
+					file_name: string;
+					id?: string;
+					object_path: string;
+					size_bytes: number;
+					updated_at?: string;
+				};
+				Update: {
+					assignment_id?: string;
+					created_at?: string;
+					created_by?: string | null;
+					file_name?: string;
+					id?: string;
+					object_path?: string;
+					size_bytes?: number;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'homework_assignment_files_assignment_id_fkey';
+						columns: ['assignment_id'];
+						isOneToOne: false;
+						referencedRelation: 'homework_assignments';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			homework_assignments: {
 				Row: {
 					class_id: string;

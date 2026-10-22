@@ -1,6 +1,7 @@
 import { localizedName } from '$lib/localized-name';
 import { redirect } from '@sveltejs/kit';
 import { HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
+import { loadHomeworkFiles } from '$lib/server/homework-files';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
 import { markHomeworkDone, STUDENT_ASSIGNMENT_COLUMNS, toItem } from '$lib/server/student-homework';
 import type { Actions, PageServerLoad } from './$types';
@@ -23,25 +24,31 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		HOMEWORK_MESSAGES
 	);
 
-	const [assignmentResult, { data: historyRows, error: historyError }, { data: cls }] =
-		await Promise.all([
-			supabase
-				.from('homework_assignments')
-				.select(STUDENT_ASSIGNMENT_COLUMNS)
-				.eq('id', instance.assignment_id)
-				.maybeSingle(),
-			supabase
-				.from('homework_status_history')
-				.select('id, instance_id, student_id, status, recorded_by, recorded_at')
-				.eq('instance_id', instance.id)
-				.eq('student_id', user.id),
-			// Hidden by RLS once the student has left the class (#42).
-			supabase
-				.from('classes')
-				.select('name, name_bo, name_de')
-				.eq('id', instance.class_id)
-				.maybeSingle()
-		]);
+	const [
+		assignmentResult,
+		{ data: historyRows, error: historyError },
+		{ data: cls },
+		homeworkFiles
+	] = await Promise.all([
+		supabase
+			.from('homework_assignments')
+			.select(STUDENT_ASSIGNMENT_COLUMNS)
+			.eq('id', instance.assignment_id)
+			.maybeSingle(),
+		supabase
+			.from('homework_status_history')
+			.select('id, instance_id, student_id, status, recorded_by, recorded_at')
+			.eq('instance_id', instance.id)
+			.eq('student_id', user.id),
+		// Hidden by RLS once the student has left the class (#42).
+		supabase
+			.from('classes')
+			.select('name, name_bo, name_de')
+			.eq('id', instance.class_id)
+			.maybeSingle(),
+		// #110: the homework's PDF files (RLS: students it is set for).
+		loadHomeworkFiles(supabase, [instance.assignment_id])
+	]);
 	const assignment = rowOr404(assignmentResult, HOMEWORK_MESSAGES);
 
 	const progress = buildHomeworkProgress(
@@ -66,8 +73,9 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	return {
 		item: toItem(instance, assignment, entry, today),
 		className: cls ? localizedName(cls) : null,
+		files: homeworkFiles.files.get(instance.assignment_id) ?? [],
 		archived: instance.archived_at !== null,
-		loadError: Boolean(historyError)
+		loadError: Boolean(historyError || homeworkFiles.error)
 	};
 };
 

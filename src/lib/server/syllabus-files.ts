@@ -8,6 +8,23 @@ import {
 	fileLimitMessage,
 	fileTooLargeMessage
 } from '$lib/syllabus-files';
+import {
+	FORM_OVERHEAD_BYTES,
+	MAX_FILE_NAME_LENGTH,
+	REMOVE_BATCH,
+	SIGNED_URL_SECONDS,
+	cleanFileName,
+	isUuid,
+	readFileForm as readSharedFileForm,
+	readPdfUpload as readSharedPdfUpload,
+	removeObjects as removeSharedObjects,
+	removeOrLog as removeSharedOrLog,
+	signObject,
+	storeObject as storeSharedObject,
+	type PdfStore,
+	type PdfUpload,
+	type UploadProblem
+} from './pdf-files';
 
 /**
  * PDF files attached to a syllabus section (0039_syllabus_section_files.sql).
@@ -19,64 +36,26 @@ import {
  * private bucket, stored as `<class_id>/<section_id>/<random uuid>.pdf`. The
  * original name lives in the row only. Objects cannot be deleted from SQL,
  * so whatever deletes rows (a file, its section, syllabus or class) removes
- * the objects here first: see `removeStoredFiles`.
+ * the objects here first: see `removeStoredFiles`. The steps shared with
+ * homework files (reading the post, checking the PDF, storing, removing,
+ * signing) are in pdf-files.ts.
  */
 
 type Client = SupabaseClient<Database>;
 
 export const SYLLABUS_FILES_BUCKET = 'syllabus-files';
-/** How long a link made by `signedFileUrl` works. */
-export const SIGNED_URL_SECONDS = 60;
+const STORE: PdfStore = { bucket: SYLLABUS_FILES_BUCKET, label: 'syllabus file' };
+export { SIGNED_URL_SECONDS, MAX_FILE_NAME_LENGTH, isUuid, cleanFileName };
+export type { UploadProblem, PdfUpload };
 /** SQLSTATE of the database's own "at most 5 files" check (0039). */
 export const FILE_LIMIT_ERROR_CODE = 'SF001';
-export const MAX_FILE_NAME_LENGTH = 200;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** `%PDF-`: how every PDF file starts. */
-const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d];
-/** A multipart post is a little larger than the file it carries. */
-const FORM_OVERHEAD_BYTES = 64 * 1024;
-/** Objects per Storage API call, and rows per page, when removing. */
-const REMOVE_BATCH = 100;
-
-export function isUuid(value: unknown): value is string {
-	return typeof value === 'string' && UUID.test(value);
-}
-
-/**
- * The name shown and downloaded for an uploaded file: its own name without
- * any folder or control characters, at most 200 characters, ending in
- * `.pdf`. Never used as the storage path.
- */
-export function cleanFileName(raw: string): string {
-	const base = (raw.split(/[\\/]/).pop() ?? '').replace(/\p{Cc}/gu, '').trim();
-	const stem = [...base.replace(/\.pdf$/i, '')]
-		.slice(0, MAX_FILE_NAME_LENGTH - 4)
-		.join('')
-		.trim();
-	return `${stem || 'document'}.pdf`;
-}
-
-export type UploadProblem = 'missing' | 'size' | 'type';
-export type PdfUpload = { name: string; bytes: ArrayBuffer };
 
 /**
  * Reads the posted `file` field. Accepts it only when it is at most 1 MB and
  * its content starts with `%PDF-`, whatever its name or declared type say.
  */
-export async function readPdfUpload(
-	entry: FormDataEntryValue | null
-): Promise<{ ok: true; value: PdfUpload } | { ok: false; problem: UploadProblem }> {
-	// A form posted with no file chosen sends an empty, unnamed file.
-	if (!(entry instanceof Blob) || entry.size === 0) return { ok: false, problem: 'missing' };
-	if (entry.size > MAX_FILE_BYTES) return { ok: false, problem: 'size' };
-	const bytes = await entry.arrayBuffer();
-	const head = new Uint8Array(bytes, 0, Math.min(PDF_MAGIC.length, bytes.byteLength));
-	if (head.length < PDF_MAGIC.length || PDF_MAGIC.some((byte, i) => head[i] !== byte)) {
-		return { ok: false, problem: 'type' };
-	}
-	const name = entry instanceof File ? entry.name : '';
-	return { ok: true, value: { name: cleanFileName(name), bytes } };
+export function readPdfUpload(entry: FormDataEntryValue | null) {
+	return readSharedPdfUpload(entry, MAX_FILE_BYTES);
 }
 
 const problemMessages = {
@@ -103,63 +82,14 @@ const fileProblem = (message: string, sectionId: string, fileId: string | null) 
 /** The largest post the file forms can honestly send: one file plus the form around it. */
 const MAX_POST_BYTES = MAX_FILE_BYTES + FORM_OVERHEAD_BYTES;
 
-const postTooLarge = () => fail(413, { error: fileTooLargeMessage() });
+const formRefusals = {
+	tooLarge: () => fail(413, { error: fileTooLargeMessage() }),
+	broken: () => fail(400, { error: m.syllabus_file_error_failed() })
+};
 
-/**
- * Reads a file form without ever holding more than one acceptable post in
- * memory, and returns its fields or the refusal to answer with.
- *
- * - A post that says it is over the limit (`Content-Length`) is refused at
- *   once. Its body is read and thrown away piece by piece, because an unread
- *   body makes some servers drop the connection instead of delivering the
- *   answer; its length is known, so that ends.
- * - Any other post -- also one without a usable `Content-Length`, which a
- *   host in front of the app may not pass on -- is read up to the limit. One
- *   byte more and it is refused there, without reading the rest.
- */
-async function readFileForm(
-	request: Request
-): Promise<{ formData: FormData } | { refused: ReturnType<typeof postTooLarge> }> {
-	const header = request.headers.get('content-length')?.trim() ?? '';
-	const reader = request.body?.getReader();
-	if (/^\d+$/.test(header) && Number(header) > MAX_POST_BYTES) {
-		try {
-			while (reader && !(await reader.read()).done);
-		} catch {
-			// The sender gave up: nothing left to read.
-		}
-		return { refused: postTooLarge() };
-	}
-
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	try {
-		for (;;) {
-			const next = reader ? await reader.read() : { done: true as const, value: undefined };
-			if (next.done) break;
-			size += next.value.byteLength;
-			if (size > MAX_POST_BYTES) {
-				await reader?.cancel().catch(() => {});
-				return { refused: postTooLarge() };
-			}
-			chunks.push(next.value);
-		}
-		const bytes = new Uint8Array(size);
-		let offset = 0;
-		for (const chunk of chunks) {
-			bytes.set(chunk, offset);
-			offset += chunk.byteLength;
-		}
-		// The same form, from the bytes that were read.
-		const formData = await new Response(bytes, {
-			headers: { 'content-type': request.headers.get('content-type') ?? '' }
-		}).formData();
-		return { formData };
-	} catch {
-		// Not a form, or the post broke off.
-		return { refused: fail(400, { error: m.syllabus_file_error_failed() }) };
-	}
-}
+/** Reads a file form up to one file plus the form around it (see `readFileForm` in pdf-files.ts). */
+const readFileForm = (request: Request) =>
+	readSharedFileForm(request, MAX_POST_BYTES, formRefusals);
 
 type StoredFile = { id: string; object_path: string };
 
@@ -187,77 +117,18 @@ async function sectionFiles(
 }
 
 /** Stores the PDF under a new random name in the section's folder; null when storage refuses it. */
-async function storeObject(
-	supabase: Client,
-	classId: string,
-	sectionId: string,
-	bytes: ArrayBuffer
-): Promise<string | null> {
-	const path = `${classId}/${sectionId}/${crypto.randomUUID()}.pdf`.toLowerCase();
-	// The bytes, not the posted File: the declared type is then ours, since
-	// the content was checked to be a PDF whatever the browser called it.
-	const { error } = await supabase.storage
-		.from(SYLLABUS_FILES_BUCKET)
-		.upload(path, bytes, { contentType: 'application/pdf', upsert: false });
-	if (error) {
-		console.error(`syllabus file upload failed: ${error.message}`);
-		return null;
-	}
-	return path;
-}
-
-/**
- * True only when storage says the object is not there. The client answers
- * that with `data: false` and a 400 / 404 error, and throws for any other
- * failure (network, 5xx): those count as "still there".
- */
-async function isGone(supabase: Client, path: string): Promise<boolean> {
-	try {
-		const { data, error } = await supabase.storage.from(SYLLABUS_FILES_BUCKET).exists(path);
-		if (data !== false) return false;
-		if (!error) return true;
-		const e = error as { status?: number; originalError?: { status?: number } };
-		const status = e.status ?? e.originalError?.status;
-		return status === 400 || status === 404;
-	} catch {
-		return false;
-	}
-}
+const storeObject = (supabase: Client, classId: string, sectionId: string, bytes: ArrayBuffer) =>
+	storeSharedObject(supabase, STORE, `${classId}/${sectionId}`, bytes);
 
 /** For an object the app could not remove after a failed step: names it in the server log. */
-async function removeOrLog(supabase: Client, path: string) {
-	if (!(await removeObjects(supabase, [path]))) {
-		console.error(`syllabus file left behind in the bucket: ${path}`);
-	}
-}
+const removeOrLog = (supabase: Client, path: string) => removeSharedOrLog(supabase, STORE, path);
 
 /**
- * Removes objects from the bucket. True only when none of them is left:
- * the Storage API answers a refused removal with "nothing removed" rather
- * than an error, so objects it did not report are looked up again.
+ * Removes objects from the bucket. True only when none of them is left
+ * (see `removeObjects` in pdf-files.ts).
  */
-export async function removeObjects(supabase: Client, paths: string[]): Promise<boolean> {
-	const bucket = supabase.storage.from(SYLLABUS_FILES_BUCKET);
-	for (let i = 0; i < paths.length; i += REMOVE_BATCH) {
-		const batch = paths.slice(i, i + REMOVE_BATCH);
-		const { data, error } = await bucket.remove(batch);
-		if (error) {
-			console.error(`syllabus file removal failed: ${error.message}`);
-			return false;
-		}
-		const removed = new Set((data ?? []).map((object) => object.name));
-		for (const path of batch) {
-			if (removed.has(path)) continue;
-			// Not reported: already gone (fine) or not removed (not fine). Only
-			// a clear "not there" counts as gone; a lookup that fails does not.
-			if (!(await isGone(supabase, path))) {
-				console.error(`syllabus file not removed: ${path}`);
-				return false;
-			}
-		}
-	}
-	return true;
-}
+export const removeObjects = (supabase: Client, paths: string[]) =>
+	removeSharedObjects(supabase, STORE, paths);
 
 /**
  * Removes the stored objects, and then the rows, of every file in a section,
@@ -482,14 +353,5 @@ export async function signedFileUrl(
 		.maybeSingle();
 	if (error || !file) return null;
 
-	const { data, error: signError } = await supabase.storage
-		.from(SYLLABUS_FILES_BUCKET)
-		.createSignedUrl(file.object_path, SIGNED_URL_SECONDS);
-	if (signError || !data?.signedUrl) return null;
-	// `download` is added here, not through createSignedUrl's option: the
-	// client library encodes it twice, so a name with Tibetan letters would
-	// be saved as "%E0%BD%82...". Storage reads it from the address either way.
-	return download
-		? `${data.signedUrl}&download=${encodeURIComponent(file.file_name)}`
-		: data.signedUrl;
+	return signObject(supabase, STORE, file.object_path, file.file_name, download);
 }
