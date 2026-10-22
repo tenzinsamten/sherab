@@ -150,6 +150,89 @@ test('slow page action: the bar shows, <main> is neither inert nor faded', async
 
 		await expect(page.locator('[data-sonner-toast]')).toHaveText('Name updated.');
 		await expectIdle(page);
+		// #109: the disabled Save dropped focus while it ran; it is back on Save.
+		await expect(save).toBeFocused();
+	} finally {
+		await page.context().close();
+	}
+});
+
+const errorToast = (page: Page) => page.locator('[data-sonner-toast][data-type="error"]');
+/** updateName's fail(400) for a blank name (messages/en.json account_name_error_required). */
+const blankNameError = 'Enter a name of 1 to 80 characters.';
+
+/** #109: My account with its Save name POST held for 1.5 s. */
+async function slowSaveName(page: Page) {
+	await openAccount(page);
+	await page.route(/\/account\?\/updateName/, async (route) => {
+		if (route.request().method() !== 'POST') return route.continue();
+		await new Promise((r) => setTimeout(r, 1500));
+		await route.continue().catch(() => undefined);
+	});
+	return page.locator('form[action="?/updateName"] button[type="submit"]');
+}
+
+test('#109: a failed page action also returns focus to the pressed button', async ({ browser }) => {
+	const page = await phone(browser);
+	try {
+		const save = await slowSaveName(page);
+		// Passes `required`, but the action trims it and answers fail(400).
+		await page.locator('#displayName').fill('   ');
+		await save.focus();
+		await page.keyboard.press('Enter');
+		await expect(save).toBeDisabled();
+		await expect(errorToast(page)).toHaveText(blankNameError);
+		await expect(page.getByTestId('field-error')).toBeVisible();
+		await expectIdle(page);
+		await expect(save).toBeFocused();
+	} finally {
+		await page.context().close();
+	}
+});
+
+test('#109: Enter in a text field keeps focus in the field, on success and on fail()', async ({
+	browser
+}) => {
+	const page = await phone(browser);
+	try {
+		const save = await slowSaveName(page);
+		const name = page.locator('#displayName');
+
+		await name.fill(`Progress entered ${tag}`);
+		await name.press('Enter');
+		await expect(save).toBeDisabled();
+		await expect(page.locator('[data-sonner-toast]')).toHaveText('Name updated.');
+		await expectIdle(page);
+		await expect(save).toBeEnabled();
+		await expect(name).toBeFocused();
+
+		// Passes `required`, but the action trims it and answers fail(400).
+		await name.fill('   ');
+		await name.press('Enter');
+		await expect(save).toBeDisabled();
+		await expect(errorToast(page)).toHaveText(blankNameError);
+		await expect(page.getByTestId('field-error')).toBeVisible();
+		await expectIdle(page);
+		await expect(save).toBeEnabled();
+		await expect(name).toBeFocused();
+	} finally {
+		await page.context().close();
+	}
+});
+
+test('#109: focus moved to a field during a slow save stays there', async ({ browser }) => {
+	const page = await phone(browser);
+	try {
+		const save = await slowSaveName(page);
+		const name = page.locator('#displayName');
+		await name.fill(`Progress moved ${tag}`);
+		await save.click();
+		await expect(save).toBeDisabled();
+		await name.focus();
+		await expect(page.locator('[data-sonner-toast]')).toHaveText('Name updated.');
+		await expectIdle(page);
+		await expect(save).toBeEnabled();
+		await expect(name).toBeFocused();
 	} finally {
 		await page.context().close();
 	}

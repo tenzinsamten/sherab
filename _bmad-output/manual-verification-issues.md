@@ -2549,3 +2549,13 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Open for planning: switch pending buttons to `aria-disabled` plus a guarded click (about 70
   buttons in 25 files, `createPending` already cancels a second submit), or return focus to
   the pressed button after `update()` in `createPending`; and which e2e locks it in.
+- 2026-10-22: #109 built, to verify (spec `implementation-artifacts/spec-109-pending-button-focus.md`).
+  The user chose the central fix: `createPending` (`src/lib/pending.svelte.ts`) returns focus
+  to the pressed button (`restoreFocus(before, submitter)`) after the action, on success and on
+  `fail()`, only if focus is on `<body>` and the button is still on the page and enabled.
+  Button markup unchanged. Found while building: on success SvelteKit's `applyAction` itself
+  moves focus to `<body>`, so `createPending` also notes where focus was as the answer
+  arrived (a text field after Enter, or one the user moved to during the save) and returns
+  it there first, else to the pressed button. To verify: on My account, Tab to Save name,
+  press Enter, and after the toast press Tab: focus moves on from Save, not from the page
+  top; and Enter in the name field leaves focus in the field.

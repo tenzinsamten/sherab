@@ -506,3 +506,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-108-teacher-tabs-classes-more.md`
   summary: Page-header count badges (`<Badge>{num(n)}</Badge>` on /teacher/classes, /student/classes and similar) have no accessible name, so screen readers announce a bare number.
   evidence: The pattern predates #108 (`src/routes/student/classes/+page.svelte:35`); fix it once for every page header, e.g. visually hidden "n classes" text.
+- source_spec: `_bmad-output/implementation-artifacts/spec-109-pending-button-focus.md`
+  summary: After Enter-to-save in a text field, #109 returns focus to the field, which on Android may reopen the soft keyboard after every save.
+  evidence: Unverified (maybe-false, medium if true): desktop Chromium e2e cannot show virtual-keyboard behaviour. Settle on an Android phone: My account, edit the name, press Enter/Go, and check whether the keyboard reopens after "Name updated."; if it does, restore to the submitter instead of a text field on coarse-pointer devices.
