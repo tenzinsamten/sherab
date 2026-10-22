@@ -28,6 +28,9 @@ let parent: TestUser;
 let student: TestUser;
 let pendingStudent: TestUser;
 let teacherParent: TestUser;
+/** #108: a class taught by `teacher`, for the Classes tab. */
+let classId: string | undefined;
+const className = `Shell class ${tag}`;
 
 type Role = 'teacher' | 'admin' | 'parent' | 'student';
 
@@ -75,10 +78,25 @@ test.beforeAll(async () => {
 		service.from('parents').upsert({ id: teacherParent.id, status: 'approved' }),
 		'dual parents row'
 	);
+	const { data: cls, error: classError } = await service
+		.from('classes')
+		.insert({ name: className, code: `S${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+		.select('id')
+		.single();
+	if (classError || !cls) throw new Error(`create class: ${classError?.message}`);
+	classId = cls.id;
+	await check(
+		service.from('class_teachers').insert({ class_id: cls.id, teacher_id: teacher.id }),
+		'assign teacher'
+	);
 });
 
 test.afterAll(async () => {
 	const problems: string[] = [];
+	if (classId) {
+		const { error } = await service.from('classes').delete().eq('id', classId);
+		if (error) problems.push(`delete class: ${error.message}`);
+	}
 	for (const id of userIds) {
 		const { error } = await service.auth.admin.deleteUser(id);
 		if (error) problems.push(`delete user ${id}: ${error.message}`);
@@ -126,12 +144,13 @@ test('phone nav: a teacher at 375px gets the bottom bar, no hamburger and no sid
 		await expect(page).toHaveURL(/\/teacher$/);
 		await expect(bottomNav(page)).toBeVisible();
 		await expect(sideNav(page)).toBeHidden();
+		// #108: Classes is a tab; Leaderboard and Help are in More.
 		expect(await navNames(page)).toEqual([
 			'Dashboard',
+			'Classes',
 			'Calendar',
 			expect.stringMatching(/^Requests/),
-			'Leaderboard',
-			'Help'
+			'More'
 		]);
 		const dashboard = mainNav(page).getByRole('link', { name: 'Dashboard' });
 		await expect(dashboard).toHaveAttribute('aria-current', 'page');
@@ -153,6 +172,83 @@ test('phone nav: a teacher at 375px gets the bottom bar, no hamburger and no sid
 			expect(box.height).toBeGreaterThanOrEqual(44);
 			expect(box.right).toBeLessThanOrEqual(375);
 		}
+
+		// More holds Leaderboard and Help; More is active on Leaderboard.
+		await mainNav(page).getByRole('button', { name: 'More' }).click();
+		const sheet = page.getByRole('dialog', { name: 'More pages' });
+		await expect(sheet).toBeVisible();
+		await expect(sheet.locator('ul').locator(':is(a, button)')).toHaveText(['Leaderboard', 'Help']);
+		await sheet.getByRole('link', { name: 'Leaderboard' }).click();
+		await expect(page).toHaveURL(/\/leaderboard$/);
+		await expect(sheet).toBeHidden();
+		await expect(mainNav(page).getByRole('button', { name: 'More' })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+	} finally {
+		await page.context().close();
+	}
+});
+
+test('teacher phone (#108): Classes lists the classes; on a class page Classes stays active, Dashboard not', async ({
+	browser
+}) => {
+	const page = await newPage(browser, 375);
+	try {
+		await signIn(page, teacher);
+		await expect(page).toHaveURL(/\/teacher$/);
+		const classes = mainNav(page).getByRole('link', { name: 'Classes' });
+		const dashboard = mainNav(page).getByRole('link', { name: 'Dashboard' });
+		await classes.click();
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
+		await expect(page.getByRole('heading', { level: 1, name: 'My Classes' })).toBeVisible();
+		await expect(classes).toHaveAttribute('aria-current', 'page');
+		await expect(dashboard).not.toHaveAttribute('aria-current');
+
+		const card = page.getByTestId('class-cards').locator('li').filter({ hasText: className });
+		await expect(card).toBeVisible();
+		await card.getByRole('link').click();
+		await expect(page).toHaveURL(new RegExp(`/teacher/classes/${classId}$`));
+		await expect(classes).toHaveAttribute('aria-current', 'page');
+		await expect(dashboard).not.toHaveAttribute('aria-current');
+	} finally {
+		await page.context().close();
+	}
+});
+
+test('desktop (#108): a teacher at 1440px gets all six side nav items, each reachable', async ({
+	browser
+}) => {
+	const page = await newPage(browser, 1440);
+	try {
+		await signIn(page, teacher);
+		await expect(sideNav(page)).toBeVisible();
+		await expect(bottomNav(page)).toBeHidden();
+		expect(await navNames(page)).toEqual([
+			'Dashboard',
+			'Classes',
+			'Calendar',
+			expect.stringMatching(/^Requests/),
+			'Leaderboard',
+			'Help'
+		]);
+		for (const [name, url] of [
+			['Classes', /\/teacher\/classes$/],
+			['Calendar', /\/calendar$/],
+			[/^Requests/, /\/requests$/],
+			['Leaderboard', /\/leaderboard$/],
+			['Dashboard', /\/teacher$/]
+		] as const) {
+			const link = mainNav(page).getByRole('link', { name });
+			await link.click();
+			await expect(page).toHaveURL(url);
+			await expect(link).toHaveAttribute('aria-current', 'page');
+		}
+		await openHelp(page);
+		await expect(helpSheet(page).getByRole('tab', { name: 'For teachers' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
 	} finally {
 		await page.context().close();
 	}
@@ -258,59 +354,65 @@ test('desktop: an admin at 1440px gets the side nav with all nine items; collaps
 	}
 });
 
-for (const locale of ['en', 'de', 'bo']) {
-	test(`long labels: a student at 375px in ${locale} sees every bar and header label in full, on at most two lines`, async ({
-		browser
-	}) => {
-		const page = await newPage(browser, 375);
-		try {
-			await signIn(page, student);
-			await expect(page).toHaveURL(/\/student$/);
-			await useLocale(page, locale);
-			await expect(bottomNav(page).getByRole('link')).toHaveCount(5);
-			const labels = await page
-				.locator('[data-testid="bottom-nav"] [data-nav-label]')
-				.evaluateAll((spans) =>
-					spans.map((span) => {
-						const style = getComputedStyle(span);
-						const lineHeight = parseFloat(style.lineHeight);
-						const box = span.getBoundingClientRect();
-						return {
-							text: span.textContent,
-							clipped:
-								span.scrollWidth > span.clientWidth + 1 ||
-								span.scrollHeight > span.clientHeight + 1,
-							lines: Math.round(box.height / lineHeight),
-							left: box.left,
-							right: box.right
-						};
-					})
-				);
-			expect(labels).toHaveLength(5);
-			for (const label of labels) {
-				expect(label.clipped, `${label.text} clipped`).toBe(false);
-				expect(label.lines, `${label.text} lines`).toBeLessThanOrEqual(2);
-				expect(label.left).toBeGreaterThanOrEqual(0);
-				expect(label.right).toBeLessThanOrEqual(375);
-			}
+// #108: the teacher's bar (four links and More) too.
+for (const [role, user, links] of [
+	['student', () => student, 5],
+	['teacher', () => teacher, 4]
+] as const) {
+	for (const locale of ['en', 'de', 'bo']) {
+		test(`long labels: a ${role} at 375px in ${locale} sees every bar and header label in full, on at most two lines`, async ({
+			browser
+		}) => {
+			const page = await newPage(browser, 375);
+			try {
+				await signIn(page, user());
+				await expect(page).toHaveURL(new RegExp(`/${role}$`));
+				await useLocale(page, locale);
+				await expect(bottomNav(page).getByRole('link')).toHaveCount(links);
+				const labels = await page
+					.locator('[data-testid="bottom-nav"] [data-nav-label]')
+					.evaluateAll((spans) =>
+						spans.map((span) => {
+							const style = getComputedStyle(span);
+							const lineHeight = parseFloat(style.lineHeight);
+							const box = span.getBoundingClientRect();
+							return {
+								text: span.textContent,
+								clipped:
+									span.scrollWidth > span.clientWidth + 1 ||
+									span.scrollHeight > span.clientHeight + 1,
+								lines: Math.round(box.height / lineHeight),
+								left: box.left,
+								right: box.right
+							};
+						})
+					);
+				expect(labels).toHaveLength(5);
+				for (const label of labels) {
+					expect(label.clipped, `${label.text} clipped`).toBe(false);
+					expect(label.lines, `${label.text} lines`).toBeLessThanOrEqual(2);
+					expect(label.left).toBeGreaterThanOrEqual(0);
+					expect(label.right).toBeLessThanOrEqual(375);
+				}
 
-			// CAP-6: the header fits -- logo, language and avatar, nothing cut.
-			const header = page.getByTestId('app-header');
-			expect(await header.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-			const language = page.getByTestId('language-menu');
-			expect(
-				await language.evaluate((el) =>
-					[...el.querySelectorAll('span')].every((s) => s.scrollWidth <= s.clientWidth + 1)
-				)
-			).toBe(true);
-			const right = await page
-				.getByTestId('account-menu')
-				.evaluate((el) => el.getBoundingClientRect().right);
-			expect(right).toBeLessThanOrEqual(375);
-		} finally {
-			await page.context().close();
-		}
-	});
+				// CAP-6: the header fits -- logo, language and avatar, nothing cut.
+				const header = page.getByTestId('app-header');
+				expect(await header.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+				const language = page.getByTestId('language-menu');
+				expect(
+					await language.evaluate((el) =>
+						[...el.querySelectorAll('span')].every((s) => s.scrollWidth <= s.clientWidth + 1)
+					)
+				).toBe(true);
+				const right = await page
+					.getByTestId('account-menu')
+					.evaluate((el) => el.getBoundingClientRect().right);
+				expect(right).toBeLessThanOrEqual(375);
+			} finally {
+				await page.context().close();
+			}
+		});
+	}
 }
 
 test('unapproved student: no nav items and no account link', async ({ browser }) => {
@@ -344,6 +446,23 @@ test('account: My Account in the avatar menu opens /account', async ({ browser }
 		await menu.getByRole('menuitem', { name: 'My Account' }).click();
 		await expect(page).toHaveURL(/\/account$/);
 		await expect(menu).toBeHidden();
+	} finally {
+		await page.context().close();
+	}
+});
+
+test('teacher with no classes (#108): the Classes page shows the empty state', async ({
+	browser
+}) => {
+	const page = await newPage(browser, 375);
+	try {
+		// teacherParent teaches no class.
+		await signIn(page, teacherParent);
+		await expect(page).toHaveURL(/\/teacher$/);
+		await mainNav(page).getByRole('link', { name: 'Classes' }).click();
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
+		await expect(page.getByText("You haven't been assigned to any classes yet.")).toBeVisible();
+		await expect(page.getByTestId('class-cards')).toHaveCount(0);
 	} finally {
 		await page.context().close();
 	}
@@ -394,11 +513,18 @@ test.describe('help', () => {
 		await expect(help).toBeHidden();
 	}
 
-	test('teacher (375px): the Help tab; replaying the tour closes it first', async ({ browser }) => {
+	test('teacher (375px): Help through More; replaying the tour closes it first', async ({
+		browser
+	}) => {
 		const page = await newPage(browser, 375);
 		try {
 			await signIn(page, teacher);
-			await openHelp(page);
+			// #108: Help is in the More sheet, which closes as Help opens.
+			await expect(mainNav(page).getByRole('button', { name: 'Help' })).toHaveCount(0);
+			await mainNav(page).getByRole('button', { name: 'More' }).click();
+			const more = page.getByRole('dialog', { name: 'More pages' });
+			await more.getByRole('button', { name: 'Help' }).click();
+			await expect(more).toBeHidden();
 			await expectHelpSheet(page, 'For teachers');
 			// Full screen on a phone.
 			const help = await openHelp(page);

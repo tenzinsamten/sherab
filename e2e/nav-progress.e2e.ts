@@ -116,12 +116,12 @@ test('cancel: another bottom-nav tab still navigates during a slow navigation', 
 		await mainNav(page).getByRole('link', { name: 'Calendar' }).click();
 		await expect(bar(page)).toBeVisible();
 
-		await mainNav(page).getByRole('link', { name: 'Leaderboard' }).click();
-		await expect(page).toHaveURL(/\/leaderboard$/);
+		await mainNav(page).getByRole('link', { name: 'Classes' }).click();
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
 		await expectIdle(page);
 		// The abandoned calendar load never lands.
 		await page.waitForTimeout(5500);
-		await expect(page).toHaveURL(/\/leaderboard$/);
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
 		await expectIdle(page);
 	} finally {
 		await page.context().close();
@@ -221,17 +221,18 @@ test('reduced motion: a static bar with the same timing, no fade transition', as
 test('fast navigation: the bar never shows', async ({ browser }) => {
 	const page = await phone(browser);
 	try {
-		// Warm the dev server and keep the leaderboard's data, so the timed
-		// navigation's load is answered at once.
+		// Warm the dev server and keep the classes page's data, so the timed
+		// navigation's load is answered at once. (#108: the Classes tab, since
+		// Leaderboard moved into More.)
 		let cached: { body: Buffer; headers: Record<string, string> } | undefined;
-		await page.route(/\/leaderboard\/__data\.json/, async (route) => {
+		await page.route(/\/teacher\/classes\/__data\.json/, async (route) => {
 			if (cached) return route.fulfill({ body: cached.body, headers: cached.headers });
 			const response = await route.fetch();
 			cached = { body: await response.body(), headers: response.headers() };
 			await route.fulfill({ response, body: cached.body });
 		});
-		await mainNav(page).getByRole('link', { name: 'Leaderboard' }).click();
-		await expect(page).toHaveURL(/\/leaderboard$/);
+		await mainNav(page).getByRole('link', { name: 'Classes' }).click();
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
 		await mainNav(page).getByRole('link', { name: 'Dashboard' }).click();
 		await expect(page).toHaveURL(/\/teacher$/);
 		await page.waitForLoadState('networkidle');
@@ -243,8 +244,8 @@ test('fast navigation: the bar never shows', async ({ browser }) => {
 				if (document.querySelector('[data-testid="nav-progress"]')) w.barSeen = true;
 			}).observe(document.body, { childList: true, subtree: true });
 		});
-		await mainNav(page).getByRole('link', { name: 'Leaderboard' }).click();
-		await expect(page).toHaveURL(/\/leaderboard$/);
+		await mainNav(page).getByRole('link', { name: 'Classes' }).click();
+		await expect(page).toHaveURL(/\/teacher\/classes$/);
 		await page.waitForTimeout(400);
 		expect(await page.evaluate(() => (window as unknown as { barSeen: boolean }).barSeen)).toBe(
 			false

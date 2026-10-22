@@ -388,9 +388,23 @@ export function helpSheet(page: Page) {
 	return page.getByRole('dialog', { name: 'Help' });
 }
 
-/** Opens Help from the shown navigation (teacher, parent, admin on desktop). */
+/**
+ * Opens Help from the shown navigation: its Help entry (parent; teacher and
+ * admin on desktop), or Help in the More sheet (teacher and admin below
+ * 80em, #108).
+ */
 export async function openHelp(page: Page) {
-	await mainNav(page).getByRole('button', { name: 'Help' }).click();
+	const entry = mainNav(page).getByRole('button', { name: /^(Help|More)$/ });
+	await expect(entry).toBeVisible();
+	if ((await entry.textContent())?.trim() === 'More') {
+		await entry.click();
+		await page
+			.getByRole('dialog', { name: 'More pages' })
+			.getByRole('button', { name: 'Help' })
+			.click();
+	} else {
+		await entry.click();
+	}
 	await expect(helpSheet(page)).toBeVisible();
 	return helpSheet(page);
 }

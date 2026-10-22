@@ -1,10 +1,8 @@
-import { localizeName, type LocalizedNames } from '$lib/localized-name';
 import { enrolledStudentIds } from '$lib/server/enrollments';
 import { fetchAllHistoryRows } from '$lib/server/history-rows';
+import { loadTeacherClasses } from '$lib/server/teacher-class-list';
 import { buildTeacherHomeworkTiles } from '$lib/server/teacher-dashboard';
 import type { PageServerLoad } from './$types';
-
-type TeacherClass = { id: string; name: string; code: string };
 
 const EMPTY_TILES = { dueThisWeek: 0, overdue: 0, awaitingReview: 0, completionPercent: 0 };
 
@@ -19,21 +17,11 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		return { classes: [], studentsCount: 0, ...EMPTY_TILES, loadError: false };
 	}
 
-	// RLS (class_teachers_select_admin_or_own + classes_select_admin_or_assigned_teacher)
-	// is what actually restricts this to the caller's own assignments -- the
-	// explicit .eq below is belt-and-suspenders, not the enforcement.
-	const { data: assignments, error } = await supabase
-		.from('class_teachers')
-		.select('classes ( id, name, name_bo, name_de, code )')
-		.eq('teacher_id', user.id);
-
-	const classes = (assignments ?? [])
-		.map((row) => row.classes as unknown as (TeacherClass & LocalizedNames) | null)
-		.filter((cls): cls is TeacherClass & LocalizedNames => cls !== null)
-		.map((cls): TeacherClass => localizeName(cls));
+	// Only the caller's own assignments, under RLS (see loadTeacherClasses).
+	const { classes, error } = await loadTeacherClasses(supabase, user.id);
 
 	if (error || classes.length === 0) {
-		return { classes, studentsCount: 0, ...EMPTY_TILES, loadError: Boolean(error) };
+		return { classes, studentsCount: 0, ...EMPTY_TILES, loadError: error };
 	}
 
 	const classIds = classes.map((c) => c.id);

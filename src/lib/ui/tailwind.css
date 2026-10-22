@@ -108,6 +108,10 @@
 @source '../../routes/admin/teachers/*.svelte';
 @source '../components/LocalizedNameFields.svelte';
 @source '../components/BadgeSubjectSelect.svelte';
+/* #108: the teacher's classes page and the class cards it shares with the
+   dashboard. */
+@source '../../routes/teacher/classes/+page.svelte';
+@source '../components/TeacherClassCards.svelte';
 
 /* Sherab theme, mapped from the iX classic light theme and the Sherab
    overrides src/app.css held until story 10 (primary blue, navy frame, 0.25rem radius). */

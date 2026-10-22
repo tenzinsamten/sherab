@@ -13,7 +13,7 @@
 
 - Phone and tablet (<80em): top header (logo, language, avatar) + fixed bottom tab bar with safe-area padding (`env(safe-area-inset-bottom)`).
 - Desktop (≥80em): collapsible side navigation, same items; replaces `ix-menu`, keeps the remembered collapse cookie (`src/lib/menu.ts`).
-- Help guides and FAQ: a full-screen sheet on phone, a dialog on desktop; opened from the Help tab (teacher, parent), the avatar menu (student) or the side nav (admin).
+- Help guides and FAQ: a full-screen sheet on phone, a dialog on desktop; opened from the Help tab (parent), the More sheet (teacher, admin on phone/tablet), the avatar menu (student) or the side nav (admin, teacher on desktop).
 
 ## Primary nav per role
 
@@ -21,7 +21,7 @@
 |---|---|
 | Parent | Dashboard, Homework, Calendar, Help |
 | Student | Dashboard, Classes, Homework, Calendar, Leaderboard — Help in the avatar menu |
-| Teacher | Dashboard, Calendar, Requests (count), Leaderboard, Help |
+| Teacher | Side nav on desktop: Dashboard, Classes, Calendar, Requests (count), Leaderboard, Help. On phone/tablet: Dashboard, Classes, Calendar, Requests (count), More (sheet with Leaderboard, Help) (#108) |
 | Admin | Side nav on desktop: Dashboard, Classes, Teachers, Parents, Teams, Calendar, Requests, Leaderboard, Help. On phone/tablet: Dashboard, Classes, Requests, Calendar, More (sheet with the rest) |
 
 ## Rollout order

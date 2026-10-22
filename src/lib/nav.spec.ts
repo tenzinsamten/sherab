@@ -20,14 +20,22 @@ describe('navItems: the side nav per role (stack.md)', () => {
 		]);
 	});
 
-	it('teacher: Dashboard, Calendar, Requests, Leaderboard, Help', () => {
-		expect(ids(navItems('teacher'))).toEqual([
+	it('teacher: Dashboard, Classes, Calendar, Requests, Leaderboard, Help (#108)', () => {
+		const items = navItems('teacher');
+		expect(ids(items)).toEqual([
 			'dashboard',
+			'classes',
 			'calendar',
 			'requests',
 			'leaderboard',
 			'help'
 		]);
+		expect(items[1]).toMatchObject({
+			kind: 'link',
+			href: '/teacher/classes',
+			label: m.nav_classes(),
+			icon: 'classes'
+		});
 	});
 
 	it('student: Help is not in the nav (it is in the avatar menu); the long labels', () => {
@@ -80,14 +88,17 @@ describe('tabItems: the bottom bar per role, short labels', () => {
 		expect(ids(more.items)).toEqual(['teachers', 'parents', 'teams', 'leaderboard', 'help']);
 	});
 
-	it('teacher: Dashboard, Calendar, Requests, Leaderboard, Help', () => {
-		expect(ids(tabItems('teacher'))).toEqual([
-			'dashboard',
-			'calendar',
-			'requests',
-			'leaderboard',
-			'help'
-		]);
+	it('teacher: Dashboard, Classes, Calendar, Requests and More with Leaderboard, Help (#108)', () => {
+		const items = tabItems('teacher', { pendingRequests: 3 });
+		expect(ids(items)).toEqual(['dashboard', 'classes', 'calendar', 'requests', 'more']);
+		expect(items[3]).toMatchObject({ count: 3 });
+		const more = items[4];
+		expect(more).not.toHaveProperty('count');
+		expect(more.kind).toBe('more');
+		if (more.kind !== 'more') return;
+		expect(more.label).toBe(m.nav_more());
+		expect(ids(more.items)).toEqual(['leaderboard', 'help']);
+		expect(more.items[1].kind).toBe('help');
 	});
 
 	it('student: the short keys, no Help', () => {
@@ -124,5 +135,17 @@ describe('isActive', () => {
 		expect(isActive(more, '/admin/classes')).toBe(false);
 		const help = navItems('teacher').find((item) => item.kind === 'help')!;
 		expect(isActive(help, '/teacher')).toBe(false);
+	});
+
+	it('teacher (#108): Classes on the list and every class page, Dashboard only on /teacher, More on Leaderboard', () => {
+		const [dashboard, classes, , , more] = tabItems('teacher');
+		expect(isActive(dashboard, '/teacher')).toBe(true);
+		expect(isActive(dashboard, '/teacher/classes/x')).toBe(false);
+		expect(isActive(classes, '/teacher/classes')).toBe(true);
+		expect(isActive(classes, '/teacher/classes/x')).toBe(true);
+		expect(isActive(classes, '/teacher/classes/x/homework')).toBe(true);
+		expect(isActive(classes, '/teacher')).toBe(false);
+		expect(isActive(more, '/leaderboard')).toBe(true);
+		expect(isActive(more, '/teacher/classes/x')).toBe(false);
 	});
 });

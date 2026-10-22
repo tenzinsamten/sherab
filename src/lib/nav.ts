@@ -37,7 +37,7 @@ export type NavLink = {
 /** Opens the Help sheet instead of going to a page. */
 export type NavHelp = { kind: 'help'; id: 'help'; label: string; icon: 'help' };
 
-/** Admin below 80em: opens a sheet with the destinations that do not fit the bar. */
+/** Admin and teacher below 80em: opens a sheet with the destinations that do not fit the bar. */
 export type NavMore = { kind: 'more'; id: 'more'; label: string; icon: 'more'; items: NavEntry[] };
 
 export type NavEntry = NavLink | NavHelp;
@@ -122,7 +122,21 @@ function destinations(opts: NavOptions) {
 			leaderboard,
 			help
 		},
-		teacher: [dashboard(resolve('/teacher')), calendar, requests, leaderboard, help],
+		teacher: {
+			dashboard: dashboard(resolve('/teacher')),
+			// #108: the class pages below it (/teacher/classes/<id>/...) keep it active.
+			classes: link(
+				'classes',
+				resolve('/teacher/classes'),
+				m.nav_classes(),
+				m.nav_classes(),
+				'classes'
+			),
+			calendar,
+			requests,
+			leaderboard,
+			help
+		},
 		student: [
 			dashboard(resolve('/student')),
 			link('classes', resolve('/student/classes'), m.nav_my_classes(), m.nav_classes(), 'classes'),
@@ -171,15 +185,21 @@ export function navItems(role: string | null | undefined, opts: NavOptions = {})
 			a.help
 		].map((d) => d.entry);
 	}
-	if (role === 'teacher' || role === 'student' || role === 'parent') {
+	if (role === 'teacher') {
+		const t = all.teacher;
+		return [t.dashboard, t.classes, t.calendar, t.requests, t.leaderboard, t.help].map(
+			(d) => d.entry
+		);
+	}
+	if (role === 'student' || role === 'parent') {
 		return all[role].map((d) => d.entry);
 	}
 	return [];
 }
 
 /**
- * The bottom tab bar (below 80em), with the short labels. The admin's
- * destinations past the fourth go into a "More" sheet.
+ * The bottom tab bar (below 80em), with the short labels. The admin's and
+ * the teacher's destinations past the fourth go into a "More" sheet.
  */
 export function tabItems(role: string | null | undefined, opts: NavOptions = {}): TabEntry[] {
 	if (opts.unapprovedStudent) return [];
@@ -197,7 +217,21 @@ export function tabItems(role: string | null | undefined, opts: NavOptions = {})
 			}
 		];
 	}
-	if (role === 'teacher' || role === 'student' || role === 'parent') {
+	if (role === 'teacher') {
+		// #108: Leaderboard and Help go into More; Help there still opens the Help sheet.
+		const t = all.teacher;
+		return [
+			...[t.dashboard, t.classes, t.calendar, t.requests].map(short),
+			{
+				kind: 'more',
+				id: 'more',
+				label: m.nav_more(),
+				icon: 'more',
+				items: [t.leaderboard, t.help].map((d) => d.entry)
+			}
+		];
+	}
+	if (role === 'student' || role === 'parent') {
 		return all[role].map(short);
 	}
 	return [];

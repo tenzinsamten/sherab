@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import BookOpen from '@lucide/svelte/icons/book-open';
-	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import TeacherClassCards from '$lib/components/TeacherClassCards.svelte';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
@@ -105,29 +104,7 @@
 			<h2 id="my-classes-heading" class="mb-3 text-xl leading-snug font-bold">
 				{m.teacher_my_classes_heading()}
 			</h2>
-			<ul class="grid gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-3" data-testid="class-cards">
-				{#each data.classes as cls (cls.id)}
-					<li class="min-w-0">
-						<div class="{ui.card} flex h-full flex-col gap-3" data-tour="teacher-class-card">
-							<div class="flex min-w-0 flex-col gap-1">
-								<h3 class="text-lg leading-snug font-bold wrap-break-word">{cls.name}</h3>
-								<p class="{ui.muted} wrap-break-word" data-tour="teacher-class-code">
-									{m.teacher_class_code_label({ code: cls.code })}
-								</p>
-							</div>
-							<Button
-								variant="secondary"
-								href={resolve('/teacher/classes/[id]', { id: cls.id })}
-								class="{ui.touch} mt-auto w-full gap-2 md:w-fit"
-								data-tour="teacher-class-open"
-							>
-								{m.teacher_view_roster()}
-								<ChevronRight class="size-5" aria-hidden="true" />
-							</Button>
-						</div>
-					</li>
-				{/each}
-			</ul>
+			<TeacherClassCards classes={data.classes} tourTargets />
 		</section>
 	{/if}
 </div>

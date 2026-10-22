@@ -503,3 +503,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-atisha-tibetan-font-fallback.md`
   summary: Tibetan class and team names rendered in the en/de interface carry no `lang="bo"`, so screen readers read them with English or German pronunciation.
   evidence: Pre-existing markup (names are rendered as plain text next to the English name); the font fix makes the text look right but does not mark its language.
+- source_spec: `_bmad-output/implementation-artifacts/spec-108-teacher-tabs-classes-more.md`
+  summary: Page-header count badges (`<Badge>{num(n)}</Badge>` on /teacher/classes, /student/classes and similar) have no accessible name, so screen readers announce a bare number.
+  evidence: The pattern predates #108 (`src/routes/student/classes/+page.svelte:35`); fix it once for every page header, e.g. visually hidden "n classes" text.
