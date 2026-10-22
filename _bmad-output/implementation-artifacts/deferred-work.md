@@ -476,3 +476,9 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9-admin-pages.md`
   summary: No test covers the empty-roster state on /admin/classes/[id]/students.
   evidence: No spec or e2e searches for `roster_empty`; the admin-students visits all use classes with students.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9b-admin-teachers-page.md`
+  summary: The inline Edit classes row on /admin/teachers doesn't move focus in on open or back to the button on Cancel/Save.
+  evidence: Pre-existing in the iX page; same gap already deferred for /admin/classes and /admin/teams (story 9).
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9b-admin-teachers-page.md`
+  summary: The rename rows on /admin/classes and /admin/teams flash their name fields to empty after a successful save, before the row closes.
+  evidence: SvelteKit's enhance resets the form before invalidateAll (`forms.js:100-105`) and the client-rendered edit row has empty defaultValues; story 9b fixed the same on /admin/teachers with `{ reset: false }`.

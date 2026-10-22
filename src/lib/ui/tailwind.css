@@ -98,12 +98,13 @@
 @source '../components/SyllabusDetail.svelte';
 @source '../components/EnrollmentPanel.svelte';
 @source '../../routes/teacher/classes/*/syllabus/**/*.svelte';
-/* Story 9: the admin pages (not /admin/teachers, story 9b) and the admin's
-   name and badge-subject fields. */
+/* Story 9 added the admin pages and the admin's name and badge-subject
+   fields; story 9b added /admin/teachers. */
 @source '../../routes/admin/+page.svelte';
 @source '../../routes/admin/classes/**/*.svelte';
 @source '../../routes/admin/parents/*.svelte';
 @source '../../routes/admin/teams/*.svelte';
+@source '../../routes/admin/teachers/*.svelte';
 @source '../components/LocalizedNameFields.svelte';
 @source '../components/BadgeSubjectSelect.svelte';
 

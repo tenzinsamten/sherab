@@ -168,14 +168,17 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 	try {
 		await signIn(adminPage, admin);
 		await adminPage.goto('/admin/teachers');
-		await adminPage.waitForFunction(() => customElements.get('ix-checkbox') !== undefined);
+		await adminPage.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 		await adminPage.waitForLoadState('networkidle');
-		await adminPage.waitForFunction(() => customElements.get('ix-input') !== undefined);
-		await adminPage.locator('#email input').first().fill(email);
-		await adminPage.locator(`ix-checkbox[value="${cls.id}"]`).click();
+		await adminPage.locator('#email').fill(email);
+		await adminPage
+			.getByTestId('teacher-create')
+			.locator(`input[type="checkbox"][value="${cls.id}"]`)
+			.check();
 		await adminPage.getByRole('button', { name: 'Create teacher' }).click();
 
-		const modal = adminPage.locator('ix-modal');
+		// The new alert dialog (mobile-first story 9b).
+		const modal = adminPage.getByTestId('confirm-dialog');
 		const question = modal.getByText(
 			'This email already has a parent account. Make them a teacher too?',
 			{ exact: false }
@@ -192,16 +195,19 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		// Submit again and confirm.
 		await adminPage.getByRole('button', { name: 'Create teacher' }).click();
 		await expect(question).toBeVisible();
-		await modal.getByRole('button', { name: 'Make teacher' }).click();
+		const makeTeacher = modal.getByRole('button', { name: 'Make teacher' });
+		await expect(makeTeacher).not.toHaveClass(/text-destructive/);
+		await makeTeacher.click();
 
 		await expect(
 			adminPage.locator('ix-toast').getByText(`${email} is now a teacher too.`, { exact: false })
 		).toBeVisible();
-		const row = adminPage.locator('tr', { hasText: email });
+		const row = adminPage.getByTestId('teacher-row').filter({ hasText: email });
 		await expect(row).toContainText(className);
-		await expect(row).toContainText('Also a parent');
+		await expect(row.locator('[data-slot="badge"]')).toHaveText('Also a parent');
 		// Exact: Help's teacher guide, always in the page, says "a temporary password".
 		await expect(adminPage.getByText('Temporary password', { exact: true })).toHaveCount(0);
+		await expect(adminPage.getByTestId('teachers-outcome')).toHaveCount(0);
 		expect(await roleOf()).toBe('teacher');
 	} finally {
 		await context.close();
@@ -220,17 +226,19 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 	try {
 		await signIn(removePage, admin);
 		await removePage.goto('/admin/teachers');
-		await removePage.waitForFunction(() => customElements.get('ix-button') !== undefined);
+		await removePage.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 		await removePage.waitForLoadState('networkidle');
-		const row = removePage.locator('tr', { hasText: email });
+		const row = removePage.getByTestId('teacher-row').filter({ hasText: email });
 		await row.getByRole('button', { name: 'Remove' }).click();
-		const modal = removePage.locator('ix-modal');
+		const modal = removePage.getByTestId('confirm-dialog');
 		await expect(modal.getByText('keep their parent account', { exact: false })).toBeVisible();
-		await modal.getByRole('button', { name: 'Remove' }).click();
+		const confirmRemove = modal.getByRole('button', { name: 'Remove', exact: true });
+		await expect(confirmRemove).toHaveClass(/text-destructive/);
+		await confirmRemove.click();
 		await expect(
 			removePage.locator('ix-toast').getByText('Their parent account is kept.', { exact: false })
 		).toBeVisible();
-		await expect(removePage.locator('tr', { hasText: email })).toHaveCount(0);
+		await expect(row).toHaveCount(0);
 		expect(await roleOf()).toBe('parent');
 	} finally {
 		await removeContext.close();

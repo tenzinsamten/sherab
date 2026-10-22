@@ -1990,7 +1990,13 @@ test.describe('syllabus and class members', () => {
  * are made here, to be edited and deleted.
  */
 test.describe('admin pages', () => {
-	const ADMIN_PAGES = ['/admin', '/admin/classes', '/admin/teams', '/admin/parents'];
+	const ADMIN_PAGES = [
+		'/admin',
+		'/admin/classes',
+		'/admin/teams',
+		'/admin/parents',
+		'/admin/teachers'
+	];
 	const dialog = (page: Page) => page.getByTestId('confirm-dialog');
 
 	function capturePosts(page: Page, action: string): URLSearchParams[] {
@@ -2165,6 +2171,95 @@ test.describe('admin pages', () => {
 		} finally {
 			await page.context().close();
 			await service.from('classes').delete().eq('id', cls.id);
+		}
+	});
+
+	test('teachers at 820px: a card keeps every action; edit classes (cancel, save), then remove names the teacher', async ({
+		browser
+	}) => {
+		const name = `TM admin teacher ${tag}`;
+		const extra = await createUser('teacher', 'admin-teacher');
+		check(
+			await service.from('profiles').update({ display_name: name }).eq('id', extra.id).select('id'),
+			'name teacher'
+		);
+		check(
+			await service
+				.from('class_teachers')
+				.insert({ class_id: classes.a.id, teacher_id: extra.id })
+				.select('class_id'),
+			'assign teacher'
+		);
+		const page = await teacherPage(browser, 820, 1180, admin);
+		const updates = capturePosts(page, 'updateClasses');
+		const removes = capturePosts(page, 'remove');
+		try {
+			await openPage(page, '/admin/teachers');
+			const card = page.locator(`[data-testid="teacher-row"][data-teacher-id="${extra.id}"]`);
+			await expect(card).toBeVisible();
+			await expect(page.locator('main thead').first()).toBeHidden();
+			await expect(card).toContainText(name);
+			await expect(card).toContainText(names.a);
+			await expect(card.getByRole('button', { name: 'Edit classes' })).toBeVisible();
+			await expect(card.getByRole('button', { name: 'Reset password' })).toBeVisible();
+			await expect(card.getByRole('button', { name: 'Remove' })).toBeVisible();
+			await expectFits(page);
+
+			// Cancel: nothing posted, the form closes.
+			const form = page.locator('form[action="?/updateClasses"]');
+			const boxFor = (id: string) => form.locator(`input[type="checkbox"][value="${id}"]`);
+			await card.getByRole('button', { name: 'Edit classes' }).click();
+			await expect(form.getByText(`Classes for ${name}`)).toBeVisible();
+			await expect(boxFor(classes.a.id)).toBeChecked();
+			await expect(boxFor(classes.b.id)).not.toBeChecked();
+			await boxFor(classes.b.id).check();
+			await form.getByRole('button', { name: 'Cancel' }).click();
+			await expect(form).toHaveCount(0);
+			expect(updates).toHaveLength(0);
+
+			// Save: the card shows both classes, the form closes.
+			await card.getByRole('button', { name: 'Edit classes' }).click();
+			await expect(boxFor(classes.b.id)).not.toBeChecked();
+			await boxFor(classes.b.id).check();
+			await expectFits(page);
+			await form.getByRole('button', { name: 'Save classes' }).click();
+			await expect(toast(page, `Classes updated for ${name}.`)).toBeVisible();
+			await expect(form).toHaveCount(0);
+			await expect(card).toContainText(names.b);
+			expect(updates).toHaveLength(1);
+			expect(updates[0].get('teacherId')).toBe(extra.id);
+			expect(updates[0].getAll('classIds').sort()).toEqual([classes.a.id, classes.b.id].sort());
+
+			// Reset password: the one-time password box scrolls into view.
+			const resets = capturePosts(page, 'resetPassword');
+			await card.getByRole('button', { name: 'Reset password' }).click();
+			await dialog(page).getByRole('button', { name: 'Reset password', exact: true }).click();
+			const outcome = page.getByTestId('teachers-outcome');
+			await expect(outcome).toContainText(`New temporary password for ${extra.email}`);
+			await expect(outcome).toBeInViewport();
+			expect(resets).toHaveLength(1);
+			expect(resets[0].get('teacherId')).toBe(extra.id);
+
+			// Remove after another result: the question names this teacher and
+			// posts this teacherId. Cancel posts nothing; Remove (red) removes the card.
+			await card.getByRole('button', { name: 'Remove' }).click();
+			await expect(dialog(page)).toContainText(`Remove ${name}?`);
+			const confirmRemove = dialog(page).getByRole('button', { name: 'Remove', exact: true });
+			await expect(confirmRemove).toHaveClass(/text-destructive/);
+			await dialog(page).getByRole('button', { name: 'Cancel' }).click();
+			await expect(dialog(page)).toHaveCount(0);
+			expect(removes).toHaveLength(0);
+			await card.getByRole('button', { name: 'Remove' }).click();
+			await confirmRemove.click();
+			await expect(toast(page, `${name} removed.`)).toBeVisible();
+			await expect(card).toHaveCount(0);
+			expect(removes).toHaveLength(1);
+			expect(removes[0].get('teacherId')).toBe(extra.id);
+		} finally {
+			await page.context().close();
+			// Removed here: cleanup() must not delete the login a second time.
+			const { data: left } = await service.from('profiles').select('id').eq('id', extra.id);
+			if (!left?.length) userIds.splice(userIds.indexOf(extra.id), 1);
 		}
 	});
 

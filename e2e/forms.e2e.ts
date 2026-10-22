@@ -647,55 +647,108 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 	}
 });
 
-test('admin teacher create: posts email and name; a failed create keeps them, a successful one clears them (#66 B8a)', async ({
+test('admin teacher create: posts email, name and classes; a failed create keeps them, a successful one clears them; reset and remove ask first (#66 B8a, mobile-first story 9b)', async ({
 	page
 }) => {
 	const email = `e2e-66-teacher-${fx.tag}@example.test`;
 	const displayName = `E2E66 Teacher ${fx.tag}`;
-	const posts: URLSearchParams[] = [];
+	const posts: Record<'create' | 'resetPassword' | 'remove', URLSearchParams[]> = {
+		create: [],
+		resetPassword: [],
+		remove: []
+	};
 	page.on('request', (r) => {
-		if (r.method() === 'POST' && r.url().includes('?/create')) {
-			posts.push(new URLSearchParams(r.postData() ?? ''));
+		if (r.method() !== 'POST') return;
+		for (const action of ['create', 'resetPassword', 'remove'] as const) {
+			if (r.url().endsWith(`?/${action}`))
+				posts[action].push(new URLSearchParams(r.postData() ?? ''));
 		}
 	});
 	try {
 		await signIn(page, fx.admin);
 		await page.goto('/admin/teachers');
-		await page.waitForFunction(() => customElements.get('ix-input') !== undefined);
+		await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 		await page.waitForLoadState('networkidle');
 
 		const emailField = page.locator('#email');
 		const nameField = page.locator('#displayName');
-		const classBox = page.getByRole('checkbox', { name: new RegExp(fx.classC.name) });
+		const classBox = page
+			.getByTestId('teacher-create')
+			.getByRole('checkbox', { name: new RegExp(fx.classC.name) });
+		const outcome = page.locator('[role="status"][data-testid="teachers-outcome"]');
+		const dialog = page.getByTestId('confirm-dialog');
 
-		// An existing teacher's email: the create fails, both fields keep their values.
-		await emailField.locator('input').first().fill(fx.teacher.email);
-		await nameField.locator('input').first().fill(displayName);
-		await classBox.click();
+		// An existing teacher's email: the create fails, the fields and the class keep their values.
+		await emailField.fill(fx.teacher.email);
+		await nameField.fill(displayName);
+		await classBox.check();
 		await expect(classBox).toBeChecked();
 		await page.getByRole('button', { name: 'Create teacher' }).click();
 		await expect(
 			page.locator('ix-toast').getByText('A teacher with this email already exists.')
 		).toBeVisible();
-		expect(posts).toHaveLength(1);
-		expect(posts[0].get('email')).toBe(fx.teacher.email);
-		expect(posts[0].get('displayName')).toBe(displayName);
-		await expect(emailField).toHaveJSProperty('value', fx.teacher.email);
-		await expect(nameField).toHaveJSProperty('value', displayName);
+		expect(posts.create).toHaveLength(1);
+		expect(posts.create[0].get('email')).toBe(fx.teacher.email);
+		expect(posts.create[0].get('displayName')).toBe(displayName);
+		await expect(emailField).toHaveValue(fx.teacher.email);
+		await expect(nameField).toHaveValue(displayName);
+		await expect(classBox).toBeChecked();
+		await expect(outcome).toHaveCount(0);
 
-		// A new email: created, and the form is empty again.
-		await emailField.locator('input').first().fill(email);
-		await expect(emailField).toHaveJSProperty('value', email);
+		// A new email: created, the password shown in the outcome box, the form empty again.
+		await emailField.fill(email);
 		await page.getByRole('button', { name: 'Create teacher' }).click();
-		await expect(page.locator('ix-message-bar')).toContainText(
-			`Teacher account created for ${email}`
-		);
-		expect(posts).toHaveLength(2);
-		expect(posts[1].get('email')).toBe(email);
-		expect(posts[1].get('displayName')).toBe(displayName);
-		expect(posts[1].getAll('classIds')).toEqual([fx.classC.id]);
-		await expect(page.locator('#email')).toHaveJSProperty('value', '');
-		await expect(page.locator('#displayName')).toHaveJSProperty('value', '');
+		await expect(outcome).toContainText(`Teacher account created for ${email}`);
+		await expect(outcome).toHaveAttribute('data-state', 'success');
+		await expect(outcome.getByText('Temporary password', { exact: true })).toBeVisible();
+		await expect(outcome).toBeInViewport();
+		expect(posts.create).toHaveLength(2);
+		expect(posts.create[1].get('email')).toBe(email);
+		expect(posts.create[1].get('displayName')).toBe(displayName);
+		expect(posts.create[1].getAll('classIds')).toEqual([fx.classC.id]);
+		await expect(emailField).toHaveValue('');
+		await expect(nameField).toHaveValue('');
+		await expect(classBox).not.toBeChecked();
+		await expect(
+			page.getByTestId('teacher-create').getByRole('checkbox', { checked: true })
+		).toHaveCount(0);
+
+		const row = page.getByTestId('teacher-row').filter({ hasText: email });
+		await expect(row).toContainText(displayName);
+		await expect(row).toContainText(fx.classC.name);
+		const teacherId = await row.getAttribute('data-teacher-id');
+		expect(teacherId).toBeTruthy();
+
+		// Reset password: Cancel posts nothing; the confirm (not red) shows the new password.
+		await row.getByRole('button', { name: 'Reset password' }).click();
+		await expect(dialog).toContainText(`Give ${displayName} a new temporary password?`);
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+		await expect(dialog).toHaveCount(0);
+		expect(posts.resetPassword).toHaveLength(0);
+		await row.getByRole('button', { name: 'Reset password' }).click();
+		const confirmReset = dialog.getByRole('button', { name: 'Reset password', exact: true });
+		await expect(confirmReset).not.toHaveClass(/text-destructive/);
+		await confirmReset.click();
+		await expect(outcome).toContainText(`New temporary password for ${email}`);
+		await expect(outcome.getByText('Temporary password', { exact: true })).toBeVisible();
+		expect(posts.resetPassword).toHaveLength(1);
+
+		// Remove: Cancel posts nothing; Remove (red) removes the row.
+		await row.getByRole('button', { name: 'Remove' }).click();
+		await expect(dialog).toContainText(`Remove ${displayName}?`);
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+		await expect(dialog).toHaveCount(0);
+		expect(posts.remove).toHaveLength(0);
+		await expect(row).toHaveCount(1);
+		await row.getByRole('button', { name: 'Remove' }).click();
+		const confirmRemove = dialog.getByRole('button', { name: 'Remove', exact: true });
+		await expect(confirmRemove).toHaveClass(/text-destructive/);
+		await confirmRemove.click();
+		await expect(page.locator('ix-toast').getByText(`${displayName} removed.`)).toBeVisible();
+		await expect(row).toHaveCount(0);
+		expect(posts.remove).toHaveLength(1);
+		expect(posts.resetPassword[0].get('teacherId')).toBe(teacherId);
+		expect(posts.remove[0].get('teacherId')).toBe(teacherId);
 	} finally {
 		const { data: rows } = await service.from('profiles').select('id').eq('email', email);
 		for (const row of rows ?? []) await service.auth.admin.deleteUser(row.id);
