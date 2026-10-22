@@ -22,13 +22,22 @@
 	 * One centred card for the signed-out pages (sign in, register, password,
 	 * email confirmation, the signed-out home). Mobile-first story 6: the
 	 * page's own `data-ui="new"` root, marked `data-hydrated` once mounted.
+	 * `after` (#16) renders below the card inside the same root, so a page
+	 * with more content (the signed-out home) keeps one new-UI root.
 	 */
 	let {
 		title,
 		subtitle,
 		children,
-		footer
-	}: { title: string; subtitle?: string; children: Snippet; footer?: Snippet } = $props();
+		footer,
+		after
+	}: {
+		title: string;
+		subtitle?: string;
+		children: Snippet;
+		footer?: Snippet;
+		after?: Snippet;
+	} = $props();
 
 	let hydrated = $state(false);
 	onMount(() => {
@@ -40,7 +49,7 @@
 	data-ui="new"
 	data-auth-card
 	data-hydrated={hydrated || undefined}
-	class="flex min-w-0 justify-center px-4 py-8 md:py-12"
+	class="flex min-w-0 flex-col items-center px-4 py-8 md:py-12"
 >
 	<div
 		class="w-full max-w-md min-w-0 rounded-lg border border-border bg-card px-5 py-8 text-card-foreground shadow-sm sm:px-8"
@@ -61,4 +70,5 @@
 			<div class="mt-4 flex flex-col items-center">{@render footer()}</div>
 		{/if}
 	</div>
+	{#if after}{@render after()}{/if}
 </div>

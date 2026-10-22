@@ -25,6 +25,13 @@ const VIEWPORTS = [
 
 const LOCALES = ['en', 'de', 'bo'] as const;
 
+/** #16: the signed-out home's two section headings per interface language. */
+const HOME_SECTIONS: Record<(typeof LOCALES)[number], [string, string]> = {
+	en: ['How joining works', 'What Sherab tracks'],
+	de: ['So funktioniert der Beitritt', 'Was Sherab festhält'],
+	bo: ['འཛིན་གྲྭར་ཇི་ལྟར་ཞུགས་དགོས།', 'ཤེས་རབ་ཀྱིས་ཐོ་འགོད་བྱེད་པ།']
+};
+
 const userIds: string[] = [];
 /** Addresses registered through the form (their accounts are removed at the end). */
 const registered: string[] = [];
@@ -630,6 +637,33 @@ for (const locale of LOCALES) {
 				await open(page, path);
 				await expect(page.locator('html')).toHaveAttribute('lang', locale);
 				await expectFits(page);
+				if (path === '/') {
+					// #16: How joining works (3 steps) and What Sherab tracks (4 cards).
+					const [join, tracks] = HOME_SECTIONS[locale];
+					await expect(page.getByRole('heading', { level: 2, name: join })).toBeVisible();
+					await expect(page.getByRole('heading', { level: 2, name: tracks })).toBeVisible();
+					const steps = page.getByTestId('home-join').locator('ol > li');
+					await expect(steps).toHaveCount(3);
+					for (const step of await steps.all()) await expect(step).toBeVisible();
+					const cards = page.getByTestId('home-tracks').locator('ul > li');
+					await expect(cards).toHaveCount(4);
+					for (const card of await cards.all()) await expect(card).toBeVisible();
+
+					// From 820px: the welcome card first, then the sections; the
+					// cards in two columns; at 1440px the sections at most 5xl wide.
+					await page.setViewportSize({ width: 820, height: 1180 });
+					const h1 = await page.locator('[data-auth-card] h1').boundingBox();
+					const h2 = await page.getByTestId('home-join').locator('h2').boundingBox();
+					expect(h2!.y).toBeGreaterThanOrEqual(h1!.y + h1!.height);
+					const first = await cards.nth(0).boundingBox();
+					const second = await cards.nth(1).boundingBox();
+					expect(Math.abs(first!.y - second!.y)).toBeLessThan(1);
+					expect(second!.x).toBeGreaterThan(first!.x);
+					await page.setViewportSize({ width: 1440, height: 900 });
+					const sections = await page.getByTestId('home-sections').boundingBox();
+					expect(sections!.width).toBeLessThanOrEqual(1024);
+					await page.setViewportSize({ width: 375, height: 740 });
+				}
 			}
 
 			// The join flow (story 6b): each step, at phone and iPad width.
