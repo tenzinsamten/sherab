@@ -7,10 +7,10 @@
  */
 export const ui = {
 	/**
-	 * A page's root. The shell's `<main>` pads 2rem (as it did under iX); a
-	 * phone page takes 1rem of it back for a 16px gutter.
+	 * A page's root. The shell's `<main>` gives the side gutter (1rem on a
+	 * phone, 2rem from 48em); from 48em the page is centred, at most 5xl wide.
 	 */
-	page: '-mx-4 flex min-w-0 flex-col gap-4 pt-3 pb-8 md:mx-auto md:max-w-5xl md:gap-6 md:pt-6',
+	page: 'flex min-w-0 flex-col gap-4 pt-3 pb-8 md:mx-auto md:max-w-5xl md:gap-6 md:pt-6',
 	header: 'flex flex-wrap items-end justify-between gap-3',
 	kicker: 'mb-1 text-xs font-bold tracking-wide text-muted-foreground uppercase',
 	heading: 'text-2xl leading-tight font-bold wrap-break-word',

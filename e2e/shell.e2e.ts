@@ -451,6 +451,30 @@ test('account: My Account in the avatar menu opens /account', async ({ browser }
 	}
 });
 
+test('content gutter: 16px on a phone, 32px on a tablet (the shell gives it, no -mx on the page)', async ({
+	browser
+}) => {
+	for (const [width, gutter] of [
+		[375, 16],
+		[820, 32]
+	] as const) {
+		const page = await newPage(browser, width);
+		try {
+			await signIn(page, teacher);
+			await expect(page).toHaveURL(/\/teacher$/);
+			const root = page.locator('main > [data-ui="new"]').first();
+			await expect(root).toBeVisible();
+			const box = (await root.boundingBox())!;
+			// The layout width, not the viewport: a classic scrollbar takes room.
+			const layout = await page.evaluate(() => document.documentElement.clientWidth);
+			expect(box.x, `left gutter at ${width}px`).toBeCloseTo(gutter, 0);
+			expect(layout - (box.x + box.width), `right gutter at ${width}px`).toBeCloseTo(gutter, 0);
+		} finally {
+			await page.context().close();
+		}
+	}
+});
+
 test('teacher with no classes (#108): the Classes page shows the empty state', async ({
 	browser
 }) => {

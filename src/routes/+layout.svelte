@@ -212,9 +212,11 @@
 					onHelp={openHelp}
 				/>
 			{/if}
-			<!-- The content area's padding (iX's, kept so the pages are unchanged). -->
+			<!-- The content gutter: 1rem on a phone, 2rem from 48em, at least the
+			     safe-area inset. Only here: `ui.page` centres the page and caps
+			     its width but adds no side margin. -->
 			<main
-				class="min-w-0 flex-1 pt-3 pr-[max(2rem,env(safe-area-inset-right))] pb-1 pl-[max(2rem,env(safe-area-inset-left))] motion-reduce:transition-none {mainFade}"
+				class="min-w-0 flex-1 pt-3 pr-[max(1rem,env(safe-area-inset-right))] pb-1 pl-[max(1rem,env(safe-area-inset-left))] motion-reduce:transition-none md:pr-[max(2rem,env(safe-area-inset-right))] md:pl-[max(2rem,env(safe-area-inset-left))] {mainFade}"
 				aria-busy={busy || undefined}
 				inert={navBusy || undefined}
 			>

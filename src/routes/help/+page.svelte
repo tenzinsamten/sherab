@@ -27,7 +27,8 @@
 		helpRoleFor(page.url.searchParams.get('role'), data.activeRole ?? data.profile?.role)
 	);
 	const baseHref = resolve('/help');
-	// Signed out there is no shell: <main> has no padding to take back.
+	// Signed out there is no shell gutter (the public <main> only keeps the
+	// safe area), so the frame pads itself.
 	let frame = $derived(
 		data.profile
 			? ui.page
