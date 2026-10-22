@@ -509,3 +509,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-109-pending-button-focus.md`
   summary: After Enter-to-save in a text field, #109 returns focus to the field, which on Android may reopen the soft keyboard after every save.
   evidence: Unverified (maybe-false, medium if true): desktop Chromium e2e cannot show virtual-keyboard behaviour. Settle on an Android phone: My account, edit the name, press Enter/Go, and check whether the keyboard reopens after "Name updated."; if it does, restore to the submitter instead of a text field on coarse-pointer devices.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-110-homework-pdf-attachments.md`
+  summary: Add load tests for a failed homework-files read (parent `filesError`, student and teacher `loadError`).
+  evidence: Review 2026-10-22 (V4): the parent spec's assignment ids are not uuids so the files read never runs, and the student and teacher detail routes have no load spec; only the success path is covered (e2e).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-110-homework-pdf-attachments.md`
+  summary: Fix the hydration crash when the teacher's homework list (or a syllabus list) is loaded directly with toast params (#111).
+  evidence: Found by the #110 e2e step: a direct load of `/teacher/classes/<id>/homework?created=0` throws "Cannot call replaceState(...) before router is initialized"; the `$effect` predates #110 and `SyllabusList.svelte` shares it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-110-homework-pdf-attachments.md`
+  summary: A PIN reset no longer ends the student's open session at once (#112); the "Reset PIN" browser test fails on main.
+  evidence: `e2e/teacher.e2e.ts:1291` fails on a477766 after a reset (student stays on /student); likely from local JWT verification with getClaims (#104 story 1).

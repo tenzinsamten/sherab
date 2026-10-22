@@ -2578,3 +2578,45 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   change does not touch. To verify: `/` at 375, 820 and 1440px in en, de and bo.
 
 - 2026-10-22: #71 closed as wontfix: not required (user).
+
+- 2026-10-22: #110 built on `feat/110-homework-pdf`, to verify, not committed (spec
+  `implementation-artifacts/spec-110-homework-pdf-attachments.md`). Asked (user, 2026-10-22):
+  "we need option to upload pdf file for homework". Decided: at most 5 MB per file and 2 files
+  per homework; parents of targeted students may open them (partly reverses #72); files can be
+  attached on the create form too. Built: migration `0053_homework_files.sql` (private bucket
+  `homework-files`, 5 MB, PDF only; table `homework_assignment_files` keyed on the homework, so
+  every weekly copy shows the same files; limit trigger `HF001`; table and `storage.objects`
+  rules: admin and the class's teachers change, targeted students and their approved parents
+  read). Shared helpers moved from the syllabus files into `src/lib/server/pdf-files.ts` and
+  `src/lib/pdf-files.ts` (syllabus behaviour and its tests unchanged); homework logic in
+  `src/lib/server/homework-files.ts`; files open through `/files/homework/<id>` (60-second
+  signed link). The teacher's homework page has a file list with Upload, Replace and Remove
+  (`HomeworkFiles.svelte`); the create form has an optional file field, checked before
+  anything is created; a valid file that cannot be stored after the create is named in a
+  warning on the homework list. The student's homework page and the parent's homework list
+  show the files. Deleting a class removes its homework objects first. Tibetan texts are the
+  assistant's draft, not reviewed. The create form now posts as multipart, so the e2e
+  helpers that read its posts parse multipart (`postedFields` in `e2e/fixtures.ts`). To
+  verify: attach two PDFs on the create form (one-off and weekly), open them as the student
+  and the parent on a phone, replace and remove one, and check the hosted push (bucket and
+  `storage.objects` rules created by `db push`).
+
+- 2026-10-22: #111 logged, not built. Found (#110 review, e2e): opening the teacher's homework
+  list directly at a URL with `?created=…` (what a browser without JavaScript gets after
+  creating homework, or a reload of that address) crashes hydration with "Cannot call
+  replaceState(...) before router is initialized": the `$effect` that shows the "created"
+  toast and drops the params calls `replaceState` before the router is ready
+  (`src/routes/teacher/classes/[id]/homework/+page.svelte:105`). Pre-existing, not from #110.
+  `SyllabusList.svelte:60` uses the same pattern. Likely fix (for planning): do the cleanup in
+  `afterNavigate`, or wait for the router. Open.
+
+- 2026-10-22: #112 logged, not built. Found (#110 verification): the browser test
+  `e2e/teacher.e2e.ts` "class members: Reset PIN … (#88)" fails on `main` (a477766) as well as
+  on the #110 branch, on a freshly reset database. After a teacher resets a student's PIN, the
+  student's already open session is expected to end (`/student` sends to `/login`), but the
+  student stays signed in. Likely cause (not confirmed): navigation latency story 1 (#104,
+  b73bd0e) verifies sessions locally with `getClaims`, which does not see a revoked session,
+  so the old session lasts until its access token expires. Deployed to production with the
+  mobile-first merge. Open for planning: whether a PIN reset (and other revocations) must end
+  open sessions at once, and how (server-side check on sensitive requests, shorter token
+  lifetime, or accept the delay and change the test).
