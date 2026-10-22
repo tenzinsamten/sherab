@@ -1254,5 +1254,6 @@
 	"nav_more_label": "ཤོག་ངོས་གཞན་དག",
 	"nav_collapse": "དཀར་ཆག་བསྡུ།",
 	"nav_expand": "དཀར་ཆག་རྒྱས།",
-	"common_close": "ཁ་རྒྱག"
+	"common_close": "ཁ་རྒྱག",
+	"common_loading": "Loading…"
 }

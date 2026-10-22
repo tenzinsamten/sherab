@@ -4,19 +4,21 @@
 	import { onMount } from 'svelte';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/toast';
 	import AppHeader from '$lib/components/shell/AppHeader.svelte';
 	import BottomNav from '$lib/components/shell/BottomNav.svelte';
 	import HelpSheet from '$lib/components/shell/HelpSheet.svelte';
+	import NavProgress from '$lib/components/shell/NavProgress.svelte';
 	import PortalRoot from '$lib/components/shell/PortalRoot.svelte';
 	import PublicHeader from '$lib/components/shell/PublicHeader.svelte';
 	import SideNav from '$lib/components/shell/SideNav.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import NewBadgeDialog from '$lib/components/NewBadgeDialog.svelte';
 	import PageTour from '$lib/components/PageTour.svelte';
+	import { runningActions } from '$lib/busy.svelte';
 	import { HELP_ROLES, helpRoleFor } from '$lib/help';
 	import { navItems, tabItems } from '$lib/nav';
 	import { releasePush, syncPush } from '$lib/push-client';
@@ -24,6 +26,22 @@
 	import { tourFor } from '$lib/tours';
 
 	let { children, data } = $props();
+
+	// Story 11: a navigation in progress, or a page action (createPending,
+	// counted app-wide) posting and reloading data. Both show the loading
+	// bar after 150 ms (NavProgress, which also sets `busyShown`). Only a
+	// navigation blocks <main> (inert, from the first moment, so a fast
+	// double tap is caught) and fades it once the bar shows; an action never
+	// does, because inert would move focus off its pressed button. The
+	// header, side nav and bottom nav sit outside <main> and stay usable, so
+	// a slow navigation can be replaced by another one.
+	let navBusy = $derived(navigating.to !== null);
+	let busy = $derived(navBusy || runningActions() > 0);
+	let busyShown = $state(false);
+	// The transition only while fading out, so an arriving page shows at full
+	// opacity at once instead of fading in from 60%. Whole class tokens, so
+	// Tailwind's scanner finds them.
+	let mainFade = $derived(navBusy && busyShown ? 'opacity-60 transition-opacity' : '');
 
 	onMount(() => {
 		// #81: without this nothing registers the service worker the build emits.
@@ -165,6 +183,9 @@
 	{/if}
 </svelte:head>
 
+<!-- Story 11: one bar for both shells (mounted once, outside the branches,
+     so signing in or out never restarts it mid-load). -->
+<NavProgress {busy} bind:shown={busyShown} />
 {#if data.profile}
 	<!-- Story 2: the new shell. Its chrome carries data-ui="new"; every page
 	     inside <main> has its own new-UI root. -->
@@ -193,7 +214,9 @@
 			{/if}
 			<!-- The content area's padding (iX's, kept so the pages are unchanged). -->
 			<main
-				class="min-w-0 flex-1 pt-3 pr-[max(2rem,env(safe-area-inset-right))] pb-1 pl-[max(2rem,env(safe-area-inset-left))]"
+				class="min-w-0 flex-1 pt-3 pr-[max(2rem,env(safe-area-inset-right))] pb-1 pl-[max(2rem,env(safe-area-inset-left))] motion-reduce:transition-none {mainFade}"
+				aria-busy={busy || undefined}
+				inert={navBusy || undefined}
 			>
 				{@render children()}
 			</main>
@@ -233,7 +256,9 @@
 	<div class="flex min-h-dvh flex-col bg-muted" data-public-shell>
 		<PublicHeader homeHref={resolve('/')} />
 		<main
-			class="min-w-0 flex-1 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
+			class="min-w-0 flex-1 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] motion-reduce:transition-none {mainFade}"
+			aria-busy={busy || undefined}
+			inert={navBusy || undefined}
 		>
 			{@render children()}
 		</main>

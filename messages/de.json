@@ -1254,5 +1254,6 @@
 	"nav_more_label": "Weitere Seiten",
 	"nav_collapse": "Menü einklappen",
 	"nav_expand": "Menü ausklappen",
-	"common_close": "Schließen"
+	"common_close": "Schließen",
+	"common_loading": "Wird geladen…"
 }

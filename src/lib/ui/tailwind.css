@@ -244,6 +244,22 @@
 	}
 }
 
+/* Story 11: the shell's indeterminate loading bar (NavProgress.svelte): a
+   segment sweeping across the track. Used with `motion-safe:` only; under
+   reduced motion the bar is a static full-width fill. */
+@theme {
+	--animate-nav-progress: nav-progress 1.2s ease-in-out infinite;
+
+	@keyframes nav-progress {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(300%);
+		}
+	}
+}
+
 /* Reduced motion: nothing in the new system animates (dialogs and sheets
    open still, the badge flourish is not played); a loading spinner keeps
    turning so a pending press still shows. In the utilities layer and with

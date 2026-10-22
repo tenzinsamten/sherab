@@ -1,4 +1,5 @@
 import type { SubmitFunction } from '@sveltejs/kit';
+import { actionEnded, actionStarted } from './busy.svelte';
 
 /**
  * Tracks which form submission on a page is in flight, so the button that
@@ -19,6 +20,8 @@ import type { SubmitFunction } from '@sveltejs/kit';
  * create form's ScheduleFields in admin/classes/+page.svelte).
  * `confirm` (#91) asks before posting, for a press that cannot be undone:
  * the form is only submitted when it resolves true (see `with` in confirm.svelte.ts).
+ * Story 11: every submit that actually posts is counted app-wide
+ * (busy.svelte.ts) until its `update()` settles, for the layout's loading bar.
  */
 export function createPending() {
 	let current = $state<string | null>(null);
@@ -39,11 +42,13 @@ export function createPending() {
 				// Enter in a text field still submits while the button is disabled.
 				if (current !== null) return cancel();
 				current = typeof key === 'function' ? key() : key;
+				actionStarted();
 				return async ({ update }) => {
 					try {
 						await update({ reset: options.reset ?? true });
 					} finally {
 						current = null;
+						actionEnded();
 					}
 				};
 			};

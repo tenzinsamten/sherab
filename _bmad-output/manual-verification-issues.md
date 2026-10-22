@@ -2540,3 +2540,12 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   class cards); whether the desktop side nav (≥80em) also moves Leaderboard and Help, or keeps
   every item; whether Help stays reachable from the tours' "Show me around" path; where it
   fits in the rollout (after story 7c, or with story 11). Nothing is changed yet.
+- 2026-10-22: #109 logged, not built. Found (mobile-first story 11 review, e2e probe): while
+  a page action runs, focus leaves the pressed button and falls to `<body>`. Cause: every
+  action button has `disabled={pending.busy}` (`createPending`, `src/lib/pending.svelte.ts`;
+  e.g. `src/routes/account/+page.svelte` Save name), and Chromium drops focus from a button
+  that becomes disabled. Not caused by story 11 (its busy state never makes `<main>` inert
+  during an action). Keyboard and screen-reader users lose their place after every save.
+  Open for planning: switch pending buttons to `aria-disabled` plus a guarded click (about 70
+  buttons in 25 files, `createPending` already cancels a second submit), or return focus to
+  the pressed button after `update()` in `createPending`; and which e2e locks it in.

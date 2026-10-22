@@ -1254,5 +1254,6 @@
 	"nav_more_label": "More pages",
 	"nav_collapse": "Collapse menu",
 	"nav_expand": "Expand menu",
-	"common_close": "Close"
+	"common_close": "Close",
+	"common_loading": "Loading…"
 }

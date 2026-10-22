@@ -494,3 +494,6 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/10-remove-ix-and-final-regression.md`
   summary: Drop the iX-era content padding: `<main>` keeps iX's 2rem side padding and `ui.page` gives 1rem back with `-mx-4`.
   evidence: Both exist only to keep migrated pages identical to iX's content area (`src/routes/+layout.svelte`, `src/lib/ui/classes.ts`); story 10 forbids layout changes.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/11-navigation-loading-bar-and-busy-screen.md`
+  summary: No e2e covers the loading bar and busy `<main>` in the signed-out public shell, or at desktop width with the side nav staying usable while `<main>` is inert.
+  evidence: Every test in `e2e/nav-progress.e2e.ts` signs in as a teacher at 375px; deleting the public `<main>`'s `aria-busy`/`inert`/fade bindings, or moving `NavProgress` into the signed-in branch, fails no test.
