@@ -8,7 +8,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatDay as formatIsoDay, formatInstant, num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import CopyField from '$lib/components/CopyField.svelte';

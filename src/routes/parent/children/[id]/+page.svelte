@@ -13,7 +13,7 @@
 		formatInstant as formatSchoolInstant,
 		num
 	} from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createPending } from '$lib/pending.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge/index.js';

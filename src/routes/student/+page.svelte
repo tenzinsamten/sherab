@@ -12,7 +12,7 @@
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
 	import { num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import { ui } from '$lib/ui/classes';

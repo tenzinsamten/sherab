@@ -10,7 +10,7 @@
 	import Pager from '$lib/components/Pager.svelte';
 	import RepeatIcon from '$lib/components/RepeatIcon.svelte';
 	import { formatDay, isoDay, num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import { ui } from '$lib/ui/classes';

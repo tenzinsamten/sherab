@@ -9,7 +9,7 @@
 	 * `contentLanguage`. It selects the font of the title and content for
 	 * every viewer; `value` is bound so the form can show that font while the
 	 * teacher types. Mobile-first story 7c: a native select in its own
-	 * `data-ui="new"` root, so it also works in the syllabus forms (still iX).
+	 * `data-ui="new"` root, so it also works in the syllabus forms.
 	 */
 	let {
 		id,

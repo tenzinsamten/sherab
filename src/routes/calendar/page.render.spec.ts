@@ -42,7 +42,6 @@ describe('calendar (+page.svelte)', () => {
 		expect(body).toMatch(/<div[^>]*data-ui="new"[^>]*data-page="calendar"/);
 		expect(body).toContain('calendar-wrap');
 		expect(body).toContain(m.calendar_empty());
-		expect(body).not.toContain('<ix-');
 	});
 
 	it('tells a parent without approved children so (no picker)', () => {

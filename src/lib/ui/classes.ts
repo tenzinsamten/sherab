@@ -7,15 +7,15 @@
  */
 export const ui = {
 	/**
-	 * A migrated page's root. The shell's `<main>` still pads 2rem for the iX
-	 * pages; a phone page takes 1rem of it back for a 16px gutter.
+	 * A page's root. The shell's `<main>` pads 2rem (as it did under iX); a
+	 * phone page takes 1rem of it back for a 16px gutter.
 	 */
 	page: '-mx-4 flex min-w-0 flex-col gap-4 pt-3 pb-8 md:mx-auto md:max-w-5xl md:gap-6 md:pt-6',
 	header: 'flex flex-wrap items-end justify-between gap-3',
 	kicker: 'mb-1 text-xs font-bold tracking-wide text-muted-foreground uppercase',
 	heading: 'text-2xl leading-tight font-bold wrap-break-word',
 	subtitle: 'mt-2 max-w-prose text-muted-foreground',
-	/** A section card (iX's `.card`). */
+	/** A section card. */
 	card: 'min-w-0 rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6',
 	cardTitle: 'mb-3 text-lg leading-snug font-bold',
 	/**
@@ -28,9 +28,9 @@ export const ui = {
 		'inline-flex min-h-11 items-center justify-center rounded-lg border px-4 text-base font-medium wrap-break-word focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
 	filterCurrent: 'border-primary bg-primary text-primary-foreground',
 	filterOther: 'border-border bg-background hover:bg-muted',
-	/** Small uppercase label (iX's `.section-label`). */
+	/** Small uppercase label. */
 	label: 'text-xs font-bold tracking-wide text-muted-foreground uppercase',
-	/** A big number (iX's `.stat-tile-value`). */
+	/** A big number. */
 	stat: 'text-3xl font-bold tabular-nums',
 	muted: 'text-muted-foreground',
 	error: 'text-sm text-destructive',

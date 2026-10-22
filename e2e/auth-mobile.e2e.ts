@@ -108,7 +108,7 @@ async function open(page: Page, path: string) {
 }
 
 const toast = (page: Page, text: string | RegExp) =>
-	page.locator('ix-toast').getByText(text).first();
+	page.locator('[data-sonner-toast]').getByText(text).first();
 
 async function setLocale(page: Page, locale: string) {
 	await page
@@ -239,7 +239,6 @@ for (const v of VIEWPORTS) {
 		}) => {
 			const parent = await createParent(`login-${v.name}`);
 			await open(page, '/login');
-			await expect(page.locator('ix-button, ix-input, ix-application-header')).toHaveCount(0);
 			await page.getByLabel('Email or username').fill(parent.email);
 			await page.locator('#password').fill('wrong-password');
 			await page.getByRole('button', { name: 'Sign in' }).click();
@@ -454,9 +453,6 @@ for (const v of VIEWPORTS) {
 			page
 		}) => {
 			await open(page, '/join');
-			await expect(page.locator('ix-button, ix-input, ix-checkbox, ix-workflow-steps')).toHaveCount(
-				0
-			);
 			const code = page.getByLabel('What is your class code?');
 			const cont = page.getByRole('button', { name: 'Continue' });
 
@@ -559,7 +555,6 @@ for (const v of VIEWPORTS) {
 				'href',
 				/\/login$/
 			);
-			await expect(page.locator('ix-button, ix-pill, ix-workflow-steps')).toHaveCount(0);
 			await expectFits(page);
 			await expectStepsFit(page);
 		});
@@ -634,7 +629,6 @@ for (const locale of LOCALES) {
 			]) {
 				await open(page, path);
 				await expect(page.locator('html')).toHaveAttribute('lang', locale);
-				await expect(page.locator('ix-button, ix-input, ix-application-header')).toHaveCount(0);
 				await expectFits(page);
 			}
 

@@ -1,7 +1,6 @@
 /**
  * Mobile-first story 5: a page's "Are you sure?" question as a promise, for
- * the new alert dialog (ConfirmDialog.svelte), replacing iX's confirmWith /
- * confirmAction on migrated pages. One question at a time per page:
+ * the alert dialog (ConfirmDialog.svelte). One question at a time per page:
  *
  *   const confirm = createConfirm();
  *   <form use:enhance={pending.submit('reject', { confirm: confirm.with(message, okay) })}>

@@ -155,7 +155,7 @@ const sessionDialog = (page: Page) => page.getByTestId('session-dialog');
 const dayDialog = (page: Page) => page.getByTestId('day-dialog');
 const confirmDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Are you sure?' });
 const toast = (page: Page, text: string | RegExp) =>
-	page.locator('ix-toast').getByText(text).first();
+	page.locator('[data-sonner-toast]').getByText(text).first();
 
 /** A sheet below 48rem, a dialog from 48rem (shadcn's slots). */
 async function expectSheetOrDialog(dialog: Locator, width: number) {

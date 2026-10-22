@@ -8,7 +8,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -25,8 +25,8 @@
 	 * and /admin/classes/[id]/students.
 	 * #88: "Reset PIN" per student posts to `?/resetPin`
 	 * (src/lib/server/student-pin.ts); the new PIN shows once, above the list.
-	 * Mobile-first story 8: its own `data-ui="new"` root (the admin page is
-	 * still iX), a native select, the new question dialog and an outcome box
+	 * Mobile-first story 8: its own `data-ui="new"` root (also on the admin
+	 * page), a native select, the new question dialog and an outcome box
 	 * for the PIN.
 	 */
 	let {

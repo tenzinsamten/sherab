@@ -10,7 +10,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { ui } from '$lib/ui/classes';
 
 	let step = $state<1 | 2 | 3>(1);

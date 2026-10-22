@@ -290,7 +290,7 @@ test('attendance: picking a session updates the leave pills, and the save keeps 
 	await attendanceBox(page, students[0]).click();
 	await page.getByRole('button', { name: 'Save attendance' }).click();
 	await expect(
-		page.locator('ix-toast').getByText(`Attendance recorded for ${days[0]}.`)
+		page.locator('[data-sonner-toast]').getByText(`Attendance recorded for ${days[0]}.`)
 	).toBeVisible();
 	expect(posts).toHaveLength(1);
 	expect(posts[0].get('sessionId')).toBe(sessions[days[0]]);
@@ -453,7 +453,7 @@ test('attendance: a tick not saved yet survives a skill save on the same page', 
 		.locator('form[data-skill-area="dance"]')
 		.getByRole('button', { name: 'Save' })
 		.click();
-	await expect(page.locator('ix-toast').getByText('Status saved.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Status saved.')).toBeVisible();
 	// The reload after the save has arrived: the summary shows the new level.
 	await expect(
 		page.locator(`button.student-toggle[data-student-id="${skilled.id}"]`)
@@ -591,7 +591,7 @@ test('skills: an empty level is blocked; a save posts, updates the summary and c
 	await choose(page, `level-${student.id}-song`, 'confident');
 	await notesInput.fill('Great progress');
 	await form('song').getByRole('button', { name: 'Save' }).click();
-	await expect(page.locator('ix-toast').getByText('Status saved.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Status saved.')).toBeVisible();
 
 	expect(posts).toHaveLength(1);
 	expect(posts[0].get('studentId')).toBe(student.id);
@@ -731,7 +731,9 @@ test('homework create: weekly via the keyboard, students see the first week at o
 	await page.getByRole('button', { name: 'Create assignment' }).click();
 	await page.waitForURL(/\/homework\?created=weekly&visible=now/);
 	await expect(
-		page.locator('ix-toast').getByText('Weekly homework created. Students can see it now.')
+		page
+			.locator('[data-sonner-toast]')
+			.getByText('Weekly homework created. Students can see it now.')
 	).toBeVisible();
 
 	expect(posts).toHaveLength(1);
@@ -793,7 +795,7 @@ test('homework create: weekly via the keyboard, students see the first week at o
 	await languageField.selectOption('de');
 	await linkField.fill('https://edited.example');
 	await page.getByRole('button', { name: 'Save changes' }).click();
-	await expect(page.locator('ix-toast').getByText('Assignment updated.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Assignment updated.')).toBeVisible();
 
 	expect(edits).toHaveLength(1);
 	expect(edits[0].get('title')).toBe(newTitle);
@@ -859,7 +861,7 @@ test('homework create: weekly starting in the future says from when students see
 	await page.waitForURL(new RegExp(`/homework\\?created=weekly&visible=${start}`));
 	await expect(
 		page
-			.locator('ix-toast')
+			.locator('[data-sonner-toast]')
 			.getByText(`Weekly homework created. Students will see it from ${longDate(start)}.`)
 	).toBeVisible();
 
@@ -899,7 +901,7 @@ test('homework list: the weekly "from tomorrow morning" and neutral messages, an
 	await arrive('?created=weekly&visible=tomorrow');
 	await expect(
 		page
-			.locator('ix-toast')
+			.locator('[data-sonner-toast]')
 			.getByText('Weekly homework created. Students will see it from tomorrow morning.')
 	).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`${list}$`));
@@ -907,7 +909,7 @@ test('homework list: the weekly "from tomorrow morning" and neutral messages, an
 	// Without a recognised `visible`: no claim about when.
 	await arrive('?created=weekly');
 	const neutral = page
-		.locator('ix-toast')
+		.locator('[data-sonner-toast]')
 		.filter({ hasText: 'Weekly homework created.' })
 		.filter({ hasNotText: 'Students' });
 	await expect(neutral).toBeVisible();
@@ -930,7 +932,9 @@ test('homework create: an empty subset shows the server error and keeps the type
 	await expect(page.getByRole('checkbox', { name: students[0].name })).not.toBeChecked();
 
 	await page.getByRole('button', { name: 'Create assignment' }).click();
-	await expect(page.locator('ix-toast').getByText('No students to assign this to.')).toBeVisible();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('No students to assign this to.')
+	).toBeVisible();
 
 	expect(posts).toHaveLength(1);
 	expect(posts[0].get('targetMode')).toBe('subset');
@@ -1004,7 +1008,7 @@ test('homework edit: a server error shows the toast and keeps the typed values',
 	await offsetField.fill('6');
 	await save.click();
 	await expect(
-		page.locator('ix-toast').getByText('Enter a valid due-date offset (0 to 365 days).')
+		page.locator('[data-sonner-toast]').getByText('Enter a valid due-date offset (0 to 365 days).')
 	).toBeVisible();
 	await page.unroute(/\?\/editAssignment/);
 	expect(sent).toHaveLength(1);
@@ -1050,7 +1054,9 @@ test('skills: a server error shows the toast, keeps the level and notes, and Sav
 	const notes = page.locator(`#notes-${student.id}-dance`);
 	await notes.fill('Needs practice');
 	await form.getByRole('button', { name: 'Save' }).click();
-	await expect(page.locator('ix-toast').getByText('Choose a valid level.')).toBeVisible();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('Choose a valid level.')
+	).toBeVisible();
 
 	expect(posts).toHaveLength(1);
 	await expect(page.locator(`#level-${student.id}-dance`)).toHaveValue('learning');
@@ -1065,7 +1071,7 @@ test('skills: a server error shows the toast, keeps the level and notes, and Sav
 	// Save again, unchanged: it goes through.
 	breakLevel = false;
 	await form.getByRole('button', { name: 'Save' }).click();
-	await expect(page.locator('ix-toast').getByText('Status saved.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Status saved.')).toBeVisible();
 	expect(posts).toHaveLength(2);
 	expect(posts[1].get('level')).toBe('learning');
 	expect(posts[1].get('notes')).toBe('Needs practice');
@@ -1114,7 +1120,7 @@ test('homework edit: unsaved edits survive marking a student done on the same pa
 	await expect(markDone).toHaveCount(1);
 	await markDone.click();
 	await modal.getByRole('button', { name: 'Mark done' }).click();
-	await expect(page.locator('ix-toast').getByText('Marked done.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Marked done.')).toBeVisible();
 	await expect(page.getByRole('button', { name: `Mark done for ${students[2].name}` })).toHaveCount(
 		0
 	);
@@ -1163,7 +1169,7 @@ test('homework create: content is required (#72)', async ({ page }) => {
 	await page.locator('#dueDate').fill(`${year}-04-03`);
 	await expect(page.locator('#dueDate')).toHaveValue(`${year}-04-03`);
 	await page.getByRole('button', { name: 'Create assignment' }).click();
-	await expect(page.locator('ix-toast').getByText('Content is required.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Content is required.')).toBeVisible();
 
 	await expect(page).toHaveURL(/\/homework\/new$/);
 	await expect(page.locator('#title')).toHaveValue(title);
@@ -1267,15 +1273,15 @@ test('homework create: Tibetan homework with formatting, longer than the old lim
 		await expect(content.locator('ul > li')).toHaveText(['དང་པོ།', 'གཉིས་པ།']);
 		// The page around it keeps the interface's font.
 		await expect(studentPage.getByTestId('homework-meta')).not.toHaveCSS('font-family', /Atisha/);
-		// ...but Tibetan characters anywhere still get Atisha, 1.36x (#78, #85): the
-		// face is also registered under iX's family name.
+		// Atisha draws Tibetan 1.36x (#78, #85). (Its alias under iX's family
+		// name went with iX in mobile-first story 10.)
 		const faces = await studentPage.evaluate(async () => {
-			await document.fonts.load("16px 'Siemens Sans'", 'བོད');
+			await document.fonts.load("16px 'Atisha'", 'བོད');
 			return [...document.fonts]
 				.filter((face) => face.status === 'loaded')
 				.map((face) => `${face.family.replace(/["']/g, '')} ${face.sizeAdjust}`);
 		});
-		expect(faces).toEqual(expect.arrayContaining(['Atisha 136%', 'Siemens Sans 136%']));
+		expect(faces).toContain('Atisha 136%');
 	} finally {
 		await context.close();
 	}
@@ -1323,7 +1329,7 @@ test('class members: Reset PIN shows the new PIN once; the student signs in with
 		expect(posts).toHaveLength(1);
 		expect(posts[0].get('studentId')).toBe(student.id);
 		expect(page.url()).not.toContain(pin);
-		await expect(page.locator('ix-toast')).toHaveCount(0);
+		await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 
 		// Gone after a reload: it is not stored anywhere.
 		await open(page, `/teacher/classes/${classId}`);

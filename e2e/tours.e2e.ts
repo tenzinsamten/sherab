@@ -4,6 +4,7 @@ import {
 	fixtureTeam,
 	helpSheet,
 	openCalendar,
+	openAccountMenu,
 	openHelp,
 	service,
 	signIn,
@@ -251,13 +252,8 @@ async function toursSeen(userId: string): Promise<string[]> {
 
 /** Long enough for a tour to have started by itself, had there been one to start. */
 async function expectNoTour(page: Page) {
-	// A page on the new UI marks its root hydrated; on an iX page, iX is defined.
-	await page.waitForFunction(() => {
-		const root = document.querySelector('main > [data-ui="new"]');
-		return root
-			? root.hasAttribute('data-hydrated')
-			: customElements.get('ix-button') !== undefined;
-	});
+	// Every page marks its new-UI root hydrated once mounted.
+	await page.waitForSelector('main > [data-ui="new"][data-hydrated]');
 	await page.waitForLoadState('networkidle');
 	await page.waitForTimeout(2500);
 	await expect(popover(page)).toHaveCount(0);
@@ -276,6 +272,25 @@ test('teacher: a tour starts on the first visit, runs to Done, and does not come
 		await expect(page).toHaveURL(/\/teacher$/);
 		await expect(popover(page)).toBeVisible();
 		await expect(highlighted(page)).toHaveAttribute('data-tour', 'teacher-class-card');
+		// Styled with the theme tokens (story 10): each popover value equals
+		// the token resolved on a probe element.
+		const styling = await popover(page).evaluate((el) => {
+			const probe = document.createElement('div');
+			probe.style.cssText =
+				'border: 1px solid var(--border); border-radius: var(--radius); background-color: var(--popover); color: var(--popover-foreground)';
+			document.body.append(probe);
+			const pick = (style: CSSStyleDeclaration) => ({
+				border: style.borderTopColor,
+				radius: style.borderTopLeftRadius,
+				background: style.backgroundColor,
+				color: style.color
+			});
+			const result = { popover: pick(getComputedStyle(el)), tokens: pick(getComputedStyle(probe)) };
+			probe.remove();
+			return result;
+		});
+		expect(styling.tokens.radius).toBe('4px');
+		expect(styling.popover).toEqual(styling.tokens);
 		// Seen as it starts, not when it ends.
 		await expect.poll(() => toursSeen(teacher.id)).toEqual(['teacher-home']);
 		// Left with Esc, it never returns by itself.
@@ -318,7 +333,7 @@ test('teacher: a tour starts on the first visit, runs to Done, and does not come
 				await expect(popover(page)).toContainText(`${index + 2} of 5`);
 				await expect(page).toHaveURL(new RegExp(`${classPath()}$`));
 				await expect(firstStudent).toHaveAttribute('aria-expanded', 'false');
-				await expect(page.locator('ix-toast')).toHaveCount(0);
+				await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 			}
 		}
 		// Back works, by button and by keyboard.
@@ -553,7 +568,7 @@ test('a parent without a child: no tour, nothing marked seen, Help says there is
 			.filter({ visible: true })
 			.click();
 		await expect(
-			page.locator('ix-toast').getByText('There is nothing to show on this page yet.')
+			page.locator('[data-sonner-toast]').getByText('There is nothing to show on this page yet.')
 		).toBeVisible();
 		await expect(popover(page)).toHaveCount(0);
 		expect(await toursSeen(childless.id)).toEqual([]);
@@ -562,19 +577,37 @@ test('a parent without a child: no tour, nothing marked seen, Help says there is
 	}
 });
 
+/**
+ * Holds the tour's start back in `context`: it waits for the page root's
+ * `data-hydrated` mark (up to 3 s), and the mark reads as absent to it for
+ * 2.5 s from the first time it is asked on each path. The window re-arms
+ * when the path changes, so it holds on /teacher after the client-side
+ * navigation from /login, and Help or a menu is surely open by the time the
+ * tour would start.
+ */
+async function holdTourStart(context: BrowserContext) {
+	await context.addInitScript(() => {
+		let path = '';
+		let since = 0;
+		const hasAttribute = Element.prototype.hasAttribute;
+		Element.prototype.hasAttribute = function (name: string) {
+			if (name === 'data-hydrated' && this.matches('main > [data-ui="new"]')) {
+				if (location.pathname !== path) {
+					path = location.pathname;
+					since = performance.now();
+				}
+				if (performance.now() - since < 2500) return false;
+			}
+			return hasAttribute.call(this, name);
+		};
+	});
+}
+
 test('Help open before an unseen tour starts: the tour stays away and is not marked seen', async ({
 	browser
 }) => {
 	const context = await personContext(browser);
-	// Holds the tour's start back (it waits for iX's components, up to 3 s)
-	// so Help is surely open by the time it would start.
-	await context.addInitScript(() => {
-		const whenDefined = customElements.whenDefined.bind(customElements);
-		customElements.whenDefined = (name: string) =>
-			name === 'ix-button'
-				? new Promise((resolve) => setTimeout(() => resolve(whenDefined(name)), 2500))
-				: whenDefined(name);
-	});
+	await holdTourStart(context);
 	const page = await context.newPage();
 	const before = await toursSeen(teacher.id);
 	try {
@@ -587,6 +620,33 @@ test('Help open before an unseen tour starts: the tour stays away and is not mar
 		await openHelp(page);
 
 		await page.waitForTimeout(4500);
+		await expect(popover(page)).toHaveCount(0);
+		expect(await toursSeen(teacher.id)).toEqual([]);
+	} finally {
+		await context.close();
+		await service.from('profiles').update({ tours_seen: before }).eq('id', teacher.id);
+	}
+});
+
+test('a menu open before an unseen tour starts: the tour stays away and is not marked seen', async ({
+	browser
+}) => {
+	const context = await personContext(browser);
+	await holdTourStart(context);
+	const page = await context.newPage();
+	const before = await toursSeen(teacher.id);
+	try {
+		check(
+			await service.from('profiles').update({ tours_seen: [] }).eq('id', teacher.id),
+			'reset tours_seen'
+		);
+		await signIn(page, teacher);
+		await expect(page).toHaveURL(/\/teacher$/);
+		// The avatar's account menu: a popup in the portal root, not Help.
+		const menu = await openAccountMenu(page);
+
+		await page.waitForTimeout(4500);
+		await expect(menu).toBeVisible();
 		await expect(popover(page)).toHaveCount(0);
 		expect(await toursSeen(teacher.id)).toEqual([]);
 	} finally {

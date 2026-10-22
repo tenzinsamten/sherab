@@ -9,7 +9,7 @@
 	import RichText from '$lib/components/RichText.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { isoDay } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import type { SkillArea } from '$lib/supabase/database.types';

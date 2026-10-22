@@ -17,7 +17,7 @@
 	import EnrollmentPanel from '$lib/components/EnrollmentPanel.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import { formatDay, formatInstant, isoDay, num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createPending } from '$lib/pending.svelte';
 	import { formatSchoolYear } from '$lib/school-year';

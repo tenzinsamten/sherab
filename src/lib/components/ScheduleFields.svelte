@@ -16,7 +16,7 @@
 	 *
 	 * Mobile-first story 5b: native checkbox, select, time, number and date
 	 * fields in their own `data-ui="new"` root, so they also work on
-	 * /admin/classes, which is still iX. Each field takes its value from the
+	 * /admin/classes. Each field takes its value from the
 	 * props only when that value changes, so a reload after another form's
 	 * save keeps unsaved edits here. Empty time and duration post empty.
 	 */

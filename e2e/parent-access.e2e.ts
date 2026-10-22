@@ -72,7 +72,7 @@ test('teacher requests parent access, the admin approves, Parent appears in the 
 	await expect(card(page)).toBeVisible();
 	await card(page).getByRole('button', { name: 'Request parent access' }).click();
 	await expect(
-		page.locator('ix-toast').getByText('Request sent. The admin will review it.')
+		page.locator('[data-sonner-toast]').getByText('Request sent. The admin will review it.')
 	).toBeVisible();
 	await expect(card(page)).toContainText('Awaiting admin approval.');
 	await openAccountMenu(page);
@@ -89,7 +89,9 @@ test('teacher requests parent access, the admin approves, Parent appears in the 
 		const row = adminPage.getByTestId('request-row').filter({ hasText: teacher.email });
 		await expect(row).toContainText('Teacher');
 		await row.getByRole('button', { name: 'Approve' }).click();
-		await expect(adminPage.locator('ix-toast').getByText(/was approved as a parent/)).toBeVisible();
+		await expect(
+			adminPage.locator('[data-sonner-toast]').getByText(/was approved as a parent/)
+		).toBeVisible();
 	} finally {
 		await context.close();
 	}
@@ -188,7 +190,7 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		await expect(question).toBeVisible();
 		await modal.getByRole('button', { name: 'Cancel' }).click();
 		await expect(question).toHaveCount(0);
-		await expect(adminPage.locator('ix-toast')).toHaveCount(0);
+		await expect(adminPage.locator('[data-sonner-toast]')).toHaveCount(0);
 		expect(await roleOf()).toBe('parent');
 		await expect(adminPage.locator('tr', { hasText: email })).toHaveCount(0);
 
@@ -200,7 +202,9 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		await makeTeacher.click();
 
 		await expect(
-			adminPage.locator('ix-toast').getByText(`${email} is now a teacher too.`, { exact: false })
+			adminPage
+				.locator('[data-sonner-toast]')
+				.getByText(`${email} is now a teacher too.`, { exact: false })
 		).toBeVisible();
 		const row = adminPage.getByTestId('teacher-row').filter({ hasText: email });
 		await expect(row).toContainText(className);
@@ -236,7 +240,9 @@ test('B14b: the admin creates a teacher with a parent-only email, confirms, and 
 		await expect(confirmRemove).toHaveClass(/text-destructive/);
 		await confirmRemove.click();
 		await expect(
-			removePage.locator('ix-toast').getByText('Their parent account is kept.', { exact: false })
+			removePage
+				.locator('[data-sonner-toast]')
+				.getByText('Their parent account is kept.', { exact: false })
 		).toBeVisible();
 		await expect(row).toHaveCount(0);
 		expect(await roleOf()).toBe('parent');
@@ -289,7 +295,7 @@ test('#90: the admin resends the confirmation mail and approves a parent whose e
 
 	await row.getByRole('button', { name: 'Resend confirmation email' }).click();
 	await expect(
-		page.locator('ix-toast').getByText(/A new confirmation email was sent/)
+		page.locator('[data-sonner-toast]').getByText(/A new confirmation email was sent/)
 	).toBeVisible();
 	await expect.poll(() => mailCount(email)).toBe(1);
 
@@ -305,7 +311,9 @@ test('#90: the admin resends the confirmation mail and approves a parent whose e
 
 	await row.getByRole('button', { name: 'Approve' }).click();
 	await modal.getByRole('button', { name: 'Approve' }).click();
-	await expect(page.locator('ix-toast').getByText(/was approved as a parent/)).toBeVisible();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText(/was approved as a parent/)
+	).toBeVisible();
 	expect(await status()).toBe('approved');
 	const { data: profile } = await service
 		.from('profiles')
@@ -355,7 +363,7 @@ test('#91: rejecting a parent asks first; Cancel keeps the request', async ({ pa
 
 	await row.getByRole('button', { name: 'Reject' }).click();
 	await modal.getByRole('button', { name: 'Reject' }).click();
-	await expect(page.locator('ix-toast').getByText(/was rejected/)).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText(/was rejected/)).toBeVisible();
 	const { data: gone } = await service.auth.admin.getUserById(parentId);
 	expect(gone.user).toBeNull();
 	userIds.splice(userIds.indexOf(parentId), 1);

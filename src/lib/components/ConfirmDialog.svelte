@@ -6,8 +6,8 @@
 
 	/**
 	 * The page's "Are you sure?" alert dialog (mobile-first story 5), driven
-	 * by `createConfirm()` ($lib/confirm.svelte). It replaces iX's confirm
-	 * modal: same title, the question, Cancel and the pressed button's label.
+	 * by `createConfirm()` ($lib/confirm.svelte). Same title as the
+	 * old confirm modal, the question, Cancel and the pressed button's label.
 	 * On close, focus goes back to where it was (the pressed button).
 	 */
 	let { confirm, testid = 'confirm-dialog' }: { confirm: Confirm; testid?: string } = $props();

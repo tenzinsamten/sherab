@@ -6,7 +6,7 @@
 	import { isoDay, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { createConfirm } from '$lib/confirm.svelte';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';

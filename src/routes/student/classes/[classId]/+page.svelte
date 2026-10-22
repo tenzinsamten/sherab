@@ -9,7 +9,7 @@
 	import SyllabusFiles from '$lib/components/SyllabusFiles.svelte';
 	import TextWithLinks from '$lib/components/TextWithLinks.svelte';
 	import { num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatSchoolYear } from '$lib/school-year';
 	import { ui } from '$lib/ui/classes';

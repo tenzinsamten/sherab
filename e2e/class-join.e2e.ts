@@ -297,7 +297,9 @@ function headerPill(page: Page) {
 
 /** The layout's load-error toast: shown when the nav count query failed. */
 function loadErrorToast(page: Page) {
-	return page.locator('ix-toast').getByText(/Something went wrong loading this page's data/);
+	return page
+		.locator('[data-sonner-toast]')
+		.getByText(/Something went wrong loading this page's data/);
 }
 
 async function decide(page: Page, className: string, button: 'Approve' | 'Reject') {
@@ -347,7 +349,7 @@ test('the class teacher approves a request; the class appears in My classes', as
 
 	await decide(page, targetName, 'Approve');
 	await expect(
-		page.locator('ix-toast').getByText(`${studentName} now belongs to ${targetName}.`)
+		page.locator('[data-sonner-toast]').getByText(`${studentName} now belongs to ${targetName}.`)
 	).toBeVisible();
 	// The last request is gone, so the section is hidden like other empty ones.
 	await expect(joinSection(page)).toHaveCount(0);
@@ -386,7 +388,7 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 		await decide(teacherPage, secondName, 'Reject');
 		await expect(
 			teacherPage
-				.locator('ix-toast')
+				.locator('[data-sonner-toast]')
 				.getByText(`${studentName}'s request to join ${secondName} was rejected.`)
 		).toBeVisible();
 		await expect(joinSection(teacherPage)).toHaveCount(0);
@@ -450,7 +452,7 @@ test('/join with an approved student\'s name, parent email and another class\'s 
 
 	await expect(
 		page
-			.locator('ix-toast')
+			.locator('[data-sonner-toast]')
 			.getByText(
 				'This parent already has a student account with this name. Sign in with that account and use “Join another class” to add this class.'
 			)

@@ -555,7 +555,9 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 				await expect(current).not.toBeChecked();
 				await expect(next).toBeChecked();
 				await form.getByRole('button', { name: 'Save' }).click();
-				await expect(page.locator('ix-toast').getByText('Schedule saved.')).toBeVisible();
+				await expect(
+					page.locator('[data-sonner-toast]').getByText('Schedule saved.')
+				).toBeVisible();
 
 				// Future sessions follow the new schedule.
 				await expect(chipsOfD).toHaveCount(1);
@@ -638,7 +640,7 @@ test.describe('class schedules & extra sessions (Story 6-4)', () => {
 			await expect(untilB).toHaveValue(`${fx.year}-11-30`);
 		};
 		await formA.getByRole('button', { name: 'Save' }).click();
-		await expect(page.locator('ix-toast').getByText('Schedule saved.')).toBeVisible();
+		await expect(page.locator('[data-sonner-toast]').getByText('Schedule saved.')).toBeVisible();
 
 		await expectEditsKept();
 
@@ -797,7 +799,9 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 			await expect(subject).toHaveValue('dance');
 			await page.getByRole('button', { name: 'Create class' }).click();
 
-			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
+			await expect(
+				page.locator('[data-sonner-toast]').getByText(`Class "${name}" created`)
+			).toBeVisible();
 			// #76: the cell shows the name and, under it, the names in the other languages.
 			await expect(
 				page.getByRole('cell', { name: `${name} ${name} bo`, exact: true })
@@ -836,7 +840,7 @@ test.describe('admin creates a class with a schedule (Story 6-4)', () => {
 test.describe('admin creates a class with blank time and duration (#66)', () => {
 	test.use({ viewport: WIDE });
 
-	test('blank start time and duration are stored as null, not iX defaults', async ({ page }) => {
+	test('blank start time and duration are stored as null, not field defaults', async ({ page }) => {
 		const name = `E2E47 ${fx.tag} Blank`;
 		const posts: string[] = [];
 		page.on('request', (r) => {
@@ -858,7 +862,9 @@ test.describe('admin creates a class with blank time and duration (#66)', () => 
 			await subject.selectOption('language');
 			await expect(subject).toHaveValue('language');
 			await page.getByRole('button', { name: 'Create class' }).click();
-			await expect(page.locator('ix-toast').getByText(`Class "${name}" created`)).toBeVisible();
+			await expect(
+				page.locator('[data-sonner-toast]').getByText(`Class "${name}" created`)
+			).toBeVisible();
 
 			expect(posts).toHaveLength(1);
 			const posted = new URLSearchParams(posts[0]);
@@ -1011,7 +1017,7 @@ test.describe('admin moves and deletes a class day (#105)', () => {
 			await expect(modal).toBeVisible();
 			await modal.locator('#move-date').fill(to);
 			await modal.getByRole('button', { name: 'Move day' }).click();
-			await expect(page.locator('ix-toast').getByText('Class day moved.')).toBeVisible();
+			await expect(page.locator('[data-sonner-toast]').getByText('Class day moved.')).toBeVisible();
 			await expect(modal).toHaveCount(0);
 
 			// The same session, now on the new date; the old date is empty.
@@ -1025,7 +1031,9 @@ test.describe('admin moves and deletes a class day (#105)', () => {
 			await expect(modal).toBeVisible();
 			await modal.getByRole('button', { name: 'Delete day' }).click();
 			await confirmDialog(page).getByRole('button', { name: 'Delete day' }).click();
-			await expect(page.locator('ix-toast').getByText('Class day deleted.')).toBeVisible();
+			await expect(
+				page.locator('[data-sonner-toast]').getByText('Class day deleted.')
+			).toBeVisible();
 			await expect(modal).toHaveCount(0);
 			await expect(chip).toHaveCount(0);
 			const { data: left } = await service.from('class_days').select('id').eq('id', day.id);

@@ -21,7 +21,7 @@
 	 * must not replace what the teacher is typing.
 	 *
 	 * Mobile-first story 7c: its own `data-ui="new"` root, so it also works
-	 * in the syllabus forms, which are still iX. `rte-input` and `rte-body` stay
+	 * in the syllabus forms. `rte-input` and `rte-body` stay
 	 * as the hooks tests find the editable area and its language by.
 	 */
 	let {

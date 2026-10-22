@@ -41,10 +41,9 @@ const row = (body: string, id: string) =>
 	body.match(new RegExp(`<tr[^>]*data-class-id="${id}"[\\s\\S]*?</tr>`))?.[0] ?? '';
 
 describe('admin classes (+page.svelte)', () => {
-	it('renders the new-UI root with the create form and no iX', () => {
+	it('renders the new-UI root with the create form', () => {
 		const body = renderPage([cls('a')]);
 		expect(body).toContain('data-ui="new"');
-		expect(body).not.toMatch(/<ix-/);
 		expect(body).toContain('data-testid="page-counter"');
 		// The name and subject fields keep their ids and posted names.
 		expect(body).toMatch(/<input[^>]*id="name"[^>]*name="name"/);

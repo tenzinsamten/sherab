@@ -39,7 +39,7 @@
 	 *
 	 * Mobile-first story 4 moved the read-only half, story 8 the edit half:
 	 * each in its own `data-ui="new"` root, so it also works on the admin
-	 * syllabus page, which is still iX.
+	 * syllabus page.
 	 */
 	let {
 		files,

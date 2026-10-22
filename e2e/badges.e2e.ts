@@ -447,7 +447,7 @@ async function expectBadgePage(page: Page) {
 	await page.locator('[data-testid="page-breadcrumb"][data-hydrated]').waitFor();
 	const opener = earned.getByRole('button', { name: 'Dance & song Homework badge 1' });
 	await opener.click();
-	// Titled with the subject (as the iX header was); the reward is in the body.
+	// Titled with the subject (as the old dialog header was); the reward is in the body.
 	const dialog = page.getByRole('dialog', { name: 'Dance & song' });
 	await expect(dialog).toContainText('1 Dance & song homework done');
 	await expect(dialog).toBeVisible();
@@ -582,7 +582,7 @@ test('a badge dismissed in this session stays gone when the layout reloads its d
 		.getByRole('alertdialog', { name: 'Are you sure?' })
 		.getByRole('button', { name: 'Mark done' })
 		.click();
-	await expect(page.locator('ix-toast').getByText('Marked done.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Marked done.')).toBeVisible();
 
 	// 2 dance homework earns no badge; the dismissed language badge stays gone.
 	await settle(page);

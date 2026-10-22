@@ -8,7 +8,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -35,7 +35,7 @@
 	 * result (`form`): it opens a section that was just added or failed to
 	 * save, closes one that was saved, and carries a wrong title's message.
 	 * Mobile-first story 8: its own `data-ui="new"` root, so it also works on
-	 * the admin syllabus page, which is still iX. It owns the page's one
+	 * the admin syllabus page. It owns the page's one
 	 * question dialog (`createConfirm` asks one question at a time) and
 	 * passes it to SyllabusFiles.
 	 */

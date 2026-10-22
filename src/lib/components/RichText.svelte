@@ -14,7 +14,7 @@
 	 * `lang` is the language it was written in, which selects the font
 	 * whatever the interface language is (see `[lang]` in app.css and the
 	 * Tibetan rule in tailwind.css). Its own `data-ui="new"` root
-	 * (mobile-first story 4), so it also works on pages that are still iX;
+	 * (mobile-first story 4);
 	 * `rich-text` stays as the hook tests find it by.
 	 */
 	let { content, lang }: { content: RichTextDoc; lang: ContentLanguage } = $props();

@@ -26,8 +26,8 @@
 	 * buttons opening their detail; locked ones are the same icon greyed out,
 	 * with what unlocks them and, for the next one, the progress toward it.
 	 * The state is always in text ("Earned on …" / "Locked"), not colour alone.
-	 * Its own `data-ui="new"` root (mobile-first story 3), so it also works on
-	 * pages that are still iX; the clay celebration styling since story 4.
+	 * Its own `data-ui="new"` root (mobile-first story 3); the clay
+	 * celebration styling since story 4.
 	 */
 	let {
 		sections,

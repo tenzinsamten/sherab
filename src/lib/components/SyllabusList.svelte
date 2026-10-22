@@ -7,7 +7,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -22,7 +22,7 @@
 	 * `schoolYear` to `?/create`). Used by the teacher and admin syllabus
 	 * pages; `hrefFor` builds each row's already-resolved detail link.
 	 * Mobile-first story 8: its own `data-ui="new"` root, so it also works on
-	 * the admin syllabus page, which is still iX; the year is a native select.
+	 * the admin syllabus page; the year is a native select.
 	 */
 	let {
 		syllabi,

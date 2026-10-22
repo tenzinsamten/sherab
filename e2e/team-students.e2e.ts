@@ -154,13 +154,9 @@ const teamLink = (page: Page, team: string) =>
 const studentItems = (page: Page) => page.getByTestId('team-students').getByRole('listitem');
 const board = (page: Page) => page.getByTestId('leaderboard');
 
-/** iX is defined, and a migrated page's new-UI root is hydrated (mobile-first stories 3-5). */
+/** The page's new-UI root is hydrated (mobile-first stories 3-5). */
 async function ready(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
-	await page.waitForFunction(() => {
-		const root = document.querySelector('main > [data-ui="new"]');
-		return !root || root.hasAttribute('data-hydrated');
-	});
+	await page.waitForSelector('main > [data-ui="new"][data-hydrated]');
 	await page.waitForLoadState('networkidle');
 }
 

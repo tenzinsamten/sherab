@@ -1,5 +1,4 @@
 <script lang="ts">
-	import '@siemens/ix/dist/siemens-ix/siemens-ix.css';
 	import '../app.css';
 	import '$lib/ui/tailwind.css';
 	import { onMount } from 'svelte';
@@ -8,13 +7,14 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages.js';
-	import { routeIxLinks, setupIx, showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import AppHeader from '$lib/components/shell/AppHeader.svelte';
 	import BottomNav from '$lib/components/shell/BottomNav.svelte';
 	import HelpSheet from '$lib/components/shell/HelpSheet.svelte';
 	import PortalRoot from '$lib/components/shell/PortalRoot.svelte';
 	import PublicHeader from '$lib/components/shell/PublicHeader.svelte';
 	import SideNav from '$lib/components/shell/SideNav.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import NewBadgeDialog from '$lib/components/NewBadgeDialog.svelte';
 	import PageTour from '$lib/components/PageTour.svelte';
 	import { HELP_ROLES, helpRoleFor } from '$lib/help';
@@ -26,12 +26,10 @@
 	let { children, data } = $props();
 
 	onMount(() => {
-		setupIx();
 		// #81: without this nothing registers the service worker the build emits.
 		if (pwaInfo) {
 			import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
 		}
-		return routeIxLinks();
 	});
 
 	// Every form action on every route returns `fail(..., { error })` on
@@ -168,8 +166,8 @@
 </svelte:head>
 
 {#if data.profile}
-	<!-- Story 2: the new shell. Its chrome carries data-ui="new"; a page
-	     inside <main> is iX until migrated, then has its own new-UI root. -->
+	<!-- Story 2: the new shell. Its chrome carries data-ui="new"; every page
+	     inside <main> has its own new-UI root. -->
 	<div class="flex min-h-dvh flex-col" data-app-shell>
 		<AppHeader
 			{homeHref}
@@ -193,7 +191,7 @@
 					onHelp={openHelp}
 				/>
 			{/if}
-			<!-- iX's content area padding, so the pages inside are unchanged. -->
+			<!-- The content area's padding (iX's, kept so the pages are unchanged). -->
 			<main
 				class="min-w-0 flex-1 pt-3 pr-[max(2rem,env(safe-area-inset-right))] pb-1 pl-[max(2rem,env(safe-area-inset-left))]"
 			>
@@ -241,4 +239,17 @@
 		</main>
 	</div>
 {/if}
+<!-- Story 10: every toast (showToast, $lib/toast), top right as iX's were,
+     5 s, dismissible, listed rather than stacked (expand); inside a new-UI
+     root so the reset and utilities apply. -->
+<div data-ui="new">
+	<Toaster
+		position="top-right"
+		duration={5000}
+		richColors
+		expand
+		closeButton
+		closeButtonAriaLabel={m.common_close()}
+	/>
+</div>
 <PortalRoot />

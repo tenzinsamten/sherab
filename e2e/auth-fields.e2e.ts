@@ -220,7 +220,9 @@ test('join: an unknown class code marks the field invalid and stays on step 1', 
 		'No class has that code. Check it with your teacher.'
 	);
 	await expect(
-		page.locator('ix-toast').getByText('No class has that code. Check it with your teacher.')
+		page
+			.locator('[data-sonner-toast]')
+			.getByText('No class has that code. Check it with your teacher.')
 	).toBeVisible();
 	await expect(page.locator('#registrationName')).toHaveCount(0);
 	// Typing again clears the invalid state.
@@ -312,7 +314,7 @@ test('account: the display name shows the saved one and saves a new one', async 
 	const name = `E2E Renamed ${fx.tag}`;
 	await page.getByLabel('Display name').fill(name);
 	await page.getByRole('button', { name: 'Save name' }).click();
-	await expect(page.locator('ix-toast').getByText('Name updated.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Name updated.')).toBeVisible();
 
 	const { data: after } = await service
 		.from('profiles')
@@ -333,10 +335,9 @@ test('login: the Sherab logo shows above the card title', async ({ page }) => {
 	await expect(logo).toHaveAttribute('src', /sherab-logo-blue/);
 });
 
-test('signed-out header: the Sherab logo is the home link, no iX header', async ({ page }) => {
+test('signed-out header: the Sherab logo is the home link', async ({ page }) => {
 	await page.goto('/login');
 	await authReady(page);
-	await expect(page.locator('ix-application-header, ix-dropdown-button')).toHaveCount(0);
 	const header = page.getByTestId('public-header');
 	const logoLink = header.getByTestId('header-home');
 	await expect(logoLink.getByRole('img', { name: 'Sherab – ཤེས་རབ་' })).toBeVisible();

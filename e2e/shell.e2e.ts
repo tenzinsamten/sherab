@@ -126,7 +126,6 @@ test('phone nav: a teacher at 375px gets the bottom bar, no hamburger and no sid
 		await expect(page).toHaveURL(/\/teacher$/);
 		await expect(bottomNav(page)).toBeVisible();
 		await expect(sideNav(page)).toBeHidden();
-		await expect(page.locator('ix-menu, ix-application-header')).toHaveCount(0);
 		expect(await navNames(page)).toEqual([
 			'Dashboard',
 			'Calendar',
@@ -502,8 +501,8 @@ test('every role at 375px: the end of the page scrolls fully into view above the
 		try {
 			await signIn(page, user());
 			await page.waitForLoadState('networkidle');
-			// Scrolled to the end on every try: iX sections may still grow
-			// after the network is quiet.
+			// Scrolled to the end on every try: sections may still grow after
+			// the network is quiet.
 			await expect
 				.poll(() =>
 					page.evaluate(() => {

@@ -1,9 +1,8 @@
-/* Sherab on Siemens iX (classic theme, light only for phase 1 -- dark mode
-   and a theme switch are phase 2; see data-ix-color-schema in app.html). Components come from iX (<ix-button>, <ix-checkbox>, toasts, ...);
-   this file only holds page layout helpers and styles for native form
-   controls, and every colour, radius and font size is an iX theme variable
-   so both colour schemas work. The previous editorial design
-   (DESIGN.md / design-tokens.md) is superseded. */
+/* Sherab's global CSS. Every page and the shell are built from the new
+   component system (Tailwind + shadcn-svelte, src/lib/ui/tailwind.css, with
+   its theme tokens); this file only holds what lives outside it: the
+   Tibetan face, the document's base, the shell's scroll padding and two
+   helper classes. Light only (#13). */
 
 /* Tibetan face (#77): Atisha by Lobsang Monlam, served by the app itself.
    One weight only; the browser draws bold from it. Limited to the Tibetan
@@ -19,53 +18,17 @@
 	unicode-range: U+0F00-0FFF;
 	size-adjust: 136%;
 }
-/* The same face under iX's family name (#78). iX sets `Siemens Sans, ...` on
-   `body` and inside every component's shadow DOM, which no page rule reaches,
-   and ships no face for that name. Font faces are document-wide, so this puts
-   Atisha behind all of those stacks -- for Tibetan characters only, in any
-   interface language. */
-@font-face {
-	font-family: 'Siemens Sans';
-	src: url('./lib/assets/fonts/Atisha.ttf') format('truetype');
-	font-weight: 400;
-	font-style: normal;
-	font-display: swap;
-	unicode-range: U+0F00-0FFF;
-	size-adjust: 136%;
-}
 
 :root {
 	--font-tibetan: 'Atisha', serif;
-
-	--space-1: 0.25rem;
-	--space-2: 0.5rem;
-	--space-3: 0.75rem;
-	--space-4: 1rem;
-	--space-6: 1.5rem;
-	--space-8: 2rem;
-
-	--content-max: 72rem;
 }
 
-/* iX sets `:root { color-scheme: light dark }`, so on a dark-mode OS the
-   browser draws native controls (the date picker's calendar icon, select
-   arrows) for dark mode: white on the app's white fields (#29). The app is
-   light-only in phase 1, so pin native controls to light. More specific than
-   `:root`. Revisit with dark mode in phase 2 (#13). */
-html[data-ix-color-schema='light'] {
+/* The app is light-only, so on a dark-mode OS the browser must still draw
+   native controls (the date picker's calendar icon, select arrows) for light
+   mode, not white on the app's white fields (#29). Revisit with dark mode
+   (#13). */
+html {
 	color-scheme: light;
-}
-
-/* Sherab keeps its own primary blue on top of iX classic. The selector is
-   more specific than iX's `[data-ix-theme][data-ix-color-schema]` rules. */
-html[data-ix-theme='classic'][data-ix-color-schema] {
-	--theme-color-primary: #2563eb;
-	--theme-color-primary--hover: #1d4fd7;
-	--theme-color-primary--active: #1b45be;
-	--theme-color-primary--contrast: #ffffff;
-	--theme-color-primary--disabled: rgba(37, 99, 235, 0.3);
-	--theme-color-ghost-primary--hover: rgba(37, 99, 235, 0.12);
-	--theme-color-ghost-primary--active: rgba(37, 99, 235, 0.2);
 }
 
 * {
@@ -78,18 +41,19 @@ body {
 	margin: 0;
 }
 
+/* The document's base, in the theme's colours and font, for what renders
+   outside a `data-ui="new"` root (each root resets these for itself). */
 body {
-	color: var(--theme-color-std-text);
-	font-size: var(--theme-font-size-l);
+	background-color: var(--background);
+	color: var(--foreground);
+	font-family: var(--sherab-font-sans);
+	font-size: 1rem;
 	line-height: 1.5;
 }
 
-a {
-	color: var(--theme-color-primary);
-}
-
-/* Tibetan has no uppercase and needs more line height than Latin, and iX's
-   fonts have no Tibetan glyphs -- keep the dedicated face for `bo`. */
+/* Tibetan has no uppercase and needs more line height than Latin, and the
+   system fonts have no good Tibetan glyphs -- keep the dedicated face for
+   `bo`. */
 [lang='bo'],
 [lang='bo'] h1,
 [lang='bo'] h2,
@@ -97,26 +61,21 @@ a {
 	font-family: var(--font-tibetan);
 	line-height: 2;
 }
-/* `body` sets its own line height, so the Tibetan interface needs it there
-   too: the glyphs are 1.36x the font size (#78, #85). */
+/* `body` sets its own font and line height, so the Tibetan interface needs
+   them there too: the glyphs are 1.36x the font size (#78, #85). */
 html[lang='bo'] body {
+	font-family: var(--sherab-font-bo);
 	line-height: 2;
-}
-/* iX's button clips its label to a single 1.43em line, which cuts the feet
-   of Tibetan letters at 1.36x. Under the Tibetan interface the button is
-   taller and the label's line fills it (#78, #85). */
-html[lang='bo'] ix-button {
-	height: 2.25rem;
-	line-height: 2.25rem;
 }
 /* Homework is shown in the language it was written in, whatever the
    interface language (#74): its title and content carry their own `lang`.
    Tibetan homework inside an English or German interface is covered by the
    rule above; this is the reverse, English or German homework inside a
-   Tibetan interface, which gets iX's font and the body's line height back. */
+   Tibetan interface, which gets the app's font and the body's line height
+   back. */
 [lang='bo'] [lang]:not([lang='bo']),
 [lang='bo'] [lang]:not([lang='bo']) :is(h1, h2, h3) {
-	font-family: var(--theme-font-family, 'Siemens Sans', Arial, Helvetica, sans-serif);
+	font-family: var(--sherab-font-sans);
 	line-height: 1.5;
 }
 
@@ -132,6 +91,14 @@ html[lang='bo'] ix-button {
 	border: 0;
 }
 
+/* One-time credentials (temp password, student PIN) stay on screen, since
+   a toast disappears before they can be copied (CopyField.svelte). */
+.credential {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-weight: 700;
+	user-select: all;
+}
+
 /* ── App shell ───────────────────────────────────────────────────────────── */
 /* Signed in (story 2), the document scrolls under the shell's sticky header
    and, below 80em, its sticky bottom bar: focus, scrollIntoView and #hash
@@ -143,251 +110,5 @@ html:has([data-app-shell]) {
 @media (width < 80em) {
 	html:has([data-shell-bottom-nav]) {
 		scroll-padding-bottom: var(--bottom-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));
-	}
-}
-/* ── Page structure ──────────────────────────────────────────────────────── */
-.page {
-	max-width: var(--content-max);
-	margin: 0 auto;
-	padding: var(--space-6) var(--space-4) var(--space-8);
-}
-.page-header {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: flex-end;
-	justify-content: space-between;
-	gap: var(--space-4);
-	margin-bottom: var(--space-6);
-}
-.page-kicker,
-.section-label {
-	display: block;
-	margin: 0 0 var(--space-2);
-	color: var(--theme-color-soft-text);
-	font-size: var(--theme-font-size-s);
-	font-weight: var(--theme-font-weight-bold);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-}
-.page-heading {
-	margin: 0;
-	font-size: var(--theme-font-size-xl);
-	font-weight: var(--theme-font-weight-bold);
-	line-height: 1.25;
-}
-.page-heading-greeting {
-	overflow-wrap: anywhere;
-}
-.page-subtitle {
-	margin: var(--space-2) 0 0;
-	max-width: 60ch;
-	color: var(--theme-color-soft-text);
-}
-.page-counter {
-	font-size: 2.5rem;
-	font-weight: var(--theme-font-weight-bold);
-	line-height: 1;
-	color: var(--theme-color-primary);
-	font-variant-numeric: tabular-nums;
-}
-.muted {
-	color: var(--theme-color-soft-text);
-}
-.actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--space-2);
-	align-items: center;
-}
-
-h1,
-h2,
-h3 {
-	font-weight: var(--theme-font-weight-bold);
-	line-height: 1.25;
-}
-h2 {
-	font-size: var(--theme-font-size-l);
-}
-
-/* Static container. Interactive tiles use <ix-card>. */
-.card {
-	padding: var(--space-6);
-	background: var(--theme-color-1);
-	border: 1px solid var(--theme-color-soft-bdr);
-	border-radius: var(--theme-default-border-radius);
-}
-.card + .card {
-	margin-top: var(--space-4);
-}
-.card > h2:first-child,
-.card > .section-label:first-child {
-	margin-top: 0;
-}
-.tile-link {
-	display: block;
-	color: inherit;
-	text-decoration: none;
-}
-/* #70: out-rank iX's visited-link colour so a visited card keeps its text colour. */
-a.tile-link.tile-link[href]:is(:link, :visited, :hover, :active) {
-	color: inherit;
-}
-/* Keyboard focus on a whole-card link (#56). */
-.tile-link:focus-visible {
-	outline: 2px solid var(--theme-color-primary);
-	outline-offset: 2px;
-	border-radius: var(--theme-default-border-radius);
-}
-/* iX gives <ix-card> a fixed 20rem width; every card here sits in a grid
-   cell or list row, so it fills that instead of overflowing into the next. */
-ix-card {
-	width: 100%;
-}
-.tile-grid ix-card {
-	height: 100%;
-}
-.tile-grid .section-label {
-	margin: 0;
-}
-.stat-tile-value {
-	margin: 0;
-	font-size: 2rem;
-	font-weight: var(--theme-font-weight-bold);
-	font-variant-numeric: tabular-nums;
-}
-.tile-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-	gap: var(--space-4);
-}
-
-/* ── Forms ─────────────────────────────────────────────────────────────────
-   Form fields are iX components (<ix-input>, <ix-select>, <ix-date-input>,
-   ..., #66) with their own `label`; `.field` only spaces them and holds the
-   `.field-error` message. Native controls remain only for credentials
-   (email/username/password, so password managers and autofill work); these
-   take iX's input tokens. */
-.field {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-1);
-	margin-bottom: var(--space-4);
-}
-.field > label {
-	color: var(--theme-color-soft-text);
-	font-size: var(--theme-font-size-default);
-}
-.field input:not([type='checkbox']):not([type='radio']),
-.field select,
-.field textarea {
-	min-height: 2.5rem;
-	padding: var(--space-1) var(--space-2);
-	background-color: var(--theme-input--background);
-	color: var(--theme-input--color);
-	border: 1px solid var(--theme-input--border-color);
-	border-radius: var(--theme-input--border-radius);
-	font: inherit;
-	font-size: var(--theme-font-size-l);
-}
-.field input:not([type='checkbox']):not([type='radio']):hover,
-.field select:hover,
-.field textarea:hover {
-	border-color: var(--theme-input--border-color--hover);
-	background-color: var(--theme-input--background--hover);
-}
-.field input:focus-visible,
-.field select:focus-visible,
-.field textarea:focus-visible {
-	outline: 1px solid var(--theme-color-focus-bdr);
-	border-color: var(--theme-input--border-color--focus);
-}
-.field input[aria-invalid='true'] {
-	border-color: var(--theme-color-alarm);
-}
-.field-error {
-	color: var(--theme-color-alarm-text);
-	font-size: var(--theme-font-size-default);
-}
-.form-narrow {
-	max-width: 32rem;
-}
-.check-list {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-2);
-	padding: var(--space-3);
-	border: 1px solid var(--theme-color-soft-bdr);
-	border-radius: var(--theme-default-border-radius);
-}
-input[type='checkbox'],
-input[type='radio'] {
-	accent-color: var(--theme-color-primary);
-}
-fieldset {
-	border: none;
-	margin: 0 0 var(--space-4);
-	padding: 0;
-}
-legend {
-	margin-bottom: var(--space-2);
-	color: var(--theme-color-soft-text);
-	font-size: var(--theme-font-size-default);
-}
-
-/* One-time credentials (temp password, student PIN) stay on screen, since
-   a toast disappears before they can be copied. */
-.credential {
-	font-family: var(--theme-font-family-mono, monospace);
-	font-weight: var(--theme-font-weight-bold);
-	user-select: all;
-}
-
-/* ── Tables and row lists ─────────────────────────────────────────────── */
-table {
-	width: 100%;
-	border-collapse: collapse;
-}
-th,
-td {
-	padding: var(--space-2) var(--space-3);
-	text-align: left;
-	border-bottom: 1px solid var(--theme-color-soft-bdr);
-	vertical-align: middle;
-}
-thead th {
-	color: var(--theme-color-soft-text);
-	font-size: var(--theme-font-size-default);
-	font-weight: var(--theme-font-weight-bold);
-}
-.table-wrap {
-	overflow-x: auto;
-}
-.grid-table-header,
-.grid-table-row {
-	display: grid;
-	align-items: center;
-	gap: var(--space-2) var(--space-3);
-	padding: var(--space-2) var(--space-3);
-	border-bottom: 1px solid var(--theme-color-soft-bdr);
-}
-.grid-table-header span {
-	color: var(--theme-color-soft-text);
-	font-size: var(--theme-font-size-default);
-	font-weight: var(--theme-font-weight-bold);
-}
-
-code {
-	font-family: var(--theme-font-family-mono, monospace);
-	font-weight: var(--theme-font-weight-bold);
-	letter-spacing: 0.06em;
-}
-
-@media (max-width: 640px) {
-	.page {
-		padding: var(--space-4) var(--space-3) var(--space-6);
-	}
-	.card {
-		padding: var(--space-4);
 	}
 }

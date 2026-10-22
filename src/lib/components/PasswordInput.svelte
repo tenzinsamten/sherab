@@ -11,8 +11,8 @@
 	 * autocomplete, required, ...), so labels, form actions and password
 	 * managers work as before (#66, B7b); only its `type` flips between
 	 * "password" and "text". Each field starts hidden and toggles on its own.
-	 * Its own `data-ui="new"` root (mobile-first story 5), so it works on a
-	 * new-UI page and inside iX markup alike.
+	 * Its own `data-ui="new"` root (mobile-first story 5), so it works on any
+	 * page.
 	 */
 	let { class: className, ...props }: Omit<HTMLInputAttributes, 'type' | 'files'> = $props();
 

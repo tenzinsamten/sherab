@@ -28,7 +28,6 @@ describe('admin dashboard (+page.svelte)', () => {
 	it('shows six tiles, exactly three of them links to classes, teachers and requests', () => {
 		const body = renderPage();
 		expect(body).toContain('data-ui="new"');
-		expect(body).not.toMatch(/<ix-/);
 		const tiles = body.match(/<ul[^>]*data-testid="dashboard-tiles"[\s\S]*?<\/ul>/)?.[0] ?? '';
 		expect(tiles.match(/<li[\s>]/g)).toHaveLength(6);
 		const hrefs = [...tiles.matchAll(/<a[^>]*href="([^"]+)"/g)].map((a) => a[1]);

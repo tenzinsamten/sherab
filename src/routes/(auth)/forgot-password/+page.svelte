@@ -5,7 +5,7 @@
 	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
 
 	let { form, data }: { form: ActionData; data: PageData } = $props();

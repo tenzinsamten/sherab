@@ -102,7 +102,7 @@ test('teacher: adds two sections with links, an empty title is refused, and reor
 	await expect(page.locator('input[name="linkUrl"]')).toHaveValue('https://one.example');
 	await title.fill('Song 1');
 	await page.getByRole('button', { name: 'Save section' }).click();
-	await expect(page.locator('ix-toast').getByText('Section saved.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Section saved.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 1']);
 
 	// "Song 2", with its own link.
@@ -160,12 +160,12 @@ test("admin: sees both sections in the teacher's order, moves one and back, and 
 	// A throwaway section, added and deleted as the admin.
 	await page.locator('#section-title-new').fill('Throwaway');
 	await page.getByRole('button', { name: 'Add section' }).click();
-	await expect(page.locator('ix-toast').getByText('Section added.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Section added.')).toBeVisible();
 	await page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(titles(page)).toHaveText(['Song 2', 'Song 1', 'Throwaway']);
 	await card(page, 'Throwaway').getByRole('button', { name: 'Delete section' }).click();
 	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
-	await expect(page.locator('ix-toast').getByText('Section deleted.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Section deleted.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 2', 'Song 1']);
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 2', 'Song 1']);
 });
@@ -213,7 +213,7 @@ test('teacher: deleting a section asks first and leaves the others in order', as
 
 	await card(page, 'Song 2').getByRole('button', { name: 'Delete section' }).click();
 	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
-	await expect(page.locator('ix-toast').getByText('Section deleted.')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').getByText('Section deleted.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Song 1']);
 	expect((await stored()).map((s) => s.title)).toEqual(['Song 1']);
 });

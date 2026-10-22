@@ -3,8 +3,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 /**
  * Mobile-first redesign, story 1: the new component system (Tailwind +
  * shadcn-svelte) on the dev-only /dev/ui preview. Inside `data-ui="new"` the
- * Sherab theme applies and neither iX's global CSS nor src/app.css styles
- * plain elements; Tibetan text uses Atisha.
+ * Sherab theme applies and neither src/app.css nor the browser defaults
+ * style plain elements; Tibetan text uses Atisha.
  */
 
 const PRIMARY = 'rgb(37, 99, 235)';
@@ -79,13 +79,14 @@ test.describe('/dev/ui', () => {
 		expect(await style(button, 'border-top-left-radius')).toBe('4px');
 	});
 
-	test('plain heading, link and table get neither iX nor app.css styles', async ({ page }) => {
+	test('plain heading, link and table get no app.css or browser-default styles', async ({
+		page
+	}) => {
 		const root = page.getByTestId('preview-en');
 		const rootFontSize = await style(root, 'font-size');
 		expect(rootFontSize).toBe('16px');
 
-		// iX sizes and bolds headings (font-size by level, Siemens Sans), app.css
-		// sets weight and line height.
+		// Browsers size and bold headings by level; the reset inherits them.
 		const heading = root.getByTestId('plain-heading');
 		expect(await style(heading, 'font-size')).toBe(rootFontSize);
 		expect(await style(heading, 'font-weight')).toBe('400');
@@ -93,7 +94,7 @@ test.describe('/dev/ui', () => {
 		expect(await style(heading, 'font-family')).toBe(await style(root, 'font-family'));
 		expect(await style(heading, 'letter-spacing')).toBe('normal');
 
-		// iX and app.css colour links primary; the reset inherits the colour.
+		// Browsers colour and underline links; the reset inherits the colour.
 		const link = root.getByTestId('plain-link');
 		expect(await style(link, 'color')).toBe(FOREGROUND);
 		expect(await style(link, 'text-decoration-line')).toBe('none');

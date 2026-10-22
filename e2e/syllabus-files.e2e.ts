@@ -176,7 +176,8 @@ function recordPosts(page: Page): string[] {
 	return posts;
 }
 
-const toast = (page: Page, text: string) => page.locator('ix-toast').getByText(text).first();
+const toast = (page: Page, text: string) =>
+	page.locator('[data-sonner-toast]').getByText(text).first();
 
 async function upload(page: Page, file: ReturnType<typeof pdf>) {
 	const section = card(page, 'Song 1');

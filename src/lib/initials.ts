@@ -4,7 +4,7 @@
  * accented letter or a joined emoji stays one character), upper-cased
  * without the runtime locale so server and browser agree; a letter whose
  * upper case would grow (ß → SS) is kept as is. Empty when there is no name,
- * so iX falls back to its generic person icon.
+ * so the avatar falls back to its generic person icon (AppHeader.svelte).
  */
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 

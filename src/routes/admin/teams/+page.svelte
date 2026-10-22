@@ -8,7 +8,7 @@
 	import { resolve } from '$app/paths';
 	import { formatInstant, num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';

@@ -9,7 +9,7 @@
 	 * button (#41, #53). `hideLabel` keeps the label for screen readers only,
 	 * e.g. inside a table whose column header already names the value.
 	 * Its own `data-ui="new"` root (mobile-first story 4), so it also works on
-	 * pages that are still iX (admin classes, requests, credentials). Where
+	 * the pages that embed it (admin classes, requests, credentials). Where
 	 * several stack (CredentialFields' `.credential-fields`), the labels line
 	 * up. `copy-field` / `credential` stay as the hooks tests find them by.
 	 */

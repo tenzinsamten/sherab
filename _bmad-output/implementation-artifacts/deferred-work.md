@@ -482,3 +482,15 @@
 - source_spec: `_bmad-output/specs/spec-mobile-ux/stories/9b-admin-teachers-page.md`
   summary: The rename rows on /admin/classes and /admin/teams flash their name fields to empty after a successful save, before the row closes.
   evidence: SvelteKit's enhance resets the form before invalidateAll (`forms.js:100-105`) and the client-rendered edit row has empty defaultValues; story 9b fixed the same on /admin/teachers with `{ reset: false }`.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/10-remove-ix-and-final-regression.md`
+  summary: Extract the five copies of the admin card/table constants and `cardLabel` (admin classes, teams, parents, teachers and the class pages migrated in story 9) into one shared `$lib/ui` module.
+  evidence: Story 9b's design note left this to story 10's cleanup; on 2026-10-22 the user chose to defer it so story 10 stays an iX-only removal.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/10-remove-ix-and-final-regression.md`
+  summary: Unwind the `data-ui="new"` coexistence isolation (scoped `reset.css`, `important` utilities, per-file `@source` list) now that iX is gone, using Tailwind's normal preflight and automatic source detection.
+  evidence: The isolation only existed to keep iX and the new UI apart; removing it touches all 82 `data-ui="new"` roots, so story 10 keeps it to stay an iX-only removal.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/10-remove-ix-and-final-regression.md`
+  summary: Tibetan characters outside a `lang="bo"` element (en/de interface, e.g. Tibetan class and team names under the English name, Tibetan text in toasts) render in the system font instead of Atisha; consider putting 'Atisha' first in `--sherab-font-sans` (its unicode-range limits it to Tibetan).
+  evidence: #78 gave Tibetan characters Atisha in any interface language via a `Siemens Sans` alias; the new UI's sans stack never named that family (`src/lib/ui/tailwind.css:117`), so migrated pages lost it in stories 1-9, and story 10 removed the alias with iX's toast.
+- source_spec: `_bmad-output/specs/spec-mobile-ux/stories/10-remove-ix-and-final-regression.md`
+  summary: Drop the iX-era content padding: `<main>` keeps iX's 2rem side padding and `ui.page` gives 1rem back with `-mx-4`.
+  evidence: Both exist only to keep migrated pages identical to iX's content area (`src/routes/+layout.svelte`, `src/lib/ui/classes.ts`); story 10 forbids layout changes.

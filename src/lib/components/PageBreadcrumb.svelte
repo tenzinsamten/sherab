@@ -7,8 +7,8 @@
 
 	/**
 	 * The breadcrumb above a nested page's header (#61), on the new component
-	 * system (mobile-first story 3); it carries its own `data-ui="new"` root,
-	 * so it works on pages that are still iX. Every level above the current
+	 * system (mobile-first story 3); it carries its own `data-ui="new"` root.
+	 * Every level above the current
 	 * page is a real link; the last item is the current page
 	 * (aria-current="page"). On a phone (below 40rem) only the last two
 	 * levels show and the earlier ones move into a "…" menu; a level without

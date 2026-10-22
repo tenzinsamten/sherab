@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as m from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createPending } from '$lib/pending.svelte';
 	import { disablePush, enablePush, pushState, type PushState } from '$lib/push-client';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';

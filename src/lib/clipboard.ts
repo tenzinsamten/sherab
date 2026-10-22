@@ -1,5 +1,5 @@
 import * as m from '$lib/paraglide/messages.js';
-import { showToast } from '$lib/ix';
+import { showToast } from '$lib/toast';
 
 /**
  * Copies text and confirms with a toast (#41). The Clipboard API needs a

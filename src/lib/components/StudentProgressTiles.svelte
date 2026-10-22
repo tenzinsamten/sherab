@@ -23,7 +23,7 @@
 	 * (badge detail story 3). The whole badges card is one link to the badge
 	 * page with every badge, its detail and progress (story 4); nothing
 	 * inside it is clickable on its own. Its own `data-ui="new"` root
-	 * (mobile-first story 3), so it also works on pages that are still iX.
+	 * (mobile-first story 3).
 	 */
 	let {
 		streak,

@@ -387,7 +387,7 @@ async function expectFits(page: Page) {
 }
 
 const toast = (page: Page, text: string | RegExp) =>
-	page.locator('ix-toast').getByText(text).first();
+	page.locator('[data-sonner-toast]').getByText(text).first();
 const confirmDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Are you sure?' });
 const section = (page: Page, testid: string) => page.getByTestId(testid);
 const row = (page: Page, testid: string, text: string) =>

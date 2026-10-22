@@ -13,8 +13,8 @@
 	 * `linkUrl` and a `linkLabel` field, read in order by parseReferenceLinks()
 	 * in $lib/server/homework-details.ts. A row with an empty URL is ignored.
 	 * Mobile-first story 7c: native fields in their own `data-ui="new"` root,
-	 * so they also work in the syllabus forms (still iX). `mb-4` spaces it
-	 * like the `.field`s around it there.
+	 * so they also work in the syllabus forms. `mb-4` spaces it
+	 * like the fields around it there.
 	 */
 	let {
 		idPrefix,

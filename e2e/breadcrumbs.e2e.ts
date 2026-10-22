@@ -251,11 +251,6 @@ const currentCrumb = (page: Page) => crumbs(page).locator('[aria-current="page"]
 const crumbItems = (page: Page) =>
 	crumbs(page).locator('li[data-slot="breadcrumb-item"]:not([data-crumb-menu])');
 
-/** The old "Back to …" buttons sat in the page header; none is left there. */
-async function expectNoBackButton(page: Page) {
-	await expect(page.locator('.page-header ix-button[variant="secondary"]')).toHaveCount(0);
-}
-
 /** Marks the loaded document, so a full page load (which drops the mark) can be told apart. */
 async function markDocument(page: Page) {
 	await page.evaluate(() => {
@@ -277,7 +272,6 @@ test('navigate up: the Homework crumb on a homework page goes to the list withou
 	await expect(currentCrumb(page)).toContainText(homeworkTitle);
 	await expect(crumbs(page).getByRole('link', { name: 'Dashboard' })).toBeVisible();
 	await expect(crumbs(page).getByRole('link', { name: className })).toBeVisible();
-	await expectNoBackButton(page);
 
 	// Four levels; every link above the current page is a 44px touch target.
 	await expect(crumbItems(page)).toHaveCount(4);
@@ -335,7 +329,6 @@ test('admin: the class level is plain text; Syllabus and Classes crumbs lead up'
 	await open(page, `/admin/classes/${classId}/syllabus/${syllabusId}`);
 
 	await expect(currentCrumb(page)).toContainText(formatSchoolYear(schoolYear));
-	await expectNoBackButton(page);
 	// Admin has no class page: the class crumb is shown, but not as a link.
 	await expect(crumbItems(page).filter({ hasText: className })).toHaveCount(1);
 	await expect(crumbs(page).getByRole('link', { name: className })).toHaveCount(0);
@@ -368,7 +361,6 @@ test('student: the My classes crumb on a class page leads to the class list', as
 	await open(page, `/student/classes/${classId}`);
 
 	await expect(currentCrumb(page)).toContainText(className);
-	await expectNoBackButton(page);
 	await crumbs(page).getByRole('link', { name: 'My classes' }).click();
 	await expect(page).toHaveURL(/\/student\/classes$/);
 });
@@ -378,7 +370,6 @@ test('student from Done: the My Homework crumb keeps the Done filter', async ({ 
 	await open(page, `/student/homework/${instanceId}?from=done`);
 
 	await expect(currentCrumb(page)).toContainText(homeworkTitle);
-	await expectNoBackButton(page);
 	await crumbs(page).getByRole('link', { name: 'My Homework' }).click();
 	await expect(page).toHaveURL(/\/student\/homework\?filter=done$/);
 });

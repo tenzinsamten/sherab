@@ -303,7 +303,7 @@ async function expectFits(page: Page, rootSelector = 'main > [data-ui="new"]') {
 }
 
 const toast = (page: Page, text: string | RegExp) =>
-	page.locator('ix-toast').getByText(text).first();
+	page.locator('[data-sonner-toast]').getByText(text).first();
 const classPath = (key: 'a' | 'b' = 'a') => `/teacher/classes/${classes[key].id}`;
 const row = (page: Page, student: { id: string }) =>
 	page.locator(`.attendance-row[data-student-id="${student.id}"]`);
@@ -965,7 +965,7 @@ test.describe('homework list', () => {
 					await page.getByRole('link', { name: 'e2e arrive' }).click();
 				};
 				await arrive('?created=weekly&visible=tomorrow');
-				const tomorrow = page.locator('ix-toast').filter({
+				const tomorrow = page.locator('[data-sonner-toast]').filter({
 					hasText: 'Weekly homework created. Students will see it from tomorrow morning.'
 				});
 				await expect(tomorrow).toBeVisible();
@@ -975,7 +975,7 @@ test.describe('homework list', () => {
 				await arrive('?created=weekly&visible=someday');
 				await expect(
 					page
-						.locator('ix-toast')
+						.locator('[data-sonner-toast]')
 						.filter({ hasText: 'Weekly homework created.' })
 						.filter({ hasNotText: 'Students' })
 				).toBeVisible();
@@ -1778,7 +1778,9 @@ test.describe('syllabus and class members', () => {
 				await expect(page).toHaveURL(new RegExp(`${syllabusList()}$`));
 				await expect(toast(page, `Syllabus ${formatSchoolYear(year)} deleted.`)).toBeVisible();
 				await expect(
-					page.locator('ix-toast').getByText(`Syllabus ${formatSchoolYear(year)} deleted.`)
+					page
+						.locator('[data-sonner-toast]')
+						.getByText(`Syllabus ${formatSchoolYear(year)} deleted.`)
 				).toHaveCount(1);
 				expect(deletes).toHaveLength(1);
 				await expect(page.getByTestId('syllabus-row')).toHaveCount(0);
@@ -1984,7 +1986,7 @@ test.describe('syllabus and class members', () => {
 /**
  * Story 9: the admin pages (dashboard, classes, teams, parents) on the new
  * UI. Rows are cards below 80em and a full table with the side nav from
- * 80em; no iX inside `main`; every row action is reachable; the fit check
+ * 80em; every row action is reachable; the fit check
  * (no sideways scroll, ≥44px targets, no cut labels) at 375, 820 and
  * 1440px in en, de and bo. A class and a team without members
  * are made here, to be edited and deleted.
@@ -2007,16 +2009,6 @@ test.describe('admin pages', () => {
 			}
 		});
 		return posts;
-	}
-
-	/** The `ix-*` elements inside `main` (none on a migrated page). */
-	async function ixInMain(page: Page) {
-		return page.evaluate(
-			() =>
-				[...document.querySelectorAll('main *')].filter((el) =>
-					el.tagName.toLowerCase().startsWith('ix-')
-				).length
-		);
 	}
 
 	async function makeClass(name: string) {
@@ -2047,14 +2039,13 @@ test.describe('admin pages', () => {
 	}
 
 	for (const viewport of [...VIEWPORTS, DESKTOP]) {
-		test(`admin pages at ${viewport.width}px: ${viewport === DESKTOP ? 'tables and side nav' : 'cards'}, no iX, everything fits`, async ({
+		test(`admin pages at ${viewport.width}px: ${viewport === DESKTOP ? 'tables and side nav' : 'cards'}, everything fits`, async ({
 			browser
 		}) => {
 			const page = await teacherPage(browser, viewport.width, viewport.height, admin);
 			try {
 				for (const path of ADMIN_PAGES) {
 					await openPage(page, path);
-					expect(await ixInMain(page), path).toBe(0);
 					await expect(page.getByTestId('side-nav')).toBeVisible({
 						visible: viewport === DESKTOP
 					});

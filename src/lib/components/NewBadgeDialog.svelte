@@ -136,7 +136,7 @@
 
 	/**
 	 * Close or Escape: every way out marks the badges seen. A tap outside
-	 * does nothing (as iX's modal), so a stray tap cannot dismiss it.
+	 * does nothing, so a stray tap cannot dismiss it.
 	 */
 	function onOpenChange(next: boolean) {
 		if (!next) markSeen();

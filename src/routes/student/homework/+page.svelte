@@ -6,7 +6,7 @@
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import { num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';

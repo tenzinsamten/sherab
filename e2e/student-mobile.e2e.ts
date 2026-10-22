@@ -435,7 +435,7 @@ async function expectTouchSize(locator: ReturnType<Page['locator']>) {
 }
 
 const toast = (page: Page, text: string | RegExp) =>
-	page.locator('ix-toast').getByText(text).first();
+	page.locator('[data-sonner-toast]').getByText(text).first();
 const row = (page: Page | ReturnType<Page['locator']>, instance: string) =>
 	page.locator(`[data-testid="homework-row"][data-instance="${instance}"]`);
 const confirmDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Are you sure?' });
@@ -765,7 +765,7 @@ for (const viewport of VIEWPORTS) {
 	});
 }
 
-test('mark done error at 375px: the iX toast says it failed, the row stays open', async ({
+test('mark done error at 375px: the toast says it failed, the row stays open', async ({
 	browser
 }) => {
 	const page = await studentPage(browser, 375, 740);

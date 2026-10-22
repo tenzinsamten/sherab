@@ -17,7 +17,7 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDay as formatIsoDay, num } from '$lib/format';
-	import { showToast } from '$lib/ix';
+	import { showToast } from '$lib/toast';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { eventDomClass, toCalendarEvents, type CalendarEventProps } from '$lib/calendar-events';

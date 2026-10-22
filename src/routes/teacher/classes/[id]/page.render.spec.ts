@@ -82,7 +82,7 @@ describe('teacher class page (+page.svelte)', () => {
 		expect(row(body, 's1')).not.toContain('data-testid="leave-badge"');
 	});
 
-	it('renders the page in its new-UI root, EnrollmentPanel last inside it, with no iX', () => {
+	it('renders the page in its new-UI root, EnrollmentPanel last inside it', () => {
 		const body = renderPage();
 		const root = body.indexOf('data-ui="new"');
 		const panel = body.indexOf('data-testid="member-list"');
@@ -91,7 +91,6 @@ describe('teacher class page (+page.svelte)', () => {
 		expect(panel).toBeGreaterThan(body.indexOf('data-tour="class-skills"'));
 		// Inside the root: the panel comes before the root's own closing tag.
 		expect(panel).toBeLessThan(closingTag(body, body.lastIndexOf('<div', root)));
-		expect(body).not.toMatch(/<ix-/);
 	});
 
 	it('without a markable session: the hint, and no save target for the tour', () => {

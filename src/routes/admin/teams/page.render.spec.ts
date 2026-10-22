@@ -32,10 +32,9 @@ const row = (body: string, id: string) =>
 	body.match(new RegExp(`<tr[^>]*data-team-id="${id}"[\\s\\S]*?</tr>`))?.[0] ?? '';
 
 describe('admin teams (+page.svelte)', () => {
-	it('renders the new-UI root with the create form and no iX', () => {
+	it('renders the new-UI root with the create form', () => {
 		const body = renderPage([team('a')]);
 		expect(body).toContain('data-ui="new"');
-		expect(body).not.toMatch(/<ix-/);
 		expect(body).toMatch(/<input[^>]*id="name"[^>]*name="name"/);
 		expect(body).toMatch(/<input[^>]*id="name-bo"[^>]*name="nameBo"/);
 		expect(body).toContain(m.teams_create_submit());

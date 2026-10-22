@@ -91,6 +91,18 @@
 
 	const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+	/**
+	 * Resolves once the page's `data-ui="new"` root is marked hydrated, or
+	 * after 3 s (a page without the mark), or when a newer attempt began.
+	 */
+	async function pageHydrated(mine: number) {
+		for (let waited = 0; waited < 3000; waited += 50) {
+			if (mine !== attempt) return;
+			if (document.querySelector('main > [data-ui="new"]')?.hasAttribute('data-hydrated')) return;
+			await wait(50);
+		}
+	}
+
 	/** driver.js sets title and text as HTML. */
 	function escapeHtml(text: string): string {
 		return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -190,24 +202,22 @@
 		const tour = pageTour();
 		if (!tour || hasSeen(tour.id)) return;
 
-		// The page's iX components draw themselves after they are defined;
-		// until then the controls have no final size or place.
-		await Promise.race([customElements.whenDefined('ix-button'), wait(3000)]);
+		// The page's controls have their final size and place once its root
+		// is hydrated (every toured page marks its `data-ui="new"` root).
+		await pageHydrated(mine);
 		for (let tries = 0; tries < 8; tries += 1) {
 			await wait(350);
 			if (mine !== attempt) return;
 			if (stepsOnPage(tour).length > 0) break;
 		}
 		if (mine !== attempt || hasSeen(tour.id)) return;
-		// Not over Help, a dialog or a menu the person opened in the meantime.
-		// The pages' dialogs are <ix-modal>, whose <dialog> is in its shadow
-		// DOM; the shell's popups (More sheet, avatar and language menus) are
-		// in the portal root.
-		const modalOpen = [...document.querySelectorAll('ix-modal')].some((modal) =>
-			modal.shadowRoot?.querySelector('dialog[open]')
-		);
-		const popupOpen = document.querySelector(`${PORTAL_TARGET} [data-state="open"]`) !== null;
-		if (helpOpen || modalOpen || popupOpen) return;
+		// Not over Help, a dialog or a menu the person opened in the meantime:
+		// the shell's and the pages' popups (sheets, dialogs, menus) are in the
+		// portal root; a native or other dialog anywhere counts too.
+		const popupOpen =
+			document.querySelector(`${PORTAL_TARGET} [data-state="open"]`) !== null ||
+			document.querySelector('dialog[open], [role="dialog"], [role="alertdialog"]') !== null;
+		if (helpOpen || popupOpen) return;
 		await run(tour, mine);
 	}
 
@@ -217,8 +227,8 @@
 		void autoStart(attempt);
 	});
 
-	// The highlight follows the control when the page scrolls inside iX's
-	// content area (driver.js itself only listens to the window).
+	// The highlight follows the control when the page scrolls inside a
+	// scrolling container (driver.js itself only listens to the window).
 	let following = 0;
 	function follow() {
 		if (following || !active) return;
@@ -259,65 +269,65 @@
 </script>
 
 <style>
-	/* driver.js popover in the iX theme. */
+	/* driver.js popover in the Sherab theme (src/lib/ui/tailwind.css tokens). */
 	:global(.driver-popover.sherab-tour) {
 		--driver-popover-font-family: inherit;
 		max-width: min(20rem, calc(100vw - 1.5rem));
 		min-width: min(15rem, calc(100vw - 1.5rem));
-		padding: var(--space-4);
-		border: 1px solid var(--theme-color-soft-bdr);
-		border-radius: var(--theme-default-border-radius);
-		background-color: var(--theme-color-1, #fff);
-		color: var(--theme-color-std-text);
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background-color: var(--popover);
+		color: var(--popover-foreground);
 		font-family: inherit;
 	}
 	:global(.sherab-tour .driver-popover-title) {
-		padding-inline-end: var(--space-6);
-		font-size: var(--theme-font-size-l, 1rem);
+		padding-inline-end: 1.5rem;
+		font-size: 1rem;
 		line-height: 1.35;
 	}
 	:global(.sherab-tour .driver-popover-description) {
-		font-size: var(--theme-font-size-default, 0.875rem);
+		font-size: 0.875rem;
 		line-height: 1.5;
 	}
 	:global(.sherab-tour .driver-popover-progress-text) {
-		color: var(--theme-color-soft-text);
-		font-size: var(--theme-font-size-default, 0.875rem);
+		color: var(--muted-foreground);
+		font-size: 0.875rem;
 	}
 	:global(.sherab-tour .driver-popover-footer) {
 		flex-wrap: wrap;
-		gap: var(--space-2);
+		gap: 0.5rem;
 	}
 	:global(.sherab-tour .driver-popover-close-btn) {
 		width: 2.5rem;
 		height: 2.5rem;
-		color: var(--theme-color-soft-text);
+		color: var(--muted-foreground);
 		font-size: 1.375rem;
 	}
 	:global(.sherab-tour .driver-popover-close-btn:hover),
 	:global(.sherab-tour .driver-popover-close-btn:focus-visible) {
-		color: var(--theme-color-std-text);
+		color: var(--popover-foreground);
 	}
 	:global(.sherab-tour .driver-popover-footer-btn) {
 		min-height: 2rem;
-		padding: var(--space-1) var(--space-3);
-		border: 1px solid var(--theme-color-primary);
-		border-radius: var(--theme-default-border-radius);
+		padding: 0.25rem 0.75rem;
+		border: 1px solid var(--primary);
+		border-radius: var(--radius);
 		background-color: transparent;
-		color: var(--theme-color-primary);
-		font-size: var(--theme-font-size-default, 0.875rem);
+		color: var(--primary);
+		font-size: 0.875rem;
 		line-height: 1.4;
 		text-shadow: none;
 	}
 	:global(.sherab-tour .driver-popover-footer-btn:hover) {
-		background-color: var(--theme-color-ghost-primary--hover);
+		background-color: var(--accent);
 	}
 	:global(.sherab-tour .driver-popover-next-btn) {
-		background-color: var(--theme-color-primary);
-		color: var(--theme-color-primary--contrast);
+		background-color: var(--primary);
+		color: var(--primary-foreground);
 	}
 	:global(.sherab-tour .driver-popover-next-btn:hover) {
-		background-color: var(--theme-color-primary--hover);
+		background-color: color-mix(in oklab, var(--primary) 80%, transparent);
 	}
 	:global(.sherab-tour .sherab-tour-skip) {
 		border-color: transparent;
@@ -326,11 +336,11 @@
 		display: none;
 	}
 	:global(.sherab-tour button:focus-visible) {
-		outline: 2px solid var(--theme-color-focus-bdr, var(--theme-color-primary));
+		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
 	:global(.sherab-tour .driver-popover-arrow) {
-		border-color: var(--theme-color-1, #fff);
+		border-color: var(--popover);
 	}
 	:global(.sherab-tour .driver-popover-arrow-side-left) {
 		border-block-color: transparent;

@@ -420,7 +420,9 @@ for (const viewport of VIEWPORTS) {
 
 				await save.click();
 				await expect(sheet).toHaveCount(0);
-				await expect(page.locator('ix-toast')).toContainText('Leave period saved. Changed: 1');
+				await expect(page.locator('[data-sonner-toast]')).toContainText(
+					'Leave period saved. Changed: 1'
+				);
 				expect(await latestAnswer(offset)).toMatchObject({ answer: 'on_leave' });
 				await expect(sessionRow(page, offset)).toContainText('On leave ·');
 				// Focus is back on the Preview button.
@@ -532,7 +534,7 @@ for (const viewport of VIEWPORTS) {
 			await expectFits(page);
 
 			await coming.click();
-			await expect(page.locator('ix-toast')).toContainText('Answer saved.');
+			await expect(page.locator('[data-sonner-toast]')).toContainText('Answer saved.');
 			await expect(row).toContainText('Coming');
 			expect(await latestAnswer(22, child)).toMatchObject({ answer: 'coming' });
 
@@ -554,7 +556,7 @@ for (const viewport of VIEWPORTS) {
 	});
 }
 
-test('session answer error at 820px: the iX toast says it was not saved', async ({ browser }) => {
+test('session answer error at 820px: the toast says it was not saved', async ({ browser }) => {
 	const page = await parentPage(browser, 820, 1180);
 	try {
 		await open(page, childPath(childA, 'sessions'));
@@ -564,8 +566,8 @@ test('session answer error at 820px: the iX toast says it was not saved', async 
 			.locator('form:has(button:text-is("Coming")) input[name="sessionId"]')
 			.evaluate((input: HTMLInputElement, id) => (input.value = id), crypto.randomUUID());
 		await row.getByRole('button', { name: 'Coming' }).click();
-		await expect(page.locator('ix-toast')).toBeVisible();
-		await expect(page.locator('ix-toast')).not.toContainText('Answer saved.');
+		await expect(page.locator('[data-sonner-toast]')).toBeVisible();
+		await expect(page.locator('[data-sonner-toast]')).not.toContainText('Answer saved.');
 		expect(await latestAnswer(29)).toBeNull();
 	} finally {
 		await page.context().close();
@@ -601,7 +603,7 @@ for (const viewport of VIEWPORTS) {
 			await expect(confirm).toBeVisible();
 			await confirm.getByRole('button', { name: 'Request deletion' }).click();
 			await expect(confirm).toHaveCount(0);
-			await expect(page.locator('ix-toast')).toContainText('Deletion requested');
+			await expect(page.locator('[data-sonner-toast]')).toContainText('Deletion requested');
 			await expect.poll(requests).toEqual([{ status: 'pending' }]);
 			await expect(request).toHaveCount(0);
 			// Focus moves to the pending status that replaced the button.

@@ -7,7 +7,7 @@
 	 * A parent's child picker (#58, #59): pill links, one per option, the
 	 * current one marked. Each `href` is already resolve()d by the caller.
 	 * Its own `data-ui="new"` root (mobile-first story 3), so it also works
-	 * on the calendar, which is still iX.
+	 * on the calendar.
 	 */
 	let { label, options }: { label: string; options: ChildPickerOption[] } = $props();
 </script>

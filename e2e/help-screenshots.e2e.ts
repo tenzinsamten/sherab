@@ -252,15 +252,9 @@ test.afterAll(async () => {
 async function open(page: Page, locale: string, path: string) {
 	// A /<locale>/... address sets the language cookie and redirects (#79).
 	await page.goto(`/${locale}${path}`);
-	// A migrated page (mobile-first stories 3-6b, the signed-out pages
-	// included): its new-UI root is hydrated. A page still on iX (no such
-	// root): iX has loaded.
-	await page.waitForFunction(() => {
-		const root = document.querySelector('main > [data-ui="new"]');
-		return root
-			? root.hasAttribute('data-hydrated')
-			: customElements.get('ix-button') !== undefined;
-	});
+	// Every page (the signed-out ones included) marks its new-UI root
+	// hydrated once mounted.
+	await page.waitForSelector('main > [data-ui="new"][data-hydrated]');
 	await page.waitForLoadState('networkidle');
 	await page.evaluate(() => document.fonts.ready);
 }

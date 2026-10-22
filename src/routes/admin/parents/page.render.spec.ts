@@ -56,7 +56,6 @@ describe('admin parents (+page.svelte)', () => {
 			pendingCount: 1
 		});
 		expect(body).toContain('data-ui="new"');
-		expect(body).not.toMatch(/<ix-/);
 		expect(row(body, 'Parent a')).toContain(m.parents_status_approved());
 		expect(row(body, 'Parent a')).not.toContain(m.requests_email_unconfirmed());
 		expect(row(body, 'Parent r')).toContain(m.parents_status_rejected());
@@ -105,7 +104,6 @@ describe('admin parents (+page.svelte)', () => {
 		expect(alert?.[1].trim()).toBe(m.parents_load_error());
 		expect(body).not.toContain('<table');
 		expect(body).not.toContain('data-testid="page-counter"');
-		expect(body).not.toMatch(/<ix-/);
 	});
 
 	it('shows the empty state when there is no parent', () => {

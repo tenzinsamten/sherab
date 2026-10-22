@@ -1,19 +1,20 @@
-/* Mobile-first redesign (spec-mobile-ux, story 1): Tailwind CSS v4 and the
-   shadcn-svelte theme for the new components, living next to Siemens iX
-   until every page is migrated.
+/* Mobile-first redesign (spec-mobile-ux): Tailwind CSS v4 and the
+   shadcn-svelte theme. Built to live next to Siemens iX while pages moved
+   over; iX is gone since story 10 and every page has its own new-UI root,
+   but the isolation below stays for now (unwinding it touches every root;
+   deferred-work.md).
 
-   Coexistence rules:
+   Rules:
    - No global preflight. Tailwind's reset is scoped to `[data-ui='new']`
-     (reset.css), so iX pages render exactly as before.
-   - Utilities are `!important`. iX's CSS and src/app.css are unlayered, and
-     unlayered element rules (`a { color }`, `h2 { font-size }`) beat anything
-     in `@layer utilities`; `important` makes the utilities win, and touches
-     only markup that uses them. Layering the legacy CSS instead would let
-     every page's scoped Svelte styles beat app.css rules they lose to today.
-   - Class names are only collected from the new component system (the
-     `@source` lines below), never from the iX pages: legacy markup uses names
-     that are also utilities (e.g. `block`), which as `!important` utilities
-     would restyle iX pages. A page migrated off iX adds its folder here.
+     (reset.css).
+   - Utilities are `!important`. src/app.css and the libraries' CSS are
+     unlayered, and unlayered element rules beat anything in
+     `@layer utilities`; `important` makes the utilities win, and touches
+     only markup that uses them.
+   - Class names are only collected from the folders and files in the
+     `@source` lines below (each story added the pages it migrated), so
+     server code stays out and words in it never
+     become utilities. A new page or component adds its path here.
    - Light theme only, like the rest of the app. */
 
 @layer theme, utilities;
@@ -92,7 +93,7 @@
 @source '../components/ContentLanguageSelect.svelte';
 @source '../components/RichTextEditor.svelte';
 /* Story 8: the syllabus and class-member components (also on the admin
-   syllabus and students pages, still iX) and the teacher's syllabus pages. */
+   syllabus and students pages) and the teacher's syllabus pages. */
 @source '../components/SyllabusList.svelte';
 @source '../components/SyllabusForm.svelte';
 @source '../components/SyllabusDetail.svelte';
@@ -108,8 +109,8 @@
 @source '../components/LocalizedNameFields.svelte';
 @source '../components/BadgeSubjectSelect.svelte';
 
-/* Sherab theme, mapped from today's iX classic light theme and the Sherab
-   overrides in src/app.css (primary blue, navy frame, 0.25rem radius). */
+/* Sherab theme, mapped from the iX classic light theme and the Sherab
+   overrides src/app.css held until story 10 (primary blue, navy frame, 0.25rem radius). */
 :root {
 	/* iX's system font stack (iX names `Siemens Sans` first but ships no face
 	   for it, so users see system-ui). */

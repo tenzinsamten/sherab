@@ -8,8 +8,7 @@
 
 	/**
 	 * Previous / Page n of m / Next. `hrefFor` returns an already resolve()d
-	 * href. Its own `data-ui="new"` root (mobile-first story 3), so it also
-	 * works on pages that are still iX. At either end the button is disabled
+	 * href. Its own `data-ui="new"` root (mobile-first story 3). At either end the button is disabled
 	 * (a `<button>`, no link).
 	 */
 	let {

@@ -1,30 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Mobile-first redesign, story 1: screenshot baselines of the iX pages,
- * taken on the code before Tailwind and shadcn-svelte were added. Every
- * later foundation change must leave these pixel-identical (the new CSS
- * must not leak into iX pages).
+ * Screenshot baselines of the sign-in card (`[data-auth-card]`) at phone and
+ * desktop width. Baselines are platform-specific (darwin).
  *
- * Story 2 (new app shell): each image is the page content only -- the
- * `.page` element (`[data-auth-card]` signed out) -- not the viewport, so the
- * shell around it (header, navigation) is not part of the proof and can be
- * replaced. Text that depends on the database or the run (counters, lists)
- * is masked. Baselines are platform-specific (darwin).
- *
- * Story 3 (parent pages): the parent dashboard is no longer an iX page, so
- * its shots are gone; the parent pages have their own checks in
- * parent-mobile.e2e.ts.
- *
- * Story 6 (auth pages): the login shots are of the new-UI card
- * (`[data-auth-card]`), re-baselined on the new UI.
- *
- * Story 7 (teacher class pages): the teacher dashboard is no longer an iX
- * page, so its shots are gone; it has its own checks in teacher-mobile.e2e.ts.
- *
- * Story 9 (admin pages): the admin classes page is no longer an iX page, so
- * its shots are gone too; the admin pages have their own checks in
- * teacher-mobile.e2e.ts ("admin pages"). Only the login shots are left.
+ * History: this was ix-visual.e2e.ts, the pixel proof (mobile-first story 1)
+ * that the new CSS did not leak into the iX pages while they coexisted. Each
+ * migrated page lost its shots to its own checks; the login card (story 6)
+ * was re-baselined on the new UI and is all that is left. Story 10 removed
+ * iX and renamed the file.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -38,12 +22,12 @@ const VIEWPORTS = [
 	{ name: 'desktop', width: 1440, height: 900 }
 ] as const;
 
-/** Wait until iX has upgraded, the network is quiet and fonts are drawn. */
+/** Wait until the page root is hydrated, the network is quiet and fonts are drawn. */
 async function settle(page: Page) {
-	await page.waitForFunction(() => customElements.get('ix-button') !== undefined);
+	await page.waitForSelector('main > [data-ui="new"][data-hydrated]');
 	await page.waitForLoadState('networkidle');
 	await page.evaluate(() => document.fonts.ready.then(() => undefined));
-	// iX lays out its header and menu after upgrade (resize observers).
+	// Layout settles after hydration (resize observers).
 	await page.waitForTimeout(500);
 }
 

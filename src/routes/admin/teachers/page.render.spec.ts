@@ -51,10 +51,9 @@ const row = (body: string, id: string) =>
 	body.match(new RegExp(`<tr[^>]*data-teacher-id="${id}"[\\s\\S]*?</tr>`))?.[0] ?? '';
 
 describe('admin teachers (+page.svelte)', () => {
-	it('renders the new-UI root with the native create form and no iX', () => {
+	it('renders the new-UI root with the native create form', () => {
 		const body = renderPage({ teachers: [teacher('a')] });
 		expect(body).toContain('data-ui="new"');
-		expect(body).not.toMatch(/<ix-/);
 		expect(body).toContain('data-testid="page-counter"');
 		expect(body).toMatch(/<form[^>]*action="\?\/create"/);
 		expect(body).toMatch(/<input[^>]*type="email"[^>]*id="email"[^>]*name="email"[^>]*required/);

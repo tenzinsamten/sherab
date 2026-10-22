@@ -2,24 +2,23 @@ import type { SubmitFunction } from '@sveltejs/kit';
 
 /**
  * Tracks which form submission on a page is in flight, so the button that
- * started it can show iX's `loading` spinner and every action button can be
+ * started it can show a loading spinner and every action button can be
  * disabled until the server answers (no double creates or deletes).
  *
  *   const pending = createPending();
  *   <form use:enhance={pending.submit('create')}>
- *   <ix-button loading={pending.is('create') || undefined} disabled={pending.busy || undefined}>
+ *   <Button type="submit" disabled={pending.busy} aria-busy={pending.is('create') || undefined}>
  *
  * `key` may be a function for shared hidden forms (e.g. one delete form for
  * every row); it is read at submit time, after the row's target is set.
  * `{ reset: false }` keeps the form's fields after a successful submit (for
  * forms whose values come back from the reloaded page data, like checkboxes,
  * which a reset would return to their server-rendered state).
- * The reset only clears native fields: iX fields (<ix-input>, <ix-select>,
- * ...) have no formResetCallback and ignore it, so forms that must clear
- * them remount with {#key} after a success (the create form's ScheduleFields
- * in admin/classes/+page.svelte).
+ * The reset only clears a field to its server-rendered default, so forms
+ * whose defaults come from props remount with {#key} after a success (the
+ * create form's ScheduleFields in admin/classes/+page.svelte).
  * `confirm` (#91) asks before posting, for a press that cannot be undone:
- * the form is only submitted when it resolves true (see confirmWith in ix.ts).
+ * the form is only submitted when it resolves true (see `with` in confirm.svelte.ts).
  */
 export function createPending() {
 	let current = $state<string | null>(null);

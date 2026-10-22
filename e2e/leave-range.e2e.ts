@@ -245,7 +245,9 @@ test('a two-week leave for one class: preview counts, save, the Sessions list sh
 
 	await modal(page).getByRole('button', { name: 'Save' }).click();
 	await expect(modal(page)).toHaveCount(0);
-	await expect(page.locator('ix-toast')).toContainText('Changed: 3 · Unchanged or skipped: 0');
+	await expect(page.locator('[data-sonner-toast]')).toContainText(
+		'Changed: 3 · Unchanged or skipped: 0'
+	);
 
 	expect(await latestAnswers()).toEqual([
 		{ answer: 'on_leave', classification: 'short_notice' },

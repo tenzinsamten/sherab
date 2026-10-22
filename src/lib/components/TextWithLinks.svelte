@@ -8,8 +8,7 @@
 	 * or `empty` when there are none and the caller has no content either. The
 	 * content itself is rich text, drawn by RichText.svelte (#72, #75). Each
 	 * opens in a new tab, marked with an external-link icon. Its own
-	 * `data-ui="new"` root (mobile-first story 4), so it also works on pages
-	 * that are still iX.
+	 * `data-ui="new"` root (mobile-first story 4).
 	 */
 	let { links, empty = '' }: { links: HomeworkReferenceLink[]; empty?: string } = $props();
 </script>

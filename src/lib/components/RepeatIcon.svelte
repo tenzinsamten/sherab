@@ -6,7 +6,7 @@
 	 * shared by the teacher and student homework views. Since the
 	 * mobile-first redesign (story 4) it is the `@lucide/svelte` icon, no
 	 * longer a copied path; a bare inline icon, so it needs no
-	 * `data-ui="new"` root and sits as before inside an iX pill.
+	 * `data-ui="new"` root and sits inside a pill.
 	 */
 	let { size = 14 }: { size?: number } = $props();
 </script>
