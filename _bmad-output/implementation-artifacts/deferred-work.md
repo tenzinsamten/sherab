@@ -521,3 +521,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-110-homework-pdf-attachments.md`
   summary: A PIN reset no longer ends the student's open session at once (#112); the "Reset PIN" browser test fails on main.
   evidence: `e2e/teacher.e2e.ts:1291` fails on a477766 after a reset (student stays on /student); likely from local JWT verification with getClaims (#104 story 1).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-113-join-class-in-classes-tab.md`
+  summary: The student Classes page counts to-do homework against a UTC "today" while the Dashboard uses Berlin's date.
+  evidence: Review 2026-10-23 (B11): `src/routes/student/classes/+page.server.ts` uses `new Date().toISOString().slice(0, 10)`; `/student` uses `todayInBerlin()`, so counts can differ around midnight. Pre-existing.

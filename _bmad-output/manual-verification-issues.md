@@ -2620,3 +2620,23 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   mobile-first merge. Open for planning: whether a PIN reset (and other revocations) must end
   open sessions at once, and how (server-side check on sensitive requests, shorter token
   lifetime, or accept the delay and change the test).
+
+- 2026-10-23: #113 built on `feat/113-enroll-in-classes-tab`, to verify, not committed (spec
+  `implementation-artifacts/spec-113-join-class-in-classes-tab.md`). Asked (user, 2026-10-23):
+  "currently enrolling for another class is at dashboard. it should be in the class tab".
+  Decided: the Dashboard keeps nothing of the card. Built: the "Join another class" card
+  (#67) moved unchanged into `src/lib/components/JoinClassCard.svelte` and is shown on the
+  Classes tab (`/student/classes`) below the class cards, and with the empty state; the
+  `my_class_join_requests` read and the `requestJoin` / `dismissJoin` actions moved from
+  `src/routes/student/+page.server.ts` to `src/routes/student/classes/+page.server.ts`. No
+  database change. Help texts `help_student_7_body` and `help_faq_9_a` name the Classes tab in
+  en, de and bo (Tibetan is the assistant's draft, not reviewed). The help screenshot
+  `student-7` (Classes tab) now includes the card and may need regenerating. To verify: on a
+  phone, send a code from the Classes tab, see it Pending below the classes, dismiss a
+  rejected request, and check the Dashboard no longer shows the card.
+
+- 2026-10-23: #113 reviewed (blind, edge-case, verification-gap): 4 patches, 1 deferred (Classes
+  page uses a UTC "today"), 10 rejected. Verified after a reset: 1667 unit tests, check and
+  build exit 0; class-join, student-mobile and credentials browser tests 34/34. Tibetan texts
+  are the assistant's draft, not reviewed. To verify: as a student, send a class code from
+  “My classes” on a phone and on a wide screen; the Dashboard has no join card.
