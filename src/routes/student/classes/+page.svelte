@@ -5,16 +5,18 @@
 	import { resolve } from '$app/paths';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
+	import JoinClassCard from '$lib/components/JoinClassCard.svelte';
 	import { num } from '$lib/format';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ui } from '$lib/ui/classes';
-	import type { PageProps } from './$types';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
 	 * My classes, mobile-first story 4: one card per class (whole card a
-	 * link), stacked on a phone, a grid from 48em.
+	 * link), stacked on a phone, a grid from 48em. #113: the "Join another
+	 * class" card follows the classes (or the empty state), whatever loaded.
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	let hydrated = $state(false);
 	onMount(() => {
@@ -69,4 +71,6 @@
 			{/each}
 		</ul>
 	{/if}
+
+	<JoinClassCard {form} joinRequests={data.joinRequests} joinLoadError={data.joinLoadError} />
 </div>

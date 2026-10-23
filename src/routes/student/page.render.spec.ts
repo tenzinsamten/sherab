@@ -23,8 +23,6 @@ describe('student dashboard (+page.svelte)', () => {
 					progressLoadError: false,
 					nextDue: [],
 					classes: [],
-					joinRequests: [],
-					joinLoadError: false,
 					loadError: true
 				}
 			} as never

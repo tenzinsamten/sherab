@@ -2,12 +2,12 @@ import { expect, test, type Page } from '@playwright/test';
 import { fixtureTeam, navLink, service, signIn, type TestUser } from './fixtures';
 
 /**
- * B12a (#67): on their dashboard an approved student sends another class's
+ * B12a (#67): on their Classes tab (#113) an approved student sends another class's
  * code and sees the request as Pending; a rejected request (set here with
  * the service role) shows as Rejected and can be dismissed.
  * B12b (#67): the class's teacher sees the request on /requests and in the
  * nav count, approves it (the class appears in the student's My classes)
- * and rejects another (the dashboard shows Rejected); a teacher of the
+ * and rejects another (the Classes tab shows Rejected); a teacher of the
  * class who is the student's parent sees the row without buttons.
  * #98: the public form /join refuses a second account for the approved
  * student's name and parent email with another class's code, and points to
@@ -182,9 +182,12 @@ test.afterAll(async () => {
 	await cleanup();
 });
 
-/** The dashboard, once its new-UI root is hydrated (mobile-first story 4). */
-async function openDashboard(page: Page) {
-	await page.goto('/student');
+/**
+ * The Classes tab (#113: the join card moved there from the dashboard), once
+ * its new-UI root is hydrated (mobile-first story 4).
+ */
+async function openClasses(page: Page) {
+	await page.goto('/student/classes');
 	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
 	await page.waitForLoadState('networkidle');
 }
@@ -201,9 +204,17 @@ async function sendCode(page: Page, code: string) {
 	await joinCard(page).getByRole('button', { name: 'Send request' }).click();
 }
 
+test('the dashboard has no join card (#113)', async ({ page }) => {
+	await signIn(page, student);
+	await page.goto('/student');
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+	await expect(page.getByTestId('dashboard-tiles')).toBeVisible();
+	await expect(joinCard(page)).toHaveCount(0);
+});
+
 test('a student sends a class code and sees the request as Pending', async ({ page }) => {
 	await signIn(page, student);
-	await openDashboard(page);
+	await openClasses(page);
 
 	// An unknown code: refused under the field, nothing listed.
 	await sendCode(page, 'zzzzzzzz');
@@ -250,7 +261,7 @@ test('a rejected request shows as Rejected and can be dismissed', async ({ page 
 	);
 
 	await signIn(page, student);
-	await openDashboard(page);
+	await openClasses(page);
 
 	const card = joinCard(page);
 	const rejected = card.locator('li', { hasText: rejectName });
@@ -361,18 +372,21 @@ test('the class teacher approves a request; the class appears in My classes', as
 	try {
 		await signIn(studentPage, student);
 		await studentPage.goto('/student/classes');
-		await expect(studentPage.getByText(targetName).first()).toBeVisible();
+		await expect(studentPage.getByTestId('class-cards').getByText(targetName)).toBeVisible();
+		await expect(
+			studentPage.getByTestId('join-card').locator('li', { hasText: targetName })
+		).toHaveCount(0);
 	} finally {
 		await context.close();
 	}
 });
 
-test("the class teacher rejects a request; the student's dashboard shows Rejected", async ({
+test("the class teacher rejects a request; the student's Classes tab shows Rejected", async ({
 	page,
 	browser
 }) => {
 	await signIn(page, student);
-	await openDashboard(page);
+	await openClasses(page);
 	await sendCode(page, classes.second.code);
 	const card = joinCard(page);
 	await expect(card.locator('li', { hasText: secondName }).getByTestId('join-status')).toHaveText(
@@ -396,7 +410,7 @@ test("the class teacher rejects a request; the student's dashboard shows Rejecte
 		await context.close();
 	}
 
-	await openDashboard(page);
+	await openClasses(page);
 	await expect(card.locator('li', { hasText: secondName }).getByTestId('join-status')).toHaveText(
 		'Rejected'
 	);
@@ -454,7 +468,7 @@ test('/join with an approved student\'s name, parent email and another class\'s 
 		page
 			.locator('[data-sonner-toast]')
 			.getByText(
-				'This parent already has a student account with this name. Sign in with that account and use “Join another class” to add this class.'
+				'This parent already has a student account with this name. Sign in with that account and use “Join another class” in “My classes” to add this class.'
 			)
 	).toBeVisible();
 	await expect(page).toHaveURL(/\/join$/);

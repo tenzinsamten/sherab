@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { todayInBerlin } from '$lib/berlin-date';
-import { actions, load } from './+page.server';
+import { load } from './+page.server';
 
 /**
  * Student dashboard load (#46), with a mocked `locals.supabase`: one queued
@@ -87,33 +87,10 @@ const leaderboard: Result = {
 
 const counts: Result = { data: [{ open_count: 1, overdue_count: 0 }], error: null };
 
-const joinRequests: Result = {
-	data: [
-		{
-			id: 'r2',
-			class_id: 'c3',
-			class_name: 'Dancers',
-			status: 'pending',
-			requested_at: '2026-09-29T10:00:00Z',
-			reviewed_at: null
-		},
-		{
-			id: 'r1',
-			class_id: 'c2',
-			class_name: 'Singers',
-			status: 'rejected',
-			requested_at: '2026-09-28T10:00:00Z',
-			reviewed_at: '2026-09-28T12:00:00Z'
-		}
-	],
-	error: null
-};
-
 function run(
 	tables: Record<string, Result>,
 	rpc: Result = leaderboard,
 	countsResult: Result = counts,
-	joinResult: Result = joinRequests,
 	progressResult: Result = { data: [], error: null }
 ) {
 	const calls: { name: string; args: unknown }[] = [];
@@ -122,7 +99,6 @@ function run(
 		rpc: async (name: string, args?: unknown) => {
 			calls.push({ name, args });
 			if (name === 'homework_counts') return countsResult;
-			if (name === 'my_class_join_requests') return joinResult;
 			if (name === 'badge_progress') return progressResult;
 			return rpc;
 		}
@@ -165,23 +141,11 @@ describe('student dashboard load', () => {
 		});
 	});
 
-	it('lists the pending and rejected join requests in the order the database gives (#67)', async () => {
+	it('#113: no longer reads the join requests (the card is on the Classes tab)', async () => {
 		const result = await run(base);
-		expect(result).toMatchObject({
-			joinRequests: [
-				{ id: 'r2', className: 'Dancers', status: 'pending' },
-				{ id: 'r1', className: 'Singers', status: 'rejected' }
-			],
-			joinLoadError: false
-		});
-	});
-
-	it('flags only the join card when my_class_join_requests() fails', async () => {
-		const result = await run(base, leaderboard, counts, {
-			data: null,
-			error: { message: 'boom' }
-		});
-		expect(result).toMatchObject({ joinRequests: [], joinLoadError: true, loadError: false });
+		expect(lastRpcCalls.map((c) => c.name)).not.toContain('my_class_join_requests');
+		expect(result).not.toHaveProperty('joinRequests');
+		expect(result).not.toHaveProperty('joinLoadError');
 	});
 
 	it('takes the To do and Overdue tiles from homework_counts() for the caller (Story 7-3)', async () => {
@@ -285,7 +249,7 @@ describe('student dashboard load', () => {
 	});
 
 	it('badge detail 3: loads badge_progress() for the caller and shapes it per subject', async () => {
-		const result = await run(base, leaderboard, counts, joinRequests, {
+		const result = await run(base, leaderboard, counts, {
 			data: [
 				{ subject: 'dance', badge_type: 'attendance', total: 7, next_milestone: 10 },
 				{ subject: 'dance', badge_type: 'homework', total: 0, next_milestone: 1 },
@@ -331,7 +295,6 @@ describe('student dashboard load', () => {
 			},
 			leaderboard,
 			counts,
-			joinRequests,
 			{ data: null, error: { message: 'boom' } }
 		);
 		expect(result).toMatchObject({
@@ -346,139 +309,5 @@ describe('student dashboard load', () => {
 		await expect(
 			run({ ...base, profiles: { data: { role: 'teacher', team_id: null }, error: null } })
 		).rejects.toMatchObject({ status: 303, location: '/' });
-	});
-});
-
-/**
- * #67: the "Join another class" actions, with a mocked `locals.supabase.rpc`.
- */
-describe('student dashboard join actions', () => {
-	type RpcResult = { data: unknown; error: { code?: string; hint?: string | null } | null };
-
-	function call(
-		action: 'requestJoin' | 'dismissJoin',
-		fields: Record<string, string>,
-		result: RpcResult = { data: 'Dancers', error: null },
-		user: { id: string } | null = { id: 's1' },
-		lookup: unknown[] = [{ id: 'c1', name: 'Dancers', name_bo: null, name_de: 'Tänzer' }]
-	) {
-		const calls: { name: string; args: unknown }[] = [];
-		const body = new FormData();
-		for (const [key, value] of Object.entries(fields)) body.set(key, value);
-		const event = {
-			request: new Request('http://localhost/student', { method: 'POST', body }),
-			locals: {
-				safeGetSession: async () => ({ session: user ? {} : null, user }),
-				supabase: {
-					rpc: async (name: string, args: unknown) => {
-						calls.push({ name, args });
-						// #76: the names in every language, for the confirmation.
-						if (name === 'validate_class_code') return { data: lookup, error: null };
-						return result;
-					}
-				}
-			}
-		};
-		const handler = actions[action] as (e: unknown) => Promise<unknown>;
-		return { calls, result: handler(event) };
-	}
-
-	it('sends the trimmed, upper-cased code and returns the class name', async () => {
-		const { calls, result } = call('requestJoin', { code: '  ab3cd9 ' });
-		expect(await result).toEqual({ joinSent: 'Dancers' });
-		expect(calls).toEqual([
-			{ name: 'request_class_join', args: { p_code: 'AB3CD9' } },
-			{ name: 'validate_class_code', args: { p_code: 'AB3CD9' } }
-		]);
-	});
-
-	it('falls back to the name request_class_join returned when the lookup finds nothing', async () => {
-		const { result } = call(
-			'requestJoin',
-			{ code: 'AB3CD9' },
-			{ data: 'Dancers', error: null },
-			{ id: 's1' },
-			[]
-		);
-		expect(await result).toEqual({ joinSent: 'Dancers' });
-	});
-
-	it('refuses an empty code without calling the database', async () => {
-		const { calls, result } = call('requestJoin', { code: '   ' });
-		expect(await result).toMatchObject({
-			status: 400,
-			data: { joinError: 'Enter a class code.', code: '' }
-		});
-		expect(calls).toEqual([]);
-	});
-
-	it('answers an overlong code like an unknown one, without calling the database', async () => {
-		const { calls, result } = call('requestJoin', { code: 'X'.repeat(40) });
-		expect(await result).toMatchObject({
-			status: 400,
-			data: { joinError: "That code doesn't open a class you can join. Check the code." }
-		});
-		expect(calls).toEqual([]);
-	});
-
-	it.each([
-		[
-			{ code: '22023', hint: 'join_code_invalid' },
-			"That code doesn't open a class you can join. Check the code."
-		],
-		[
-			{ code: '23505', hint: 'join_already_pending' },
-			"You've already requested this class. Wait for a decision."
-		],
-		[
-			{ code: '22023', hint: 'join_limit' },
-			'You have 3 requests waiting. Wait for a decision before sending another.'
-		],
-		[{ code: '42501', hint: null }, "You can't send join requests with this account."],
-		[{ code: 'XX000', hint: null }, 'Could not send the request. Please try again.']
-	])('maps a refusal %o to its message', async (error, message) => {
-		const { result } = call('requestJoin', { code: 'AB3CD9' }, { data: null, error });
-		expect(await result).toMatchObject({
-			status: 400,
-			data: { joinError: message, code: 'AB3CD9' }
-		});
-	});
-
-	it('dismisses a request by id', async () => {
-		const { calls, result } = call('dismissJoin', { id: 'r1' }, { data: null, error: null });
-		expect(await result).toEqual({ joinDismissed: true });
-		expect(calls).toEqual([{ name: 'dismiss_class_join', args: { p_request_id: 'r1' } }]);
-	});
-
-	it.each(['requestJoin', 'dismissJoin'] as const)(
-		'%s refuses a signed-out caller without calling the database',
-		async (action) => {
-			const { calls, result } = call(action, { code: 'AB3CD9', id: 'r1' }, undefined, null);
-			expect(await result).toMatchObject({ status: 401, data: { joinError: 'Not signed in.' } });
-			expect(calls).toEqual([]);
-		}
-	);
-
-	it('says why a request that is not rejected cannot be dismissed', async () => {
-		const { result } = call(
-			'dismissJoin',
-			{ id: 'r1' },
-			{ data: null, error: { code: '22023', hint: 'join_not_rejected' } }
-		);
-		expect(await result).toMatchObject({
-			status: 400,
-			data: { joinError: 'Only a rejected request can be dismissed.' }
-		});
-	});
-
-	it('reports a failed or id-less dismiss', async () => {
-		const failed = call('dismissJoin', { id: 'r1' }, { data: null, error: { code: '42501' } });
-		expect(await failed.result).toMatchObject({
-			status: 400,
-			data: { joinError: 'Could not dismiss the request. Please try again.' }
-		});
-		const missing = call('dismissJoin', {});
-		expect(await missing.result).toMatchObject({ status: 400 });
-		expect(missing.calls).toEqual([]);
 	});
 });

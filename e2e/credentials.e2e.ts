@@ -212,8 +212,8 @@ test('register: the screen shows the username and PIN once, and they sign the st
 
 	// A form post is stopped before its action runs: a plain form gets the
 	// redirect, an enhanced one (which asks for JSON) the same as data.
-	const post = await page.request.post('/student?/dismissJoin', {
-		form: { requestId: crypto.randomUUID() },
+	const post = await page.request.post('/student/classes?/dismissJoin', {
+		form: { id: crypto.randomUUID() },
 		headers: { origin: baseURL ?? '', accept: 'text/html' },
 		maxRedirects: 0
 	});

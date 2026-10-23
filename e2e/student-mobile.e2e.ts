@@ -445,7 +445,7 @@ for (const viewport of VIEWPORTS) {
 	const wide = viewport.width >= 768;
 
 	test.describe(`at ${viewport.width}px`, () => {
-		test(`dashboard (${viewport.name}): tiles in a grid, progress, next due, classes, join`, async ({
+		test(`dashboard (${viewport.name}): tiles in a grid, progress, next due, classes, no join card`, async ({
 			browser
 		}) => {
 			const page = await studentPage(browser, viewport.width, viewport.height);
@@ -477,21 +477,29 @@ for (const viewport of VIEWPORTS) {
 				const [a, b] = await Promise.all([cards.nth(0).boundingBox(), cards.nth(1).boundingBox()]);
 				if (wide) expect(Math.round(a!.y)).toBe(Math.round(b!.y));
 				else expect(b!.y).toBeGreaterThan(a!.y + a!.height - 1);
-				await expect(page.getByTestId('join-card')).toBeVisible();
+				// #113: the join card is on the Classes tab, not here.
+				await expect(page.getByTestId('join-card')).toHaveCount(0);
 				await expectFits(page);
 			} finally {
 				await page.context().close();
 			}
 		});
 
-		test(`join a class (${viewport.name}): upper-cased, refused under the field, sent and listed, rejected dismissed`, async ({
+		test(`join a class on the Classes tab (${viewport.name}): upper-cased, refused under the field, sent and listed, rejected dismissed`, async ({
 			browser
 		}) => {
 			const page = await studentPage(browser, viewport.width, viewport.height);
 			const target = wide ? 'd' : 'c';
 			const rejected = wide ? 'f' : 'e';
 			try {
+				// #113: the card sits below the class cards on the Classes tab.
+				await openPage(page, '/student/classes');
 				const card = page.getByTestId('join-card');
+				const [classesBox, cardBox] = await Promise.all([
+					page.getByTestId('class-cards').boundingBox(),
+					card.boundingBox()
+				]);
+				expect(cardBox!.y).toBeGreaterThanOrEqual(classesBox!.y + classesBox!.height - 1);
 				const field = card.getByLabel('Class code');
 				const send = card.getByRole('button', { name: 'Send request' });
 				await expectTouchSize(send);
@@ -798,6 +806,8 @@ test('homework list empty at 375px: a student with no class sees the empty state
 		await expect(page.getByTestId('empty-state')).toContainText("You're not in a class yet.");
 		await openPage(page, '/student/classes');
 		await expect(page.getByTestId('empty-state')).toBeVisible();
+		// #113: the join card shows with the empty state too.
+		await expect(page.getByTestId('join-card')).toBeVisible();
 		await expectFits(page);
 	} finally {
 		await page.context().close();
@@ -853,7 +863,7 @@ test('no JavaScript: Mark done posts directly and the page shows Done', async ({
 		expect(await latestStatus(instance)).toBe('done');
 
 		// The join form posts without JavaScript too; a refused code stays in the field.
-		await page.goto('/student');
+		await page.goto('/student/classes');
 		await page.getByLabel('Class code').fill('QQQQQQ');
 		// Enter sends it (the button sits at the page end, under the sticky
 		// bottom bar, until the page scrolls on its own).
