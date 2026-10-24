@@ -589,3 +589,12 @@
 - source_spec: none
   summary: (#120 B) No offline banner: nothing in `src/` watches `online` / `offline`, so the app does not say the connection is gone.
   evidence: Split from #120 on 2026-10-24; independently shippable from the failed-action toast.
+- source_spec: none
+  summary: (#126 A) Teacher dashboard tiles ("Due this week", "Overdue", "Awaiting review") are not links to filtered lists, and homework list rows show done/total but no "to review" count.
+  evidence: Split from #126 on 2026-10-24 (user built the empty-state calls to action first); `src/routes/teacher/+page.svelte:38-52`, `teacher/classes/[id]/homework/+page.svelte:186-192`; needs list filters.
+- source_spec: none
+  summary: (#126 B) The student dashboard's Overdue tile opens the same unfiltered To do list as the To do tile.
+  evidence: Split from #126 on 2026-10-24; `src/routes/student/+page.svelte:37-38`; needs an overdue filter on the homework list.
+- source_spec: none
+  summary: `rls.spec.ts` "7-5 sick leave decisions … Read: the student, their parent, the class teacher and the admin read the decision" times out at 5 s now and then on a freshly reset database.
+  evidence: Timed out in 2 of 4 full `npm test` runs on 2026-10-24 (while verifying #124 and #126, neither touching data); passed on the immediate rerun after another reset each time. Cause not investigated (likely a slow multi-client read; a longer per-test timeout or splitting the reads would settle it).

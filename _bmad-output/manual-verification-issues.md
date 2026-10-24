@@ -2980,3 +2980,14 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   avatar menu). Verified after a reset: 1723 unit tests, check and build exit 0; after a second
   reset, shell, breadcrumbs, parent-mobile and student-mobile 80/80. To verify: as a parent,
   open a child — Dashboard is highlighted; as a student, Badges — Dashboard is highlighted.
+
+- 2026-10-24: #126 C (empty states) built on `fix/121-unsaved-changes-guard` (remaining items on
+  this branch), to verify (spec `implementation-artifacts/spec-126-empty-state-next-steps.md`).
+  Built: a student with no class gets "Join a class" (to My classes) on the dashboard and in My
+  homework; a parent with no child gets "How joining works" (the parents' help guide); an empty
+  class roster says to share the class code and shows it with a copy button (new text
+  `roster_empty_body`; Tibetan: the assistant's draft). Deferred: #126 A (teacher tiles as links,
+  "to review" count) and B (student Overdue filter). Verified: check and build exit 0; 1726 unit
+  tests after a reset (one recurring `rls.spec` 7-5 timeout, logged in deferred-work); after a
+  second reset, student-mobile, parent-mobile, teacher-mobile and class-join 133/133. To verify:
+  a new student, a new parent and a class without students on a phone; check the Tibetan wording.
