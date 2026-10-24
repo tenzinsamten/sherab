@@ -2856,3 +2856,19 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   (4 help-screenshot tests skipped, opt-in). To verify: as a teacher with only a Sick note or
   a join request, and as the admin, in English, German and Tibetan; open and close History;
   check the Tibetan wording.
+
+- 2026-10-24: #117 (sign-in half) built on `fix/117-form-field-errors` (stacked on
+  `fix/116-requests-pending-first`), to verify (spec
+  `implementation-artifacts/spec-117-auth-form-field-errors.md`). Built: on login, register,
+  forgot password, reset password and resend confirmation, a failed submit's error also stays
+  in the form: under its field (marked `aria-invalid`, linked with `aria-describedby`) or
+  above the button when it belongs to no one field; wrong credentials mark both login fields.
+  The toast stays; the inline message has no `role="alert"` (user's choice in review), so
+  screen readers hear it once. No new texts. Deferred: the admin create and rename forms
+  (#117b). Found while verifying, not caused by #117: `teacher.e2e.ts` "Reset PIN" fails (the
+  student's open session is not ended), also on `27a2b30`. Verified after a reset: 1687 unit
+  tests, check and build exit 0; after a second reset, nine browser test files touching the
+  sign-in pages 105 passed, 1 failed (that Reset PIN test), 4 skipped (help screenshots,
+  opt-in). To verify: a wrong password, a taken email, mismatched and short passwords, a
+  student username on forgot password, on a phone and with a screen reader, in English,
+  German and Tibetan.

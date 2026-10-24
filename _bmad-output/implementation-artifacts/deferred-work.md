@@ -562,3 +562,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-116-requests-pending-first.md`
   summary: The help screenshots of `/requests` (`e2e/help-screenshots.e2e.ts`, `static/help/<locale>/teacher-3.png`) show the layout before #116.
   evidence: The page now leads with waiting cards and folds the decided lists into History.
+- source_spec: none
+  summary: (#117b) The admin create and rename forms (classes, teachers, teams, incl. `LocalizedNameFields`) show errors only as a toast; they need the error under the field with `aria-invalid` / `aria-describedby`.
+  evidence: Split from #117 on 2026-10-24 (user chose sign-in pages first); the admin forms are independently shippable and their server failures need their own field mapping.
+- source_spec: `_bmad-output/implementation-artifacts/spec-117-auth-form-field-errors.md`
+  summary: e2e `teacher.e2e.ts:1292` "Reset PIN shows the new PIN once" fails: after a PIN reset the student's open session is not ended (`/student` stays, expected a redirect to `/login`, line 1343).
+  evidence: Fails alone after a reset on `fix/117-form-field-errors` and on `27a2b30` (before #117) in a separate worktree, same line and URL; #117 changes only sign-in page markup. Cause not investigated.
