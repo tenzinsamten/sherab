@@ -51,3 +51,31 @@ describe('destructive button contrast (#119)', () => {
 		expect(contrast(rgb(strong), overWhite(destructive, 0.2))).toBeGreaterThanOrEqual(4.5);
 	});
 });
+
+/** #122: field borders (`--input`, rgba over white) and visible focus outlines. */
+describe('field borders and focus (#122)', () => {
+	it('field borders reach 3:1 on white and on the muted shell', () => {
+		const m = css.match(/--input:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\);/);
+		if (!m) throw new Error('--input not found as rgba()');
+		const [r, g, b, a] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+		// On the white page and on the muted public shell (--muted #eff0f1).
+		for (const page of [[255, 255, 255], rgb(token('muted'))]) {
+			const border = [r, g, b].map((c, i) => Math.round(c * a + page[i] * (1 - a)));
+			expect(contrast(border, page)).toBeGreaterThanOrEqual(3);
+		}
+	});
+
+	it('controls focus with a solid outline, not the faint ring', () => {
+		for (const path of [
+			'../components/ui/button/button.svelte',
+			'../components/ui/input/input.svelte',
+			'../components/ui/native-select/native-select.svelte',
+			'../components/ui/badge/badge.svelte',
+			'../components/RichTextEditor.svelte'
+		]) {
+			const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+			expect(source, path).not.toMatch(/focus-(visible|within):ring-(3|\[3px\]|ring\/50)/);
+			expect(source, path).toMatch(/focus-(visible|within):outline-solid/);
+		}
+	});
+});

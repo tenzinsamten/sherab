@@ -847,6 +847,29 @@ for (const [width, height] of [
 	});
 }
 
+test('skip link at 1440px, signed in: past the header and side nav into the page (#122)', async ({
+	browser
+}) => {
+	const page = await signedIn(browser, 1440, 900, teacher);
+	try {
+		await openPage(page, '/requests');
+		await page.locator('body').focus();
+		await page.keyboard.press('Tab');
+		const skip = page.getByRole('link', { name: 'Skip to content' });
+		await expect(skip).toBeFocused();
+		await expect(skip).toBeInViewport();
+		await page.keyboard.press('Enter');
+		await expect(page.locator('main#main')).toBeFocused();
+		expect(page.url()).not.toContain('#main');
+		await page.keyboard.press('Tab');
+		expect(await page.evaluate(() => !!document.activeElement?.closest('main#main'))).toBe(true);
+		// Focusable only for the jump: a click on the page's text focuses nothing.
+		await expect(page.locator('main#main')).not.toHaveAttribute('tabindex');
+	} finally {
+		await page.context().close();
+	}
+});
+
 test('requests at 1440px for the admin: full tables for all ten sections, actions in reach', async ({
 	browser
 }) => {

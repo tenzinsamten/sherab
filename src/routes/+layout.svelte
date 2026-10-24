@@ -172,6 +172,17 @@
 		const started = await pageTour?.start();
 		if (!started) showToast('info', m.tour_nothing_here());
 	}
+
+	// #122: the skip link moves focus to the page's <main>, focusable only
+	// until it loses focus again.
+	function skipToContent(event: MouseEvent) {
+		const main = document.getElementById('main');
+		if (!main) return;
+		event.preventDefault();
+		main.tabIndex = -1;
+		main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
+		main.focus();
+	}
 </script>
 
 <svelte:head>
@@ -186,6 +197,18 @@
 <!-- Story 11: one bar for both shells (mounted once, outside the branches,
      so signing in or out never restarts it mid-load). -->
 <NavProgress {busy} bind:shown={busyShown} />
+<!-- #122: first in the tab order, above the screen until focused (not
+     sr-only: Tailwind's not-sr-only would force it static); skips the header
+     and the navigation to the page (both shells' <main> are #main). With JS
+     it focuses <main> without a hash or history entry, and <main> is
+     focusable only for that moment (else a click on its text would focus it). -->
+<a
+	data-ui="new"
+	href="#main"
+	onclick={skipToContent}
+	class="fixed top-2 left-2 z-50 -translate-y-[calc(100%+1rem)] rounded-md bg-background px-4 py-3 font-medium text-foreground focus:translate-y-0 focus:shadow-md focus:outline-2 focus:outline-solid focus:outline-offset-2 focus:outline-ring"
+	>{m.skip_to_content()}</a
+>
 {#if data.profile}
 	<!-- Story 2: the new shell. Its chrome carries data-ui="new"; every page
 	     inside <main> has its own new-UI root. -->
@@ -216,7 +239,8 @@
 			     safe-area inset. Only here: `ui.page` centres the page and caps
 			     its width but adds no side margin. -->
 			<main
-				class="min-w-0 flex-1 pt-3 pr-[max(1rem,env(safe-area-inset-right))] pb-1 pl-[max(1rem,env(safe-area-inset-left))] motion-reduce:transition-none md:pr-[max(2rem,env(safe-area-inset-right))] md:pl-[max(2rem,env(safe-area-inset-left))] {mainFade}"
+				id="main"
+				class="min-w-0 flex-1 outline-none pt-3 pr-[max(1rem,env(safe-area-inset-right))] pb-1 pl-[max(1rem,env(safe-area-inset-left))] motion-reduce:transition-none md:pr-[max(2rem,env(safe-area-inset-right))] md:pl-[max(2rem,env(safe-area-inset-left))] {mainFade}"
 				aria-busy={busy || undefined}
 				inert={navBusy || undefined}
 			>
@@ -258,7 +282,8 @@
 	<div class="flex min-h-dvh flex-col bg-muted" data-public-shell>
 		<PublicHeader homeHref={resolve('/')} />
 		<main
-			class="min-w-0 flex-1 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] motion-reduce:transition-none {mainFade}"
+			id="main"
+			class="min-w-0 flex-1 outline-none pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] motion-reduce:transition-none {mainFade}"
 			aria-busy={busy || undefined}
 			inert={navBusy || undefined}
 		>

@@ -34,7 +34,7 @@
 	}
 
 	const itemClass =
-		'flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-primary aria-[current=page]:text-sidebar-primary-foreground';
+		'flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-primary aria-[current=page]:text-sidebar-primary-foreground';
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- every href is resolve()d by the caller (src/lib/nav.ts, the layout). -->

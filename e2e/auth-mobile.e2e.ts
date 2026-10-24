@@ -531,6 +531,22 @@ for (const v of VIEWPORTS) {
 			}
 		});
 
+		test(`skip link (${v.name}): the first Tab shows it; Enter moves focus to the page (#122)`, async ({
+			page
+		}) => {
+			await open(page, '/login');
+			await page.locator('body').focus();
+			await page.keyboard.press('Tab');
+			const skip = page.getByRole('link', { name: 'Skip to content' });
+			await expect(skip).toBeFocused();
+			await expect(skip).toBeInViewport();
+			await page.keyboard.press('Enter');
+			await expect(page.locator('main#main')).toBeFocused();
+			// The next Tab goes into the page, not back to the header.
+			await page.keyboard.press('Tab');
+			await expect(page.locator('#email')).toBeFocused();
+		});
+
 		test(`keyboard (${v.name}): every control on sign in shows focus, in order`, async ({
 			page
 		}) => {
@@ -538,7 +554,7 @@ for (const v of VIEWPORTS) {
 			await recordResting(page);
 			await page.locator('body').focus();
 			const order: string[] = [];
-			for (let i = 0; i < 9; i++) {
+			for (let i = 0; i < 10; i++) {
 				await page.keyboard.press('Tab');
 				const id = await page.evaluate(() => {
 					const el = document.activeElement as HTMLElement | null;
@@ -553,7 +569,9 @@ for (const v of VIEWPORTS) {
 				order.push(id);
 				expect(await focusShows(page), `focus visible on ${id}`).toBe(true);
 			}
+			// #122: the skip link first.
 			expect(order).toEqual([
+				'Skip to content',
 				'header-home',
 				'language-menu',
 				'email',

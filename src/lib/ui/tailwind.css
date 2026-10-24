@@ -154,7 +154,8 @@
 	--success: #2c8500;
 	--warning: #ffbb00;
 	--border: rgba(0, 20, 40, 0.2);
-	--input: rgba(0, 20, 40, 0.3);
+	/* #122: 3.51:1 on white (non-text contrast 3:1). */
+	--input: rgba(0, 20, 40, 0.5);
 	--ring: #2563eb;
 
 	/* The navy frame (header, navigation) with the current page in primary. */
@@ -167,7 +168,8 @@
 	--sidebar-accent: rgba(255, 255, 255, 0.12);
 	--sidebar-accent-foreground: #ffffff;
 	--sidebar-border: rgba(255, 255, 255, 0.12);
-	--sidebar-ring: #2563eb;
+	/* #122: white, so focus shows on the navy frame and around the blue current item. */
+	--sidebar-ring: #ffffff;
 
 	/* Celebration surfaces (story 4; component-specs.md "full celebration
 	   treatment", design-tokens.md Claymorphism core): progress tiles,

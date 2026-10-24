@@ -183,7 +183,7 @@
 <div data-ui="new" class="rte mb-4 flex min-w-0 flex-col gap-1.5">
 	<span class="text-sm font-medium" id={`${id}-label`}>{label}{required ? '*' : ''}</span>
 	<div
-		class="min-w-0 rounded-lg border border-input bg-background focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
+		class="min-w-0 rounded-lg border border-input bg-background focus-within:border-ring focus-within:outline-2 focus-within:outline-solid focus-within:outline-offset-2 focus-within:outline-ring"
 	>
 		<div
 			class="flex flex-wrap items-center gap-1 border-b border-border p-1"
