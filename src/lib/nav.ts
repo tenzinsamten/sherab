@@ -28,8 +28,14 @@ export type NavLink = {
 	href: string;
 	label: string;
 	icon: NavIcon;
-	/** Active only on this exact path (a role's dashboard), not below it. */
+	/** The href matches only on this exact path, not below it (a role's dashboard); `also` still applies. */
 	exact?: boolean;
+	/**
+	 * #125: also active on and below these paths: pages that belong to the
+	 * dashboard but have no tab of their own (a parent's child, a student's
+	 * badges).
+	 */
+	also?: string[];
 	/** #60: the Requests count pill; omitted at 0. */
 	count?: number;
 };
@@ -89,8 +95,11 @@ function destinations(opts: NavOptions) {
 		m.nav_leaderboard(),
 		'leaderboard'
 	);
-	const dashboard = (href: string) =>
-		link('dashboard', href, m.nav_dashboard(), m.nav_dashboard(), 'dashboard', { exact: true });
+	const dashboard = (href: string, also?: string[]) =>
+		link('dashboard', href, m.nav_dashboard(), m.nav_dashboard(), 'dashboard', {
+			exact: true,
+			...(also ? { also } : {})
+		});
 
 	return {
 		admin: {
@@ -138,7 +147,7 @@ function destinations(opts: NavOptions) {
 			help
 		},
 		student: [
-			dashboard(resolve('/student')),
+			dashboard(resolve('/student'), [resolve('/student/badges')]),
 			link('classes', resolve('/student/classes'), m.nav_my_classes(), m.nav_classes(), 'classes'),
 			link(
 				'homework',
@@ -151,7 +160,7 @@ function destinations(opts: NavOptions) {
 			{ ...leaderboard, entry: { ...leaderboard.entry, label: m.nav_team_leaderboard() } }
 		],
 		parent: [
-			dashboard(resolve('/parent')),
+			dashboard(resolve('/parent'), [resolve('/parent/children')]),
 			link('homework', resolve('/parent/homework'), m.nav_homework(), m.nav_homework(), 'homework'),
 			calendar,
 			help
@@ -238,10 +247,11 @@ export function tabItems(role: string | null | undefined, opts: NavOptions = {})
 }
 
 /** Whether `item` is the page at `pathname` (or, for a "More" tab, holds it). */
+/** #125: `/account` is reached from the avatar menu and deliberately marks no tab. */
 export function isActive(item: TabEntry, pathname: string): boolean {
 	if (item.kind === 'help') return false;
 	if (item.kind === 'more') return item.items.some((inner) => isActive(inner, pathname));
-	return item.exact
-		? pathname === item.href
-		: pathname === item.href || pathname.startsWith(item.href + '/');
+	const under = (path: string) => pathname === path || pathname.startsWith(path + '/');
+	if (item.also?.some(under)) return true;
+	return item.exact ? pathname === item.href : under(item.href);
 }

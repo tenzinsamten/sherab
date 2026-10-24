@@ -137,6 +137,22 @@ describe('isActive', () => {
 		expect(isActive(help, '/teacher')).toBe(false);
 	});
 
+	it("#125: Dashboard also on a parent's child and a student's badges; no tab on /account", () => {
+		const [parentDashboard, parentHomework] = navItems('parent');
+		expect(isActive(parentDashboard, '/parent/children/abc')).toBe(true);
+		expect(isActive(parentDashboard, '/parent/children/abc/badges')).toBe(true);
+		expect(isActive(parentDashboard, '/parent/childrenx')).toBe(false);
+		expect(isActive(parentHomework, '/parent/children/abc')).toBe(false);
+		const [studentDashboard] = navItems('student');
+		expect(isActive(studentDashboard, '/student/badges')).toBe(true);
+		expect(isActive(studentDashboard, '/student/badgesx')).toBe(false);
+		expect(isActive(studentDashboard, '/student/classes')).toBe(false);
+		for (const role of ['admin', 'teacher', 'student', 'parent']) {
+			for (const item of [...tabItems(role), ...navItems(role)])
+				expect(isActive(item, '/account'), `${role} ${item.id}`).toBe(false);
+		}
+	});
+
 	it('teacher (#108): Classes on the list and every class page, Dashboard only on /teacher, More on Leaderboard', () => {
 		const [dashboard, classes, , , more] = tabItems('teacher');
 		expect(isActive(dashboard, '/teacher')).toBe(true);
