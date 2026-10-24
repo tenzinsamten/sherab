@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import ListTodo from '@lucide/svelte/icons/list-todo';
 	import { resolve } from '$app/paths';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
@@ -82,7 +83,12 @@
 						? m.student_no_classes()
 						: m.student_done_empty()}
 				icon={ListTodo}
-			/>
+			>
+				{#if !data.loadError && data.filter === 'todo'}
+					<!-- #126: the next step: joining lives on My classes (#113). -->
+					<Button href={resolve('/student/classes')} variant="outline">{m.nav_join()}</Button>
+				{/if}
+			</EmptyState>
 		</section>
 	{/if}
 

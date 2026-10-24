@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { resolve } from '$app/paths';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import StudentHomeworkRows from '$lib/components/StudentHomeworkRows.svelte';
 	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
 	import { num } from '$lib/format';
@@ -131,6 +132,12 @@
 			<p class={ui.muted}>
 				{data.loadError ? m.student_homework_load_failed() : m.student_no_classes()}
 			</p>
+			{#if !data.loadError}
+				<!-- #126: the next step: joining lives on My classes (#113). -->
+				<div>
+					<Button href={resolve('/student/classes')} variant="outline">{m.nav_join()}</Button>
+				</div>
+			{/if}
 		{:else}
 			<ul class="grid gap-3 md:grid-cols-2 lg:grid-cols-3" data-testid="class-cards">
 				{#each data.classes as cls (cls.id)}

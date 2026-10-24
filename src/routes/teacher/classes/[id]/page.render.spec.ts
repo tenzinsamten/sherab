@@ -99,4 +99,14 @@ describe('teacher class page (+page.svelte)', () => {
 		expect(body).not.toContain('data-tour="class-attendance-save"');
 		expect(body).not.toContain('id="sessionId"');
 	});
+
+	it('#126: an empty roster says to share the class code and offers it to copy', () => {
+		const body = renderPage({ students: [] });
+		const empty = body.match(/<div[^>]*data-testid="empty-state"[\s\S]*?<\/section>/)?.[0] ?? '';
+		expect(empty).toContain(m.roster_empty());
+		expect(empty).toContain(m.roster_empty_body());
+		expect(empty).toContain(m.class_code_label());
+		const copy = empty.match(/<[^>]*class="[^"]*copy-field[\s\S]*?<\/button>/)?.[0] ?? '';
+		expect(copy).toContain('ABC123');
+	});
 });

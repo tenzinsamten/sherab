@@ -1,23 +1,26 @@
 <script lang="ts">
-	import type { Component } from 'svelte';
+	import type { Component, Snippet } from 'svelte';
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import { cn } from '$lib/utils.js';
 
 	/**
 	 * Sherab: an empty or failed section (replaces iX's `ix-empty-state`): an
-	 * icon, a heading line and an optional line below it.
+	 * icon, a heading line and an optional line below it. #126: `children`
+	 * is the next step (a link or a value to copy), under the text.
 	 */
 	let {
 		header,
 		subHeader,
 		icon: Icon,
-		class: className
+		class: className,
+		children
 	}: {
 		header: string;
 		subHeader?: string;
 		/** A Lucide icon component. */
 		icon?: Component<{ class?: string; 'aria-hidden'?: boolean }>;
 		class?: string;
+		children?: Snippet;
 	} = $props();
 </script>
 
@@ -33,4 +36,7 @@
 			<Empty.Description class="text-base text-muted-foreground">{subHeader}</Empty.Description>
 		{/if}
 	</Empty.Header>
+	{#if children}
+		<Empty.Content>{@render children()}</Empty.Content>
+	{/if}
 </Empty.Root>

@@ -263,6 +263,7 @@
 	"roster_section_label": "02 / Klassenliste",
 	"roster_heading": "Klassenliste",
 	"roster_empty": "Noch keine genehmigten Schüler:innen in dieser Klasse.",
+	"roster_empty_body": "Teile den Klassencode, damit deine Schüler:innen den Beitritt anfragen können.",
 	"roster_attendance_heading": "Anwesenheit erfassen",
 	"roster_attendance_session_label": "Termin",
 	"roster_attendance_session_marked": "{session} · erfasst",

@@ -10,6 +10,7 @@
 	import { resolve } from '$app/paths';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import CopyField from '$lib/components/CopyField.svelte';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -316,7 +317,10 @@
 	<div id="roster" class="flex min-w-0 scroll-mt-6 flex-col gap-4 md:gap-6">
 		{#if data.students.length === 0}
 			<section class={ui.card}>
-				<EmptyState header={m.roster_empty()} icon={Users} />
+				<EmptyState header={m.roster_empty()} subHeader={m.roster_empty_body()} icon={Users}>
+					<!-- #126: the next step: share the class code. -->
+					<CopyField label={m.class_code_label()} value={data.class.code} />
+				</EmptyState>
 			</section>
 		{:else}
 			<section class={ui.card} aria-labelledby="attendance-heading">

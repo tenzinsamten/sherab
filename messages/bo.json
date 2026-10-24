@@ -263,6 +263,7 @@
 	"roster_section_label": "༠༢ / མིང་ཐོ།",
 	"roster_heading": "མིང་ཐོ།",
 	"roster_empty": "འཛིན་གྲྭ་འདིར་ད་དུང་ཆོག་མཆན་ཐོབ་པའི་སློབ་མ་མེད།",
+	"roster_empty_body": "སློབ་མ་ཚོས་ཞུགས་པའི་རེ་སྐུལ་ཞུ་ཐུབ་ཆེད་འཛིན་གྲྭའི་ཨང་རྟགས་དེ་སྤེལ།",
 	"roster_attendance_heading": "ཡོང་མེད་ཐོ་འགོད།",
 	"roster_attendance_session_label": "ཚོགས་ཐེངས།",
 	"roster_attendance_session_marked": "{session} · ཐོ་འགོད་བྱས་ཟིན།",

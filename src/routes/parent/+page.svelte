@@ -9,6 +9,7 @@
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { num } from '$lib/format';
 	import { resolve } from '$app/paths';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ui } from '$lib/ui/classes';
 	import type { PageProps } from './$types';
@@ -74,11 +75,12 @@
 		</section>
 	{:else if data.children.length === 0}
 		<section class={ui.card}>
-			<EmptyState
-				header={m.parent_empty_heading()}
-				subHeader={m.parent_empty_body()}
-				icon={Users}
-			/>
+			<EmptyState header={m.parent_empty_heading()} subHeader={m.parent_empty_body()} icon={Users}>
+				<!-- #126: the next step: the parents' guide explains joining. -->
+				<Button href="{resolve('/help')}?role=parent" variant="outline"
+					>{m.home_join_heading()}</Button
+				>
+			</EmptyState>
 		</section>
 	{:else}
 		<ul class="grid gap-4 md:grid-cols-2" aria-label={m.parent_children_label()}>

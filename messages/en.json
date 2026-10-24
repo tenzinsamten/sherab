@@ -263,6 +263,7 @@
 	"roster_section_label": "02 / Roster",
 	"roster_heading": "Roster",
 	"roster_empty": "No approved students in this class yet.",
+	"roster_empty_body": "Share the class code so your students can ask to join.",
 	"roster_attendance_heading": "Mark attendance",
 	"roster_attendance_session_label": "Session",
 	"roster_attendance_session_marked": "{session} · marked",
