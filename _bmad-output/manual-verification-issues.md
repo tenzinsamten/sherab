@@ -2972,3 +2972,11 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   1722 unit tests passed after another reset; after a second reset, shared-mobile, class-join
   and parent-access 34/34. To verify: Approve and Reject side by side on a phone are clearly
   different; Reject's question reads as a normal confirm.
+
+- 2026-10-24: #125 built on `fix/121-unsaved-changes-guard` (remaining items on this branch), to
+  verify (spec `implementation-artifacts/spec-125-nav-current-tab.md`). Built: Dashboard is the
+  current tab (bottom and side nav) on a parent's child page (`/parent/children/...`) and on
+  `/student/badges`; `/account` marks no tab on purpose (user's choice: it is reached from the
+  avatar menu). Verified after a reset: 1723 unit tests, check and build exit 0; after a second
+  reset, shell, breadcrumbs, parent-mobile and student-mobile 80/80. To verify: as a parent,
+  open a child — Dashboard is highlighted; as a student, Badges — Dashboard is highlighted.
