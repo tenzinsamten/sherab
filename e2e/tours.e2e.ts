@@ -261,6 +261,53 @@ async function expectNoTour(page: Page) {
 
 const classPath = () => `/teacher/classes/${classId}`;
 
+/**
+ * #127: every visible tour control (Close, Skip, Back, Next or Done) is a 44px
+ * target (43.5: sub-pixel rounding of 2.75rem), the footer stays inside the
+ * popover, and the title's text ends left of Close.
+ */
+async function expectTourTargets(page: Page) {
+	const m = await popover(page).evaluate((el) => {
+		const boxes = [...el.querySelectorAll<HTMLElement>('button')]
+			.filter((button) => button.offsetParent !== null)
+			.map((button) => {
+				const box = button.getBoundingClientRect();
+				return {
+					name: button.textContent?.trim() || button.ariaLabel,
+					w: box.width,
+					h: box.height
+				};
+			});
+		const pop = el.getBoundingClientRect();
+		const footer = el.querySelector('.driver-popover-footer')?.getBoundingClientRect() ?? null;
+		const titleEl = el.querySelector('.driver-popover-title');
+		const close = el.querySelector('.driver-popover-close-btn')?.getBoundingClientRect() ?? null;
+		let text: DOMRect | null = null;
+		if (titleEl) {
+			const range = document.createRange();
+			range.selectNodeContents(titleEl);
+			text = range.getBoundingClientRect();
+		}
+		return {
+			boxes,
+			footerInside: !!footer && footer.left >= pop.left - 0.5 && footer.right <= pop.right + 0.5,
+			clear: !!text && !!close && (text.right <= close.left + 0.5 || text.top >= close.bottom - 0.5)
+		};
+	});
+	// Close, Back, Next or Done, and Skip except on the last step.
+	expect(m.boxes.length).toBeGreaterThanOrEqual(3);
+	expect(m.boxes.length).toBeLessThanOrEqual(4);
+	expect(m.boxes.map((box) => box.name)).toEqual(
+		expect.arrayContaining(['×', expect.stringMatching(/^(Next|Done)$/)])
+	);
+	for (const box of m.boxes) {
+		expect(box.w, `${box.name} width`).toBeGreaterThanOrEqual(43.5);
+		expect(box.h, `${box.name} height`).toBeGreaterThanOrEqual(43.5);
+	}
+	expect(m.footerInside).toBe(true);
+	expect(m.clear).toBe(true);
+}
+
 test('teacher: a tour starts on the first visit, runs to Done, and does not come back', async ({
 	browser
 }) => {
@@ -305,6 +352,7 @@ test('teacher: a tour starts on the first visit, runs to Done, and does not come
 		await expect(popover(page)).toContainText('Choose the session');
 		await expect(popover(page)).toContainText('1 of 5');
 		await expect(popover(page).getByRole('button', { name: 'Skip' })).toBeVisible();
+		await expectTourTargets(page);
 
 		const targets = [
 			'class-attendance-save',
@@ -441,6 +489,7 @@ test('parent at phone width: every step of the Sessions tour and its text are on
 			if (index > 0) await popover(page).getByRole('button', { name: 'Next' }).click();
 			await expect(highlighted(page)).toHaveAttribute('data-tour', target);
 			await expect(popover(page)).toContainText(`${index + 1} of ${targets.length}`);
+			await expectTourTargets(page);
 			// Both boxes settle after the page has scrolled to the control.
 			await expect(async () => {
 				for (const box of [

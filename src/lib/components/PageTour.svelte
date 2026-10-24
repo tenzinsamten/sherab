@@ -282,7 +282,9 @@
 		font-family: inherit;
 	}
 	:global(.sherab-tour .driver-popover-title) {
-		padding-inline-end: 1.5rem;
+		/* #127: clear of the 44px close button, which sits at the popover's
+		   edge, outside this 1rem padding. */
+		padding-inline-end: calc(2.75rem - 1rem);
 		font-size: 1rem;
 		line-height: 1.35;
 	}
@@ -298,9 +300,13 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 	}
+	/* #127: every tour control is a 44px target (the tour opens by itself on
+	   a phone). */
 	:global(.sherab-tour .driver-popover-close-btn) {
-		width: 2.5rem;
-		height: 2.5rem;
+		display: grid;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
 		color: var(--muted-foreground);
 		font-size: 1.375rem;
 	}
@@ -309,8 +315,9 @@
 		color: var(--popover-foreground);
 	}
 	:global(.sherab-tour .driver-popover-footer-btn) {
-		min-height: 2rem;
-		padding: 0.25rem 0.75rem;
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+		padding: 0.5rem 1rem;
 		border: 1px solid var(--primary);
 		border-radius: var(--radius);
 		background-color: transparent;
