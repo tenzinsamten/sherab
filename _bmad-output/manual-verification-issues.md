@@ -2962,3 +2962,13 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   reset: 1721 unit tests, check and build exit 0; after a second reset, shell, shared-mobile
   and nav-progress 54/54. To verify: on a phone in Tibetan, the Requests count "༡" reads as a
   digit; labels in German and Tibetan.
+
+- 2026-10-24: #124 built on `fix/121-unsaved-changes-guard` (remaining items on this branch), to
+  verify (spec `implementation-artifacts/spec-124-reject-neutral.md`). Built: on `/requests` every
+  Reject (registrations, parent accounts, Sick leave, class join) is a neutral outline and its
+  question's confirm is no longer red; approving a deletion request, "Clear rejected" and the
+  decided-parents clear stay red (they erase data). Verified after a reset: check and build exit
+  0; one `rls.spec` test timed out once (5 s, sick-leave reads; #124 touches no data) and all
+  1722 unit tests passed after another reset; after a second reset, shared-mobile, class-join
+  and parent-access 34/34. To verify: Approve and Reject side by side on a phone are clearly
+  different; Reject's question reads as a normal confirm.
