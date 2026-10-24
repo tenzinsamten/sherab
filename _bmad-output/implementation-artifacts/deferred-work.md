@@ -545,3 +545,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-114-tibetan-line-height.md`
   summary: `src/lib/server/rls.spec.ts` fails intermittently on a freshly reset database (a duplicate random class day, or a 5-second timeout).
   evidence: Gate runs 2026-10-24: run 1 failed `#105 class day move and delete … CD002` ("duplicate key … class_days_day_unique" for 4094-10-10; days are drawn from `3000 + Math.random() * 6000` years); run 2 failed `7-5 sick leave decisions … Read` with "Test timed out in 5000ms"; run 3 passed 1667/1667. The #114 change is CSS only.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-115-error-page.md`
+  summary: Add a static `src/error.html` (all three languages) for errors the root layout's own load throws, and for file routes, which `+error.svelte` does not render.
+  evidence: Review 2026-10-24 (BH7): without it SvelteKit's bare English fallback still shows, e.g. on a Supabase outage in `src/routes/+layout.server.ts`, and `/files/...` 404s show "File not found." (`e2e/syllabus-files.e2e.ts:434`).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-115-error-page.md`
+  summary: Give unexpected errors an id via a `handleError` hook and show it on the error page, so a report can be matched to the log.
+  evidence: Review 2026-10-24 (BH8): no `handleError` in `src/hooks*.ts`; a 500 shows only "Error 500". Idea, not a defect.

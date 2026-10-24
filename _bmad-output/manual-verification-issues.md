@@ -2825,3 +2825,16 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   class roster, card titles and page headings no longer touch, and headings do not look too
   spaced out. The `bo` help screenshots still show the old spacing
   (`npm run help:screenshots`).
+
+- 2026-10-24: #115 built on `fix/115-error-page` (stacked on `fix/114-tibetan-line-height`),
+  to verify (spec `implementation-artifacts/spec-115-error-page.md`). Built:
+  `src/routes/+error.svelte`, inside the shell: "Page not found" (404), "No access"
+  (401/403) or "Something went wrong" (anything else), the status ("Error 404", Tibetan
+  digits under Tibetan), a button to the role's home (`/` signed out), and for the last case
+  a "Try again" link to the same address. The server's English message is not shown.
+  Texts in en, de, bo; the Tibetan texts (`error_*` in `messages/bo.json`) are the
+  assistant's draft, not reviewed. Not covered (deferred): errors from the root layout's own
+  load and from file routes (`/files/...`) still show SvelteKit's static English page.
+  Verified after a reset: 1669 unit tests, check and build exit 0; six affected browser test
+  files 42/42. To verify: on a phone, open an unknown address signed out and signed in, and
+  `/admin` as a teacher, in English, German and Tibetan; check the Tibetan wording.
