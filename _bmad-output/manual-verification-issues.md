@@ -2838,3 +2838,21 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Verified after a reset: 1669 unit tests, check and build exit 0; six affected browser test
   files 42/42. To verify: on a phone, open an unknown address signed out and signed in, and
   `/admin` as a teacher, in English, German and Tibetan; check the Tibetan wording.
+
+- 2026-10-24: #116 built on `fix/116-requests-pending-first` (stacked on `fix/115-error-page`),
+  to verify (spec `implementation-artifacts/spec-116-requests-pending-first.md`). Built: on
+  `/requests` the cards with something waiting come first (Registrations, now with its own
+  heading, Sick leave, class join, then the admin's deletion and parent requests); a card
+  with nothing waiting is left out. One "Nothing waiting" empty state shows only when no
+  pending list has a row and nothing failed to load. Then Upcoming leave, then one "History"
+  group (closed on load, an `h2` in its summary) with all decided lists. Deciding the last
+  request moves focus to the page heading. Texts in en, de, bo; the Tibetan texts
+  (`requests_registrations_heading` ཐོ་འགོད།, `requests_history_heading` ལོ་རྒྱུས།,
+  `requests_empty_body`) are the assistant's draft, not reviewed; a reviewer noted ལོ་རྒྱུས།
+  may read as "historical account". Deferred: no inline error when the admin's deletion or
+  parent list fails to load; header subtitles still name only registrations; help screenshots
+  of `/requests` (`npm run help:screenshots`). Verified after a reset: 1678 unit tests, check
+  and build exit 0; after a second reset, eight browser test files touching `/requests` 78/78
+  (4 help-screenshot tests skipped, opt-in). To verify: as a teacher with only a Sick note or
+  a join request, and as the admin, in English, German and Tibetan; open and close History;
+  check the Tibetan wording.

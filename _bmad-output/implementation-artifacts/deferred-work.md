@@ -553,3 +553,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-115-error-page.md`
   summary: Give unexpected errors an id via a `handleError` hook and show it on the error page, so a report can be matched to the log.
   evidence: Review 2026-10-24 (BH8): no `handleError` in `src/hooks*.ts`; a 500 shows only "Error 500". Idea, not a defect.
+- source_spec: `_bmad-output/implementation-artifacts/spec-116-requests-pending-first.md`
+  summary: Requests shows no inline error when the admin's deletion or parent pending query fails; only the generic load-error toast reports it.
+  evidence: `+page.server.ts` maps the failed list to `[]` and sets only `loadError`; the join card has its own inline `requests_join_load_failed`, the others have none (pre-existing before #116).
+- source_spec: `_bmad-output/implementation-artifacts/spec-116-requests-pending-first.md`
+  summary: The Requests header subtitles (`requests_teacher_subtitle`, `requests_admin_subtitle`) still describe only registrations.
+  evidence: The page also lists Sick leave, class join, deletion and parent requests; the spec kept the subtitles out of scope.
+- source_spec: `_bmad-output/implementation-artifacts/spec-116-requests-pending-first.md`
+  summary: The help screenshots of `/requests` (`e2e/help-screenshots.e2e.ts`, `static/help/<locale>/teacher-3.png`) show the layout before #116.
+  evidence: The page now leads with waiting cards and folds the decided lists into History.
