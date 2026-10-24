@@ -571,3 +571,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-117b-admin-form-field-errors.md`
   summary: Admin class and teacher create can show raw database or auth text (`error.message`) as the error, now also inline; map these to message keys on the server.
   evidence: `admin/classes/+page.server.ts:168` and `admin/teachers/+page.server.ts:104` return `error.message` when no known case matches (pre-existing; untranslated, technical).
+- source_spec: `_bmad-output/implementation-artifacts/spec-118-sign-in-pending.md`
+  summary: Busy buttons (createPending) give screen-reader users no "sending" announcement; the spinner is `aria-hidden` and `aria-busy` on a button is rarely read.
+  evidence: `src/lib/pending.svelte.ts` callers set only `disabled` and `aria-busy`; app-wide, not specific to the sign-in pages.
+- source_spec: `_bmad-output/implementation-artifacts/spec-118-sign-in-pending.md`
+  summary: Register and join keep their own `submitting` flag, so they do not drive the layout's loading bar or the #109 focus restore; moving them to `createPending({ reset: false })` would match the other sign-in forms.
+  evidence: `(auth)/register/+page.svelte:15,65-69` and `(auth)/join/+page.svelte:27,177-181` use `submitting = true/false` without `actionStarted()`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-115-error-page.md`
+  summary: e2e `nav-progress.e2e.ts:241` "load error: the error page shows and the busy state clears" looks for a heading named "500"; since #115 the error page's heading is "Something went wrong" with "Error 500" below, so the test fails.
+  evidence: Found while verifying #118 (2026-10-24); `src/routes/+error.svelte:66-69` (#115, 576e284). #115's verification ran six browser test files, not this one. Fix: expect the `error_generic_heading` text and "Error 500".

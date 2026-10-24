@@ -2888,3 +2888,15 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   class and a team without a Tibetan name and with a taken name, rename one into a taken
   name, create a teacher without a class and with a taken email, in English, German and
   Tibetan.
+
+- 2026-10-24: #118 built on `fix/118-sign-in-pending` (stacked on `fix/117b-admin-form-errors`),
+  to verify (spec `implementation-artifacts/spec-118-sign-in-pending.md`). Built: login,
+  forgot password, resend confirmation and reset password submit through `createPending`:
+  while sending, the button is disabled with a spinner and `aria-busy`, a second tap or Enter
+  is ignored, and the loading bar shows. Deferred: no screen-reader "sending" announcement
+  (app-wide); register and join still use their own flag. Found while verifying, not caused by
+  #118: `nav-progress.e2e.ts` "load error" still expects a "500" heading from before #115.
+  Verified after a reset: 1706 unit tests, check and build exit 0; after a second reset,
+  auth-mobile, auth-fields, login-visual and nav-progress 53 passed, 1 failed (that stale
+  test). To verify: on a slow phone connection, tap Sign in, Send reset link, Send link and
+  Update password twice quickly.
