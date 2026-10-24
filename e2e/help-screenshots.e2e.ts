@@ -292,7 +292,7 @@ test('parent pages', async ({ page }) => {
 		await shot(page, locale, 'parent-5');
 		await open(page, locale, `/parent/children/${childId}?tab=sessions`);
 		// The sessions list, below the leave-period form.
-		await shot(page, locale, 'parent-6', 'section.card:not([aria-labelledby])');
+		await shot(page, locale, 'parent-6', '#sessions-heading');
 		await open(page, locale, '/parent/homework');
 		await shot(page, locale, 'parent-7');
 		await open(page, locale, `/parent/children/${childId}?tab=overview`);
