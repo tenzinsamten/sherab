@@ -147,6 +147,10 @@
 	--accent: rgba(37, 99, 235, 0.12);
 	--accent-foreground: rgba(0, 10, 20, 0.9);
 	--destructive: #d72332;
+	/* #119: the destructive button's text and icon on its red tint (AA 4.5:1).
+	   Tailwind's red-700, the nearest common darker red: 5.53:1 on the tint,
+	   4.70:1 on the hover tint, which is the binding case (src/lib/ui/contrast.spec.ts). */
+	--destructive-strong: #b91c1c;
 	--success: #2c8500;
 	--warning: #ffbb00;
 	--border: rgba(0, 20, 40, 0.2);
@@ -198,6 +202,7 @@
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
+	--color-destructive-strong: var(--destructive-strong);
 	--color-success: var(--success);
 	--color-warning: var(--warning);
 	--color-border: var(--border);
