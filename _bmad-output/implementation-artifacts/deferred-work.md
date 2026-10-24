@@ -583,3 +583,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-119-destructive-contrast.md`
   summary: Red text on a red tint below 4.5:1 outside the destructive button variant: file-delete buttons on hover, the destructive badge, the admin parents alert, the dropdown destructive item on focus.
   evidence: #d72332 on `destructive/10` is 4.30:1 (computed); `SyllabusFiles.svelte:242`, `HomeworkFiles.svelte:239`, `ui/badge/badge.svelte:11`, `admin/parents/+page.svelte:68`, `ui/dropdown-menu/dropdown-menu-item.svelte:23`. `text-destructive-strong` (#119) would fix each.
+- source_spec: none
+  summary: (#120 A) A full page load while offline shows the browser's own error page; a precached offline page as the service worker's navigation fallback would replace it.
+  evidence: Split from #120 on 2026-10-24 (user built the failed-action toast first); `vite.config.ts` sets `workbox.navigateFallback: null`; offline sync stays a non-goal (ARCHITECTURE-SPINE.md:240).
+- source_spec: none
+  summary: (#120 B) No offline banner: nothing in `src/` watches `online` / `offline`, so the app does not say the connection is gone.
+  evidence: Split from #120 on 2026-10-24; independently shippable from the failed-action toast.

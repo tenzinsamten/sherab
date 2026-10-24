@@ -2911,3 +2911,16 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   Verified after a reset: 1708 unit tests, check and build exit 0; after a second reset,
   shared-mobile, forms and login-visual 32/32. To verify: Delete, Reject and Cancel on
   `/requests`, `admin/classes` and `calendar` read clearly, also on hover.
+
+- 2026-10-24: #120 (failed-action part) built on `fix/120-offline-action-toast` (stacked on
+  `fix/119-destructive-contrast`), to verify (spec
+  `implementation-artifacts/spec-120-offline-action-toast.md`). Built: when a form action cannot
+  be sent (no connection: the fetch throws a TypeError), `createPending` shows "No connection.
+  Check your internet and try again." and keeps the page, the typed values and focus, instead
+  of the error page. Answers the server sent, and unreadable ones (e.g. a proxy's HTML 502),
+  behave as before. New text `action_error_offline` in en, de, bo; the Tibetan text is the
+  assistant's draft. Not covered: register and join (own flag, deferred in #118). Deferred: an
+  offline page for full page loads (#120 A) and an offline banner (#120 B). Verified after a
+  reset: 1712 unit tests, check and build exit 0; after a second reset, auth-mobile,
+  auth-fields and shared-mobile 68/68. To verify: in the installed app, turn on flight mode and
+  press Mark done, Approve or Save; check the Tibetan wording.
