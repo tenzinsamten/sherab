@@ -2872,3 +2872,19 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   opt-in). To verify: a wrong password, a taken email, mismatched and short passwords, a
   student username on forgot password, on a phone and with a screen reader, in English,
   German and Tibetan.
+
+- 2026-10-24: #117b (admin half of #117) built on `fix/117b-admin-form-errors` (stacked on
+  `fix/117-form-field-errors`), to verify (spec
+  `implementation-artifacts/spec-117b-admin-form-field-errors.md`). Built: on the admin class,
+  team and teacher pages a failed create or rename keeps its error in that form: a missing
+  English or Tibetan name, or a duplicate, under the name field it is about; the teacher's
+  email errors under Email, "no class" under the classes; other failures above the form's
+  button. A rename error shows only in its row. Fields are marked `aria-invalid`; the toast
+  stays, the inline message has no `role="alert"` (as #117). Delete, Reset password, Remove
+  and the teachers' class edit stay toast-only. Known limit: when two languages hold the same
+  name, a duplicate shows under the first of them. Deferred: raw database/auth text as the
+  create error. Verified after a reset: 1706 unit tests, check and build exit 0; after a
+  second reset, eight browser test files on the admin pages 147/147. To verify: create a
+  class and a team without a Tibetan name and with a taken name, rename one into a taken
+  name, create a teacher without a class and with a taken email, in English, German and
+  Tibetan.

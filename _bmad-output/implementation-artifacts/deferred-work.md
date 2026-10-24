@@ -568,3 +568,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-117-auth-form-field-errors.md`
   summary: e2e `teacher.e2e.ts:1292` "Reset PIN shows the new PIN once" fails: after a PIN reset the student's open session is not ended (`/student` stays, expected a redirect to `/login`, line 1343).
   evidence: Fails alone after a reset on `fix/117-form-field-errors` and on `27a2b30` (before #117) in a separate worktree, same line and URL; #117 changes only sign-in page markup. Cause not investigated.
+- source_spec: `_bmad-output/implementation-artifacts/spec-117b-admin-form-field-errors.md`
+  summary: Admin class and teacher create can show raw database or auth text (`error.message`) as the error, now also inline; map these to message keys on the server.
+  evidence: `admin/classes/+page.server.ts:168` and `admin/teachers/+page.server.ts:104` return `error.message` when no known case matches (pre-existing; untranslated, technical).
