@@ -2953,3 +2953,12 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   after them and a second reset, 108/108 on the files they touch. To verify: Tab through a page
   on a laptop (skip link, outlines on every control, side nav), field borders on a phone in
   daylight; check the Tibetan wording.
+
+- 2026-10-24: #123 built on `fix/121-unsaved-changes-guard` (remaining items on this branch),
+  to verify (spec `implementation-artifacts/spec-123-bottom-nav-text-size.md`). Built: bottom
+  nav labels 12px (were 11px); the count pills in the bottom nav and the collapsed side nav
+  12px (were 10px), Tibetan digits kept (user's choice), with the Tibetan line height (#114).
+  Labels still fit five tabs at 375px in en, de, bo on at most two lines. Verified after a
+  reset: 1721 unit tests, check and build exit 0; after a second reset, shell, shared-mobile
+  and nav-progress 54/54. To verify: on a phone in Tibetan, the Requests count "༡" reads as a
+  digit; labels in German and Tibetan.
