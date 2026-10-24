@@ -1,162 +1,135 @@
 ---
 id: TOKENS-class-tracker
-tool: ui-ux-pro-max
-generated: 2026-09-13
-companions: [brand-guide.md, component-specs.md]
+rewritten: 2026-10-24
+source: src/lib/ui/tailwind.css, src/lib/ui/classes.ts, src/app.css, src/routes/+layout.svelte, src/lib/components/ui
+tests: src/lib/ui/contrast.spec.ts, src/lib/ui/tailwind-sources.spec.ts, src/routes/requests/page.render.spec.ts
+supersedes: the 2026-09-13 token set (Claymorphism, Baloo 2, 48px, dark theme)
 ---
 
-# Design Tokens — Sherab
+# Design Tokens — Sherab (as built)
 
-Implementation-ready CSS custom properties for the SvelteKit app (per ARCHITECTURE-SPINE.md). One token set, two dials — `--celebration-intensity` (full on gamification surfaces, low on utility surfaces) and `--density` (spacious for kid-facing screens, tighter for roster/admin tables) — rather than two separate systems. See [[brand-guide]] for the "why."
+The app's look as the code defines it (#130). The code is the source of truth: the theme tokens
+live in `src/lib/ui/tailwind.css` (`:root` and the `@theme` mapping), the shared class strings in
+`src/lib/ui/classes.ts`, the Tibetan font in `src/app.css`. When a token changes there, change this
+page. Contrast ratios are WCAG 2.x; those marked **(tested)** are computed in
+`src/lib/ui/contrast.spec.ts`, the others were computed for this page.
 
-## Color
+The theme comes from Siemens iX's classic light theme, with Sherab's overrides: a primary blue, a
+navy frame and a small radius. Components use these tokens. Exceptions with their own colours: the
+calendar's class chips (below) and the toasts (Sonner's `richColors`).
 
-```css
-:root {
-  /* Core palette — DB match: styles.csv Claymorphism ("Learning blue + play yellow + fun pink") */
-  --color-primary: #2563EB;
-  --color-on-primary: #FFFFFF;
-  --color-secondary: #F59E0B;
-  --color-on-secondary: #0F172A;
-  --color-accent: #EC4899;      /* celebration only — see brand-guide "What NOT to do" */
-  --color-on-accent: #0F172A;   /* #000 flagged too low-contrast on #EC4899 at small text; use dark navy + bold weight, verify 4.5:1 at ship size */
+## Colour
 
-  --color-background: #EFF6FF;
-  --color-foreground: #0F172A;
-  --color-card: #FFFFFF;
-  --color-card-foreground: #0F172A;
-  --color-muted: #F1F5FD;
-  --color-muted-foreground: #475569;
-  --color-border: #E4ECFC;
+On white:
 
-  --color-destructive: #DC2626;
-  --color-on-destructive: #FFFFFF;
-  --color-ring: #2563EB;
+| Token | Value | Role | Contrast on white |
+|---|---|---|---|
+| `--background`, `--card`, `--popover` | `#ffffff` | Page, cards, popovers | — |
+| `--foreground` (and `*-foreground` on light surfaces) | `rgba(0,10,20,.9)` | Body text | 16.09:1 |
+| `--muted` / `--secondary` | `#eff0f1` | Quiet surfaces, the signed-out shell | — |
+| `--muted-foreground` | `rgba(0,10,20,.6)` | Secondary text | 5.31:1 (5.09:1 on `--muted`) |
+| `--primary` | `#2563eb` | Primary actions, links, current filter | 5.17:1; white on it 5.17:1 |
+| `--primary-strong` | `#1d4ed8` | Blue text on light-blue surfaces; primary and badge-link hover (#129) | 5.66:1 on `--accent`, 5.82:1 on `primary/10`, white on it 6.70:1 **(tested)** |
+| `--accent` | `rgba(37,99,235,.12)` | Current item, pressed tool | — |
+| `--destructive` | `#d72332` | Errors, red tints, borders | 5.03:1 |
+| `--destructive-strong` | `#b91c1c` | Text and icon of the destructive button on its tint (#119) | 5.53:1 on `destructive/10`, 4.70:1 on `/20` (hover, the binding case) **(tested)** |
+| `--success` | `#2c8500` | Success states | 4.71:1 |
+| `--warning` | `#ffbb00` | Warning tints and borders (never as text) | — |
+| `--border` | `rgba(0,20,40,.2)` | Card and table lines (decorative) | — |
+| `--input` | `rgba(0,20,40,.5)` | Field borders (#122) | 3.51:1, 3.42:1 on `--muted` (3:1 non-text) **(tested)** |
+| `--ring` | `#2563eb` | Focus outline | 5.17:1 |
 
-  /* Status chips — CAP-2 skill-status, CAP-3 homework state (icon/label always pairs with color, never color-only) */
-  --color-status-not-started: var(--color-muted-foreground);
-  --color-status-learning: var(--color-secondary);
-  --color-status-confident: #16A34A;
-  --color-status-overdue: var(--color-destructive);
-  --color-status-done: #16A34A;
-  --color-status-reviewed: var(--color-primary);
-}
+On `--muted` (the signed-out shell's background), plain red and green text fall below 4.5:1:
+`--destructive` 4.41:1, `--success` 4.12:1 (`--primary` 4.53:1). Error and success text there sits
+on a white card, or uses the strong tokens (5.67:1 and 5.87:1).
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-background: #0F172A;
-    --color-foreground: #F1F5FD;
-    --color-card: #1B2336;
-    --color-card-foreground: #F1F5FD;
-    --color-muted: #1E293B;
-    --color-muted-foreground: #94A3B8;
-    --color-border: #334155;
-    /* primary/secondary/accent unchanged — Claymorphism DB match: "Dark conditional", keep hue, only swap neutrals */
-  }
-}
-:root[data-theme="dark"] {
-  --color-background: #0F172A;
-  --color-foreground: #F1F5FD;
-  --color-card: #1B2336;
-  --color-card-foreground: #F1F5FD;
-  --color-muted: #1E293B;
-  --color-muted-foreground: #94A3B8;
-  --color-border: #334155;
-}
-```
+Rules held by tests:
+
+- Red text on a red tint uses `--destructive-strong`; blue text on a light-blue surface uses
+  `--primary-strong` (the plain tokens give 4.30:1 and 4.37:1) — `contrast.spec.ts`.
+- Only actions that erase data are red; Reject is a neutral outline (#124) —
+  `src/routes/requests/page.render.spec.ts`.
+
+### The frame (header and navigation)
+
+| Token | Value | Role |
+|---|---|---|
+| `--frame`, `--sidebar` | `#0f172a` | Navy header and side nav |
+| `--frame-foreground`, `--sidebar-foreground` | `#ffffff` | Text on the frame (17.85:1) |
+| `--sidebar-primary` | `#2563eb` | The current page's item (white text on it 5.17:1) |
+| `--sidebar-accent`, `--sidebar-border` | `rgba(255,255,255,.12)` | Hover and lines on the frame |
+| `--sidebar-ring` | `#ffffff` | Focus on the frame, clear of the blue current item (#122) |
+
+### Celebration (kid-facing only)
+
+Progress tiles, badges and the New badge dialog (`ui.clay`) keep a softer treatment from the
+original brand: `--clay` `#e4ecfc` (border), `--play` `#f59e0b`, `--celebrate` `#ec4899`,
+`--radius-clay` 20px and `--shadow-clay`. Nothing else uses them.
+
+### Calendar chips
+
+The calendar gives each class a colour from its own palette, `--chip-c0` … `--chip-c5`
+(`-bg`/`-fg`/`-accent`, hex in `tailwind.css`), with text on its tint at least 7:1; a cancelled
+session uses a grey chip.
 
 ## Typography
 
-```css
-:root {
-  --font-display: 'Baloo 2', sans-serif;       /* headings, streak numbers, badge names, nav — everywhere */
-  --font-playful: 'Comic Neue', sans-serif;    /* short kid-facing strings only: empty states, toasts */
-  --font-body: 'Source Sans 3', sans-serif;    /* dense body copy, tables, forms — admin + teacher */
-  --font-tibetan: 'Noto Serif Tibetan', serif; /* lang="bo" content — flagged in brand-guide, no sans alt found */
+- `--sherab-font-sans`: `'Atisha'`, then the system stack (`system-ui`, `-apple-system`, `Segoe UI`,
+  Roboto, …). `--sherab-font-bo` is the same stack inside the new UI (`[data-ui='new']`); outside
+  it, `src/app.css` sets `--font-tibetan: 'Atisha', serif` on `[lang='bo']` and `h1`–`h3`.
+- Atisha (`src/app.css` `@font-face`): one file, weight 400 (bold is synthesised),
+  `unicode-range: U+0F00-0FFF` (so it draws only Tibetan, in any interface language, while Latin
+  falls through to the system font), `font-display: swap`, and `size-adjust: 136%`, which makes
+  Tibetan 1.36× the font size.
+- Line height 1.5; under Tibetan (`:lang(bo)`) 2, including inside `text-xs` … `text-4xl` and
+  `leading-tight`/`-snug`/`-relaxed` (#114). Not covered: `leading-none`/`-normal`/`-loose`,
+  numeric or arbitrary leadings, and sizes from `text-5xl` up. The copied values are pinned to
+  Tailwind 4.3.3 (update them when Tailwind is upgraded).
+- Sizes are Tailwind's scale, with a few fixed sizes (`text-[0.8rem]` in Button `sm`,
+  `text-[0.8125rem]` in BadgeCollection, `text-[0.875rem]` in toasts); nothing is below 12px (#123).
+- Headings: `ui.heading` `text-2xl` bold; `ui.cardTitle` `text-lg` bold; small labels `text-xs`
+  bold uppercase (`ui.kicker`, `ui.label`). Body copy is sentence case.
+- Long text has a reading width: `max-w-prose` on rich text and subtitles (#129).
 
-  --text-xs: 0.75rem;   /* 12px — avoid for body per checklist; labels/meta only */
-  --text-sm: 0.875rem;  /* 14px */
-  --text-base: 1rem;    /* 16px — body minimum */
-  --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
-  --text-2xl: 1.75rem;  /* streak counters, badge names */
-  --text-3xl: 2.25rem;  /* hero streak/badge moments */
-  --line-height-body: 1.5;
-  --line-height-heading: 1.2;
-}
-```
+## Shape and spacing
 
-## Shape, shadow & motion (Claymorphism core)
+- `--radius` 0.25rem (`rounded-md`/`lg`/`xl` all map to it; `rounded-sm` is 2px less).
+- Cards: `ui.card` — border, `p-4` on a phone, `p-6` from `md` (48rem).
+- Pages: `ui.page` — a column with `gap-4`/`gap-6`, centred and capped at `max-w-5xl` from `md`.
+  The signed-in shell adds the side gutter (1rem, 2rem from `md`, at least the safe-area inset);
+  the signed-out shell only the safe-area inset (its cards centre themselves).
+- Navigation: a bottom tab bar below `xl` (80rem), a side nav from `xl`.
+- Dialogs: a white surface with a `ring-1 ring-foreground/10` edge.
 
-```css
-:root {
-  /* Full celebration intensity — badges, streak card, leaderboard */
-  --radius-clay: 20px;
-  --border-clay: 3px solid var(--color-border);
-  --shadow-clay:
-    0 8px 16px rgba(37, 99, 235, 0.12),
-    inset 0 1px 2px rgba(255, 255, 255, 0.6);
-  --press-duration: 200ms;
-  --press-easing: ease-out;
+## Touch, focus and states
 
-  /* Reduced intensity — roster/forms/admin lists (same language, quieter) */
-  --radius-clay-quiet: 12px;
-  --border-clay-quiet: 1.5px solid var(--color-border);
-  --shadow-clay-quiet: 0 2px 4px rgba(37, 99, 235, 0.08);
+- Touch targets: `ui.touch` (`h-auto min-h-11 px-4 text-base whitespace-normal`) gives 44px of
+  height; icon buttons use `size-11`, the calendar `min-width: 2.75rem`. 44px is the standard (user,
+  2026-10-24). Input and NativeSelect are `h-11` by default. Smaller defaults to avoid: Button's
+  own sizes (28–32px) and NativeSelect `size="sm"` (28px); callers add `ui.touch` (#129 B deferred).
+- Focus: a solid 2px outline in `--ring` with a 2px offset (`focus-visible:outline-2 outline-solid
+  outline-offset-2 outline-ring`, #122) on Button, Input, NativeSelect, Badge and the editor.
+  Controls whose base sets `outline-none` need `outline-solid`. Variations: the calendar's buttons
+  and events use a 1px offset; `ui.filter`, `ui.link` and `ui.tileLink` omit `outline-solid` (fine
+  while they set no `outline-none`); the Help sheet's close button has no offset.
+- A "Skip to content" link is the first Tab stop on every page (#122).
+- Invalid fields: `aria-invalid` gives a red border and a `ring-3 ring-destructive/20`; disabled
+  controls are `opacity-50` (inputs also `bg-input/50`).
 
-  --transition-standard: 200ms ease-out;
-}
+## Motion
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --press-duration: 0ms;
-    --transition-standard: 0ms;
-  }
-}
-```
+`@theme` animations: `--animate-badge-pop` and `--animate-badge-burst` (the New badge dialog,
+`motion-safe:` only) and `--animate-nav-progress` (the loading bar). Under
+`prefers-reduced-motion`, the new UI drops every animation and transition except `.animate-spin`.
 
-## Spacing & density
+## Theme
 
-```css
-:root {
-  /* Standard scale (16-64px) — DB default for --density mid; kid-facing screens use this */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-12: 3rem;
-  --space-16: 4rem;
+Light only. Dark mode is deferred (#13): the `dark:` variants in the shadcn components apply only
+under a `.dark` class, which the app never sets, and there are no dark tokens.
 
-  /* Admin/roster density override — tighter, for data-dense tables only */
-  --space-dense-1: 0.25rem;
-  --space-dense-2: 0.375rem;
-  --space-dense-3: 0.5rem;
-  --space-dense-4: 0.75rem;
-}
-```
+## Tailwind
 
-## Touch, targets & breakpoints
-
-Source: DB match, `ux-guidelines.csv` (Touch Target Size, Touch Spacing, Touch Friendly, Tap Delay, Back Button, Sticky Navigation, Compact Control Semantics, Mobile Keyboards).
-
-```css
-:root {
-  --touch-target-min: 48px;   /* Android 48dp baseline; iOS 44pt ≈ 44px — use the larger to cover both, per DB guidance to not treat one platform's unit as universal */
-  --touch-gap-min: 8px;
-}
-```
-
-- `touch-action: manipulation;` on all interactive elements (removes the 300ms tap delay).
-- Every skill-status chip (Not started/Learning/Confident) and Done/Reviewed toggle is a `<button aria-pressed="...">`, never a `<div onclick>` — DB-matched "Compact Control Semantics" guidance, severity Critical.
-- Numeric inputs (streak grace period, badge milestone step, homework look-ahead window — admin settings from SPEC.md Constraints) use `inputmode="numeric"`.
-- Sticky nav gets `padding-top` on the body equal to nav height — never let it overlap content.
-- Use `history.pushState()` for in-app navigation so the hardware/browser back button behaves predictably (relevant since this is an installable PWA).
-
-Breakpoints (checklist default): `375px`, `768px`, `1024px`, `1440px`. Mobile-first: teachers and students are phone/tablet-first per SPEC.md constraint ("must run... on existing family phones/tablets").
-
-## Not found in the design database (flag, don't fabricate)
-
-- **Icon set** (`icons.csv` query "badge achievement streak icon" → 0 results): no curated icon recommendations exist for this domain. Fallback: use a general SVG icon library (Lucide or Heroicons) per the standard checklist ("no emoji as icons") — this is a general default, not a database-sourced recommendation.
-- **Svelte stack guidance** (`stacks/svelte.csv` → 0 results for forms/accessibility/PWA/offline): no stack-specific rows exist yet for Svelte in this tool's database. The touch/forms/nav guidance above is the general `ux` domain guidance applied to SvelteKit by hand, not Svelte-specific DB output.
+Tailwind runs without its global reset (scoped to `[data-ui='new']`), with `!important` utilities,
+and with `source(none)`: only files listed by `@source` in `tailwind.css` get their classes
+generated. `src/lib/ui/tailwind-sources.spec.ts` fails when a component in `src/lib/components`
+that uses classes is not listed; route pages are not checked by it.

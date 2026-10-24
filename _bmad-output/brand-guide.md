@@ -1,4 +1,6 @@
 ---
+status: superseded-for-visuals
+superseded_by: design-tokens.md (2026-10-24, #130)
 id: BRAND-class-tracker
 tool: ui-ux-pro-max
 generated: 2026-09-13
@@ -6,6 +8,12 @@ companions: [design-tokens.md, component-specs.md]
 ---
 
 # Brand Guide — Sherab (Munich Tibetan Sunday School Class Tracker)
+
+> **Superseded for the look (2026-10-24, #130).** The visual system below (Claymorphism everywhere,
+> Baloo 2 / Noto Serif Tibetan, 48px targets, a dark theme, #DC2626) is not what was built. The app's
+> tokens, type, targets and theme are in [design-tokens.md](design-tokens.md), generated from the
+> code. Still valid here: the name Sherab and its meaning, the audience, and the tone; the clay
+> treatment survives on kid-facing celebration surfaces only.
 
 ## App name: Sherab
 

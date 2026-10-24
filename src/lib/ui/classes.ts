@@ -20,7 +20,7 @@ export const ui = {
 	cardTitle: 'mb-3 text-lg leading-snug font-bold',
 	/**
 	 * A celebration surface (story 4: progress tiles, badges, the New badge
-	 * dialog): component-specs.md's full clay treatment, kid-facing only.
+	 * dialog): the clay treatment (design-tokens.md "Celebration"), kid-facing only.
 	 */
 	clay: 'min-w-0 rounded-clay border-3 border-clay bg-card p-4 text-card-foreground shadow-clay md:p-6',
 	/** A To do / Done filter link (story 4): ≥44px, the current one filled. */

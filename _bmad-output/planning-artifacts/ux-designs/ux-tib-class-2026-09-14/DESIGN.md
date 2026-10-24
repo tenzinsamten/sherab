@@ -1,7 +1,8 @@
 ---
 name: Sherab
 description: Bold, high-contrast, editorial/brutalist visual system for the Munich Tibetan Sunday School class tracker — a free volunteer-run PWA, not a polished consumer product.
-status: final
+status: superseded
+superseded_by: _bmad-output/design-tokens.md (2026-10-24, #130)
 sources:
   - '{planning_artifacts}/../specs/spec-class-tracker/SPEC.md'
   - '{planning_artifacts}/architecture/architecture-tib-class-2026-09-13/ARCHITECTURE-SPINE.md'
@@ -100,6 +101,12 @@ components:
     background: '{colors.border-hairline}'
     foreground: '{colors.ink-muted}'
 ---
+
+> **Superseded (2026-10-24, #130).** This visual system (0 radius, no shadows, all-caps display
+> type) is not what was built. The app's look is in `_bmad-output/design-tokens.md`, generated from
+> the code. In EXPERIENCE.md the flows and screen inventory still hold; its visual and layout notes
+> (a from-scratch component system, a horizontal desktop nav, keyboard paths "not yet defined") are
+> superseded too: the app uses shadcn-svelte, a side nav from 80rem, and #122's focus and skip link.
 
 ## Brand & Style
 

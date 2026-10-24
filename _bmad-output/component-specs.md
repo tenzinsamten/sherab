@@ -1,4 +1,6 @@
 ---
+status: superseded-for-visuals
+superseded_by: design-tokens.md (2026-10-24, #130)
 id: COMPONENTS-class-tracker
 tool: ui-ux-pro-max
 generated: 2026-09-13
@@ -6,6 +8,11 @@ companions: [brand-guide.md, design-tokens.md]
 ---
 
 # Component Specs — Sherab
+
+> **Superseded for visual details (2026-10-24, #130).** Token names, radii, shadows, 48px targets and
+> the "-quiet" variants below are not what was built; see [design-tokens.md](design-tokens.md) and
+> `src/lib/components/ui`. Still valid here: which components each capability needs and their
+> behaviour rules (for example Approve and Reject told apart, Reject as a neutral outline, #124).
 
 Maps [[design-tokens]] to the actual capabilities in `_bmad-output/specs/spec-class-tracker/SPEC.md`. Kid-facing components (student role) get full `--radius-clay` / `--shadow-clay` treatment; teacher/admin components use `-quiet` tokens — same shape language, lower volume, per [[brand-guide]].
 

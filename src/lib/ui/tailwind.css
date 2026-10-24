@@ -180,9 +180,8 @@
 	/* #122: white, so focus shows on the navy frame and around the blue current item. */
 	--sidebar-ring: #ffffff;
 
-	/* Celebration surfaces (story 4; component-specs.md "full celebration
-	   treatment", design-tokens.md Claymorphism core): progress tiles,
-	   badges and the New badge dialog. Kid-facing only. */
+	/* Celebration surfaces (story 4; design-tokens.md "Celebration"):
+	   progress tiles, badges and the New badge dialog. Kid-facing only. */
 	--clay: #e4ecfc;
 	--play: #f59e0b;
 	--celebrate: #ec4899;

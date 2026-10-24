@@ -3022,3 +3022,11 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   check and build exit 0; after a second reset, nine browser test files 211/211. To verify: a long
   Tibetan breadcrumb on a phone; a homework text on a laptop; the forgot-password message with a
   screen reader; the breadcrumb ellipsis in Safari.
+
+- 2026-10-24: #130 done on `fix/121-unsaved-changes-guard` (remaining items on this branch), spec
+  `implementation-artifacts/spec-130-design-docs.md`. `design-tokens.md` now describes the app as
+  built (colours with contrast, strong tokens, frame, celebration, calendar chips, Atisha and the
+  Tibetan line height, radius, 44px targets as the standard — user's choice —, focus, states,
+  motion, light only, Tailwind sources), checked against the code by a reviewer; `brand-guide.md`,
+  `component-specs.md` and the UX `DESIGN.md` are marked superseded for the look. Found: red and
+  green text on the grey `--muted` background are below 4.5:1 (4.41, 4.12); noted in the doc.
