@@ -19,11 +19,34 @@
 		resolve('/resend-confirmation') +
 			(unconfirmed && form?.email?.includes('@') ? `?email=${encodeURIComponent(form.email)}` : '')
 	);
+
+	// #117: the action's error also stays in the form (the toast goes after
+	// 5s): under the empty field, or above the button. Wrong credentials mark
+	// both fields, so it never says which one is wrong.
+	let errorText = $derived(form && 'error' in form && form.error ? form.error : '');
+	let errorAt = $derived.by((): { at: string; marked: string[] } | null => {
+		if (!errorText) return null;
+		if (errorText === m.login_error_required()) {
+			const field = form?.email ? 'password' : 'email';
+			return { at: field, marked: [field] };
+		}
+		if (errorText === m.login_error_invalid()) return { at: 'form', marked: ['email', 'password'] };
+		return { at: 'form', marked: [] };
+	});
+	const invalid = (id: string) => (errorAt?.marked.includes(id) ? 'true' : undefined);
+	const describedBy = (id: string) =>
+		errorAt?.marked.includes(id) ? `${errorAt.at}-error` : undefined;
 </script>
 
 <svelte:head>
 	<title>{m.login_heading()} — Sherab</title>
 </svelte:head>
+
+{#snippet error(at: string)}
+	{#if errorAt?.at === at}
+		<p id="{at}-error" class={ui.error}>{errorText}</p>
+	{/if}
+{/snippet}
 
 <AuthCard title={m.login_welcome_title()} subtitle={m.login_welcome_subtitle()}>
 	{#if data.confirmLinkFailed && !form}
@@ -42,7 +65,10 @@
 				placeholder={m.login_email_placeholder()}
 				required
 				value={form?.email ?? ''}
+				aria-invalid={invalid('email')}
+				aria-describedby={describedBy('email')}
 			/>
+			{@render error('email')}
 		</div>
 		<div class={auth.field}>
 			<label for="password" class={auth.label}>{m.login_password_label()}</label>
@@ -52,8 +78,12 @@
 				autocomplete="current-password"
 				placeholder={m.login_password_placeholder()}
 				required
+				aria-invalid={invalid('password')}
+				aria-describedby={describedBy('password')}
 			/>
+			{@render error('password')}
 		</div>
+		{@render error('form')}
 		<Button type="submit" class={auth.submit}>
 			<LogIn class="size-5" aria-hidden="true" />
 			{m.login_submit()}

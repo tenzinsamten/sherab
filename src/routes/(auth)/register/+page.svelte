@@ -15,11 +15,30 @@
 	let submitting = $state(false);
 	let receiptEmail = $derived(form && 'success' in form && form.success ? form.email : null);
 	let values = $derived(form && !('success' in form) ? form : null);
+
+	// #117: a failed submit's error also stays in the form (the toast goes
+	// after 5s): under its field, or above the button.
+	let errorText = $derived(values?.error ?? '');
+	let errorAt = $derived.by((): string | null => {
+		if (!errorText) return null;
+		if (errorText === m.register_error_exists()) return 'email';
+		if (errorText === m.reset_error_length()) return 'password';
+		if (errorText === m.reset_error_mismatch()) return 'confirm';
+		return 'form';
+	});
+	const invalid = (id: string) => (errorAt === id ? 'true' : undefined);
+	const describedBy = (id: string) => (errorAt === id ? `${id}-error` : undefined);
 </script>
 
 <svelte:head>
 	<title>{m.register_heading()} — Sherab</title>
 </svelte:head>
+
+{#snippet error(at: string)}
+	{#if errorAt === at}
+		<p id="{at}-error" class={ui.error}>{errorText}</p>
+	{/if}
+{/snippet}
 
 {#if receiptEmail}
 	<AuthCard title={m.register_receipt_heading()}>
@@ -72,7 +91,10 @@
 					autocomplete="email"
 					required
 					value={values?.email ?? ''}
+					aria-invalid={invalid('email')}
+					aria-describedby={describedBy('email')}
 				/>
+				{@render error('email')}
 			</div>
 			<div class={auth.field}>
 				<label for="password" class={auth.label}>{m.register_password_label()}</label>
@@ -82,7 +104,10 @@
 					autocomplete="new-password"
 					minlength={6}
 					required
+					aria-invalid={invalid('password')}
+					aria-describedby={describedBy('password')}
 				/>
+				{@render error('password')}
 			</div>
 			<div class={auth.field}>
 				<label for="confirm" class={auth.label}>{m.register_confirm_label()}</label>
@@ -92,8 +117,12 @@
 					autocomplete="new-password"
 					minlength={6}
 					required
+					aria-invalid={invalid('confirm')}
+					aria-describedby={describedBy('confirm')}
 				/>
+				{@render error('confirm')}
 			</div>
+			{@render error('form')}
 			<Button
 				type="submit"
 				class={auth.submit}

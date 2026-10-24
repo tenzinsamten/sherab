@@ -117,6 +117,28 @@ async function open(page: Page, path: string) {
 const toast = (page: Page, text: string | RegExp) =>
 	page.locator('[data-sonner-toast]').getByText(text).first();
 
+/**
+ * #117: the action's error also stays in the form, as a message at
+ * `#<at>-error`, and each marked field is invalid and described by it.
+ */
+async function expectFormError(page: Page, at: string, text: string, marked: string[]) {
+	const error = page.locator(`#${at}-error`);
+	await expect(error).toHaveText(text);
+	// No live role: the toast already announces it.
+	await expect(error).not.toHaveAttribute('role');
+	for (const id of marked) {
+		await expect(page.locator(`#${id}`)).toHaveAttribute('aria-invalid', 'true');
+		await expect(page.locator(`#${id}`)).toHaveAttribute('aria-describedby', `${at}-error`);
+	}
+}
+
+/** Turns off the browser's checks (required, minlength, type="email") so the server's run. */
+async function skipBrowserChecks(page: Page) {
+	await page.locator('[data-auth-card] form[method="POST"]').evaluate((form) => {
+		(form as HTMLFormElement).noValidate = true;
+	});
+}
+
 async function setLocale(page: Page, locale: string) {
 	await page
 		.context()
@@ -252,6 +274,11 @@ for (const v of VIEWPORTS) {
 			await expect(toast(page, 'Invalid email or password.')).toBeVisible();
 			await expect(page).toHaveURL(/\/login$/);
 			await expect(page.locator('#email')).toHaveValue(parent.email);
+			// #117: above the button, both fields marked; still there once the toast has gone.
+			await expectFormError(page, 'form', 'Invalid email or password.', ['email', 'password']);
+			await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+			await expect(page.locator('#form-error')).toHaveText('Invalid email or password.');
+			await expect(page.locator('#email')).toHaveAttribute('aria-invalid', 'true');
 			// The fields password managers fill keep their names and hints.
 			await expect(page.locator('#email')).toHaveAttribute('autocomplete', 'username');
 			await expect(page.locator('#password')).toHaveAttribute('autocomplete', 'current-password');
@@ -277,6 +304,32 @@ for (const v of VIEWPORTS) {
 			await expect(page.locator('#displayName')).toHaveValue(name);
 			await expect(page.locator('#email')).toHaveValue(existing.email);
 			await expect(page.locator('#password')).toHaveValue('secret-123');
+			await expectFormError(
+				page,
+				'email',
+				'An account with this email already exists. Sign in instead. If you are a teacher and also a parent, sign in and use “Request parent access” under My Account.',
+				['email']
+			);
+
+			// #117: too short (past the browser's minlength) under Password; the
+			// email's error is replaced.
+			await skipBrowserChecks(page);
+			await page.locator('#password').fill('abc');
+			await page.locator('#confirm').fill('abc');
+			await page.getByRole('button', { name: 'Create account' }).click();
+			await expectFormError(page, 'password', 'Password must be at least 6 characters.', [
+				'password'
+			]);
+			await expect(page.locator('#email-error')).toHaveCount(0);
+			await expect(page.locator('#email')).not.toHaveAttribute('aria-invalid');
+
+			// A mismatch under Confirm.
+			await page.locator('#password').fill('secret-123');
+			await page.locator('#confirm').fill('secret-456');
+			await page.getByRole('button', { name: 'Create account' }).click();
+			await expectFormError(page, 'confirm', 'Passwords do not match.', ['confirm']);
+			await expect(page.locator('#password-error')).toHaveCount(0);
+			await page.locator('#confirm').fill('secret-123');
 
 			const email = `e2e-auth-reg-${v.name}-${tag}@example.test`;
 			registered.push(email);
@@ -293,16 +346,32 @@ for (const v of VIEWPORTS) {
 			await expect(
 				toast(page, 'That reset link is invalid or has expired. Please request a new one.')
 			).toBeVisible();
+			// #117: a student's username, under Email.
+			await page.locator('#email').fill(`student-${v.name}`);
+			await page.getByRole('button', { name: 'Send reset link' }).click();
+			await expectFormError(
+				page,
+				'email',
+				"Students can't reset their own password yet. Please ask your teacher.",
+				['email']
+			);
 			await page.locator('#email').fill(`nobody-${v.name}-${tag}@example.test`);
 			await page.getByRole('button', { name: 'Send reset link' }).click();
 			await expect(toast(page, /If an account exists for that email/)).toBeVisible();
+			await expect(page.locator('#email-error')).toHaveCount(0);
+			await expect(page.locator('#email')).not.toHaveAttribute('aria-invalid');
 
 			await open(page, '/resend-confirmation');
+			// #117: empty (past the browser's check), under Email.
+			await skipBrowserChecks(page);
+			await page.getByRole('button', { name: 'Send link' }).click();
+			await expectFormError(page, 'email', 'Enter the email you registered with.', ['email']);
 			await page.locator('#email').fill(`nobody-${v.name}-${tag}@example.test`);
 			await page.getByRole('button', { name: 'Send link' }).click();
 			await expect(page.getByRole('status')).toContainText(
 				'If this email is waiting for confirmation, a new link is on its way.'
 			);
+			await expect(page.locator('#email-error')).toHaveCount(0);
 		});
 
 		test(`reset password (${v.name}): inside the signed-in shell; a mismatch toasts, a match saves`, async ({
@@ -316,6 +385,17 @@ for (const v of VIEWPORTS) {
 			await page.getByRole('button', { name: 'Update password' }).click();
 			await expect(toast(page, 'Passwords do not match.')).toBeVisible();
 			await expect(page).toHaveURL(/\/reset-password$/);
+			await expectFormError(page, 'confirm', 'Passwords do not match.', ['confirm']);
+
+			// #117: too short (past the browser's minlength), under Password.
+			await skipBrowserChecks(page);
+			await page.locator('#password').fill('abc');
+			await page.locator('#confirm').fill('abc');
+			await page.getByRole('button', { name: 'Update password' }).click();
+			await expectFormError(page, 'password', 'Password must be at least 6 characters.', [
+				'password'
+			]);
+			await expect(page.locator('#confirm-error')).toHaveCount(0);
 
 			await page.locator('#password').fill('new-secret-1');
 			await page.locator('#confirm').fill('new-secret-1');
