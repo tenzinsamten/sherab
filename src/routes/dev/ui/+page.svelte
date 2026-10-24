@@ -52,12 +52,18 @@
 		<!-- Nested language: Tibetan inside English, English inside Tibetan. -->
 		{#if sample.lang === 'en'}
 			<h3 lang="bo" data-testid="nested-lang">ཤེས་རབ།</h3>
+			<p lang="bo" class="text-sm" data-testid="nested-sized">ཤེས་རབ།</p>
 			<!-- Tibetan with no `lang` of its own (a class or team name in an
 			     English interface): still drawn in Atisha (#78). -->
 			<p data-testid="untagged-bo">ཤེས་རབ།</p>
 		{:else}
 			<p lang="en" data-testid="nested-lang">Written in English</p>
+			<p lang="en" class="text-sm" data-testid="nested-sized">Written in English</p>
 		{/if}
+		<!-- Size and leading utilities keep the language's line height (#114). -->
+		<p class="text-sm" data-testid="sized-text">{sample.cardBody}</p>
+		<h3 class="text-lg leading-tight" data-testid="tight-heading">{sample.cardTitle}</h3>
+		<p class="text-base leading-snug" data-testid="snug-text">{sample.cardBody}</p>
 
 		<div class="flex flex-wrap items-center gap-2">
 			<Button data-testid="button-default">

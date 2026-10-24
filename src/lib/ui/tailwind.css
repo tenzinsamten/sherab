@@ -291,16 +291,45 @@
    Tibetan block, so the font is the same either way. Only on the root and on those
    two kinds of nested elements, so everything else inherits (and a `font-*`
    or `leading-*` utility still wins). Specific enough to beat app.css's
-   `[lang='bo'] ...` rules; see reset.css for the `:not(#__)`. */
+   `[lang='bo'] ...` rules; see reset.css for the `:not(#__)`.
+   The size utilities `text-xs` … `text-4xl` and the leadings `leading-tight`,
+   `leading-snug` and `/relaxed` set their own line height, and they are
+   important, so they would give Tibetan the Latin line back (#114). They read
+   the theme variables below, which inherit: in Tibetan each is the Tibetan
+   line, elsewhere Tailwind's own value (copied from `tailwindcss/theme.css`,
+   4.3.3; update them with Tailwind). Other leadings (`leading-none`,
+   `-normal`, `-loose`, `leading-6`, `leading-[…]`) are not covered. */
 [data-ui='new']:not(#__),
 [data-ui='new']:lang(bo) [lang]:not(:lang(bo)):not(#__) {
 	font-family: var(--sherab-font-sans);
 	line-height: 1.5;
+	--text-xs--line-height: calc(1 / 0.75);
+	--text-sm--line-height: calc(1.25 / 0.875);
+	--text-base--line-height: calc(1.5 / 1);
+	--text-lg--line-height: calc(1.75 / 1.125);
+	--text-xl--line-height: calc(1.75 / 1.25);
+	--text-2xl--line-height: calc(2 / 1.5);
+	--text-3xl--line-height: calc(2.25 / 1.875);
+	--text-4xl--line-height: calc(2.5 / 2.25);
+	--leading-tight: 1.25;
+	--leading-snug: 1.375;
+	--leading-relaxed: 1.625;
 }
 [data-ui='new']:lang(bo):not(#__),
 [data-ui='new'] [lang]:lang(bo):not(#__) {
 	font-family: var(--sherab-font-bo);
 	line-height: 2;
+	--text-xs--line-height: 2;
+	--text-sm--line-height: 2;
+	--text-base--line-height: 2;
+	--text-lg--line-height: 2;
+	--text-xl--line-height: 2;
+	--text-2xl--line-height: 2;
+	--text-3xl--line-height: 2;
+	--text-4xl--line-height: 2;
+	--leading-tight: 2;
+	--leading-snug: 2;
+	--leading-relaxed: 2;
 }
 
 /* Story 5b: @event-calendar/core on /calendar, in the Sherab theme. The

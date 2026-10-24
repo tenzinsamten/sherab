@@ -111,6 +111,24 @@ test.describe('/dev/ui', () => {
 			`${1.5 * parseFloat(await style(enInBo, 'font-size'))}px`
 		);
 
+		// `text-sm`, `leading-tight` and `leading-snug` set their own line
+		// height; in Tibetan they keep the Tibetan line, and English inside
+		// Tibetan gets Tailwind's back, and the reverse (#114).
+		const ratio = (locator: Locator) =>
+			locator.evaluate((element) => {
+				const computed = getComputedStyle(element);
+				return parseFloat(computed.lineHeight) / parseFloat(computed.fontSize);
+			});
+		const enRoot = page.getByTestId('preview-en');
+		expect(await ratio(root.getByTestId('sized-text'))).toBeCloseTo(2, 2);
+		expect(await ratio(root.getByTestId('tight-heading'))).toBeCloseTo(2, 2);
+		expect(await ratio(root.getByTestId('snug-text'))).toBeCloseTo(2, 2);
+		expect(await ratio(root.getByTestId('nested-sized'))).toBeCloseTo(1.25 / 0.875, 2);
+		expect(await ratio(enRoot.getByTestId('nested-sized'))).toBeCloseTo(2, 2);
+		expect(await ratio(enRoot.getByTestId('sized-text'))).toBeCloseTo(1.25 / 0.875, 2);
+		expect(await ratio(enRoot.getByTestId('tight-heading'))).toBeCloseTo(1.25, 2);
+		expect(await ratio(enRoot.getByTestId('snug-text'))).toBeCloseTo(1.375, 2);
+
 		// English page text stays on the system fonts; Tibetan with no `lang`
 		// of its own in the English root is drawn in Atisha (#78).
 		const en = page.getByTestId('preview-en');
