@@ -257,7 +257,9 @@ test('load error: the error page shows and the busy state clears', async ({ brow
 		await expect(main(page)).toHaveAttribute('inert', '');
 
 		await expect(page).toHaveURL(/\/calendar$/, { timeout: 10_000 });
-		await expect(page.getByRole('heading', { name: '500' })).toBeVisible();
+		// #115: the translated error page, with the status below its heading.
+		await expect(page.getByRole('heading', { name: 'Something went wrong' })).toBeVisible();
+		await expect(page.getByText('Error 500')).toBeVisible();
 		expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(
 			true
 		);
