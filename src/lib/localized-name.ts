@@ -49,3 +49,27 @@ export function localizeName<T extends LocalizedNames>(
 	const { name, name_bo, name_de, ...rest } = row;
 	return { ...rest, name: pickLocalized(name, name_bo, name_de, locale) };
 }
+
+/** A field of LocalizedNameFields.svelte, by its posted name. */
+export type NameField = 'name' | 'nameBo' | 'nameDe';
+
+/**
+ * #117b: the name field a failed class or team save's error belongs to, or
+ * null when it belongs to no one field (shown above the form's button).
+ * Matched by text, as the sign-in pages do (#117): the missing English or
+ * Tibetan name, or the duplicate message naming one of the submitted values
+ * (the server names the colliding one, `duplicateName()`).
+ */
+export function nameErrorField(
+	error: string,
+	values: { name?: string | null; nameBo?: string | null; nameDe?: string | null },
+	messages: { required: string; boRequired: string; duplicate: (name: string) => string }
+): NameField | null {
+	if (error === messages.required) return 'name';
+	if (error === messages.boRequired) return 'nameBo';
+	for (const field of ['name', 'nameBo', 'nameDe'] as const) {
+		const value = values[field];
+		if (value && error === messages.duplicate(value)) return field;
+	}
+	return null;
+}

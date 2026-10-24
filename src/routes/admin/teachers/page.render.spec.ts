@@ -1,6 +1,7 @@
 import { render } from 'svelte/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
+import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
 import Page from './+page.svelte';
 
 /**
@@ -36,12 +37,15 @@ function teacher(id: string, overrides: Partial<Teacher> = {}): Teacher {
 	};
 }
 
-function renderPage(data: { teachers?: Teacher[]; classes?: typeof classes }) {
+function renderPage(
+	data: { teachers?: Teacher[]; classes?: typeof classes },
+	form: Record<string, unknown> | null = null
+) {
 	return render(Page, {
 		props: {
 			params: {},
 			data: { teachers: [], classes, loadError: false, ...data },
-			form: null
+			form
 		} as never
 	}).body.replace(/<!--[\s\S]*?-->/g, ''); // without Svelte's hydration markers
 }
@@ -106,5 +110,84 @@ describe('admin teachers (+page.svelte)', () => {
 		const body = renderPage({});
 		expect(body).toContain(m.teachers_empty());
 		expect(body).not.toContain('<table');
+	});
+
+	describe('create errors (#117b)', () => {
+		const values = { email: 'new@example.test', displayName: 'New', classIds: ['c1'] };
+		const message = (html: string, id: string) =>
+			html.match(new RegExp(`<p id="${id}"[^>]*>([\\s\\S]*?)</p>`))?.[1].trim();
+		const email = (html: string) => html.match(/<input[^>]*\sid="email"[^>]*>/)?.[0] ?? '';
+		const fieldset = (html: string) => html.match(/<fieldset[^>]*\sid="classes"[^>]*>/)?.[0] ?? '';
+		const page = (form: Record<string, unknown>) => {
+			const html = renderPage({ teachers: [teacher('a')] }, form);
+			// The toast announces the error; the inline message has no live role.
+			expect(html).not.toContain('role="alert"');
+			return html;
+		};
+
+		it('email required, duplicate and parent pending under Email', () => {
+			for (const error of [
+				m.teachers_error_email_required(),
+				m.teachers_error_duplicate(),
+				m.teachers_error_parent_pending()
+			]) {
+				const html = page({ error, ...values });
+				expect(message(html, 'email-error')).toBe(error);
+				expect(email(html)).toContain('aria-invalid="true"');
+				expect(email(html)).toContain('aria-describedby="email-error"');
+				expect(fieldset(html)).not.toContain('aria-describedby');
+			}
+		});
+
+		it('no class under the classes, which it describes', () => {
+			const error = m.teachers_error_class_required();
+			const html = page({ error, ...values, classIds: [] });
+			expect(message(html, 'classes-error')).toBe(error);
+			expect(fieldset(html)).toContain('aria-describedby="classes-error"');
+			expect(email(html)).not.toMatch(/\saria-invalid=/);
+		});
+
+		it('create, assign and promote failures above the button, no field marked', () => {
+			for (const error of [
+				m.teachers_error_create_failed(),
+				'Some raw auth message',
+				m.teachers_error_assign_failed({ message: 'boom' }),
+				m.teachers_error_promote_failed({ message: 'boom' })
+			]) {
+				const html = page({ error, ...values });
+				const create = html.match(/<form[^>]*action="\?\/create"[\s\S]*?<\/form>/)?.[0] ?? '';
+				expect(message(create, 'form-error')).toBe(error);
+				expect(email(html)).not.toMatch(/\saria-invalid=/);
+				expect(fieldset(html)).not.toContain('aria-describedby');
+			}
+		});
+
+		it('promotable: no inline message', () => {
+			const html = page({ promotable: true, ...values });
+			expect(html).not.toMatch(/<p id="[^"]*-error"/);
+		});
+
+		it('the other actions’ errors stay toast-only', () => {
+			for (const error of [
+				m.teachers_error_update_failed({ message: 'boom' }),
+				m.teachers_error_reset_failed(),
+				m.teachers_error_remove_failed()
+			]) {
+				expect(page({ error })).not.toMatch(/<p id="[^"]*-error"/);
+			}
+		});
+
+		describe('under Tibetan', () => {
+			const original = getLocale;
+			afterEach(() => overwriteGetLocale(original));
+
+			it('places the Tibetan text', () => {
+				overwriteGetLocale(() => 'bo');
+				const error = m.teachers_error_class_required();
+				const html = page({ error, ...values, classIds: [] });
+				expect(message(html, 'classes-error')).toBe(error);
+				expect(error).not.toBe(m.teachers_error_class_required({}, { locale: 'en' }));
+			});
+		});
 	});
 });

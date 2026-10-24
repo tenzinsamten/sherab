@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -15,7 +15,7 @@
 	import LocalizedNameFields from '$lib/components/LocalizedNameFields.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { otherNames } from '$lib/localized-name';
+	import { nameErrorField, otherNames, type NameField } from '$lib/localized-name';
 	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';
 
@@ -39,7 +39,11 @@
 	});
 
 	// #76: the team whose names are being edited (one row at a time).
-	let editingId = $state<string | null>(null);
+	// #117b: a page rendered with a failed save (no JS) opens that team's
+	// row, so its error shows.
+	let editingId = $state<string | null>(
+		untrack(() => (form && 'renameId' in form ? (form.renameId ?? null) : null))
+	);
 
 	$effect(() => {
 		if (form && 'team' in form && form.team) {
@@ -68,6 +72,34 @@
 		return { name: team.name, nameBo: team.name_bo, nameDe: team.name_de };
 	}
 
+	// #117b: a failed save's error under the name field it is about, or above
+	// the form's button (`at` null). Create errors (they echo the names) show
+	// in the create form only, edit errors in their team's row only; each
+	// goes with the next result.
+	type FormError = { text: string; at: NameField | null };
+	function fieldError(
+		error: string,
+		values: { name?: string | null; nameBo?: string | null; nameDe?: string | null }
+	): FormError {
+		return {
+			text: error,
+			at: nameErrorField(error, values, {
+				required: m.teams_error_name_required(),
+				boRequired: m.teams_error_name_bo_required(),
+				duplicate: (name) => m.teams_error_duplicate_name({ name })
+			})
+		};
+	}
+	let createError = $derived(
+		form && 'error' in form && form.error && 'name' in form ? fieldError(form.error, form) : null
+	);
+	function editError(team: TeamRow): FormError | null {
+		if (!form || !('renameId' in form) || form.renameId !== team.id) return null;
+		if (!('error' in form) || !form.error) return null;
+		return fieldError(form.error, form.renameValues);
+	}
+	const nameError = (e: FormError | null) => (e?.at ? { field: e.at, text: e.text } : null);
+
 	// One markup for both layouts: stacked cards below 80em, a table from 80em
 	// (copied from /requests).
 	const table = 'block w-full min-w-0 xl:table xl:border-collapse';
@@ -92,6 +124,13 @@
 	<title>{m.teams_heading()} — Sherab Admin</title>
 </svelte:head>
 
+<!-- #117b: a form's error that belongs to no one field, above its button. -->
+{#snippet formError(e: FormError | null, prefix: string)}
+	{#if e && !e.at}
+		<p id="{prefix}form-error" class={ui.error}>{e.text}</p>
+	{/if}
+{/snippet}
+
 <div data-ui="new" class={ui.page} data-hydrated={hydrated || undefined}>
 	<header class={ui.header}>
 		<div class="min-w-0">
@@ -112,7 +151,12 @@
 			use:enhance={pending.submit('create')}
 			novalidate
 		>
-			<LocalizedNameFields label={m.teams_name_label()} values={createdNames} />
+			<LocalizedNameFields
+				label={m.teams_name_label()}
+				values={createdNames}
+				error={nameError(createError)}
+			/>
+			{@render formError(createError, '')}
 			<div>
 				<Button
 					type="submit"
@@ -249,8 +293,10 @@
 												label={m.teams_name_label()}
 												idPrefix="edit-{team.id}-"
 												values={editValues(team)}
+												error={nameError(editError(team))}
 											/>
 										</fieldset>
+										{@render formError(editError(team), `edit-${team.id}-`)}
 										<div class="flex min-w-0 flex-wrap gap-2">
 											<Button
 												type="submit"

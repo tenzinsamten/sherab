@@ -2,6 +2,8 @@
 	import * as m from '$lib/paraglide/messages.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import type { NameField } from '$lib/localized-name';
+	import { ui } from '$lib/ui/classes';
 
 	/**
 	 * The name of a class or team in each language (#76), posted as `name`
@@ -12,15 +14,21 @@
 	 * Mobile-first story 9: native fields in their own `data-ui="new"` root.
 	 * They take part in form reset, so a successful create clears them
 	 * without a remount.
+	 *
+	 * #117b: `error` is a failed save's message for one of the fields: that
+	 * input is marked and described by `<input id>-error` under it. No live
+	 * role: the toast announces it (#117).
 	 */
 	let {
 		label,
 		idPrefix = '',
-		values
+		values,
+		error = null
 	}: {
 		label: string;
 		idPrefix?: string;
 		values?: { name?: string | null; nameBo?: string | null; nameDe?: string | null };
+		error?: { field: NameField; text: string } | null;
 	} = $props();
 
 	const fields = $derived([
@@ -67,7 +75,12 @@
 				required={field.required}
 				autocomplete="off"
 				value={field.value}
+				aria-invalid={error?.field === field.name ? 'true' : undefined}
+				aria-describedby={error?.field === field.name ? `${field.id}-error` : undefined}
 			/>
+			{#if error?.field === field.name}
+				<p id="{field.id}-error" class={ui.error}>{error.text}</p>
+			{/if}
 		</div>
 	{/each}
 </div>

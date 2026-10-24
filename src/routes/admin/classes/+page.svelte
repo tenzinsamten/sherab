@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -19,7 +19,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { badgeSubjectLabel, isBadgeSubject } from '$lib/badge-subject';
-	import { otherNames } from '$lib/localized-name';
+	import { nameErrorField, otherNames, type NameField } from '$lib/localized-name';
 	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageProps } from './$types';
 
@@ -46,8 +46,11 @@
 		hydrated = true;
 	});
 
-	// #76: the class being edited (one row at a time).
-	let editingId = $state<string | null>(null);
+	// #76: the class being edited (one row at a time). #117b: a page rendered
+	// with a failed save (no JS) opens that class's row, so its error shows.
+	let editingId = $state<string | null>(
+		untrack(() => (form && 'renameId' in form ? (form.renameId ?? null) : null))
+	);
 
 	$effect(() => {
 		if (form && 'class' in form && form.class) {
@@ -78,6 +81,37 @@
 			badgeSubject: cls.badge_subject
 		};
 	}
+
+	// #117b: a failed save's error under the name field it is about, or above
+	// the form's button (`at` null). Create errors (they echo the names, or
+	// the 401 without them) show in the create form only, edit errors in
+	// their class's row only; each goes with the next result.
+	type FormError = { text: string; at: NameField | null };
+	function fieldError(
+		error: string,
+		values: { name?: string | null; nameBo?: string | null; nameDe?: string | null }
+	): FormError {
+		return {
+			text: error,
+			at: nameErrorField(error, values, {
+				required: m.classes_error_name_required(),
+				boRequired: m.classes_error_name_bo_required(),
+				duplicate: (name) => m.classes_error_duplicate_name({ name })
+			})
+		};
+	}
+	let createError = $derived.by((): FormError | null => {
+		if (!form || !('error' in form) || !form.error || 'renameId' in form) return null;
+		if ('name' in form) return fieldError(form.error, form);
+		// The create action's 401 is its only result without the names.
+		return form.error === 'Not signed in.' ? { text: form.error, at: null } : null;
+	});
+	function editError(cls: ClassRow): FormError | null {
+		if (!form || !('renameId' in form) || form.renameId !== cls.id) return null;
+		if (!('error' in form) || !form.error) return null;
+		return fieldError(form.error, form.renameValues);
+	}
+	const nameError = (e: FormError | null) => (e?.at ? { field: e.at, text: e.text } : null);
 
 	// The subject error of a failed edit, for that class's row only.
 	function editSubjectError(cls: ClassRow) {
@@ -160,6 +194,13 @@
 	<title>{m.classes_heading()} — Sherab Admin</title>
 </svelte:head>
 
+<!-- #117b: a form's error that belongs to no one field, above its button. -->
+{#snippet formError(e: FormError | null, prefix: string)}
+	{#if e && !e.at}
+		<p id="{prefix}form-error" class={ui.error}>{e.text}</p>
+	{/if}
+{/snippet}
+
 {#snippet spinner(key: string)}
 	{#if pending.is(key)}
 		<LoaderCircle class="animate-spin" aria-hidden="true" />
@@ -186,7 +227,11 @@
 			use:enhance={pending.submit('create')}
 			novalidate
 		>
-			<LocalizedNameFields label={m.classes_name_label()} values={createdNames} />
+			<LocalizedNameFields
+				label={m.classes_name_label()}
+				values={createdNames}
+				error={nameError(createError)}
+			/>
 			<BadgeSubjectSelect
 				id="new-class-subject"
 				value={createdSubject}
@@ -208,6 +253,7 @@
 					errors={scheduleErrors}
 				/>
 			{/key}
+			{@render formError(createError, '')}
 			<div>
 				<Button
 					type="submit"
@@ -372,6 +418,7 @@
 												label={m.classes_name_label()}
 												idPrefix="edit-{cls.id}-"
 												values={editValues(cls)}
+												error={nameError(editError(cls))}
 											/>
 											<BadgeSubjectSelect
 												id="edit-{cls.id}-subject"
@@ -379,6 +426,7 @@
 												error={editSubjectError(cls)}
 											/>
 										</fieldset>
+										{@render formError(editError(cls), `edit-${cls.id}-`)}
 										<div class="flex min-w-0 flex-wrap gap-2">
 											<Button
 												type="submit"

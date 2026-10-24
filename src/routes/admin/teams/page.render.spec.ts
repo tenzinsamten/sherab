@@ -1,6 +1,7 @@
 import { render } from 'svelte/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
+import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
 import Page from './+page.svelte';
 
 /**
@@ -22,9 +23,9 @@ function team(id: string, overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function renderPage(teams: ReturnType<typeof team>[]) {
+function renderPage(teams: ReturnType<typeof team>[], form: Record<string, unknown> | null = null) {
 	return render(Page, {
-		props: { params: {}, data: { teams, loadError: false }, form: null } as never
+		props: { params: {}, data: { teams, loadError: false }, form } as never
 	}).body;
 }
 
@@ -67,5 +68,95 @@ describe('admin teams (+page.svelte)', () => {
 		const body = renderPage([]);
 		expect(body).toContain(m.teams_empty());
 		expect(body).not.toContain('<table');
+	});
+
+	describe('form errors (#117b)', () => {
+		const names = { name: 'Lions', nameBo: 'སེང་གེ', nameDe: 'Löwen' };
+		const message = (html: string, id: string) =>
+			html.match(new RegExp(`<p id="${id}"[^>]*>([\\s\\S]*?)</p>`))?.[1].trim();
+		const input = (html: string, id: string) =>
+			html.match(new RegExp(`<input[^>]*\\sid="${id}"[^>]*>`))?.[0] ?? '';
+		const marked = (html: string, id: string) => {
+			expect(input(html, id)).toContain('aria-invalid="true"');
+			expect(input(html, id)).toContain(`aria-describedby="${id}-error"`);
+		};
+		const unmarked = (html: string, ...ids: string[]) => {
+			for (const id of ids) expect(input(html, id)).not.toMatch(/\saria-invalid=/);
+		};
+		const create = (html: string) =>
+			html.match(/<section[^>]*data-testid="team-create"[\s\S]*?<\/section>/)?.[0] ?? '';
+		const page = (form: Record<string, unknown>) => {
+			const html = renderPage([team('a'), team('b')], form);
+			// The toast announces the error; the inline message has no live role.
+			expect(html).not.toContain('role="alert"');
+			return html;
+		};
+
+		it('create: a missing English or Tibetan name under its field', () => {
+			for (const [error, id] of [
+				[m.teams_error_name_required(), 'name'],
+				[m.teams_error_name_bo_required(), 'name-bo']
+			] as const) {
+				const html = page({ error, ...names });
+				expect(message(create(html), `${id}-error`)).toBe(error);
+				marked(html, id);
+			}
+		});
+
+		it('create: a duplicate under the field that collided', () => {
+			const error = m.teams_error_duplicate_name({ name: names.nameBo });
+			const html = page({ error, ...names });
+			expect(message(html, 'name-bo-error')).toBe(error);
+			marked(html, 'name-bo');
+			unmarked(html, 'name', 'name-de');
+		});
+
+		it('create: a failed create above the button, no field marked', () => {
+			const html = page({ error: m.teams_error_create_failed(), ...names });
+			expect(message(create(html), 'form-error')).toBe(m.teams_error_create_failed());
+			unmarked(html, 'name', 'name-bo', 'name-de');
+		});
+
+		it('a delete failure stays toast-only', () => {
+			const html = page({ error: m.teams_error_delete_failed() });
+			expect(html).not.toContain(m.teams_error_delete_failed());
+		});
+
+		it('rename: the error in its row only, with that row’s ids', () => {
+			const error = m.teams_error_name_required();
+			const html = page({
+				error,
+				renameId: 'b',
+				renameValues: { name: '', nameBo: 'x', nameDe: '' }
+			});
+			expect(message(html, 'edit-b-name-error')).toBe(error);
+			marked(html, 'edit-b-name');
+			unmarked(html, 'name');
+			expect(html).not.toContain('edit-a-');
+			expect(create(html)).not.toContain(error);
+
+			const failed = page({
+				error: m.teams_error_rename_failed(),
+				renameId: 'b',
+				renameValues: names
+			});
+			expect(message(failed, 'edit-b-form-error')).toBe(m.teams_error_rename_failed());
+			expect(failed).not.toContain('id="form-error"');
+		});
+
+		describe('under Tibetan', () => {
+			const original = getLocale;
+			afterEach(() => overwriteGetLocale(original));
+
+			it('places the Tibetan text', () => {
+				overwriteGetLocale(() => 'bo');
+				const error = m.teams_error_duplicate_name({ name: names.name });
+				const html = page({ error, ...names });
+				expect(message(html, 'name-error')).toBe(error);
+				expect(error).not.toBe(
+					m.teams_error_duplicate_name({ name: names.name }, { locale: 'en' })
+				);
+			});
+		});
 	});
 });

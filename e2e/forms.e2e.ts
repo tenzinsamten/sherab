@@ -604,6 +604,12 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 		await expect(
 			page.locator('[data-sonner-toast]').getByText('Class name is required.')
 		).toBeVisible();
+		// #117b: the name's error also stays under it, without a live role.
+		const nameError = page.locator('#name-error');
+		await expect(nameError).toHaveText('Class name is required.');
+		await expect(nameError).not.toHaveAttribute('role', 'alert');
+		await expect(page.locator('#name')).toHaveAttribute('aria-invalid', 'true');
+		await expect(page.locator('#name')).toHaveAttribute('aria-describedby', 'name-error');
 		const subjectError = page.locator('#new-class-subject-error');
 		await expect(subjectError).toHaveText('Choose the badge subject.');
 		await expect(subjectError).toHaveAttribute('role', 'alert');
@@ -631,6 +637,10 @@ test('admin class create: a failed create keeps the typed name, and deleting a c
 		await page.getByRole('button', { name: 'Create class' }).click();
 		await expect(page.locator('[data-sonner-toast]').getByText(/already exists/)).toBeVisible();
 		await expect(field).toHaveValue(typed);
+		// #117b: the duplicate stays under the English name it names.
+		await expect(nameError).toHaveText(`A class called “${typed}” already exists.`);
+		await expect(field).toHaveAttribute('aria-invalid', 'true');
+		await expect(page.locator('#name-bo')).not.toHaveAttribute('aria-invalid', 'true');
 		await expect(subject).toHaveValue('language');
 		// A subject picked: its error is gone.
 		await expect(subjectError).toHaveCount(0);
@@ -707,11 +717,20 @@ test('admin teacher create: posts email, name and classes; a failed create keeps
 		await expect(nameField).toHaveValue(displayName);
 		await expect(classBox).toBeChecked();
 		await expect(outcome).toHaveCount(0);
+		// #117b: the error also stays under Email, which it marks.
+		const emailError = page.locator('#email-error');
+		await expect(emailError).toHaveText('A teacher with this email already exists.');
+		await expect(emailError).not.toHaveAttribute('role', 'alert');
+		await expect(emailField).toHaveAttribute('aria-invalid', 'true');
+		await expect(emailField).toHaveAttribute('aria-describedby', 'email-error');
 
 		// A new email: created, the password shown in the outcome box, the form empty again.
 		await emailField.fill(email);
 		await page.getByRole('button', { name: 'Create teacher' }).click();
 		await expect(outcome).toContainText(`Teacher account created for ${email}`);
+		// #117b: the next result takes the error away.
+		await expect(emailError).toHaveCount(0);
+		await expect(emailField).not.toHaveAttribute('aria-invalid', 'true');
 		await expect(outcome).toHaveAttribute('data-state', 'success');
 		await expect(outcome.getByText('Temporary password', { exact: true })).toBeVisible();
 		await expect(outcome).toBeInViewport();

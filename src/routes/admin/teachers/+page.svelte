@@ -97,6 +97,26 @@
 		form && 'classIds' in form && !('success' in form) ? (form.classIds ?? []) : []
 	);
 
+	// #117b: a failed create's error under Email, under the classes, or above
+	// the button. Create results echo the email (the other actions' errors do
+	// not: they stay toast-only); the promotable 409 has no error (its dialog
+	// asks). It goes with the next result.
+	let createErrorText = $derived(
+		form && 'error' in form && form.error && 'email' in form ? form.error : ''
+	);
+	let createErrorAt = $derived.by((): 'email' | 'classes' | 'form' | null => {
+		if (!createErrorText) return null;
+		if (
+			createErrorText === m.teachers_error_email_required() ||
+			createErrorText === m.teachers_error_duplicate() ||
+			createErrorText === m.teachers_error_parent_pending()
+		)
+			return 'email';
+		if (createErrorText === m.teachers_error_class_required()) return 'classes';
+		return 'form';
+	});
+	const describedBy = (at: string) => (createErrorAt === at ? `${at}-error` : undefined);
+
 	let credential = $derived(
 		form && 'tempPassword' in form && form.tempPassword
 			? {
@@ -153,6 +173,12 @@
 {#snippet spinner(key: string)}
 	{#if pending.is(key)}
 		<LoaderCircle class="animate-spin" aria-hidden="true" />
+	{/if}
+{/snippet}
+
+{#snippet createError(at: string)}
+	{#if createErrorAt === at}
+		<p id="{at}-error" class={ui.error}>{createErrorText}</p>
 	{/if}
 {/snippet}
 
@@ -225,17 +251,26 @@
 							required
 							autocomplete="off"
 							value={createdEmail}
+							aria-invalid={createErrorAt === 'email' ? 'true' : undefined}
+							aria-describedby={describedBy('email')}
 						/>
+						{@render createError('email')}
 					</div>
 					<div class="flex min-w-0 flex-col gap-1.5">
 						<Label for="displayName" class={fieldLabel}>{m.teachers_display_name_label()}</Label>
 						<Input id="displayName" name="displayName" autocomplete="off" value={createdName} />
 					</div>
 				</div>
-				<fieldset class="flex min-w-0 flex-col gap-2">
+				<fieldset
+					id="classes"
+					class="flex min-w-0 flex-col gap-2"
+					aria-describedby={describedBy('classes')}
+				>
 					<legend class="mb-2 {fieldLabel}">{m.teachers_assign_legend()}</legend>
 					{@render classCheckboxes((id) => createdClassIds.includes(id))}
+					{@render createError('classes')}
 				</fieldset>
+				{@render createError('form')}
 				<div>
 					<Button
 						type="submit"
