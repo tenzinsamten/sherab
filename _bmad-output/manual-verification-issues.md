@@ -2991,3 +2991,11 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   tests after a reset (one recurring `rls.spec` 7-5 timeout, logged in deferred-work); after a
   second reset, student-mobile, parent-mobile, teacher-mobile and class-join 133/133. To verify:
   a new student, a new parent and a class without students on a phone; check the Tibetan wording.
+
+- 2026-10-24: #127 built on `fix/121-unsaved-changes-guard` (remaining items on this branch), to
+  verify (spec `implementation-artifacts/spec-127-tour-targets.md`). Built: the page tour's Next,
+  Back, Skip/Done and Close are 44px targets (were 32px and 40px), the × is centred and the title
+  keeps clear of it. Verified after a reset: 1726 unit tests, check and build exit 0; after a
+  second reset, tours, shared-mobile and teacher-mobile 108/108; after the review fixes, the tour
+  tests (incl. every step at 390px) 11/11. To verify: on a phone, the first visit's tour buttons
+  are easy to tap.
