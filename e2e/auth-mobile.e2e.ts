@@ -404,6 +404,63 @@ for (const v of VIEWPORTS) {
 			await expect(page.locator('[data-app-shell]')).toBeVisible();
 		});
 
+		test(`sending (${v.name}): sign in, forgot, resend and reset show a busy button; one post per press (#118)`, async ({
+			page
+		}) => {
+			// Held at the network: the button is disabled and busy until the answer,
+			// and a second submit of the form (Enter cannot: the button is disabled)
+			// is ignored, so one POST goes out.
+			async function heldSubmit(button: string) {
+				let release!: () => void;
+				const held = new Promise<void>((resolve) => (release = resolve));
+				let posts = 0;
+				await page.route('**/*', async (route) => {
+					if (route.request().method() !== 'POST') return route.fallback();
+					posts += 1;
+					await held;
+					await route.continue();
+				});
+				try {
+					const submit = page.getByRole('button', { name: button });
+					await submit.click();
+					await expect(submit).toBeDisabled();
+					await expect(submit).toHaveAttribute('aria-busy', 'true');
+					await page.locator('main form').evaluate((form: HTMLFormElement) => form.requestSubmit());
+					release();
+					await expect(submit).toBeEnabled();
+					await expect(submit).not.toHaveAttribute('aria-busy');
+					expect(posts).toBe(1);
+				} finally {
+					release();
+					await page.unroute('**/*');
+				}
+			}
+
+			await open(page, '/login');
+			await page.locator('#email').fill(`nobody-send-${v.name}-${tag}@example.test`);
+			await page.locator('#password').fill('wrong-password');
+			await heldSubmit('Sign in');
+			await expect(page.locator('#form-error')).toHaveText('Invalid email or password.');
+			await expect(page.locator('#email')).toHaveValue(`nobody-send-${v.name}-${tag}@example.test`);
+
+			await open(page, '/forgot-password');
+			await page.locator('#email').fill(`nobody-send-${v.name}-${tag}@example.test`);
+			await heldSubmit('Send reset link');
+			await expect(toast(page, /If an account exists for that email/)).toBeVisible();
+
+			await open(page, '/resend-confirmation');
+			await page.locator('#email').fill(`nobody-send-${v.name}-${tag}@example.test`);
+			await heldSubmit('Send link');
+			await expect(page.getByRole('status')).toContainText('a new link is on its way');
+
+			const parent = await createParent(`send-${v.name}`);
+			await recoverySession(page, parent.email);
+			await page.locator('#password').fill('new-secret-1');
+			await page.locator('#confirm').fill('new-secret-2');
+			await heldSubmit('Update password');
+			await expect(page.locator('#confirm-error')).toHaveText('Passwords do not match.');
+		});
+
 		test(`home (${v.name}): signed out, Sign in opens /login and Join a class opens /join`, async ({
 			page
 		}) => {

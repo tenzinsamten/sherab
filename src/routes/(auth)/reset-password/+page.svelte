@@ -1,13 +1,18 @@
 <script lang="ts">
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { createPending } from '$lib/pending.svelte';
 	import { ui } from '$lib/ui/classes';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
+
+	// #118: the button shows the form is sending; a second tap or Enter is ignored until the answer.
+	const pending = createPending();
 
 	// #117: the action's error also stays in the form (the toast goes after
 	// 5s): under its field, or above the button.
@@ -33,7 +38,7 @@
 {/snippet}
 
 <AuthCard title={m.reset_heading()}>
-	<form method="POST" use:enhance class={auth.form}>
+	<form method="POST" use:enhance={pending.submit('reset')} class={auth.form}>
 		<div class={auth.field}>
 			<label for="password" class={auth.label}>{m.reset_password_label()}</label>
 			<PasswordInput
@@ -61,6 +66,16 @@
 			{@render error('confirm')}
 		</div>
 		{@render error('form')}
-		<Button type="submit" class={auth.submit}>{m.reset_submit()}</Button>
+		<Button
+			type="submit"
+			class={auth.submit}
+			disabled={pending.busy}
+			aria-busy={pending.is('reset') || undefined}
+		>
+			{#if pending.is('reset')}
+				<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+			{/if}
+			{m.reset_submit()}
+		</Button>
 	</form>
 </AuthCard>

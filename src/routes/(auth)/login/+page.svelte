@@ -1,4 +1,5 @@
 <script lang="ts">
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogIn from '@lucide/svelte/icons/log-in';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
@@ -7,10 +8,14 @@
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import { createPending } from '$lib/pending.svelte';
 	import { ui } from '$lib/ui/classes';
 	import type { ActionData, PageData } from './$types';
 
 	let { form, data }: { form: ActionData; data: PageData } = $props();
+
+	// #118: the button shows the form is sending; a second tap or Enter is ignored until the answer.
+	const pending = createPending();
 
 	// #89: a failed confirmation link, or a sign-in with an unconfirmed
 	// email, offers a new link. The typed email goes along when there is one.
@@ -54,7 +59,7 @@
 		     next sign-in attempt instead of stacking on its error (#89). -->
 		<p class="mb-4 {ui.error}" role="alert">{m.login_error_confirm_link()}</p>
 	{/if}
-	<form method="POST" use:enhance class={auth.form}>
+	<form method="POST" use:enhance={pending.submit('login')} class={auth.form}>
 		<div class={auth.field}>
 			<label for="email" class={auth.label}>{m.login_email_label()}</label>
 			<Input
@@ -84,8 +89,17 @@
 			{@render error('password')}
 		</div>
 		{@render error('form')}
-		<Button type="submit" class={auth.submit}>
-			<LogIn class="size-5" aria-hidden="true" />
+		<Button
+			type="submit"
+			class={auth.submit}
+			disabled={pending.busy}
+			aria-busy={pending.is('login') || undefined}
+		>
+			{#if pending.is('login')}
+				<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+			{:else}
+				<LogIn class="size-5" aria-hidden="true" />
+			{/if}
 			{m.login_submit()}
 		</Button>
 	</form>

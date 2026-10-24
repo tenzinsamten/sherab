@@ -1,15 +1,20 @@
 <script lang="ts">
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import AuthCard, { auth } from '$lib/components/AuthCard.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import { createPending } from '$lib/pending.svelte';
 	import { ui } from '$lib/ui/classes';
 	import { showToast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
 
 	let { form, data }: { form: ActionData; data: PageData } = $props();
+
+	// #118: the button shows the form is sending; a second tap or Enter is ignored until the answer.
+	const pending = createPending();
 
 	// #117: the action's error also stays in the form (the toast goes after
 	// 5s): under Email, or above the button.
@@ -35,7 +40,7 @@
 </svelte:head>
 
 <AuthCard title={m.forgot_heading()} subtitle={m.forgot_description()}>
-	<form method="POST" use:enhance class={auth.form}>
+	<form method="POST" use:enhance={pending.submit('forgot')} class={auth.form}>
 		<div class={auth.field}>
 			<label for="email" class={auth.label}>{m.forgot_email_label()}</label>
 			<Input
@@ -56,7 +61,17 @@
 		{#if errorAt === 'form'}
 			<p id="form-error" class={ui.error}>{errorText}</p>
 		{/if}
-		<Button type="submit" class={auth.submit}>{m.forgot_submit()}</Button>
+		<Button
+			type="submit"
+			class={auth.submit}
+			disabled={pending.busy}
+			aria-busy={pending.is('forgot') || undefined}
+		>
+			{#if pending.is('forgot')}
+				<LoaderCircle class="size-5 animate-spin" aria-hidden="true" />
+			{/if}
+			{m.forgot_submit()}
+		</Button>
 	</form>
 
 	{#snippet footer()}
