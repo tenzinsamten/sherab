@@ -580,3 +580,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-115-error-page.md`
   summary: e2e `nav-progress.e2e.ts:241` "load error: the error page shows and the busy state clears" looks for a heading named "500"; since #115 the error page's heading is "Something went wrong" with "Error 500" below, so the test fails.
   evidence: Found while verifying #118 (2026-10-24); `src/routes/+error.svelte:66-69` (#115, 576e284). #115's verification ran six browser test files, not this one. Fix: expect the `error_generic_heading` text and "Error 500".
+- source_spec: `_bmad-output/implementation-artifacts/spec-119-destructive-contrast.md`
+  summary: Red text on a red tint below 4.5:1 outside the destructive button variant: file-delete buttons on hover, the destructive badge, the admin parents alert, the dropdown destructive item on focus.
+  evidence: #d72332 on `destructive/10` is 4.30:1 (computed); `SyllabusFiles.svelte:242`, `HomeworkFiles.svelte:239`, `ui/badge/badge.svelte:11`, `admin/parents/+page.svelte:68`, `ui/dropdown-menu/dropdown-menu-item.svelte:23`. `text-destructive-strong` (#119) would fix each.

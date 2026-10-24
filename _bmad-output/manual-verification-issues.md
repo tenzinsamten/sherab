@@ -2900,3 +2900,14 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   auth-mobile, auth-fields, login-visual and nav-progress 53 passed, 1 failed (that stale
   test). To verify: on a slow phone connection, tap Sign in, Send reset link, Send link and
   Update password twice quickly.
+
+- 2026-10-24: #119 built on `fix/119-destructive-contrast` (stacked on `fix/118-sign-in-pending`),
+  to verify (spec `implementation-artifacts/spec-119-destructive-contrast.md`). Built (user's
+  choice: darker button text only): a token `--destructive-strong` (#b91c1c) for the text and
+  icon of the destructive button variant: 5.53:1 on its tint, 4.70:1 on hover (was 4.30 and
+  3.65). The tint, error text and badges keep #d72332. `src/lib/ui/contrast.spec.ts` checks the
+  ratios from the tokens. Deferred: the same red-on-tint pairing (4.30:1) in the badge, the
+  admin parents alert, the file-delete buttons on hover and the dropdown destructive item.
+  Verified after a reset: 1708 unit tests, check and build exit 0; after a second reset,
+  shared-mobile, forms and login-visual 32/32. To verify: Delete, Reject and Cancel on
+  `/requests`, `admin/classes` and `calendar` read clearly, also on hover.
