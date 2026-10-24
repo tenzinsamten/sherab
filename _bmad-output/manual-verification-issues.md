@@ -3007,3 +3007,18 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   fails when a Tibetan text equals its English one, plurals included, unless it is on a short
   list (logo, tagline, KB, MB, PIN). Verified after a reset: 1728 unit tests, check and build exit
   0. To verify: a teacher's class page in Tibetan, the Upcoming leave card.
+
+- 2026-10-24: #129 A built on `fix/121-unsaved-changes-guard` (remaining items on this branch), to
+  verify (spec `implementation-artifacts/spec-129-ui-clear-fixes.md`). Built: a darker blue
+  (`--primary-strong` #1d4ed8) for blue text on light-blue surfaces (More sheet current item,
+  Help sheet tab, pressed editor buttons, "Done" badge) and for the primary button's and badge
+  links' hover; forgot-password and resend success as a status line that screen readers announce
+  (no success toast); homework and syllabus text at a reading width; three components added to
+  Tailwind's sources, with a test; breadcrumbs (and the "…" menu) no longer clip Tibetan vowels;
+  editor buttons named "H1, Heading" / "H2, Subheading"; the password toggle keeps one name and
+  says its state with `aria-pressed` (`password_hide` removed). Deferred: #129 B (Help placement,
+  active role, required-field marks, default button size, badge names on phones) and C (table
+  classes), and a rendered check of the strong colours. Verified after a reset: 1733 unit tests,
+  check and build exit 0; after a second reset, nine browser test files 211/211. To verify: a long
+  Tibetan breadcrumb on a phone; a homework text on a laptop; the forgot-password message with a
+  screen reader; the breadcrumb ellipsis in Safari.

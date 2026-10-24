@@ -598,3 +598,12 @@
 - source_spec: none
   summary: `rls.spec.ts` "7-5 sick leave decisions … Read: the student, their parent, the class teacher and the admin read the decision" times out at 5 s now and then on a freshly reset database.
   evidence: Timed out in 2 of 4 full `npm test` runs on 2026-10-24 (while verifying #124 and #126, neither touching data); passed on the immediate rerun after another reset each time. Cause not investigated (likely a slow multi-client read; a longer per-test timeout or splitting the reads would settle it).
+- source_spec: none
+  summary: (#129 B, decisions) Help is in a different place per role; the active role shows only in the avatar menu and switching gives no confirmation; required fields are marked inconsistently (editor "*", nothing on Title/Due date, optional files unmarked); default Button sizes are 32px/28px; earned badge names are only a `title` tooltip on phones.
+  evidence: Split from #129 on 2026-10-24 (user built the clear fixes first); each needs a product or design decision; see the #129 entry in `manual-verification-issues.md` for files and lines.
+- source_spec: none
+  summary: (#129 C) The table class strings are repeated six times (admin classes, teachers, parents, teams, requests, teacher homework).
+  evidence: Split from #129 on 2026-10-24; a refactor with no user-visible change.
+- source_spec: `_bmad-output/implementation-artifacts/spec-129-ui-clear-fixes.md`
+  summary: No rendered check that the `--color-*-strong` mappings (`primary-strong`, #129; `destructive-strong`, #119) produce their utilities; deleting a mapping leaves the unit tests green.
+  evidence: `contrast.spec.ts` reads the token hex and the class strings in source; a computed-style e2e on one badge or button would close it.
