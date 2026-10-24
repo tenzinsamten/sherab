@@ -170,7 +170,10 @@ async function expectTeamA(page: Page) {
 async function expectNotFound(page: Page, teamId: string) {
 	const response = await page.goto(`/teams/${teamId}`);
 	expect(response?.status()).toBe(404);
-	await expect(page.getByText('Team not found.')).toBeVisible();
+	// The error page (#115): its own heading, not the server's message.
+	await expect(
+		page.getByTestId('error-page').getByRole('heading', { level: 1, name: 'Page not found' })
+	).toBeVisible();
 	for (const name of [...NAMES_A, NAME_B]) {
 		await expect(page.getByText(name)).toHaveCount(0);
 	}

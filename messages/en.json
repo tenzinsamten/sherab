@@ -1299,5 +1299,15 @@
 	"nav_collapse": "Collapse menu",
 	"nav_expand": "Expand menu",
 	"common_close": "Close",
-	"common_loading": "Loading…"
+	"common_loading": "Loading…",
+	"error_not_found_heading": "Page not found",
+	"error_not_found_body": "This page doesn't exist or is no longer available. Check the address, or go back to your start page.",
+	"error_forbidden_heading": "No access",
+	"error_forbidden_body": "Your account can't open this page. If you think it should, ask your teacher or the school's admin.",
+	"error_generic_heading": "Something went wrong",
+	"error_generic_body": "This page couldn't be shown. Please try again in a moment.",
+	"error_status": "Error {status}",
+	"error_back_home": "Back to my start page",
+	"error_back_start": "Back to the start page",
+	"error_try_again": "Try again"
 }

@@ -1299,5 +1299,15 @@
 	"nav_collapse": "Menü einklappen",
 	"nav_expand": "Menü ausklappen",
 	"common_close": "Schließen",
-	"common_loading": "Wird geladen…"
+	"common_loading": "Wird geladen…",
+	"error_not_found_heading": "Seite nicht gefunden",
+	"error_not_found_body": "Diese Seite gibt es nicht oder nicht mehr. Prüfe die Adresse oder geh zurück zu deiner Startseite.",
+	"error_forbidden_heading": "Kein Zugriff",
+	"error_forbidden_body": "Dein Konto kann diese Seite nicht öffnen. Wenn das nicht stimmt, frag deine Lehrkraft oder die Verwaltung der Schule.",
+	"error_generic_heading": "Etwas ist schiefgelaufen",
+	"error_generic_body": "Diese Seite konnte nicht angezeigt werden. Bitte versuch es gleich noch einmal.",
+	"error_status": "Fehler {status}",
+	"error_back_home": "Zurück zu meiner Startseite",
+	"error_back_start": "Zurück zur Startseite",
+	"error_try_again": "Erneut versuchen"
 }

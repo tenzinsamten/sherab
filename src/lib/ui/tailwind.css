@@ -30,6 +30,7 @@
 @source '../components/ui';
 @source '../components/shell';
 @source '../../routes/+layout.svelte';
+@source '../../routes/+error.svelte';
 @source '../../routes/dev/ui';
 /* Story 3: the parent pages and the shared components they use (only
    their .svelte files: words in server code must not become utilities). */
