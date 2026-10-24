@@ -23,6 +23,9 @@
 	/**
 	 * Requests: registrations, sick notes, upcoming leave and class join
 	 * requests (teacher and admin), plus deletion and parent requests (admin).
+	 * #116: the cards with requests waiting come first (a card with none is
+	 * left out), one empty state when nothing waits at all, then upcoming
+	 * leave, then every decided list in one History group, closed on load.
 	 * Mobile-first story 5: each section's rows are stacked cards below 80em
 	 * and a full table from 80em (one markup, so the tour's `data-tour` rows
 	 * are the visible ones at every width); questions are the new alert
@@ -73,6 +76,19 @@
 		if (credential && outcomeBox) outcomeBox.scrollIntoView({ block: 'nearest' });
 	});
 
+	// #116: the empty state only when no pending list has a row (the own-child
+	// rows count: they are on the page, unlike in the count pill), nor a
+	// join load error to show, nor a failed list (it comes as []).
+	let nothingWaiting = $derived(
+		!data.loadError &&
+			data.pending.length === 0 &&
+			data.sickPending.length === 0 &&
+			data.joinPending.length === 0 &&
+			!data.joinLoadError &&
+			(data.role !== 'admin' ||
+				(data.deletionPending.length === 0 && data.parentsPending.length === 0))
+	);
+
 	// Story 7-5: only the rows the viewer may decide count (never their own child).
 	let sickActionable = $derived(data.sickPending.filter((r) => !r.ownChild).length);
 	// Story 7-6: likewise, never a deletion request for the admin's own child.
@@ -83,8 +99,9 @@
 	/**
 	 * Where focus goes once a decision is saved: the decided row leaves its
 	 * list, so the row now in its place (the next one) or the one before it,
-	 * else the section's heading, else (the section is gone) the page's. Only when focus was lost with the row; after an error the row
-	 * stays and so does focus.
+	 * else the section's heading, else (the section is gone) the page's. Only
+	 * when focus was lost with the row; after an error the row stays and so
+	 * does focus.
 	 */
 	type Spot = { row: Element; list: Element | null; index: number; section: Element | null };
 	function spotOf(element: Element | null | undefined): Spot | null {
@@ -111,7 +128,7 @@
 		];
 		const target = candidates.find((el) => el?.isConnected);
 		if (target) return target.focus();
-		// The section is gone (its last join request was decided): the page heading.
+		// The section is gone (its last request was decided): the page heading.
 		const heading = document.querySelector<HTMLElement>('main h1');
 		if (!heading) return;
 		if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1;
@@ -298,6 +315,10 @@
 	const meta = `text-sm ${ui.muted}`;
 	const sectionCard = `${ui.card} flex flex-col gap-3`;
 	const sectionHeading = 'text-lg leading-snug font-bold outline-none';
+	// The History <details> summary: the whole line is the ≥44px target; its
+	// text is an h2, so heading navigation reaches it.
+	const summary =
+		'min-h-11 cursor-pointer rounded-lg py-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 	const ownChild = `${ui.muted} xl:text-right`;
 </script>
 
@@ -368,12 +389,13 @@
 	{/if}
 
 	<div class="grid min-w-0 grid-cols-1 gap-4 md:gap-6">
-		<section
-			class={sectionCard}
-			aria-label={m.requests_pending_heading()}
-			data-testid="requests-registrations"
-		>
-			{#if data.pending.length === 0}
+		<!-- #116: what waits comes first; one empty state when nothing does. -->
+		{#if nothingWaiting}
+			<section
+				class={sectionCard}
+				aria-label={m.requests_pending_heading()}
+				data-testid="requests-empty"
+			>
 				<div tabindex="-1" data-section-heading class="outline-none">
 					<EmptyState
 						header={m.requests_empty_heading()}
@@ -381,7 +403,18 @@
 						icon={UserCheck}
 					/>
 				</div>
-			{:else}
+			</section>
+		{/if}
+
+		{#if data.pending.length > 0}
+			<section
+				class={sectionCard}
+				aria-labelledby="registrations-heading"
+				data-testid="requests-registrations"
+			>
+				<h2 id="registrations-heading" class={sectionHeading} tabindex="-1" data-section-heading>
+					{m.requests_registrations_heading()}
+				</h2>
 				<!-- WebKit drops table semantics from a restyled table (cards below 80em): the roles keep them. -->
 				<!-- svelte-ignore a11y_no_redundant_roles -->
 				<table role="table" class={table}>
@@ -476,78 +509,15 @@
 						{m.requests_no_teams_note()}
 					</p>
 				{/if}
-			{/if}
-		</section>
+			</section>
+		{/if}
 
-		<section class={sectionCard} aria-labelledby="decided-heading" data-testid="requests-decided">
-			<h2 id="decided-heading" class={sectionHeading} tabindex="-1" data-section-heading>
-				{m.requests_decided_heading({
-					approved: num(data.decided.filter((s) => s.status === 'approved').length),
-					rejected: num(data.decided.filter((s) => s.status === 'rejected').length)
-				})}
-			</h2>
-			{#if data.decided.length === 0}
-				<p class={ui.muted}>{m.requests_decided_empty()}</p>
-			{:else}
-				<!-- svelte-ignore a11y_no_redundant_roles -->
-				<table role="table" class={table}>
-					<tbody role="rowgroup" class={tbody}>
-						{#each data.decided as student (student.id)}
-							<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
-								<td role="cell" class={tdPill}>{@render decidedPill(student.status)}</td>
-								<td role="cell" class="{td} {student.status === 'rejected' ? ui.muted : ''}">
-									{student.registrationName}
-								</td>
-								<td role="cell" class={tdActions}>
-									{#if student.status === 'rejected'}
-										<form
-											method="POST"
-											action="?/clearRejected"
-											class={actionForm}
-											use:enhance={decide(`clear:${student.id}`, {
-												confirm: confirm.with(
-													m.requests_clear_rejected_confirm({
-														name: student.registrationName ?? ''
-													}),
-													m.requests_clear_rejected(),
-													{ destructive: true }
-												)
-											})}
-										>
-											<input type="hidden" name="studentId" value={student.id} />
-											<input type="hidden" name="studentName" value={student.registrationName} />
-											<Button
-												type="submit"
-												variant="ghost"
-												class={actionButton}
-												aria-busy={pending.is(`clear:${student.id}`) || undefined}
-												disabled={pending.busy}
-											>
-												{#if pending.is(`clear:${student.id}`)}
-													{@render spinner(`clear:${student.id}`)}
-												{:else}
-													<Trash2 aria-hidden="true" />
-												{/if}
-												{m.requests_clear_rejected()}
-											</Button>
-										</form>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</section>
-
-		<section class={sectionCard} aria-labelledby="sick-heading" data-testid="requests-sick">
-			<h2 id="sick-heading" class={sectionHeading} tabindex="-1" data-section-heading>
-				{m.requests_sick_heading()}
-			</h2>
-			<p class={ui.muted}>{m.requests_sick_subtitle()}</p>
-			{#if data.sickPending.length === 0}
-				<p class={ui.muted}>{m.requests_sick_empty()}</p>
-			{:else}
+		{#if data.sickPending.length > 0}
+			<section class={sectionCard} aria-labelledby="sick-heading" data-testid="requests-sick">
+				<h2 id="sick-heading" class={sectionHeading} tabindex="-1" data-section-heading>
+					{m.requests_sick_heading()}
+				</h2>
+				<p class={ui.muted}>{m.requests_sick_subtitle()}</p>
 				<!-- svelte-ignore a11y_no_redundant_roles -->
 				<table role="table" class={table}>
 					<thead role="rowgroup" class={thead}>
@@ -631,88 +601,10 @@
 						{/each}
 					</tbody>
 				</table>
-			{/if}
-		</section>
+			</section>
+		{/if}
 
-		<section
-			class={sectionCard}
-			aria-labelledby="sick-decided-heading"
-			data-testid="requests-sick-decided"
-		>
-			<h2 id="sick-decided-heading" class={sectionHeading} tabindex="-1" data-section-heading>
-				{m.requests_sick_decided_heading()}
-			</h2>
-			{#if data.sickDecided.length === 0}
-				<p class={ui.muted}>{m.requests_sick_decided_empty()}</p>
-			{:else}
-				<!-- svelte-ignore a11y_no_redundant_roles -->
-				<table role="table" class={table}>
-					<tbody role="rowgroup" class={tbody}>
-						{#each data.sickDecided as row (`${row.sessionId}:${row.studentId}`)}
-							<tr role="row" class={tr} data-testid="request-row">
-								<td role="cell" class={tdPill}>{@render decidedPill(row.decision)}</td>
-								<td role="cell" class="{td} {row.decision === 'rejected' ? ui.muted : ''}">
-									<span class="wrap-break-word">{row.studentName}</span>
-									<p class={meta}>
-										{row.className} ·
-										<time datetime={row.day}>{formatDay(row.day)}</time>
-										· {row.startTime ?? m.calendar_status_unset()}
-										{#if row.decidedBySystem}
-											· {m.requests_sick_auto()}
-										{/if}
-									</p>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</section>
-
-		<!-- #107: planned leave of the coming weeks; a list, no decision. -->
-		<section
-			class={sectionCard}
-			aria-labelledby="upcoming-leave-heading"
-			data-testid="requests-upcoming-leave"
-		>
-			<h2 id="upcoming-leave-heading" class={sectionHeading}>
-				{m.requests_upcoming_leave_heading()}
-			</h2>
-			<p class={ui.muted}>{m.requests_upcoming_leave_subtitle()}</p>
-			{#if data.upcomingLeaveError}
-				<p class={ui.muted} role="alert">{m.requests_upcoming_leave_load_failed()}</p>
-			{:else if data.upcomingLeave.length === 0}
-				<p class={ui.muted}>{m.requests_upcoming_leave_empty()}</p>
-			{:else}
-				<!-- svelte-ignore a11y_no_redundant_roles -->
-				<table role="table" class={table}>
-					<tbody role="rowgroup" class={tbody}>
-						{#each data.upcomingLeave as row (`${row.sessionId}:${row.studentId}`)}
-							<tr role="row" class={tr} data-testid="request-row">
-								<td role="cell" class={td}>
-									<div class="flex flex-wrap items-center gap-2">
-										<strong class="wrap-break-word">{row.studentName}</strong>
-										<Badge variant="warning">
-											{m.leave_answer_on_leave()}{#if row.classification}
-												· {row.classification === 'planned'
-													? m.leave_class_planned()
-													: m.leave_class_short_notice()}{/if}
-										</Badge>
-									</div>
-									<p class={meta}>
-										{row.className} ·
-										<time datetime={row.day}>{formatDay(row.day)}</time>
-										· {row.startTime ?? m.calendar_status_unset()}
-									</p>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</section>
-
-		<!-- B12b (#67): hidden while nothing is waiting, like the student queue. -->
+		<!-- B12b (#67): with requests waiting or a load error only. -->
 		{#if data.joinLoadError || data.joinPending.length > 0}
 			<section class={sectionCard} aria-labelledby="join-heading" data-testid="requests-join">
 				<h2 id="join-heading" class={sectionHeading} tabindex="-1" data-section-heading>
@@ -782,23 +674,10 @@
 						</tbody>
 					</table>
 				{/if}
-				<form
-					bind:this={joinForm}
-					method="POST"
-					action={joinTarget.decision === 'approved' ? '?/approveJoin' : '?/rejectJoin'}
-					use:enhance={decide(
-						() => `join:${joinTarget.decision}:${joinTarget.id}`,
-						{},
-						() => joinRow
-					)}
-					hidden
-				>
-					<input type="hidden" name="requestId" value={joinTarget.id} />
-				</form>
 			</section>
 		{/if}
 
-		{#if data.role === 'admin'}
+		{#if data.role === 'admin' && data.deletionPending.length > 0}
 			<section
 				class={sectionCard}
 				aria-labelledby="deletion-heading"
@@ -808,307 +687,493 @@
 					{m.requests_deletion_heading()}
 				</h2>
 				<p class={ui.muted}>{m.requests_deletion_subtitle()}</p>
-				{#if data.deletionPending.length === 0}
-					<p class={ui.muted}>{m.requests_deletion_empty()}</p>
-				{:else}
-					<!-- svelte-ignore a11y_no_redundant_roles -->
-					<table role="table" class={table}>
-						<thead role="rowgroup" class={thead}>
-							<tr role="row">
-								<th role="columnheader" class={th}>{m.requests_col_student()}</th>
-								<th role="columnheader" class={th}
-									><span class="sr-only">{m.requests_approve()}</span></th
-								>
-							</tr>
-						</thead>
-						<tbody role="rowgroup" class={tbody}>
-							{#each data.deletionPending as row (row.id)}
-								<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
-									<td role="cell" class={td}>
-										<strong class="wrap-break-word">{row.studentName}</strong>
-										<p class={meta}>
-											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
-											{formatRequestDate(row.requestedAt)}
-										</p>
-									</td>
-									<td role="cell" class={tdActions}>
-										{#if row.ownChild}
-											<p class={ownChild}>{m.requests_deletion_own_child()}</p>
-										{:else}
-											<div class={actions}>
-												<div class={actionForm}>
-													<Button
-														variant="destructive"
-														class={actionButton}
-														aria-busy={pending.is(`approveDeletion:${row.id}`) || undefined}
-														aria-haspopup="dialog"
-														disabled={pending.busy}
-														onclick={(event) => approveDeletion(row, event.currentTarget)}
-													>
-														{@render spinner(`approveDeletion:${row.id}`)}
-														{m.requests_approve()}
-													</Button>
-												</div>
-												<form
-													method="POST"
-													action="?/rejectDeletion"
-													class={actionForm}
-													use:enhance={decide(`rejectDeletion:${row.id}`, {
-														confirm: confirm.with(
-															m.requests_deletion_reject_confirm({ name: row.studentName ?? '' }),
-															m.requests_reject()
-														)
-													})}
+				<!-- svelte-ignore a11y_no_redundant_roles -->
+				<table role="table" class={table}>
+					<thead role="rowgroup" class={thead}>
+						<tr role="row">
+							<th role="columnheader" class={th}>{m.requests_col_student()}</th>
+							<th role="columnheader" class={th}
+								><span class="sr-only">{m.requests_approve()}</span></th
+							>
+						</tr>
+					</thead>
+					<tbody role="rowgroup" class={tbody}>
+						{#each data.deletionPending as row (row.id)}
+							<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
+								<td role="cell" class={td}>
+									<strong class="wrap-break-word">{row.studentName}</strong>
+									<p class={meta}>
+										{m.requests_deletion_requested_by({ name: row.requesterName })} ·
+										{formatRequestDate(row.requestedAt)}
+									</p>
+								</td>
+								<td role="cell" class={tdActions}>
+									{#if row.ownChild}
+										<p class={ownChild}>{m.requests_deletion_own_child()}</p>
+									{:else}
+										<div class={actions}>
+											<div class={actionForm}>
+												<Button
+													variant="destructive"
+													class={actionButton}
+													aria-busy={pending.is(`approveDeletion:${row.id}`) || undefined}
+													aria-haspopup="dialog"
+													disabled={pending.busy}
+													onclick={(event) => approveDeletion(row, event.currentTarget)}
 												>
-													<input type="hidden" name="requestId" value={row.id} />
-													<input type="hidden" name="studentName" value={row.studentName ?? ''} />
-													<Button
-														type="submit"
-														variant="outline"
-														class={actionButton}
-														aria-busy={pending.is(`rejectDeletion:${row.id}`) || undefined}
-														disabled={pending.busy}
-													>
-														{@render spinner(`rejectDeletion:${row.id}`)}
-														{m.requests_reject()}
-													</Button>
-												</form>
+													{@render spinner(`approveDeletion:${row.id}`)}
+													{m.requests_approve()}
+												</Button>
 											</div>
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
-				<form
-					bind:this={approveDeletionForm}
-					method="POST"
-					action="?/approveDeletion"
-					use:enhance={decide(
-						() => `approveDeletion:${deletionTarget.id}`,
-						{},
-						() => deletionRow
-					)}
-					hidden
-				>
-					<input type="hidden" name="requestId" value={deletionTarget.id} />
-					<input type="hidden" name="studentName" value={deletionTarget.name} />
-				</form>
+											<form
+												method="POST"
+												action="?/rejectDeletion"
+												class={actionForm}
+												use:enhance={decide(`rejectDeletion:${row.id}`, {
+													confirm: confirm.with(
+														m.requests_deletion_reject_confirm({ name: row.studentName ?? '' }),
+														m.requests_reject()
+													)
+												})}
+											>
+												<input type="hidden" name="requestId" value={row.id} />
+												<input type="hidden" name="studentName" value={row.studentName ?? ''} />
+												<Button
+													type="submit"
+													variant="outline"
+													class={actionButton}
+													aria-busy={pending.is(`rejectDeletion:${row.id}`) || undefined}
+													disabled={pending.busy}
+												>
+													{@render spinner(`rejectDeletion:${row.id}`)}
+													{m.requests_reject()}
+												</Button>
+											</form>
+										</div>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</section>
+		{/if}
 
-			<section
-				class={sectionCard}
-				aria-labelledby="deletion-decided-heading"
-				data-testid="requests-deletion-decided"
-			>
-				<h2 id="deletion-decided-heading" class={sectionHeading}>
-					{m.requests_deletion_decided_heading()}
-				</h2>
-				{#if data.deletionDecided.length === 0}
-					<p class={ui.muted}>{m.requests_deletion_decided_empty()}</p>
-				{:else}
-					<!-- svelte-ignore a11y_no_redundant_roles -->
-					<table role="table" class={table}>
-						<tbody role="rowgroup" class={tbody}>
-							{#each data.deletionDecided as row (row.id)}
-								<tr role="row" class={tr} data-testid="request-row">
-									<td role="cell" class={tdPill}>{@render decidedPill(row.status)}</td>
-									<td role="cell" class="{td} {row.status === 'rejected' ? ui.muted : ''}">
-										<span class="wrap-break-word"
-											>{row.studentName ?? m.requests_deletion_deleted_student()}</span
-										>
-										<p class={meta}>
-											{m.requests_deletion_requested_by({ name: row.requesterName })} ·
-											{formatRequestDate(row.requestedAt)}
-										</p>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
-			</section>
-
+		{#if data.role === 'admin' && data.parentsPending.length > 0}
 			<section class={sectionCard} aria-labelledby="parents-heading" data-testid="requests-parents">
 				<h2 id="parents-heading" class={sectionHeading} tabindex="-1" data-section-heading>
 					{m.requests_parents_heading()}
 				</h2>
 				<p class={ui.muted}>{m.requests_parents_subtitle()}</p>
-				{#if data.parentsPending.length === 0}
-					<p class={ui.muted}>{m.requests_parents_empty()}</p>
-				{:else}
-					<!-- svelte-ignore a11y_no_redundant_roles -->
-					<table role="table" class={table}>
-						<thead role="rowgroup" class={thead}>
-							<tr role="row">
-								<th role="columnheader" class={th}>{m.requests_col_parent()}</th>
-								<th role="columnheader" class={th}
-									><span class="sr-only">{m.requests_approve()}</span></th
-								>
-							</tr>
-						</thead>
-						<tbody role="rowgroup" class={tbody}>
-							{#each data.parentsPending as parent (parent.id)}
-								<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
-									<td role="cell" class={td}>
-										<div class="flex flex-wrap items-center gap-2">
-											<strong class="wrap-break-word">{parent.name}</strong>
-											{@render staffPill(parent)}
-											{#if parent.emailConfirmedAt}
-												<Badge variant="success">{m.requests_email_confirmed()}</Badge>
-											{:else}
-												<Badge variant="warning">{m.requests_email_unconfirmed()}</Badge>
-											{/if}
-										</div>
-										<p class="{meta} wrap-anywhere">
-											{parent.email} · {formatRequestDate(parent.createdAt)}
-										</p>
-									</td>
-									<td role="cell" class={tdActions}>
-										<div class={actions}>
-											{#if !parent.emailConfirmedAt}
-												<form
-													method="POST"
-													action="?/resendParentConfirmation"
-													class={actionForm}
-													use:enhance={pending.submit(`resendParent:${parent.id}`)}
-												>
-													<input type="hidden" name="parentId" value={parent.id} />
-													<input type="hidden" name="parentName" value={parent.name} />
-													<Button
-														type="submit"
-														variant="outline"
-														class={actionButton}
-														aria-busy={pending.is(`resendParent:${parent.id}`) || undefined}
-														disabled={pending.busy}
-													>
-														{@render spinner(`resendParent:${parent.id}`)}
-														{m.requests_parent_resend()}
-													</Button>
-												</form>
-											{/if}
+				<!-- svelte-ignore a11y_no_redundant_roles -->
+				<table role="table" class={table}>
+					<thead role="rowgroup" class={thead}>
+						<tr role="row">
+							<th role="columnheader" class={th}>{m.requests_col_parent()}</th>
+							<th role="columnheader" class={th}
+								><span class="sr-only">{m.requests_approve()}</span></th
+							>
+						</tr>
+					</thead>
+					<tbody role="rowgroup" class={tbody}>
+						{#each data.parentsPending as parent (parent.id)}
+							<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
+								<td role="cell" class={td}>
+									<div class="flex flex-wrap items-center gap-2">
+										<strong class="wrap-break-word">{parent.name}</strong>
+										{@render staffPill(parent)}
+										{#if parent.emailConfirmedAt}
+											<Badge variant="success">{m.requests_email_confirmed()}</Badge>
+										{:else}
+											<Badge variant="warning">{m.requests_email_unconfirmed()}</Badge>
+										{/if}
+									</div>
+									<p class="{meta} wrap-anywhere">
+										{parent.email} · {formatRequestDate(parent.createdAt)}
+									</p>
+								</td>
+								<td role="cell" class={tdActions}>
+									<div class={actions}>
+										{#if !parent.emailConfirmedAt}
 											<form
 												method="POST"
-												action="?/approveParent"
+												action="?/resendParentConfirmation"
 												class={actionForm}
-												use:enhance={submitApproveParent(parent)}
+												use:enhance={pending.submit(`resendParent:${parent.id}`)}
 											>
 												<input type="hidden" name="parentId" value={parent.id} />
 												<input type="hidden" name="parentName" value={parent.name} />
 												<Button
 													type="submit"
+													variant="outline"
 													class={actionButton}
-													aria-busy={pending.is(`approveParent:${parent.id}`) || undefined}
+													aria-busy={pending.is(`resendParent:${parent.id}`) || undefined}
 													disabled={pending.busy}
 												>
-													{@render spinner(`approveParent:${parent.id}`)}
-													{m.requests_approve()}
-												</Button>
-											</form>
-											<form
-												method="POST"
-												action="?/rejectParent"
-												class={actionForm}
-												use:enhance={decide(`rejectParent:${parent.id}`, {
-													confirm: confirm.with(
-														parent.staffRole
-															? m.requests_parent_staff_reject_confirm({ name: parent.name })
-															: m.requests_parent_reject_confirm({ name: parent.name }),
-														m.requests_reject(),
-														{ destructive: true }
-													)
-												})}
-											>
-												<input type="hidden" name="parentId" value={parent.id} />
-												<input type="hidden" name="parentName" value={parent.name} />
-												<Button
-													type="submit"
-													variant="destructive"
-													class={actionButton}
-													aria-busy={pending.is(`rejectParent:${parent.id}`) || undefined}
-													disabled={pending.busy}
-												>
-													{@render spinner(`rejectParent:${parent.id}`)}
-													{m.requests_reject()}
-												</Button>
-											</form>
-										</div>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
-			</section>
-
-			<section
-				class={sectionCard}
-				aria-labelledby="parents-decided-heading"
-				data-testid="requests-parents-decided"
-			>
-				<h2 id="parents-decided-heading" class={sectionHeading} tabindex="-1" data-section-heading>
-					{m.requests_parents_decided_heading()}
-				</h2>
-				{#if data.parentsDecided.length === 0}
-					<p class={ui.muted}>{m.requests_parents_decided_empty()}</p>
-				{:else}
-					<!-- svelte-ignore a11y_no_redundant_roles -->
-					<table role="table" class={table}>
-						<tbody role="rowgroup" class={tbody}>
-							{#each data.parentsDecided as parent (parent.id)}
-								<tr role="row" class={tr} tabindex="-1" data-request-row data-testid="request-row">
-									<td role="cell" class={tdPill}>{@render decidedPill(parent.status)}</td>
-									<td role="cell" class="{td} {parent.status === 'rejected' ? ui.muted : ''}">
-										<div class="flex flex-wrap items-center gap-2">
-											<span class="wrap-break-word">{parent.name}</span>
-											{@render staffPill(parent)}
-										</div>
-										<p class="{meta} wrap-anywhere">{parent.email}</p>
-									</td>
-									<td role="cell" class={tdActions}>
-										{#if parent.status === 'rejected' && !parent.staffRole}
-											<!-- Its account delete failed earlier: retry it. A staff
-											     member's rejected request keeps its login (B14a). -->
-											<form
-												method="POST"
-												action="?/rejectParent"
-												class={actionForm}
-												use:enhance={decide(`rejectParent:${parent.id}`, {
-													confirm: confirm.with(
-														m.requests_parent_reject_confirm({ name: parent.name }),
-														m.requests_clear_rejected(),
-														{ destructive: true }
-													)
-												})}
-											>
-												<input type="hidden" name="parentId" value={parent.id} />
-												<input type="hidden" name="parentName" value={parent.name} />
-												<Button
-													type="submit"
-													variant="ghost"
-													class={actionButton}
-													aria-busy={pending.is(`rejectParent:${parent.id}`) || undefined}
-													disabled={pending.busy}
-												>
-													{#if pending.is(`rejectParent:${parent.id}`)}
-														{@render spinner(`rejectParent:${parent.id}`)}
-													{:else}
-														<Trash2 aria-hidden="true" />
-													{/if}
-													{m.requests_clear_rejected()}
+													{@render spinner(`resendParent:${parent.id}`)}
+													{m.requests_parent_resend()}
 												</Button>
 											</form>
 										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
+										<form
+											method="POST"
+											action="?/approveParent"
+											class={actionForm}
+											use:enhance={submitApproveParent(parent)}
+										>
+											<input type="hidden" name="parentId" value={parent.id} />
+											<input type="hidden" name="parentName" value={parent.name} />
+											<Button
+												type="submit"
+												class={actionButton}
+												aria-busy={pending.is(`approveParent:${parent.id}`) || undefined}
+												disabled={pending.busy}
+											>
+												{@render spinner(`approveParent:${parent.id}`)}
+												{m.requests_approve()}
+											</Button>
+										</form>
+										<form
+											method="POST"
+											action="?/rejectParent"
+											class={actionForm}
+											use:enhance={decide(`rejectParent:${parent.id}`, {
+												confirm: confirm.with(
+													parent.staffRole
+														? m.requests_parent_staff_reject_confirm({ name: parent.name })
+														: m.requests_parent_reject_confirm({ name: parent.name }),
+													m.requests_reject(),
+													{ destructive: true }
+												)
+											})}
+										>
+											<input type="hidden" name="parentId" value={parent.id} />
+											<input type="hidden" name="parentName" value={parent.name} />
+											<Button
+												type="submit"
+												variant="destructive"
+												class={actionButton}
+												aria-busy={pending.is(`rejectParent:${parent.id}`) || undefined}
+												disabled={pending.busy}
+											>
+												{@render spinner(`rejectParent:${parent.id}`)}
+												{m.requests_reject()}
+											</Button>
+										</form>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</section>
 		{/if}
+
+		<!-- #107: planned leave of the coming weeks; a list, no decision. -->
+		<section
+			class={sectionCard}
+			aria-labelledby="upcoming-leave-heading"
+			data-testid="requests-upcoming-leave"
+		>
+			<h2 id="upcoming-leave-heading" class={sectionHeading}>
+				{m.requests_upcoming_leave_heading()}
+			</h2>
+			<p class={ui.muted}>{m.requests_upcoming_leave_subtitle()}</p>
+			{#if data.upcomingLeaveError}
+				<p class={ui.muted} role="alert">{m.requests_upcoming_leave_load_failed()}</p>
+			{:else if data.upcomingLeave.length === 0}
+				<p class={ui.muted}>{m.requests_upcoming_leave_empty()}</p>
+			{:else}
+				<!-- svelte-ignore a11y_no_redundant_roles -->
+				<table role="table" class={table}>
+					<tbody role="rowgroup" class={tbody}>
+						{#each data.upcomingLeave as row (`${row.sessionId}:${row.studentId}`)}
+							<tr role="row" class={tr} data-testid="request-row">
+								<td role="cell" class={td}>
+									<div class="flex flex-wrap items-center gap-2">
+										<strong class="wrap-break-word">{row.studentName}</strong>
+										<Badge variant="warning">
+											{m.leave_answer_on_leave()}{#if row.classification}
+												· {row.classification === 'planned'
+													? m.leave_class_planned()
+													: m.leave_class_short_notice()}{/if}
+										</Badge>
+									</div>
+									<p class={meta}>
+										{row.className} ·
+										<time datetime={row.day}>{formatDay(row.day)}</time>
+										· {row.startTime ?? m.calendar_status_unset()}
+									</p>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</section>
+
+		<!-- #116: the decided lists, closed on load. -->
+		<details class="min-w-0" data-testid="requests-history">
+			<summary class={summary}>
+				<h2 class="inline text-lg leading-snug font-bold">{m.requests_history_heading()}</h2>
+			</summary>
+			<div class="mt-2 grid min-w-0 grid-cols-1 gap-4 md:gap-6">
+				<section
+					class={sectionCard}
+					aria-labelledby="decided-heading"
+					data-testid="requests-decided"
+				>
+					<h2 id="decided-heading" class={sectionHeading} tabindex="-1" data-section-heading>
+						{m.requests_decided_heading({
+							approved: num(data.decided.filter((s) => s.status === 'approved').length),
+							rejected: num(data.decided.filter((s) => s.status === 'rejected').length)
+						})}
+					</h2>
+					{#if data.decided.length === 0}
+						<p class={ui.muted}>{m.requests_decided_empty()}</p>
+					{:else}
+						<!-- svelte-ignore a11y_no_redundant_roles -->
+						<table role="table" class={table}>
+							<tbody role="rowgroup" class={tbody}>
+								{#each data.decided as student (student.id)}
+									<tr
+										role="row"
+										class={tr}
+										tabindex="-1"
+										data-request-row
+										data-testid="request-row"
+									>
+										<td role="cell" class={tdPill}>{@render decidedPill(student.status)}</td>
+										<td role="cell" class="{td} {student.status === 'rejected' ? ui.muted : ''}">
+											{student.registrationName}
+										</td>
+										<td role="cell" class={tdActions}>
+											{#if student.status === 'rejected'}
+												<form
+													method="POST"
+													action="?/clearRejected"
+													class={actionForm}
+													use:enhance={decide(`clear:${student.id}`, {
+														confirm: confirm.with(
+															m.requests_clear_rejected_confirm({
+																name: student.registrationName ?? ''
+															}),
+															m.requests_clear_rejected(),
+															{ destructive: true }
+														)
+													})}
+												>
+													<input type="hidden" name="studentId" value={student.id} />
+													<input
+														type="hidden"
+														name="studentName"
+														value={student.registrationName}
+													/>
+													<Button
+														type="submit"
+														variant="ghost"
+														class={actionButton}
+														aria-busy={pending.is(`clear:${student.id}`) || undefined}
+														disabled={pending.busy}
+													>
+														{#if pending.is(`clear:${student.id}`)}
+															{@render spinner(`clear:${student.id}`)}
+														{:else}
+															<Trash2 aria-hidden="true" />
+														{/if}
+														{m.requests_clear_rejected()}
+													</Button>
+												</form>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				</section>
+
+				<section
+					class={sectionCard}
+					aria-labelledby="sick-decided-heading"
+					data-testid="requests-sick-decided"
+				>
+					<h2 id="sick-decided-heading" class={sectionHeading} tabindex="-1" data-section-heading>
+						{m.requests_sick_decided_heading()}
+					</h2>
+					{#if data.sickDecided.length === 0}
+						<p class={ui.muted}>{m.requests_sick_decided_empty()}</p>
+					{:else}
+						<!-- svelte-ignore a11y_no_redundant_roles -->
+						<table role="table" class={table}>
+							<tbody role="rowgroup" class={tbody}>
+								{#each data.sickDecided as row (`${row.sessionId}:${row.studentId}`)}
+									<tr role="row" class={tr} data-testid="request-row">
+										<td role="cell" class={tdPill}>{@render decidedPill(row.decision)}</td>
+										<td role="cell" class="{td} {row.decision === 'rejected' ? ui.muted : ''}">
+											<span class="wrap-break-word">{row.studentName}</span>
+											<p class={meta}>
+												{row.className} ·
+												<time datetime={row.day}>{formatDay(row.day)}</time>
+												· {row.startTime ?? m.calendar_status_unset()}
+												{#if row.decidedBySystem}
+													· {m.requests_sick_auto()}
+												{/if}
+											</p>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				</section>
+
+				{#if data.role === 'admin'}
+					<section
+						class={sectionCard}
+						aria-labelledby="deletion-decided-heading"
+						data-testid="requests-deletion-decided"
+					>
+						<h2 id="deletion-decided-heading" class={sectionHeading}>
+							{m.requests_deletion_decided_heading()}
+						</h2>
+						{#if data.deletionDecided.length === 0}
+							<p class={ui.muted}>{m.requests_deletion_decided_empty()}</p>
+						{:else}
+							<!-- svelte-ignore a11y_no_redundant_roles -->
+							<table role="table" class={table}>
+								<tbody role="rowgroup" class={tbody}>
+									{#each data.deletionDecided as row (row.id)}
+										<tr role="row" class={tr} data-testid="request-row">
+											<td role="cell" class={tdPill}>{@render decidedPill(row.status)}</td>
+											<td role="cell" class="{td} {row.status === 'rejected' ? ui.muted : ''}">
+												<span class="wrap-break-word"
+													>{row.studentName ?? m.requests_deletion_deleted_student()}</span
+												>
+												<p class={meta}>
+													{m.requests_deletion_requested_by({ name: row.requesterName })} ·
+													{formatRequestDate(row.requestedAt)}
+												</p>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						{/if}
+					</section>
+
+					<section
+						class={sectionCard}
+						aria-labelledby="parents-decided-heading"
+						data-testid="requests-parents-decided"
+					>
+						<h2
+							id="parents-decided-heading"
+							class={sectionHeading}
+							tabindex="-1"
+							data-section-heading
+						>
+							{m.requests_parents_decided_heading()}
+						</h2>
+						{#if data.parentsDecided.length === 0}
+							<p class={ui.muted}>{m.requests_parents_decided_empty()}</p>
+						{:else}
+							<!-- svelte-ignore a11y_no_redundant_roles -->
+							<table role="table" class={table}>
+								<tbody role="rowgroup" class={tbody}>
+									{#each data.parentsDecided as parent (parent.id)}
+										<tr
+											role="row"
+											class={tr}
+											tabindex="-1"
+											data-request-row
+											data-testid="request-row"
+										>
+											<td role="cell" class={tdPill}>{@render decidedPill(parent.status)}</td>
+											<td role="cell" class="{td} {parent.status === 'rejected' ? ui.muted : ''}">
+												<div class="flex flex-wrap items-center gap-2">
+													<span class="wrap-break-word">{parent.name}</span>
+													{@render staffPill(parent)}
+												</div>
+												<p class="{meta} wrap-anywhere">{parent.email}</p>
+											</td>
+											<td role="cell" class={tdActions}>
+												{#if parent.status === 'rejected' && !parent.staffRole}
+													<!-- Its account delete failed earlier: retry it. A staff
+													     member's rejected request keeps its login (B14a). -->
+													<form
+														method="POST"
+														action="?/rejectParent"
+														class={actionForm}
+														use:enhance={decide(`rejectParent:${parent.id}`, {
+															confirm: confirm.with(
+																m.requests_parent_reject_confirm({ name: parent.name }),
+																m.requests_clear_rejected(),
+																{ destructive: true }
+															)
+														})}
+													>
+														<input type="hidden" name="parentId" value={parent.id} />
+														<input type="hidden" name="parentName" value={parent.name} />
+														<Button
+															type="submit"
+															variant="ghost"
+															class={actionButton}
+															aria-busy={pending.is(`rejectParent:${parent.id}`) || undefined}
+															disabled={pending.busy}
+														>
+															{#if pending.is(`rejectParent:${parent.id}`)}
+																{@render spinner(`rejectParent:${parent.id}`)}
+															{:else}
+																<Trash2 aria-hidden="true" />
+															{/if}
+															{m.requests_clear_rejected()}
+														</Button>
+													</form>
+												{/if}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						{/if}
+					</section>
+				{/if}
+			</div>
+		</details>
 	</div>
+
+	<!-- Shared hidden forms for the join and deletion decisions: outside the
+	     cards, so a card leaving with its last request keeps them. -->
+	<form
+		bind:this={joinForm}
+		method="POST"
+		action={joinTarget.decision === 'approved' ? '?/approveJoin' : '?/rejectJoin'}
+		use:enhance={decide(
+			() => `join:${joinTarget.decision}:${joinTarget.id}`,
+			{},
+			() => joinRow
+		)}
+		hidden
+	>
+		<input type="hidden" name="requestId" value={joinTarget.id} />
+	</form>
+	{#if data.role === 'admin'}
+		<form
+			bind:this={approveDeletionForm}
+			method="POST"
+			action="?/approveDeletion"
+			use:enhance={decide(
+				() => `approveDeletion:${deletionTarget.id}`,
+				{},
+				() => deletionRow
+			)}
+			hidden
+		>
+			<input type="hidden" name="requestId" value={deletionTarget.id} />
+			<input type="hidden" name="studentName" value={deletionTarget.name} />
+		</form>
+	{/if}
 </div>
 
 <ConfirmDialog {confirm} />

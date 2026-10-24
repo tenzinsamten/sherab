@@ -46,6 +46,8 @@ let classK = '';
 let classJ = '';
 
 let teacher: TestUser;
+/** #116: the teacher of class J, whose only request is one registration. */
+let lastTeacher: TestUser;
 let admin: TestUser;
 let parent: TestUser;
 let student: TestUser;
@@ -62,6 +64,7 @@ const sickName = (v: string) => `SH Sick ${v} ${tag}`;
 const joinName = (v: string) => `SH Join ${v} ${tag}`;
 const credsName = `SH Reg creds ${tag}`;
 const goneName = `SH Reg gone ${tag}`;
+const lastName = `SH Reg last ${tag}`;
 const leaveName = `SH Leave ${tag}`;
 const sickDoneName = `SH Sick done ${tag}`;
 const delPendingName = `SH Del pending ${tag}`;
@@ -169,13 +172,18 @@ async function approvedStudent(key: string, name: string, classId: string, paren
 	return user;
 }
 
-/** A registration waiting in class K. */
-async function pendingRegistration(key: string, name: string, pendingAddress = false) {
+/** A registration waiting in class K (or `classId`). */
+async function pendingRegistration(
+	key: string,
+	name: string,
+	pendingAddress = false,
+	classId = classK
+) {
 	const user = await createUser('student', key, { pendingAddress });
 	check(
 		await service
 			.from('profiles')
-			.update({ class_id: classK, status: 'pending', registration_name: name })
+			.update({ class_id: classId, status: 'pending', registration_name: name })
 			.eq('id', user.id),
 		`make ${key} pending`
 	);
@@ -295,6 +303,12 @@ test.beforeAll(async () => {
 		}
 		await pendingRegistration('reg-creds', credsName, true);
 		await pendingRegistration('reg-gone', goneName);
+		lastTeacher = await createUser('teacher', 'teacher-last');
+		check(
+			await service.from('class_teachers').insert({ class_id: classJ, teacher_id: lastTeacher.id }),
+			'assign last teacher'
+		);
+		await pendingRegistration('reg-last', lastName, false, classJ);
 
 		const leave = await approvedStudent('leave', leaveName, classK, parent.id);
 		await answer(leave, sessions[1], 'on_leave');
@@ -392,6 +406,13 @@ const confirmDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Are
 const section = (page: Page, testid: string) => page.getByTestId(testid);
 const row = (page: Page, testid: string, text: string) =>
 	section(page, testid).getByTestId('request-row').filter({ hasText: text });
+/** #116: the decided lists sit in the History group, closed on load. */
+async function openHistory(page: Page) {
+	const history = section(page, 'requests-history');
+	if (!(await history.evaluate((el) => (el as HTMLDetailsElement).open)))
+		await history.locator('summary').click();
+	await expect(history).toHaveAttribute('open', '');
+}
 const countPill = (page: Page) => page.getByTestId('requests-count').locator('.sr-only');
 
 async function pendingCount(page: Page): Promise<number> {
@@ -464,8 +485,10 @@ for (const viewport of VIEWPORTS) {
 				await expect(join).toContainText(kName);
 				await expect(join).toContainText(jName);
 				await expect(join.getByRole('button', { name: 'Reject' })).toBeVisible();
-				// Planned leave and the decided sick note are listed too.
+				// Planned leave and the decided sick note (in the History) are listed too.
 				await expect(row(page, 'requests-upcoming-leave', leaveName)).toContainText('On leave');
+				await expect(section(page, 'requests-history')).not.toHaveAttribute('open');
+				await openHistory(page);
 				await expect(row(page, 'requests-sick-decided', sickDoneName)).toContainText('Approved');
 				await expectFits(page);
 			} finally {
@@ -501,7 +524,8 @@ for (const viewport of VIEWPORTS) {
 					'data-request-row',
 					''
 				);
-				// Listed as decided now.
+				// Listed as decided now, in the History.
+				await openHistory(page);
 				await expect(row(page, 'requests-decided', reg(v, 'B'))).toContainText('Rejected');
 
 				// Approve a sick note.
@@ -748,6 +772,26 @@ test('a request decided meanwhile at 375px: the error toast, nothing else change
 	}
 });
 
+test('the last request decided at 375px (#116): the card leaves, Nothing waiting, focus on the heading', async ({
+	browser
+}) => {
+	const page = await signedIn(browser, 375, 740, lastTeacher);
+	try {
+		await openPage(page, '/requests');
+		await expect(page.getByTestId('requests-empty')).toHaveCount(0);
+		const last = row(page, 'requests-registrations', lastName);
+		await last.getByRole('button', { name: 'Reject' }).click();
+		await confirmDialog(page).getByRole('button', { name: 'Reject' }).click();
+		await expect(toast(page, `${lastName} was rejected.`)).toBeVisible();
+		await expect(section(page, 'requests-registrations')).toHaveCount(0);
+		await expect(page.getByTestId('requests-empty')).toContainText('Nothing waiting');
+		await expect(page.getByRole('heading', { level: 1, name: 'Requests' })).toBeFocused();
+		await expect.poll(() => profileStatus(ids[lastName])).toBe('rejected');
+	} finally {
+		await page.context().close();
+	}
+});
+
 /** A context whose browser looks like a person's: tours start by themselves. */
 async function personPage(browser: Browser, width: number, height: number, who: TestUser) {
 	const context: BrowserContext = await browser.newContext({ viewport: { width, height } });
@@ -810,6 +854,8 @@ test('requests at 1440px for the admin: full tables for all ten sections, action
 	try {
 		await openPage(page, '/requests');
 		await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeVisible();
+		// The decided tables are in the History, closed on load.
+		await openHistory(page);
 		const sections = [
 			'requests-registrations',
 			'requests-decided',
