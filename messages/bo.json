@@ -603,6 +603,8 @@
 	"common_cancel": "ཕྱིར་འཐེན།",
 	"common_delete": "བསུབ།",
 	"common_confirm_title": "ཁྱེད་ཀྱིས་གཏན་འཁེལ་ལམ།",
+	"unsaved_leave_confirm": "ཤོག་ངོས་འདི་ནས་ཐོན་ནམ། ཁྱེད་ཀྱིས་བྲིས་པ་དེ་ཉར་ཚགས་བྱས་མེད།",
+	"unsaved_leave_okay": "ཐོན།",
 	"localized_name_label": "{label} ({language})",
 	"names_edit": "མིང་ཞུན་དག",
 	"names_edit_title": "{name} གི་མིང་ཚོ།",

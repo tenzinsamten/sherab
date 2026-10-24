@@ -603,6 +603,8 @@
 	"common_cancel": "Abbrechen",
 	"common_delete": "Löschen",
 	"common_confirm_title": "Sind Sie sicher?",
+	"unsaved_leave_confirm": "Diese Seite verlassen? Was du eingegeben hast, ist nicht gespeichert.",
+	"unsaved_leave_okay": "Verlassen",
 	"localized_name_label": "{label} ({language})",
 	"names_edit": "Namen bearbeiten",
 	"names_edit_title": "Namen von {name}",

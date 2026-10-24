@@ -8,6 +8,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import type { createPending } from '$lib/pending.svelte';
 	import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
+	import type { UnsavedGuard } from '$lib/unsaved.svelte';
 	import type { HomeworkReferenceLink } from '$lib/supabase/database.types';
 	import { ui } from '$lib/ui/classes';
 	import ContentLanguageSelect from './ContentLanguageSelect.svelte';
@@ -21,12 +22,14 @@
 	 * in a chosen language, like homework content (#75), and stays optional.
 	 * `titleError` is the server's message for a wrong title, shown under the
 	 * field. `pending` is the page's, so every button waits for one answer.
+	 * `unsaved` is the page's leave guard (#121): leaving with a changed form asks.
 	 * Mobile-first story 8: native fields in its own `data-ui="new"` root.
 	 */
 	let {
 		section,
 		titleError,
 		pending,
+		unsaved,
 		oncancel
 	}: {
 		section: {
@@ -38,6 +41,7 @@
 		};
 		titleError?: string;
 		pending: ReturnType<typeof createPending>;
+		unsaved: UnsavedGuard;
 		oncancel: () => void;
 	} = $props();
 
@@ -56,7 +60,8 @@
 	method="POST"
 	action="?/updateSection"
 	novalidate
-	use:enhance={pending.submit(() => saveKey, { reset: false })}
+	use:enhance={unsaved.submit(pending.submit(() => saveKey, { reset: false }))}
+	use:unsaved.track
 >
 	<input type="hidden" name="sectionId" value={section.id} />
 	<div class="mb-4 flex min-w-0 flex-col gap-1.5">

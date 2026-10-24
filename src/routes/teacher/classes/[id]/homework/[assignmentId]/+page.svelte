@@ -20,6 +20,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { createPending } from '$lib/pending.svelte';
+	import { createUnsavedGuard } from '$lib/unsaved.svelte';
 	import type { ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import { ui } from '$lib/ui/classes';
@@ -39,6 +40,8 @@
 
 	const pending = createPending();
 	const confirm = createConfirm();
+	// #121: asks before leaving a changed edit form (only that form).
+	const unsaved = createUnsavedGuard(confirm);
 	let assignment = $derived(data.assignment);
 	// The edit form's language (#74): starts as the saved one and, like the
 	// other edit fields, keeps the teacher's pick when the page data reloads.
@@ -218,7 +221,8 @@
 			<form
 				method="POST"
 				action="?/editAssignment"
-				use:enhance={pending.submit('edit', { reset: false })}
+				use:enhance={unsaved.submit(pending.submit('edit', { reset: false }))}
+				use:unsaved.track
 				class="mt-3"
 			>
 				<input type="hidden" name="assignmentId" value={assignment.id} />

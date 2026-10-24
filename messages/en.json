@@ -603,6 +603,8 @@
 	"common_cancel": "Cancel",
 	"common_delete": "Delete",
 	"common_confirm_title": "Are you sure?",
+	"unsaved_leave_confirm": "Leave this page? What you typed is not saved.",
+	"unsaved_leave_okay": "Leave",
 	"localized_name_label": "{label} ({language})",
 	"names_edit": "Edit names",
 	"names_edit_title": "Names of {name}",

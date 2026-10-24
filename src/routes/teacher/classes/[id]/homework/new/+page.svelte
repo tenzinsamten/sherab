@@ -7,6 +7,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { todayInBerlin } from '$lib/berlin-date';
 	import { formatDay } from '$lib/format';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import LinkRows from '$lib/components/LinkRows.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
@@ -15,7 +16,9 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
+	import { createUnsavedGuard } from '$lib/unsaved.svelte';
 	import { readContentLanguage, type ContentLanguage } from '$lib/rich-text';
 	import type { SkillArea } from '$lib/supabase/database.types';
 	import { ui } from '$lib/ui/classes';
@@ -50,6 +53,9 @@
 	// Success redirects to the list, which shows the toast; errors come from
 	// the root layout's form-error toast.
 	const pending = createPending();
+	// #121: asks before leaving the form once something was typed.
+	const confirm = createConfirm();
+	const unsaved = createUnsavedGuard(confirm);
 
 	// #110: the optional PDF files. The server checks them before it creates
 	// anything (a refused file returns the form as typed; the files are
@@ -65,7 +71,7 @@
 	});
 	let fileError = $derived(localFileError || serverFileError);
 
-	const create = pending.submit('create');
+	const create = unsaved.submit(pending.submit('create'));
 	const submitCreate: SubmitFunction = (input) => {
 		localFileError = '';
 		const chosen = input.formData
@@ -148,6 +154,7 @@
 			action="?/createAssignment"
 			enctype="multipart/form-data"
 			use:enhance={submitCreate}
+			use:unsaved.track
 		>
 			<div class={field}>
 				<Label for="title">{m.homework_title_label()}</Label>
@@ -296,3 +303,5 @@
 		</form>
 	</section>
 </div>
+
+<ConfirmDialog {confirm} />

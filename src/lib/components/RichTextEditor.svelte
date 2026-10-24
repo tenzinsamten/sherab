@@ -108,6 +108,9 @@
 				}
 			});
 			editor = instance;
+			// #121: the same serialiser as onUpdate from the start, so typing and
+			// undoing gives back the exact string the form started with.
+			json = instance.isEmpty ? '' : JSON.stringify(instance.getJSON());
 		})();
 		return () => {
 			cancelled = true;

@@ -14,6 +14,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { createPending } from '$lib/pending.svelte';
+	import { createUnsavedGuard } from '$lib/unsaved.svelte';
 	import { ui } from '$lib/ui/classes';
 	import { formatSchoolYear } from '$lib/school-year';
 	import type { ContentLanguage, RichTextDoc } from '$lib/rich-text';
@@ -93,6 +94,8 @@
 
 	const pending = createPending();
 	const confirm = createConfirm();
+	// #121: asks before leaving a changed section form (SyllabusForm).
+	const unsaved = createUnsavedGuard(confirm);
 	let deleteForm: HTMLFormElement | undefined = $state();
 
 	function setEditing(id: string, on: boolean) {
@@ -160,6 +163,7 @@
 						? result.titleError
 						: undefined}
 					{pending}
+					{unsaved}
 					oncancel={() => {
 						cancelledResult = result;
 						setEditing(section.id, false);
@@ -332,7 +336,7 @@
 		bind:this={deleteForm}
 		method="POST"
 		action="?/delete"
-		use:enhance={pending.submit('delete')}
+		use:enhance={unsaved.submit(pending.submit('delete'))}
 		hidden
 	>
 		<input type="hidden" name="syllabusId" value={syllabus.id} />
