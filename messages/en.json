@@ -2,6 +2,7 @@
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 
 	"load_error_generic": "Something went wrong loading this page's data. Please refresh, or try again shortly.",
+	"action_error_offline": "No connection. Check your internet and try again.",
 
 	"nav_classes": "Classes",
 	"nav_teachers": "Teachers",

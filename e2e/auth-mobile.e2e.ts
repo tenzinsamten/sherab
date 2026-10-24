@@ -461,6 +461,30 @@ for (const v of VIEWPORTS) {
 			await expect(page.locator('#confirm-error')).toHaveText('Passwords do not match.');
 		});
 
+		test(`no connection (${v.name}): a failed sign-in post toasts and keeps the page (#120)`, async ({
+			page
+		}) => {
+			await open(page, '/login');
+			const email = `nobody-offline-${v.name}-${tag}@example.test`;
+			await page.locator('#email').fill(email);
+			await page.locator('#password').fill('any-password');
+			await page.route('**/*', (route) =>
+				route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.fallback()
+			);
+			try {
+				await page.getByRole('button', { name: 'Sign in' }).click();
+				await expect(
+					toast(page, 'No connection. Check your internet and try again.')
+				).toBeVisible();
+				await expect(page).toHaveURL(/\/login$/);
+				await expect(page.getByRole('heading', { name: 'Something went wrong' })).toHaveCount(0);
+				await expect(page.locator('#email')).toHaveValue(email);
+				await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+			} finally {
+				await page.unroute('**/*');
+			}
+		});
+
 		test(`home (${v.name}): signed out, Sign in opens /login and Join a class opens /join`, async ({
 			page
 		}) => {

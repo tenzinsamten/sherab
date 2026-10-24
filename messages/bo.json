@@ -2,6 +2,7 @@
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 
 	"load_error_generic": "ཤོག་ངོས་འདིའི་གནད་སྡུད་འཇུག་སྐབས་ནོར་འཁྲུལ་བྱུང་། ཤོག་ངོས་གསར་སྒྱུར་རམ་ཡང་བསྐྱར་འབད་རོགས།",
+	"action_error_offline": "དྲ་རྒྱ་དང་འབྲེལ་བ་མེད། དྲ་རྒྱ་ལ་ཞིབ་ལྟ་གནང་ནས་སླར་འབད་རོགས།",
 
 	"nav_classes": "འཛིན་གྲྭ།",
 	"nav_teachers": "དགེ་རྒན།",

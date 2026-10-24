@@ -1,5 +1,7 @@
 import { tick } from 'svelte';
 import type { SubmitFunction } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages.js';
+import { showToast } from '$lib/toast';
 import { actionEnded, actionStarted } from './busy.svelte';
 
 /**
@@ -27,6 +29,8 @@ import { actionEnded, actionStarted } from './busy.svelte';
  * on success SvelteKit's applyAction moves it to <body> too, so afterwards
  * focus goes back to where it was when the answer came (a text field after
  * Enter, or one the user moved to), else to the pressed button (see `restoreFocus`).
+ * #120: when the request could not be sent (the fetch threw a TypeError: no
+ * connection), a toast says so and the page stays as it was.
  */
 export function createPending() {
 	let current = $state<string | null>(null);
@@ -51,13 +55,27 @@ export function createPending() {
 				return async ({ update, result }) => {
 					// Where focus is as the answer arrives, before applyAction resets it.
 					const before = typeof document !== 'undefined' ? document.activeElement : null;
+					// #120: the fetch itself failed (a TypeError, no status). An answer that
+					// came but could not be read (a proxy's HTML 502) also has no status,
+					// but throws a SyntaxError, and goes to the error page as before.
+					const offline =
+						result.type === 'error' &&
+						result.status === undefined &&
+						result.error instanceof TypeError;
 					try {
-						await update({ reset: options.reset ?? true });
+						// #120: no connection: say so and keep the page and its values,
+						// instead of the error page.
+						if (offline) {
+							showToast('error', m.action_error_offline());
+						} else {
+							await update({ reset: options.reset ?? true });
+						}
 					} finally {
 						current = null;
 						actionEnded();
-						// A redirect's new page and an error page set their own focus.
-						if (result.type !== 'redirect' && result.type !== 'error') {
+						// A redirect's new page and an error page set their own focus; the
+						// page kept after a failed fetch (#120) does not.
+						if (result.type !== 'redirect' && (result.type !== 'error' || offline)) {
 							await restoreFocus(before, submitter);
 						}
 					}

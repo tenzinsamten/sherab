@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
+import { showToast } from '$lib/toast';
 import { runningActions } from './busy.svelte';
 import { createPending, restoreFocus } from './pending.svelte';
+
+vi.mock('$lib/toast', () => ({ showToast: vi.fn() }));
 
 type Input = Parameters<ReturnType<ReturnType<typeof createPending>['submit']>>[0];
 
@@ -130,7 +134,7 @@ describe('createPending().submit: running actions (story 11)', () => {
 // runs in node, so `document` and the elements are stubs.
 describe('restoreFocus (#109)', () => {
 	const body = { tagName: 'BODY' };
-	let doc: { body: unknown; activeElement: unknown };
+	let doc: { body: unknown; activeElement: unknown; cookie: string };
 	type Fake = HTMLElement & { focus: ReturnType<typeof vi.fn> };
 	/** Like the browser, a focused element becomes `activeElement`, unless it can't take focus. */
 	const element = (
@@ -144,7 +148,8 @@ describe('restoreFocus (#109)', () => {
 		return el;
 	};
 	const stubDocument = (activeElement: unknown) => {
-		doc = { body, activeElement };
+		// `cookie`: the message of a toast reads the locale from it (#120).
+		doc = { body, activeElement, cookie: '' };
 		vi.stubGlobal('document', doc);
 	};
 	type After = (o: { update: () => Promise<void>; result: unknown }) => Promise<void>;
@@ -283,7 +288,7 @@ describe('restoreFocus (#109)', () => {
 	it('a redirect or an error page moves no focus (they set their own)', async () => {
 		for (const result of [
 			{ type: 'redirect', status: 303, location: '/elsewhere' },
-			{ type: 'error', error: new Error('boom') }
+			{ type: 'error', status: 500, error: new Error('boom') }
 		]) {
 			const field = element();
 			const save = element();
@@ -295,6 +300,15 @@ describe('restoreFocus (#109)', () => {
 			expect(save.focus).not.toHaveBeenCalled();
 			expect(doc.activeElement).toBe(body);
 		}
+	});
+
+	it('#120: after a failed fetch the page stays, so focus returns', async () => {
+		const save = element();
+		stubDocument(body);
+		await (
+			await submitWith(save)
+		)({ result: { type: 'error', error: new TypeError('Failed to fetch') }, update: resetsFocus });
+		expect(doc.activeElement).toBe(save);
 	});
 
 	it('a throwing update() still returns focus', async () => {
@@ -338,5 +352,44 @@ describe('restoreFocus (#109)', () => {
 		const i = { ...input(), submitter: save } as unknown as Input;
 		await createPending().submit('reject', { confirm: async () => false })(i);
 		expect(save.focus).not.toHaveBeenCalled();
+	});
+});
+
+describe('createPending().submit: no connection (#120)', () => {
+	type After = (o: { update: () => Promise<void>; result: unknown }) => Promise<void>;
+	afterEach(() => vi.mocked(showToast).mockClear());
+
+	it('a failed fetch (an error without status) toasts and keeps the page', async () => {
+		const pending = createPending();
+		const running = runningActions();
+		const after = (await pending.submit('done')(input())) as After;
+		const update = vi.fn(async () => undefined);
+		await after({ update, result: { type: 'error', error: new TypeError('Failed to fetch') } });
+		expect(update).not.toHaveBeenCalled();
+		expect(showToast).toHaveBeenCalledWith('error', m.action_error_offline());
+		expect(pending.busy).toBe(false);
+		expect(runningActions()).toBe(running);
+	});
+
+	it('an answer that could not be read (no status, not a TypeError) goes to the error page', async () => {
+		const pending = createPending();
+		const after = (await pending.submit('done')(input())) as After;
+		const update = vi.fn(async () => undefined);
+		await after({
+			update,
+			result: { type: 'error', error: new SyntaxError('Unexpected token <') }
+		});
+		expect(update).toHaveBeenCalledOnce();
+		expect(showToast).not.toHaveBeenCalled();
+	});
+
+	it('an error the server answered is applied as before', async () => {
+		const pending = createPending();
+		const after = (await pending.submit('done')(input())) as After;
+		const update = vi.fn(async () => undefined);
+		await after({ update, result: { type: 'error', status: 500, error: new Error('boom') } });
+		expect(update).toHaveBeenCalledOnce();
+		expect(showToast).not.toHaveBeenCalled();
+		expect(pending.busy).toBe(false);
 	});
 });

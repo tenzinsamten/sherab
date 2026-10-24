@@ -2,6 +2,7 @@
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 
 	"load_error_generic": "Beim Laden dieser Seite ist etwas schiefgelaufen. Bitte neu laden oder später erneut versuchen.",
+	"action_error_offline": "Keine Verbindung. Bitte prüfe deine Internetverbindung und versuche es erneut.",
 
 	"nav_classes": "Klassen",
 	"nav_teachers": "Lehrkräfte",
