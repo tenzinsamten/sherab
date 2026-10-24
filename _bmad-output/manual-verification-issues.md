@@ -2924,3 +2924,19 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   reset: 1712 unit tests, check and build exit 0; after a second reset, auth-mobile,
   auth-fields and shared-mobile 68/68. To verify: in the installed app, turn on flight mode and
   press Mark done, Approve or Save; check the Tibetan wording.
+
+- 2026-10-24: #121 built on `fix/121-unsaved-changes-guard` (stacked on
+  `fix/120-offline-action-toast`), to verify (spec
+  `implementation-artifacts/spec-121-unsaved-changes-guard.md`). Built: the homework create
+  and edit forms and the syllabus section form ask "Leave this page? What you typed is not
+  saved." (red Leave) before leaving with changes by the nav, a link, Back, or an outside link
+  (user's choice); reload or closing the tab get the browser's prompt. Changed means the form's
+  values differ from the first touch; typing then undoing asks nothing; the form's own save
+  never asks; a failed save keeps asking. The rich-text editor now serialises its starting
+  content the way it does after an edit. Texts in en, de, bo; the Tibetan is the assistant's
+  draft. Known limits: a section's own Cancel discards without asking; values the browser
+  restores before the first touch count as the baseline. Verified after a reset: 1719 unit
+  tests, check and build exit 0; after a second reset, 13 browser test files on homework,
+  syllabus and the editor 216 passed, 1 failed (the Reset PIN test, already failing before
+  #117). To verify: on a phone, type a homework title and tap the bottom nav, press Back, and
+  reload; save and leave; check the Tibetan wording.
