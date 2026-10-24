@@ -525,3 +525,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-113-join-class-in-classes-tab.md`
   summary: The student Classes page counts to-do homework against a UTC "today" while the Dashboard uses Berlin's date.
   evidence: Review 2026-10-23 (B11): `src/routes/student/classes/+page.server.ts` uses `new Date().toISOString().slice(0, 10)`; `/student` uses `todayInBerlin()`, so counts can differ around midnight. Pre-existing.
+
+- source_spec: none
+  summary: Add a translated root error page with a way back to the role's home (#115).
+  evidence: Split from the UI/UX fix batch #114-#119 (user, 2026-10-24: one spec per goal, in order); independently shippable, no `+error.svelte` exists in `src/`.
+
+- source_spec: none
+  summary: Requests shows "Nothing waiting" only when nothing at all is pending, with pending sections before history (#116).
+  evidence: Split from the UI/UX fix batch #114-#119 (user, 2026-10-24); independent of the others, touches only `src/routes/requests/+page.svelte`.
+
+- source_spec: none
+  summary: Auth and admin forms show errors next to the field with `aria-invalid`, and the sign-in forms show a pending state (#117, #118).
+  evidence: Split from the UI/UX fix batch #114-#119 (user, 2026-10-24); #117 and #118 share the auth form pages, so they go in one spec.
+
+- source_spec: none
+  summary: Destructive button text and hover reach 4.5:1 contrast (#119).
+  evidence: Split from the UI/UX fix batch #114-#119 (user, 2026-10-24); independent token or variant change, related to #124 (Reject buttons as outline).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-114-tibetan-line-height.md`
+  summary: `src/lib/server/rls.spec.ts` fails intermittently on a freshly reset database (a duplicate random class day, or a 5-second timeout).
+  evidence: Gate runs 2026-10-24: run 1 failed `#105 class day move and delete … CD002` ("duplicate key … class_days_day_unique" for 4094-10-10; days are drawn from `3000 + Math.random() * 6000` years); run 2 failed `7-5 sick leave decisions … Read` with "Test timed out in 5000ms"; run 3 passed 1667/1667. The #114 change is CSS only.

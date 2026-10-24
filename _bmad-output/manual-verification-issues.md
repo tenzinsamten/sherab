@@ -2640,3 +2640,188 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   build exit 0; class-join, student-mobile and credentials browser tests 34/34. Tibetan texts
   are the assistant's draft, not reviewed. To verify: as a student, send a class code from
   “My classes” on a phone and on a wide screen; the Dashboard has no join card.
+
+- 2026-10-24: #114–#130 logged, not built. Found (UI/UX review of the code and the help
+  screenshots, three read-only reviewers; asked by the user, 2026-10-24). Items marked
+  "checked" were confirmed again against the code; the rest are the reviewers' readings,
+  with file and line, and still need a look in a browser. Contrast ratios are WCAG 2.x,
+  computed from the tokens in `src/lib/ui/tailwind.css:135-171`. Open for planning: order,
+  and which of these to take for phase 1.
+
+- 2026-10-24: #114 logged, not built. Tibetan line height lost on most text (checked).
+  `text-sm`/`text-base`/`text-lg`/`text-xl` set their own Latin line height (Tailwind v4,
+  `--text-sm--line-height` etc.), and the utilities are imported `important`
+  (`src/lib/ui/tailwind.css:21`), so they beat the Tibetan `line-height: 2` rule
+  (`tailwind.css:300-304`). With Atisha at `size-adjust: 136%` (`src/app.css:19`) the
+  effective leading is about 1.05–1.1. About 150 uses (`text-sm` 87, `text-base` 32,
+  `text-lg` 32), plus `leading-snug`/`leading-tight` in `ui.heading` and `ui.cardTitle`
+  (`src/lib/ui/classes.ts`). Seen in `static/help/bo/teacher-5.png`: wrapped roster summary
+  lines nearly touch. Wider than the "Tibetan headings cramped by `leading-tight`" item in
+  `deferred-work.md`. Likely fix (for planning): set `--tw-leading: 2` on Tibetan elements
+  so the size utilities read it, or a `bo:` leading variant.
+
+- 2026-10-24: #115 logged, not built. No error page (checked). There is no `+error.svelte`
+  in `src/`, so 404, 403 (e.g. `src/lib/server/class-access.ts:22`,
+  `parent/+layout.server.ts:18`) and failed actions show SvelteKit's plain default page, in
+  English under every language, with no link back. Likely fix: a root `+error.svelte` with
+  translated texts per status and a button to the role's home (`roleHome`).
+
+- 2026-10-24: #116 logged, not built. Requests says "Nothing waiting" while requests wait
+  (checked). The first card on `/requests` covers only self-registrations and shows the
+  empty state `requests_empty_heading` ("Nothing waiting") when there are none
+  (`src/routes/requests/+page.svelte:376`), even when class join, sick, deletion or parent
+  requests are pending further down. Pending sections are mixed with "Decided" history
+  (join requests are the 6th section, parent approvals the 9th). A teacher sees the count in
+  the nav, reads "Nothing waiting" and stops. Likely fix: all pending sections first,
+  history collapsed below, one empty state only when nothing at all is pending.
+
+- 2026-10-24: #117 logged, not built. Form errors only as a 5-second toast (checked). The
+  root layout turns every `fail({ error })` into `showToast('error', …)`
+  (`src/routes/+layout.svelte:57-63`). Login, register (password mismatch, too short) and
+  the admin create forms show no error next to the field and set no `aria-invalid` /
+  `aria-describedby` (`(auth)/login/+page.svelte` never reads `form.error`). Slow readers
+  miss it and cannot tell which field is wrong. Likely fix: also show the error under the
+  field (`role="alert"`) and mark the field.
+
+- 2026-10-24: #118 logged, not built. Sign-in forms show no pending state. Login,
+  forgot-password, resend-confirmation and reset-password use a plain `use:enhance`
+  (`(auth)/login/+page.svelte:34`, `forgot-password/+page.svelte:26`,
+  `reset-password/+page.svelte:14`): the button never disables and the loading bar does not
+  show (it counts only `createPending` actions). On a slow phone there is no feedback and a
+  second tap submits again. Likely fix: `createPending`, as register and join do.
+
+- 2026-10-24: #119 logged, not built. Destructive button text below 4.5:1 (checked). The
+  destructive variant is #d72332 on `destructive/10`
+  (`src/lib/components/ui/button/button.svelte:17`): 4.30:1, 3.65:1 on hover. Used on every
+  Delete, Reject and Cancel button (12 on `/requests`, `admin/classes`, `calendar`). Likely
+  fix: a darker text token (about #b91c1c), or solid `bg-destructive text-white` (5.03:1).
+  See also #124.
+
+- 2026-10-24: #120 logged, not built. No offline handling in the installed app (checked).
+  `vite.config.ts:46` sets `navigateFallback: null` and nothing in `src/` watches the
+  connection, so an offline student or parent gets the browser's own error page, and an
+  offline "Mark done" ends on the page from #115. Likely fix: a precached offline page, an
+  offline banner, and network failures in `createPending` shown as a toast. Open: how much
+  offline support phase 1 needs.
+
+- 2026-10-24: #121 logged, not built. Unsaved homework and syllabus text can be lost. The
+  homework create and edit pages (`teacher/classes/[id]/homework/new/+page.svelte`,
+  `homework/[assignmentId]/+page.svelte`) and `SyllabusForm.svelte` have no
+  `beforeNavigate` / `beforeunload` guard (the only `beforeNavigate` is in
+  `PageTour.svelte`). One tap on the always-visible bottom nav, or Back, drops what the
+  teacher typed. Likely fix: ask before leaving a changed form.
+
+- 2026-10-24: #122 logged, not built. Field borders and focus ring too faint. `--input` is
+  rgba(0,20,40,.3) (`tailwind.css:152`): 1.99:1 against white, below the 3:1 for
+  non-text contrast, on every Input and NativeSelect. The focus ring `ring-3 ring-ring/50`
+  (`button.svelte:7`, `input.svelte:28,41`) is 2.14:1, and on a primary button only the
+  faint halo shows. The current side-nav item has the same colour as its focus outline
+  (`SideNav.svelte:36`). No "Skip to content" link before `<main>` (`+layout.svelte:218`),
+  so keyboard users tab through the header and side nav on every page. Likely fix:
+  `--input` about rgba(0,20,40,.5), a solid 2px focus outline with offset, a skip link.
+
+- 2026-10-24: #123 logged, not built. Bottom nav text too small, count reads as a comma in
+  Tibetan (checked). Labels are 11px (`text-[0.6875rem]`,
+  `src/lib/components/shell/BottomNav.svelte:45`); the count pill is 10px
+  (`text-[0.625rem]`, `:63`), and the Tibetan digit "༡" looks like "," in
+  `static/help/bo/teacher-1.png`, `teacher-5.png`, `teacher-8.png`. Likely fix: at least
+  `text-xs` for labels and 12px for the count. Open: Tibetan or Latin digits in the count
+  (#80 chose Tibetan digits).
+
+- 2026-10-24: #124 logged, not built. Reject buttons are red, specs say neutral outline.
+  `variant="destructive"` on the Reject buttons (`src/routes/requests/+page.svelte:456`,
+  `:841`, `:1027`); `component-specs.md` asks for a "neutral outline reject, not
+  destructive-red", and the UX DESIGN.md also says outline. Likely fix: `variant="outline"`.
+
+- 2026-10-24: #125 logged, not built. No bottom-nav tab marked on some pages. Dashboard is
+  matched by exact path only (`src/lib/nav.ts:92-93`, `:153-158`), so nothing is current on
+  `/parent/children/[id]` (the parent's main page), `/student/badges` and `/account`.
+  Likely fix: let Dashboard also match `/parent/children/*` and `/student/badges`; decide
+  what `/account` belongs to.
+
+- 2026-10-24: #126 logged, not built. Dead ends between counts and the work.
+  - Teacher dashboard: the "Due this week", "Overdue" and "Awaiting review" tiles are not
+    links (`src/routes/teacher/+page.svelte:38-52`), and homework list rows show done/total
+    but no "to review" count (`teacher/classes/[id]/homework/+page.svelte:186-192`).
+  - Student dashboard: the Overdue tile opens the same unfiltered To do list as the To do
+    tile (`src/routes/student/+page.svelte:37-38`).
+  - Empty states without a next step: `student_no_classes` on the dashboard
+    (`student/+page.svelte:128-131`) and My homework (`student/homework/+page.svelte:79-83`)
+    does not point to the Classes tab, where joining now lives (#113); `parent_empty_body`
+    (`parent/+page.svelte:76-82`) has no link to how joining works; `roster_empty`
+    (`teacher/classes/[id]/+page.svelte:317`) has no "share the class code" action.
+  Likely fix: link tiles to filtered lists (`?filter=overdue` etc.), add a call to action
+  to each empty state.
+
+- 2026-10-24: #127 logged, not built. Page tour buttons below 44px. Next, Back and Skip are
+  `min-height: 2rem` (32px) and Close is 40px (`src/lib/components/PageTour.svelte:302`,
+  `:312`). The tour opens by itself on first visit for teachers, parents and admins on
+  phones. Likely fix: 2.75rem for all four.
+
+- 2026-10-24: #128 logged, not built. Seven texts still English in `messages/bo.json`:
+  `common_loading`, `requests_upcoming_leave_heading`, `requests_upcoming_leave_subtitle`,
+  `requests_upcoming_leave_empty`, `requests_upcoming_leave_load_failed`,
+  `roster_upcoming_leave_heading`, `roster_upcoming_leave_empty`; and `home_poster_hero`
+  ("Class Tracker"), which may be on purpose. `de` is complete; all three files have the
+  same 1,219 keys. Open: Tibetan wording from the user.
+
+- 2026-10-24: #129 logged, not built. Smaller UI/UX items from the same review:
+  - Primary text on the accent surface 4.37:1 (current item in the More sheet,
+    `BottomNav.svelte:48`; pressed editor toolbar buttons, `RichTextEditor.svelte:52`); the
+    `info` badge (homework "Done") 4.4999:1 (`ui/badge/badge.svelte:19`); white on
+    `primary/80` hover 3.62:1 (`button.svelte:10`).
+  - Forgot-password success only as a toast (`forgot-password/+page.svelte:17`);
+    resend-confirmation already shows a lasting `role="status"` message.
+  - Homework and syllabus text has no reading width; about 110–120 characters per line on
+    desktop (`student/homework/[instanceId]/+page.svelte:106`, the teacher homework page
+    `:188`, `student/classes/[classId]:99`). Likely fix: `max-w-prose` on `.rich-text`.
+  - `HomeworkFiles.svelte`, `JoinClassCard.svelte` and `PageTour.svelte` are missing from
+    the `@source` list in `tailwind.css` (utilities use `source(none)`); today only
+    `md:items-start` (`JoinClassCard.svelte:90`) is lost, but new classes there will not
+    exist.
+  - Breadcrumb `truncate` can clip Tibetan vowels below the line
+    (`PageBreadcrumb.svelte:41`, `:70`); the long Tibetan join-code placeholder is cut off
+    (`static/help/bo/student-1.png`).
+  - Earned badges on the dashboard tile are icons only, names in a `title` tooltip that
+    phones do not show (`StudentProgressTiles.svelte:105-113`).
+  - Help is in a different place per role (avatar menu for students, More for teachers, tab
+    bar for parents; `nav.ts:140-152`).
+  - The active role shows only inside the avatar menu; switching gives no confirmation
+    (`AppHeader.svelte:93-110`, `role/+server.ts:39`).
+  - Required fields marked inconsistently: "*" in the rich-text editor
+    (`RichTextEditor.svelte:181`), nothing on Title and Due date
+    (`homework/new/+page.svelte:153`, `:219`), optional PDF files not marked optional.
+  - Editor buttons show "H1"/"H2" but are named "Heading"/"Subheading"
+    (`RichTextEditor.svelte:226-243`, label in name).
+  - Default button sizes are 32px/28px (`button.svelte:24-37`); every caller overrides with
+    `ui.touch`, but a new button will be small.
+  - The password toggle changes both `aria-label` and `aria-pressed`
+    (`PasswordInput.svelte:34-37`).
+  - The table class strings are repeated six times (`admin/classes:140`,
+    `admin/teachers:125`, `admin/parents:36`, `admin/teams:73`, `requests:283`, teacher
+    homework `:136`).
+
+- 2026-10-24: #130 logged, not built. The design documents no longer describe the app.
+  `design-tokens.md` and `brand-guide.md` describe Claymorphism, Baloo 2 / Noto Serif
+  Tibetan, 48px targets, a dark theme and destructive #DC2626 with white text; the UX
+  `DESIGN.md` ("final") says 0 radius, no shadows, all-caps display type; the code is an
+  iX-derived theme with 0.25rem radius, system font plus Atisha, 44px targets, light only
+  (`tailwind.css:118-170`; dark mode deferred as #13). The code itself is consistent (no
+  palette colours or raw hex in components). Likely fix: rewrite `design-tokens.md` from
+  `tailwind.css` and mark the older documents as superseded. Open: whether 44px or 48px is
+  the target.
+
+- 2026-10-24: #114 built on `fix/114-tibetan-line-height`, to verify (spec
+  `implementation-artifacts/spec-114-tibetan-line-height.md`). Asked (user, 2026-10-24): "start
+  fixing it", the first six one spec at a time. Built: in `src/lib/ui/tailwind.css` the
+  Tibetan rules also set the theme variables that `text-xs` … `text-4xl`, `leading-tight`,
+  `leading-snug` and `/relaxed` read, so in Tibetan they all give the Tibetan line height 2,
+  and English or German inside Tibetan (and every non-Tibetan root) keeps Tailwind's values.
+  No page changes. Also fixes the `deferred-work.md` item on cramped `leading-tight`
+  headings. Decided by the assistant: one line height (2) for every size, so a wrapped
+  Tibetan page heading gets a 48px line. Verified after a reset: 1667 unit tests, check and
+  build exit 0; ui-foundation, toast, syllabus-sections, shell and breadcrumbs browser tests
+  46/46. To verify: under the Tibetan interface on a phone, wrapped text on the teacher's
+  class roster, card titles and page headings no longer touch, and headings do not look too
+  spaced out. The `bo` help screenshots still show the old spacing
+  (`npm run help:screenshots`).
