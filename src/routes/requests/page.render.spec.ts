@@ -200,6 +200,53 @@ describe('requests (+page.svelte)', () => {
 		expect(body).toContain('action="?/approveDeletion"');
 	});
 
+	it('#124: every Reject is a neutral outline; only approving a deletion is red', () => {
+		const body = renderPage({
+			role: 'admin',
+			pending: [registration],
+			sickPending: [sick],
+			joinPending: [
+				{
+					id: 'j1',
+					studentName: 'Norbu',
+					className: 'Class B',
+					currentClasses: 'Class A',
+					requestedAt: '2026-10-19T10:00:00Z',
+					ownChild: false
+				}
+			],
+			parentsPending: [parent],
+			deletionPending: [
+				{
+					id: 'd1',
+					studentName: 'Tenzin',
+					requesterName: 'Lhamo',
+					requestedAt: '2026-10-19T10:00:00Z',
+					ownChild: false
+				}
+			]
+		} as never);
+		/** The opening tags of the buttons whose whole label is `label`. */
+		const buttons = (label: string) =>
+			[...body.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)]
+				.filter((match) => match[1].replace(/<[^>]*>/g, '').trim() === label)
+				.map((match) => match[0].match(/<button[^>]*>/)![0]);
+		// Registration, Sick leave, class join, parent account, deletion request.
+		const rejects = buttons(m.requests_reject());
+		expect(rejects).toHaveLength(5);
+		for (const tag of rejects) {
+			expect(tag).not.toContain('bg-destructive');
+			expect(tag).toContain('border-border');
+		}
+		// Approving a deletion erases the child's data: it stays red.
+		const deletion =
+			body.match(/<section[^>]*data-testid="requests-deletion"[\s\S]*?<\/section>/)?.[0] ?? '';
+		const approve = [...deletion.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].find(
+			(match) => match[1].replace(/<[^>]*>/g, '').trim() === m.requests_approve()
+		);
+		expect(approve?.[0]).toContain('bg-destructive');
+	});
+
 	it('shows no empty state for the admin while only parent requests wait', () => {
 		const body = renderPage({ role: 'admin', parentsPending: [parent] } as never);
 		expect(body).not.toContain(emptyStateMark);

@@ -177,8 +177,7 @@
 			decision === 'approved'
 				? m.requests_join_approve_confirm(params)
 				: m.requests_join_reject_confirm(params),
-			decision === 'approved' ? m.requests_approve() : m.requests_reject(),
-			{ destructive: decision === 'rejected' }
+			decision === 'approved' ? m.requests_approve() : m.requests_reject()
 		);
 		if (!ok) return;
 		joinRow = button;
@@ -477,8 +476,7 @@
 											use:enhance={decide(`reject:${student.id}`, {
 												confirm: confirm.with(
 													m.requests_reject_confirm({ name: student.registrationName ?? '' }),
-													m.requests_reject(),
-													{ destructive: true }
+													m.requests_reject()
 												)
 											})}
 										>
@@ -486,7 +484,7 @@
 											<input type="hidden" name="studentName" value={student.registrationName} />
 											<Button
 												type="submit"
-												variant="destructive"
+												variant="outline"
 												class={actionButton}
 												aria-busy={pending.is(`reject:${student.id}`) || undefined}
 												disabled={pending.busy}
@@ -573,8 +571,7 @@
 																		name: row.studentName,
 																		date: formatDay(row.day)
 																	}),
-															decision === 'approved' ? m.requests_approve() : m.requests_reject(),
-															{ destructive: decision === 'rejected' }
+															decision === 'approved' ? m.requests_approve() : m.requests_reject()
 														)
 													})}
 												>
@@ -584,7 +581,7 @@
 													<input type="hidden" name="decision" value={decision} />
 													<Button
 														type="submit"
-														variant={decision === 'approved' ? 'default' : 'destructive'}
+														variant={decision === 'approved' ? 'default' : 'outline'}
 														class={actionButton}
 														aria-busy={pending.is(`sick:${decision}:${key}`) || undefined}
 														disabled={pending.busy}
@@ -654,7 +651,7 @@
 												{#each ['approved', 'rejected'] as const as decision (decision)}
 													<div class={actionForm}>
 														<Button
-															variant={decision === 'approved' ? 'default' : 'destructive'}
+															variant={decision === 'approved' ? 'default' : 'outline'}
 															class={actionButton}
 															aria-busy={pending.is(`join:${decision}:${row.id}`) || undefined}
 															aria-haspopup="dialog"
@@ -842,8 +839,7 @@
 													parent.staffRole
 														? m.requests_parent_staff_reject_confirm({ name: parent.name })
 														: m.requests_parent_reject_confirm({ name: parent.name }),
-													m.requests_reject(),
-													{ destructive: true }
+													m.requests_reject()
 												)
 											})}
 										>
@@ -851,7 +847,7 @@
 											<input type="hidden" name="parentName" value={parent.name} />
 											<Button
 												type="submit"
-												variant="destructive"
+												variant="outline"
 												class={actionButton}
 												aria-busy={pending.is(`rejectParent:${parent.id}`) || undefined}
 												disabled={pending.busy}
