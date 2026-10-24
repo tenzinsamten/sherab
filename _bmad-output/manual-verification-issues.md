@@ -2999,3 +2999,11 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   second reset, tours, shared-mobile and teacher-mobile 108/108; after the review fixes, the tour
   tests (incl. every step at 390px) 11/11. To verify: on a phone, the first visit's tour buttons
   are easy to tap.
+
+- 2026-10-24: #128 built on `fix/121-unsaved-changes-guard` (remaining items on this branch), to
+  verify (spec `implementation-artifacts/spec-128-tibetan-leftovers.md`). Built: the class roster's
+  "Upcoming leave" heading and empty line in Tibetan, using the user's own wording from the
+  Requests page; "Class Tracker" stays English on purpose (user). `src/lib/messages.spec.ts` now
+  fails when a Tibetan text equals its English one, plurals included, unless it is on a short
+  list (logo, tagline, KB, MB, PIN). Verified after a reset: 1728 unit tests, check and build exit
+  0. To verify: a teacher's class page in Tibetan, the Upcoming leave card.
