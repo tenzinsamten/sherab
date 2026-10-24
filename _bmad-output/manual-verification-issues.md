@@ -2940,3 +2940,16 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   syllabus and the editor 216 passed, 1 failed (the Reset PIN test, already failing before
   #117). To verify: on a phone, type a homework title and tap the bottom nav, press Back, and
   reload; save and leave; check the Tibetan wording.
+
+- 2026-10-24: #122 built on `fix/121-unsaved-changes-guard` (the remaining items stay on this
+  branch, user's request), to verify (spec `implementation-artifacts/spec-122-borders-focus-skip.md`).
+  Built: field borders 3.51:1 (`--input` rgba(0,20,40,.5)); buttons, fields, selects, badges and
+  the editor focus with a solid 2px blue outline (offset 2px) instead of the faint ring; the side
+  nav focuses with a white outline, clear of the blue current item; a "Skip to content" link is
+  the first Tab stop on every page and moves focus to the page (no hash). New text
+  `skip_to_content` in en, de, bo; the Tibetan is the assistant's draft. Also fixed before it:
+  `nav-progress.e2e.ts` expected the pre-#115 error heading (c57d9d0). Verified after a reset:
+  1721 unit tests, check and build exit 0; before the review fixes 226 browser tests passed;
+  after them and a second reset, 108/108 on the files they touch. To verify: Tab through a page
+  on a laptop (skip link, outlines on every control, side nav), field borders on a phone in
+  daylight; check the Tibetan wording.
