@@ -272,6 +272,26 @@ test('admin phone: Dashboard, Classes, Requests (count), Calendar; More holds th
 		const requests = mainNav(page).getByRole('link', { name: /^Requests/ });
 		await expect(requests).toHaveAttribute('data-count', /^[1-9]\d*$/);
 		await expect(requests).toHaveAccessibleName(/^Requests\s*,\s*\d+ pending$/);
+		// #123: the count pill at 12px, also under Tibetan (a "༡" at 10px reads as
+		// a comma), with the Tibetan line (#114) so the glyph is not cut.
+		// By test id and address: under Tibetan the nav's and link's names change.
+		const pill = bottomNav(page).locator('a[href$="/requests"] [data-count-pill]');
+		const pillStyle = () =>
+			pill.evaluate((el) => {
+				const style = getComputedStyle(el);
+				return {
+					size: parseFloat(style.fontSize),
+					line: parseFloat(style.lineHeight),
+					cut: el.scrollHeight > el.clientHeight + 1
+				};
+			});
+		expect((await pillStyle()).size).toBeGreaterThanOrEqual(12);
+		await useLocale(page, 'bo');
+		const bo = await pillStyle();
+		expect(bo.size).toBeGreaterThanOrEqual(12);
+		expect(bo.line).toBeGreaterThanOrEqual(2 * bo.size - 0.5);
+		expect(bo.cut).toBe(false);
+		await useLocale(page, 'en');
 
 		await mainNav(page).getByRole('button', { name: 'More' }).click();
 		const sheet = page.getByRole('dialog', { name: 'More pages' });
@@ -342,6 +362,20 @@ test('desktop: an admin at 1440px gets the side nav with all nine items; collaps
 		await expect(sideNav(page)).toHaveAttribute('data-expanded', 'false');
 		await page.reload();
 		await expect(sideNav(page)).toHaveAttribute('data-expanded', 'false');
+		// #123: collapsed, the Requests pill is 12px and stays inside the rail,
+		// with no sideways scroll in the list.
+		const rail = await sideNav(page).evaluate((nav) => {
+			const pill = nav.querySelector<HTMLElement>('[data-count-pill]');
+			const list = nav.querySelector('ul');
+			return {
+				size: pill ? parseFloat(getComputedStyle(pill).fontSize) : 0,
+				inside: pill
+					? pill.getBoundingClientRect().right <= nav.getBoundingClientRect().right
+					: false,
+				scrolls: list ? list.scrollWidth > list.clientWidth + 1 : true
+			};
+		});
+		expect(rail).toEqual({ size: 12, inside: true, scrolls: false });
 		// Collapsed, the entries keep their names (icons only on screen).
 		await expect(mainNav(page).getByRole('link', { name: 'Teams' })).toBeVisible();
 
@@ -382,6 +416,7 @@ for (const [role, user, links] of [
 									span.scrollWidth > span.clientWidth + 1 ||
 									span.scrollHeight > span.clientHeight + 1,
 								lines: Math.round(box.height / lineHeight),
+								size: parseFloat(style.fontSize),
 								left: box.left,
 								right: box.right
 							};
@@ -391,6 +426,9 @@ for (const [role, user, links] of [
 				for (const label of labels) {
 					expect(label.clipped, `${label.text} clipped`).toBe(false);
 					expect(label.lines, `${label.text} lines`).toBeLessThanOrEqual(2);
+					// #123: at 11px the labels (and Tibetan in particular) were too
+					// small to read on a phone; keep them at 12px or more.
+					expect(label.size, `${label.text} size`).toBeGreaterThanOrEqual(12);
 					expect(label.left).toBeGreaterThanOrEqual(0);
 					expect(label.right).toBeLessThanOrEqual(375);
 				}

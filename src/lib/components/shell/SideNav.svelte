@@ -65,7 +65,7 @@
 							{#if item.count && !expanded}
 								<CountPill
 									count={item.count}
-									class="absolute -top-2 -right-2.5 min-w-4 bg-sidebar-foreground px-1 text-[0.625rem] text-sidebar"
+									class="absolute -top-2.5 -right-3.5 bg-sidebar-foreground text-sidebar"
 								/>
 							{/if}
 						</span>

@@ -42,7 +42,7 @@
 	});
 
 	const tabClass =
-		'flex h-full min-h-14 w-full flex-col items-center justify-start gap-0.5 rounded-md px-0.5 pt-1.5 pb-1 text-center text-[0.6875rem] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-[current=page]:font-semibold aria-[current=page]:text-primary';
+		'flex h-full min-h-14 w-full flex-col items-center justify-start gap-0.5 rounded-md px-0.5 pt-1.5 pb-1 text-center text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-[current=page]:font-semibold aria-[current=page]:text-primary';
 	const labelClass = 'w-full hyphens-auto wrap-break-word';
 	const sheetItemClass =
 		'flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-base hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-primary';
@@ -60,7 +60,7 @@
 	<span class="relative">
 		<Icon class="size-6" aria-hidden={true} />
 		{#if item.kind === 'link' && item.count}
-			<CountPill count={item.count} class="absolute -top-1.5 left-4 min-w-4 px-1 text-[0.625rem]" />
+			<CountPill count={item.count} class="absolute -top-2 left-3.5" />
 		{/if}
 	</span>
 {/snippet}
