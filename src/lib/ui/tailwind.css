@@ -113,6 +113,11 @@
    dashboard. */
 @source '../../routes/teacher/classes/+page.svelte';
 @source '../components/TeacherClassCards.svelte';
+/* #129: shared components that were missing (src/lib/ui/tailwind-sources.spec.ts
+   checks every component is listed). */
+@source '../components/HomeworkFiles.svelte';
+@source '../components/JoinClassCard.svelte';
+@source '../components/PageTour.svelte';
 
 /* Sherab theme, mapped from the iX classic light theme and the Sherab
    overrides src/app.css held until story 10 (primary blue, navy frame, 0.25rem radius). */
@@ -140,6 +145,10 @@
 	--popover-foreground: rgba(0, 10, 20, 0.9);
 	--primary: #2563eb;
 	--primary-foreground: #ffffff;
+	/* #129: primary text on light-blue surfaces and the primary button's hover
+	   (AA 4.5:1), as #119's strong red. Tailwind's blue-700: 5.66:1 on
+	   --accent, 5.82:1 on primary/10, white on it 6.70:1 (src/lib/ui/contrast.spec.ts). */
+	--primary-strong: #1d4ed8;
 	--secondary: #eff0f1;
 	--secondary-foreground: rgba(0, 10, 20, 0.9);
 	--muted: #eff0f1;
@@ -197,6 +206,7 @@
 	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
+	--color-primary-strong: var(--primary-strong);
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
 	--color-muted: var(--muted);

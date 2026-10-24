@@ -31,14 +31,18 @@
 	const phoneVisible = $derived(new Set(phone.slice(-2).map(({ index }) => index)));
 	const collapsed = $derived(phone.slice(0, -2));
 
-	// Vertical padding inside the clipped box keeps Tibetan letters' feet (#86).
 	// Set once the trail is interactive (tests wait for it before opening "…").
 	let hydrated = $state(false);
 	onMount(() => {
 		hydrated = true;
 	});
 
-	const crumbText = 'block max-w-full truncate py-1';
+	// A long label ends with an ellipsis, cut only sideways: `overflow-x: clip`
+	// leaves the vertical overflow visible (`truncate`'s `overflow: hidden` cut
+	// Tibetan vowels above and letters' feet below the line box, #86, #129).
+	// `min-w-0` lets the flex item shrink (only `hidden` did that
+	// implicitly). The padding keeps the glyphs inside the crumb's own box too.
+	const crumbText = 'block max-w-full min-w-0 overflow-x-clip py-1 text-ellipsis whitespace-nowrap';
 	const linkClass =
 		'inline-flex min-h-11 max-w-full min-w-11 items-center rounded-md px-1 text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring';
 </script>
@@ -67,7 +71,10 @@
 							<DropdownMenu.Item class="min-h-11 p-0">
 								{#snippet child({ props })}
 									<a {...props} href={item.href} class="{props.class} px-3 text-base">
-										<span class="truncate">{item.label}</span>
+										<span
+											class="min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap"
+											data-crumb-text>{item.label}</span
+										>
 									</a>
 								{/snippet}
 							</DropdownMenu.Item>
@@ -85,15 +92,19 @@
 					: 'shrink-[2]'} {hiddenOnPhone ? 'hidden sm:inline-flex' : ''}"
 			>
 				{#if index === last}
-					<span aria-current="page" class="{crumbText} px-1 font-medium text-foreground">
+					<span
+						aria-current="page"
+						class="{crumbText} px-1 font-medium text-foreground"
+						data-crumb-text
+					>
 						{item.label}
 					</span>
 				{:else if item.href}
 					<Breadcrumb.Link href={item.href} class={linkClass}>
-						<span class={crumbText}>{item.label}</span>
+						<span class={crumbText} data-crumb-text>{item.label}</span>
 					</Breadcrumb.Link>
 				{:else}
-					<span class="{crumbText} px-1">{item.label}</span>
+					<span class="{crumbText} px-1" data-crumb-text>{item.label}</span>
 				{/if}
 			</Breadcrumb.Item>
 			{#if index < last}

@@ -15,7 +15,8 @@
 	 * whatever the interface language is (see `[lang]` in app.css and the
 	 * Tibetan rule in tailwind.css). Its own `data-ui="new"` root
 	 * (mobile-first story 4);
-	 * `rich-text` stays as the hook tests find it by.
+	 * `rich-text` stays as the hook tests find it by. `max-w-prose` (#129):
+	 * a reading width on desktop instead of ~115 characters per line.
 	 */
 	let { content, lang }: { content: RichTextDoc; lang: ContentLanguage } = $props();
 
@@ -23,7 +24,7 @@
 	const list = 'mb-2 pl-6';
 </script>
 
-<div data-ui="new" class="rich-text min-w-0 wrap-anywhere [&>:first-child]:mt-0" {lang}>
+<div data-ui="new" class="rich-text max-w-prose min-w-0 wrap-anywhere [&>:first-child]:mt-0" {lang}>
 	{@render blocks(content.content)}
 </div>
 

@@ -339,7 +339,7 @@ for (const v of VIEWPORTS) {
 			await expect(page.getByText(email)).toBeVisible();
 		});
 
-		test(`forgot and resend (${v.name}): a toast and a status line; an expired link toasts`, async ({
+		test(`forgot and resend (${v.name}): status lines; an expired link toasts`, async ({
 			page
 		}) => {
 			await open(page, '/forgot-password?error=expired');
@@ -357,7 +357,15 @@ for (const v of VIEWPORTS) {
 			);
 			await page.locator('#email').fill(`nobody-${v.name}-${tag}@example.test`);
 			await page.getByRole('button', { name: 'Send reset link' }).click();
-			await expect(toast(page, /If an account exists for that email/)).toBeVisible();
+			// #129: a status line that stays, and no success toast.
+			await expect(page.getByRole('status')).toContainText('If an account exists for that email');
+			// At once, not retried: a returning success toast would still be there.
+			expect(
+				await page
+					.locator('[data-sonner-toast]')
+					.filter({ hasText: /If an account exists/ })
+					.count()
+			).toBe(0);
 			await expect(page.locator('#email-error')).toHaveCount(0);
 			await expect(page.locator('#email')).not.toHaveAttribute('aria-invalid');
 
@@ -446,7 +454,14 @@ for (const v of VIEWPORTS) {
 			await open(page, '/forgot-password');
 			await page.locator('#email').fill(`nobody-send-${v.name}-${tag}@example.test`);
 			await heldSubmit('Send reset link');
-			await expect(toast(page, /If an account exists for that email/)).toBeVisible();
+			await expect(page.getByRole('status')).toContainText('If an account exists for that email');
+			// At once, not retried: a returning success toast would still be there.
+			expect(
+				await page
+					.locator('[data-sonner-toast]')
+					.filter({ hasText: /If an account exists/ })
+					.count()
+			).toBe(0);
 
 			await open(page, '/resend-confirmation');
 			await page.locator('#email').fill(`nobody-send-${v.name}-${tag}@example.test`);

@@ -31,7 +31,6 @@
 	"login_password_label": "Password",
 	"login_password_placeholder": "Enter your password",
 	"password_show": "Show password",
-	"password_hide": "Hide password",
 	"login_submit": "Sign in",
 	"login_error_invalid": "Invalid email or password.",
 	"login_error_required": "Email and password are required.",

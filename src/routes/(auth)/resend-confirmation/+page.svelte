@@ -28,12 +28,14 @@
 </svelte:head>
 
 <AuthCard title={m.resend_heading()} subtitle={m.resend_description()}>
-	{#if form?.success}
-		<!-- Stays on the page (a toast would be gone before the mail arrives). -->
-		<p role="status" class="mb-4 rounded-lg border border-border bg-muted p-3">
-			{m.resend_success()}
-		</p>
-	{/if}
+	<!-- Stays on the page (a toast would be gone before the mail arrives). The
+	     live region is always there, empty, so the text added into it is
+	     announced (#129). -->
+	<div role="status">
+		{#if form?.success}
+			<p class="mb-4 rounded-lg border border-border bg-muted p-3">{m.resend_success()}</p>
+		{/if}
+	</div>
 	<form method="POST" use:enhance={pending.submit('resend')} class={auth.form}>
 		<div class={auth.field}>
 			<label for="email" class={auth.label}>{m.forgot_email_label()}</label>

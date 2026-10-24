@@ -282,17 +282,22 @@ test('register: each password field has its own show/hide button (#82)', async (
 	await expect(password).toHaveValue('secret-123');
 	await expect(confirm).toHaveAttribute('type', 'password');
 	await expect(page).toHaveURL(/\/register$/);
-	const hide = page.getByRole('button', { name: 'Hide password' });
-	await expect(hide).toHaveCount(1);
-	await expect(hide).toHaveAttribute('aria-pressed', 'true');
+	// #129: the name stays "Show password"; only aria-pressed says it is shown.
+	await expect(page.getByRole('button', { name: 'Hide password' })).toHaveCount(0);
+	await expect(show).toHaveCount(2);
+	await expect(show.first()).toHaveAttribute('aria-pressed', 'true');
+	// No title: "Show password" would contradict the eye-off icon.
+	await expect(show.first()).not.toHaveAttribute('title');
+	await expect(show.nth(1)).toHaveAttribute('aria-pressed', 'false');
 	// The field keeps what the form action reads.
 	await expect(password).toHaveAttribute('name', 'password');
 	await expect(password).toHaveAttribute('autocomplete', 'new-password');
 	await expect(password).toHaveAttribute('required', '');
 
-	await hide.click();
+	await show.first().click();
 	await expect(password).toHaveAttribute('type', 'password');
 	await expect(show).toHaveCount(2);
+	await expect(show.first()).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('account: the display name shows the saved one and saves a new one', async ({ page }) => {

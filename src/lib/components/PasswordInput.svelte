@@ -17,7 +17,10 @@
 	let { class: className, ...props }: Omit<HTMLInputAttributes, 'type' | 'files'> = $props();
 
 	let shown = $state(false);
-	let toggleLabel = $derived(shown ? m.password_hide() : m.password_show());
+	// #129: a toggle keeps one name ("Show password"); `aria-pressed` alone
+	// says whether the password is shown (a changing name and a pressed state
+	// would contradict each other: "Hide password, pressed").
+	const toggleLabel = m.password_show();
 </script>
 
 <div data-ui="new" class="password-input relative flex min-w-0">
@@ -31,7 +34,6 @@
 		type="button"
 		class="password-toggle absolute inset-y-0 end-0 inline-flex w-11 items-center justify-center rounded-e-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 		aria-label={toggleLabel}
-		title={toggleLabel}
 		aria-pressed={shown}
 		aria-controls={props.id}
 		onclick={() => (shown = !shown)}

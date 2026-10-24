@@ -30,9 +30,6 @@
 	$effect(() => {
 		if (data.expired && !form) showToast('error', m.forgot_error_expired());
 	});
-	$effect(() => {
-		if (form?.success) showToast('success', m.forgot_success());
-	});
 </script>
 
 <svelte:head>
@@ -40,6 +37,14 @@
 </svelte:head>
 
 <AuthCard title={m.forgot_heading()} subtitle={m.forgot_description()}>
+	<!-- #129: stays on the page, as on resend-confirmation (a toast would be
+	     gone before the mail arrives); the one announcement. The live region is
+	     always there, empty, so the text added into it is announced. -->
+	<div role="status">
+		{#if form?.success}
+			<p class="mb-4 rounded-lg border border-border bg-muted p-3">{m.forgot_success()}</p>
+		{/if}
+	</div>
 	<form method="POST" use:enhance={pending.submit('forgot')} class={auth.form}>
 		<div class={auth.field}>
 			<label for="email" class={auth.label}>{m.forgot_email_label()}</label>

@@ -31,7 +31,6 @@
 	"login_password_label": "གསང་ཚིག་",
 	"login_password_placeholder": "ཁྱེད་ཀྱི་གསང་ཚིག་འཇུག་རོགས།",
 	"password_show": "གསང་གྲངས་སྟོན།",
-	"password_hide": "གསང་གྲངས་སྦས།",
 	"login_submit": "ནང་འཛུལ།",
 	"login_error_invalid": "གློག་འཕྲིན་དང་གསང་གྲངས་ནོར་བ།",
 	"login_error_required": "གློག་འཕྲིན་དང་གསང་གྲངས་སོགས་དགོས་ཀྱི་ཡོད།",

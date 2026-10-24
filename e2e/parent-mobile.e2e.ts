@@ -804,14 +804,18 @@ for (const locale of ['en', 'de', 'bo']) {
 				await open(page, path);
 				await expect(page.locator('html')).toHaveAttribute('lang', locale);
 				await expectFits(page);
-				// #86: a crumb's one-line label is not clipped (Tibetan letters' feet).
+				// #86, #129: a crumb's one-line label is not clipped (Tibetan letters'
+				// feet and vowels): it is cut only sideways.
 				const clipped = await page
 					.getByTestId('page-breadcrumb')
-					.locator('.truncate')
+					.locator('[data-crumb-text]')
 					.evaluateAll((spans) =>
 						spans
 							.filter((el) => el.getClientRects().length > 0)
-							.filter((el) => el.scrollHeight > el.clientHeight)
+							.filter(
+								(el) =>
+									el.scrollHeight > el.clientHeight || getComputedStyle(el).overflowY !== 'visible'
+							)
 							.map((el) => el.textContent?.trim())
 					);
 				expect(clipped).toEqual([]);

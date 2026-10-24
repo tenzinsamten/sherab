@@ -31,7 +31,6 @@
 	"login_password_label": "Passwort",
 	"login_password_placeholder": "Passwort eingeben",
 	"password_show": "Passwort anzeigen",
-	"password_hide": "Passwort verbergen",
 	"login_submit": "Anmelden",
 	"login_error_invalid": "Ungültige E-Mail-Adresse oder ungültiges Passwort.",
 	"login_error_required": "E-Mail und Passwort sind erforderlich.",

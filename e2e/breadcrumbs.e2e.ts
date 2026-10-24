@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
 import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 
@@ -404,4 +404,79 @@ test('parent tab: the last crumb names the open tab and follows a tab switch', a
 	await tabs.getByRole('link', { name: 'Overview' }).click();
 	await expect(currentCrumb(page)).toContainText('Overview');
 	await expect(crumbs(page).getByRole('link', { name: studentName })).toHaveCount(0);
+});
+
+test('Tibetan phone: a long crumb ends with an ellipsis and its vowels are not cut (#129)', async ({
+	page
+}) => {
+	// Vowels above (gigu, drengbu, naro) and stacks below the line (zhabkyu, subjoined letters).
+	const tibetanTitle = `${'སྒྲིག་བསྒྲུབས་རྐྱེན་སྐྱོང་ཕྱུག་བརྒྱུད་'.repeat(3)}${tag}`;
+	const { assignment } = await giveHomework(classId, tibetanTitle);
+	await page.setViewportSize({ width: 360, height: 740 });
+	await signIn(page, teacher);
+	await page
+		.context()
+		.addCookies([{ name: 'PARAGLIDE_LOCALE', value: 'bo', url: new URL(page.url()).origin }]);
+	await open(page, `/teacher/classes/${classId}/homework/${assignment}`);
+	await expect(page.locator('html')).toHaveAttribute('lang', 'bo');
+	// The trail's name is in Tibetan now: found by its test id.
+	const trail = page.getByTestId('page-breadcrumb');
+	const current = trail.locator('[aria-current="page"]');
+	await expect(current).toContainText(tibetanTitle);
+
+	/**
+	 * Each visible label: nothing from it up to `stop` (the trail, or a menu
+	 * item: the menu itself scrolls) cuts it vertically, and the text's font
+	 * box (taller than the Atisha glyphs) is inside the label's box.
+	 */
+	const checkLabels = (labels: Locator, stop: string) =>
+		labels.evaluateAll(
+			(spans, stop) =>
+				spans
+					.filter((span) => span.getClientRects().length > 0)
+					.map((span) => {
+						const end = span.closest(stop)!;
+						const clippers: string[] = [];
+						for (let el: Element | null = span; el; el = el.parentElement) {
+							if (getComputedStyle(el).overflowY !== 'visible') clippers.push(el.tagName);
+							if (el === end) break;
+						}
+						const range = document.createRange();
+						range.selectNodeContents(span);
+						const text = range.getBoundingClientRect();
+						const box = span.getBoundingClientRect();
+						return {
+							label: span.textContent?.trim().slice(0, 12),
+							clippers,
+							inside: text.top >= box.top - 0.5 && text.bottom <= box.bottom + 0.5,
+							ellipsis: getComputedStyle(span).textOverflow
+						};
+					}),
+			stop
+		);
+	const expectUncut = (boxes: Awaited<ReturnType<typeof checkLabels>>) => {
+		expect(boxes.length).toBeGreaterThan(0);
+		for (const box of boxes) {
+			expect(box, box.label).toMatchObject({ clippers: [], inside: true, ellipsis: 'ellipsis' });
+		}
+	};
+
+	expectUncut(
+		await checkLabels(trail.locator('[data-crumb-text]'), '[data-testid="page-breadcrumb"]')
+	);
+
+	// The collapsed levels in the "…" menu (portaled, outside the trail).
+	await page.getByTestId('breadcrumb-more').click();
+	const menu = page.getByRole('menu');
+	await expect(menu.getByRole('menuitem')).toHaveCount(2);
+	expectUncut(await checkLabels(menu.locator('[data-crumb-text]'), '[role="menuitem"]'));
+	await page.keyboard.press('Escape');
+	await expect(menu).toHaveCount(0);
+
+	// The long title is cut sideways only, inside the phone's width.
+	const cut = await current.evaluate((span) => ({
+		cut: span.scrollWidth > span.clientWidth,
+		noDocScroll: document.documentElement.scrollWidth <= document.documentElement.clientWidth
+	}));
+	expect(cut).toEqual({ cut: true, noDocScroll: true });
 });

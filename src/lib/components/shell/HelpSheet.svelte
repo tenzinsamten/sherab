@@ -42,7 +42,7 @@
 	});
 
 	const tabClass =
-		'inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-primary';
+		'inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-[state=active]:bg-accent data-[state=active]:font-semibold data-[state=active]:text-primary-strong';
 	// HelpGuide and HelpFaq carry their own styles (mobile-first story 5).
 	const contentClass = 'max-w-[70ch]';
 </script>

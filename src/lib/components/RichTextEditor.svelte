@@ -47,7 +47,7 @@
 		'block min-h-48 p-3 outline-none whitespace-pre-wrap wrap-anywhere [&_p]:mb-2 [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-bold [&>:first-child]:mt-0 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:mb-1 [&_a]:text-primary [&_a]:underline';
 	// ≥44px (CAP-3); the pressed state is filled.
 	const tool =
-		'inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-transparent px-2 font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary [&_svg]:size-5';
+		'inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-transparent px-2 font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary-strong [&_svg]:size-5';
 	const separator = 'mx-1 h-6 w-px bg-border';
 
 	const start = untrack(() => initial);
@@ -224,10 +224,11 @@
 				><Underline aria-hidden="true" /></button
 			>
 			<span class={separator} aria-hidden="true"></span>
+			<!-- #129: the names start with the visible "H1"/"H2" (WCAG 2.5.3). -->
 			<button
 				type="button"
 				class={tool}
-				aria-label={m.rte_heading()}
+				aria-label="H1, {m.rte_heading()}"
 				title={m.rte_heading()}
 				aria-pressed={active('heading', { level: 2 })}
 				disabled={!editor}
@@ -237,7 +238,7 @@
 			<button
 				type="button"
 				class={tool}
-				aria-label={m.rte_subheading()}
+				aria-label="H2, {m.rte_subheading()}"
 				title={m.rte_subheading()}
 				aria-pressed={active('heading', { level: 3 })}
 				disabled={!editor}

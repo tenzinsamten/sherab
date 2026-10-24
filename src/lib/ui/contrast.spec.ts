@@ -79,3 +79,59 @@ describe('field borders and focus (#122)', () => {
 		}
 	});
 });
+
+/**
+ * #129: primary text on light-blue surfaces and white on the primary hover
+ * reach 4.5:1 with the strong blue (the plain blue is below it on its tints).
+ */
+describe('primary-strong contrast (#129)', () => {
+	const primary = token('primary');
+	const strong = token('primary-strong');
+	const white = [255, 255, 255];
+	const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+	it('reaches 4.5:1 on the accent, on primary/10 and as the white hover background', () => {
+		const m = css.match(/--accent:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\);/);
+		if (!m) throw new Error('--accent not found as rgba()');
+		const accent = [m[1], m[2], m[3]].map((c) =>
+			Math.round(Number(c) * Number(m[4]) + 255 * (1 - Number(m[4])))
+		);
+		// More sheet's current item, the Help sheet's active tab and a pressed editor button (text on bg-accent).
+		expect(contrast(rgb(strong), accent)).toBeGreaterThanOrEqual(4.5);
+		// The info badge (text on bg-primary/10).
+		expect(contrast(rgb(strong), overWhite(primary, 0.1))).toBeGreaterThanOrEqual(4.5);
+		// The default button's hover and the default badge link's hover (white text on bg-primary-strong).
+		expect(contrast(white, rgb(strong))).toBeGreaterThanOrEqual(4.5);
+	});
+
+	it('those places use the strong blue', () => {
+		const sheetItem = read('../components/shell/BottomNav.svelte').match(
+			/sheetItemClass =\s*'([^']*)'/
+		)?.[1];
+		expect(sheetItem).toContain('aria-[current=page]:text-primary-strong');
+		expect(sheetItem).not.toMatch(/aria-\[current=page\]:text-primary(\s|$)/);
+
+		const tool = read('../components/RichTextEditor.svelte').match(/const tool =\s*'([^']*)'/)?.[1];
+		expect(tool).toContain('aria-pressed:text-primary-strong');
+		expect(tool).not.toMatch(/aria-pressed:text-primary(\s|$)/);
+
+		const helpTab = read('../components/shell/HelpSheet.svelte').match(
+			/tabClass =\s*'([^']*)'/
+		)?.[1];
+		expect(helpTab).toContain('data-[state=active]:text-primary-strong');
+		expect(helpTab).not.toMatch(/data-\[state=active\]:text-primary(\s|$)/);
+
+		const badge = read('../components/ui/badge/badge.svelte');
+		const info = badge.match(/info:\s*'([^']*)'/)?.[1];
+		expect(info).toContain('text-primary-strong');
+		expect(info).not.toMatch(/text-primary(\s|$)/);
+		// The default badge as a link: white text on its hover.
+		const badgeDefault = badge.match(/default:\s*'([^']*)'/)?.[1] ?? '';
+		expect(badgeDefault).toContain('[a]:hover:bg-primary-strong');
+		expect(badgeDefault).not.toContain('hover:bg-primary/');
+
+		const variant = button.match(/default:\s*'([^']*)'/)?.[1] ?? '';
+		expect(variant).toContain('hover:bg-primary-strong');
+		expect(variant).not.toContain('hover:bg-primary/');
+	});
+});

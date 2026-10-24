@@ -45,7 +45,7 @@
 		'flex h-full min-h-14 w-full flex-col items-center justify-start gap-0.5 rounded-md px-0.5 pt-1.5 pb-1 text-center text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-[current=page]:font-semibold aria-[current=page]:text-primary';
 	const labelClass = 'w-full hyphens-auto wrap-break-word';
 	const sheetItemClass =
-		'flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-base hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-primary';
+		'flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-base hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-primary-strong';
 
 	function help() {
 		moreOpen = false;
