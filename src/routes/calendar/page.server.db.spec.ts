@@ -1,7 +1,7 @@
 /**
  * #104h (CAP-4): the calendar load against a real local Supabase instance,
  * like rls.spec.ts. The student and parent reads filter through embedded
- * resources (class_sessions -> class_days.day, profiles.parent_id) under the
+ * resources (class_sessions -> class_days.day, profiles.registered_by_parent_id) under the
  * caller's RLS, which a fake client cannot check. Skipped when local
  * Supabase isn't reachable. Every user, class, team and class day it creates
  * is removed again.
@@ -12,6 +12,7 @@ import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/publi
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
 import type { Database } from '$lib/supabase/database.types';
+import { linkParent } from '$lib/server/testing/link-parent';
 import { load } from './+page.server';
 
 const service = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -106,7 +107,6 @@ async function createChild(
 			.update({
 				class_id: classId,
 				status,
-				parent_id: parentId,
 				registration_name: `CAL104 ${name}`,
 				display_name: `CAL104 ${name}`,
 				...(status === 'approved' ? { team_id: await fixtureTeamId() } : {})
@@ -114,6 +114,7 @@ async function createChild(
 			.eq('id', login.id),
 		`set up ${name}`
 	);
+	await linkParent(service, login.id, parentId);
 	const enrolled = check(
 		await service
 			.from('class_enrollments')

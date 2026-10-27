@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { berlinToday, fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { berlinToday, fixtureTeam, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Mobile-first redesign, story 3 (parent pages pilot): the parent
@@ -191,12 +191,12 @@ test.beforeAll(async () => {
 						status,
 						registration_name: name,
 						display_name: name,
-						parent_id: parent.id,
 						team_id: status === 'approved' ? await team.id() : null
 					})
 					.eq('id', user.id),
 				`set up ${key}`
 			);
+			await linkParent(user.id, parent.id);
 			if (status === 'approved') {
 				const enrolled = check(
 					await service

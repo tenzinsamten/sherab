@@ -81,14 +81,14 @@ describe('admin parents +page.server.ts load', () => {
 				data: [
 					{
 						id: 'c2',
-						parent_id: 'p1',
+						registered_by_parent_id: 'p1',
 						display_name: null,
 						registration_name: 'Pema',
 						status: 'pending'
 					},
 					{
 						id: 'c1',
-						parent_id: 'p1',
+						registered_by_parent_id: 'p1',
 						display_name: 'Anna',
 						registration_name: 'Anna R',
 						status: 'approved'
@@ -122,9 +122,11 @@ describe('admin parents +page.server.ts load', () => {
 		expect(parentsCall?.select).toBe(
 			'id, status, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )'
 		);
-		expect(childrenCall?.select).toBe('id, parent_id, display_name, registration_name, status');
+		expect(childrenCall?.select).toBe(
+			'id, registered_by_parent_id, display_name, registration_name, status'
+		);
 		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
-		expect(childrenCall?.notArgs).toEqual(['parent_id', 'is', null]);
+		expect(childrenCall?.notArgs).toEqual(['registered_by_parent_id', 'is', null]);
 		expect(childrenCall?.inArgs).toBeUndefined();
 	});
 
@@ -201,7 +203,7 @@ describe('admin parents +page.server.ts load', () => {
 				data: [
 					...ids.map((id) => ({
 						id: `c-${id}`,
-						parent_id: id,
+						registered_by_parent_id: id,
 						display_name: `Child ${id}`,
 						registration_name: null,
 						status: 'approved'
@@ -209,7 +211,7 @@ describe('admin parents +page.server.ts load', () => {
 					// RLS may still return a child of a parent not listed; it is not shown.
 					{
 						id: 'c-orphan',
-						parent_id: 'gone',
+						registered_by_parent_id: 'gone',
 						display_name: 'Orphan',
 						registration_name: null,
 						status: 'approved'
@@ -230,7 +232,7 @@ describe('admin parents +page.server.ts load', () => {
 		const childrenCall = calls.find((c) => c.table === 'profiles');
 		expect(childrenCall?.inArgs).toBeUndefined();
 		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
-		expect(childrenCall?.notArgs).toEqual(['parent_id', 'is', null]);
+		expect(childrenCall?.notArgs).toEqual(['registered_by_parent_id', 'is', null]);
 	});
 
 	it('sets loadError and no rows when the parents query fails', async () => {

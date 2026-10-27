@@ -45,8 +45,8 @@ async function createStaff(role: 'teacher' | 'parent'): Promise<TestUser> {
 
 async function cleanup() {
 	const problems: string[] = [];
-	// The registered students first: profiles.parent_id is ON DELETE
-	// RESTRICT, and a class or team with students cannot be deleted.
+	// The registered students first: a parent with linked children cannot be
+	// deleted (student_parents), and a class or team with students cannot be deleted.
 	if (classId) {
 		const { data: students, error } = await service
 			.from('profiles')

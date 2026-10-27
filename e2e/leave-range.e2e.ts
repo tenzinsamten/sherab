@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { berlinToday, fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { berlinToday, fixtureTeam, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B11 (#57): a parent sets a two-week leave period on the child page's
@@ -147,10 +147,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', student.id),
-			'link parent'
-		);
+		await linkParent(student.id, parent.id);
 
 		// Sessions of this class only: a new class day keeps only this class's
 		// session (attendance_backfill_session), an existing one gets an extra.

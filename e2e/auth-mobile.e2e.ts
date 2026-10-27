@@ -75,14 +75,14 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
 	const problems: string[] = [];
-	// Students registered through /join first: profiles.parent_id is ON
-	// DELETE RESTRICT, and a class with students cannot be deleted.
+	// Students registered through /join first: a parent with linked children
+	// cannot be deleted (student_parents), and a class with students cannot be deleted.
 	if (joinParent) {
 		const { data: students } = await service
 			.from('profiles')
 			.select('id')
 			.eq('role', 'student')
-			.eq('parent_id', joinParent.id);
+			.eq('registered_by_parent_id', joinParent.id);
 		for (const { id } of students ?? []) {
 			const { error } = await service.auth.admin.deleteUser(id);
 			if (error) problems.push(`delete student ${id}: ${error.message}`);

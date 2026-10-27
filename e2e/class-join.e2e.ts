@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { fixtureTeam, navLink, service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, navLink, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * B12a (#67): on their Classes tab (#113) an approved student sends another class's
@@ -60,16 +60,8 @@ function check<T>(result: { data: T; error: { message: string } | null }, what: 
 
 async function cleanup() {
 	const problems: string[] = [];
-	// Unlink the parent first (profiles.parent_id is ON DELETE RESTRICT), so
-	// a failed student delete can't block deleting teacherParent too.
-	if (studentId) {
-		const { error } = await service
-			.from('profiles')
-			.update({ parent_id: null })
-			.eq('id', studentId);
-		if (error) problems.push(`unlink parent: ${error.message}`);
-	}
-	// The student first: a class with students cannot be deleted.
+	// The student first: a class with students cannot be deleted, and a
+	// parent with linked children cannot be deleted (student_parents, AD-10).
 	if (studentId) {
 		const { error } = await service.auth.admin.deleteUser(studentId);
 		if (error) problems.push(`delete student: ${error.message}`);
@@ -168,10 +160,7 @@ test.beforeAll(async () => {
 			await service.from('parents').insert({ id: teacherParent.id, status: 'approved' }),
 			'make teacher a parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: teacherParent.id }).eq('id', studentId),
-			'link parent'
-		);
+		await linkParent(studentId, teacherParent.id);
 	} catch (error) {
 		await cleanup().catch(() => undefined);
 		throw error;
@@ -441,7 +430,7 @@ test('/join with an approved student\'s name, parent email and another class\'s 
 				.from('profiles')
 				.select('id')
 				.eq('role', 'student')
-				.eq('parent_id', teacherParent.id),
+				.eq('registered_by_parent_id', teacherParent.id),
 			"read the parent's students"
 		);
 	expect(await studentsOfParent()).toEqual([{ id: studentId }]);

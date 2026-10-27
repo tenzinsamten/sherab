@@ -15,7 +15,7 @@ type ParentRow = {
 
 type ChildRow = {
 	id: string;
-	parent_id: string | null;
+	registered_by_parent_id: string | null;
 	display_name: string | null;
 	registration_name: string | null;
 	status: ChildStatus;
@@ -42,7 +42,7 @@ const STATUS_ORDER: Record<ParentStatus, number> = { pending: 0, approved: 1, re
  */
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 	// CAP-5: one round trip. The children are every student with a parent,
-	// not `parent_id IN (<all ids>)`, which grows the URL with each parent
+	// not `registered_by_parent_id IN (<all ids>)`, which grows the URL with each parent
 	// and fails at a few hundred. RLS (profiles admin select) still limits
 	// the rows; a child whose parent is not listed is never shown.
 	const [{ data: parentRows, error: parentsError }, { data: childData, error: childrenError }] =
@@ -50,9 +50,9 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 			supabase.from('parents').select(PARENT_COLUMNS),
 			supabase
 				.from('profiles')
-				.select('id, parent_id, display_name, registration_name, status')
+				.select('id, registered_by_parent_id, display_name, registration_name, status')
 				.eq('role', 'student')
-				.not('parent_id', 'is', null)
+				.not('registered_by_parent_id', 'is', null)
 		]);
 
 	if (parentsError) {
@@ -70,14 +70,14 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 
 	const childrenByParent = new Map<string, { id: string; name: string; status: ChildStatus }[]>();
 	for (const child of childRows) {
-		if (!child.parent_id) continue;
-		const list = childrenByParent.get(child.parent_id) ?? [];
+		if (!child.registered_by_parent_id) continue;
+		const list = childrenByParent.get(child.registered_by_parent_id) ?? [];
 		list.push({
 			id: child.id,
 			name: child.display_name || child.registration_name || '',
 			status: child.status
 		});
-		childrenByParent.set(child.parent_id, list);
+		childrenByParent.set(child.registered_by_parent_id, list);
 	}
 
 	const parents = rows

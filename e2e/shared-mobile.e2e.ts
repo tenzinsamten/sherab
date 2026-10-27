@@ -5,6 +5,7 @@ import {
 	berlinToday,
 	env,
 	fixtureTeam,
+	linkParent,
 	helpSheet,
 	openHelp,
 	service,
@@ -149,12 +150,12 @@ async function approvedStudent(key: string, name: string, classId: string, paren
 				status: 'approved',
 				registration_name: name,
 				display_name: name,
-				parent_id: parentId ?? null,
 				team_id: await team.id()
 			})
 			.eq('id', user.id),
 		`set up ${key}`
 	);
+	if (parentId) await linkParent(user.id, parentId);
 	const enrolled = check(
 		await service
 			.from('class_enrollments')

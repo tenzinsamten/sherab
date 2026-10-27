@@ -201,8 +201,8 @@ type SessionRow = {
 /**
  * The parent branch's reads (#58, #104h), all started at once: children from
  * linked_children(), the enrollments of the caller's children (embedded
- * profiles.parent_id = caller), and their answers on this month's sessions
- * (embedded class_days.day in the month, profiles.parent_id = caller).
+ * profiles.registered_by_parent_id = caller), and their answers on this month's sessions
+ * (embedded class_days.day in the month, profiles.registered_by_parent_id = caller).
  */
 function readParentView(supabase: SupabaseClient, userId: string, first: string, last: string) {
 	return Promise.all([
@@ -210,15 +210,15 @@ function readParentView(supabase: SupabaseClient, userId: string, first: string,
 		supabase
 			.from('class_enrollments')
 			.select(
-				'class_id, student_id, student:profiles!class_enrollments_student_id_fkey!inner(parent_id)'
+				'class_id, student_id, student:profiles!class_enrollments_student_id_fkey!inner(registered_by_parent_id)'
 			)
-			.eq('student.parent_id', userId),
+			.eq('student.registered_by_parent_id', userId),
 		supabase
 			.from('session_leave_history')
 			.select(
-				'class_session_id, student_id, answer, class_sessions!inner(class_days!inner(day)), student:profiles!session_leave_history_student_id_fkey!inner(parent_id)'
+				'class_session_id, student_id, answer, class_sessions!inner(class_days!inner(day)), student:profiles!session_leave_history_student_id_fkey!inner(registered_by_parent_id)'
 			)
-			.eq('student.parent_id', userId)
+			.eq('student.registered_by_parent_id', userId)
 			.gte('class_sessions.class_days.day', first)
 			.lte('class_sessions.class_days.day', last)
 			.order('answered_at', { ascending: false })

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Badge detail story 3: the Badges tile on /student shows each earned badge
@@ -159,12 +159,12 @@ test.beforeAll(async () => {
 					status: 'approved',
 					registration_name: `E2E BD3 Student ${tag}`,
 					display_name: `E2E BD3 Student ${tag}`,
-					parent_id: parent.id,
 					team_id: await team.id()
 				})
 				.eq('id', student.id),
 			'approve student'
 		);
+		await linkParent(student.id, parent.id);
 		for (const cls of [language, dance]) {
 			const enrolled = check(
 				await service

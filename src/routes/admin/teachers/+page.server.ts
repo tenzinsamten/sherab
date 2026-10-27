@@ -217,7 +217,7 @@ export const actions: Actions = {
 
 		// B14b (#68): a teacher who is also an approved parent keeps the login
 		// (and its parents row, children, password) and becomes parent-only.
-		// Deleting it would lose the parent account, or fail on the parent_id
+		// Deleting it would lose the parent account, or fail on the student_parents
 		// RESTRICT FK with linked children. The RPC re-checks is_admin(), the
 		// teacher role and the approval.
 		const { data: parentRow, error: parentError } = await supabase

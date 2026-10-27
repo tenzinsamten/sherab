@@ -39,6 +39,45 @@ export const service = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 export type TestUser = { id: string; email: string; password: string };
 
+/**
+ * spec-second-parent (AD-10): links a student to a parent with the service
+ * role. The first link (slot 1) also sets profiles.registered_by_parent_id,
+ * as the sign-up does; a second link goes to slot 2 and leaves that column
+ * alone. registered_by_parent_id is not meant for access, but until story 2
+ * /calendar and the admin parents page still read it. Every other parent
+ * check reads the student_parents link. The parent needs a parents row.
+ *
+ * A student keeps at least one link while they exist, so tests never unlink:
+ * delete the student before the parent instead.
+ */
+export async function linkParent(studentId: string, parentId: string): Promise<void> {
+	const { data: active, error: readError } = await service
+		.from('student_parents')
+		.select('parent_id, slot')
+		.eq('student_id', studentId)
+		.is('removed_at', null);
+	if (readError) throw new Error(`linkParent: read links: ${readError.message}`);
+	if (active?.some((l) => l.parent_id === parentId)) return;
+
+	const used = new Set(active?.map((l) => l.slot));
+	if (used.has(1) && used.has(2)) {
+		throw new Error(`linkParent: student ${studentId} already has two parents`);
+	}
+	if (!active?.length) {
+		const { error: profileError } = await service
+			.from('profiles')
+			.update({ registered_by_parent_id: parentId })
+			.eq('id', studentId);
+		if (profileError) throw new Error(`linkParent: profile: ${profileError.message}`);
+	}
+
+	const slot = used.has(1) ? 2 : 1;
+	const { error: linkError } = await service
+		.from('student_parents')
+		.insert({ student_id: studentId, parent_id: parentId, slot });
+	if (linkError) throw new Error(`linkParent: link: ${linkError.message}`);
+}
+
 export type CalendarFixture = {
 	tag: string;
 	year: number;

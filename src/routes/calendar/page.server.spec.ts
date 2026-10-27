@@ -882,10 +882,10 @@ describe('calendar load: student and parent reads in one batch (#104h)', () => {
 		});
 		expect(r.loadError).toBe(false);
 		const enrollCalls = callsOn(fake, 'class_enrollments');
-		expect(enrollCalls).toContainEqual(['eq', 'student.parent_id', 'parent1']);
+		expect(enrollCalls).toContainEqual(['eq', 'student.registered_by_parent_id', 'parent1']);
 		expect(enrollCalls.some((c) => c[0] === 'in')).toBe(false);
 		const answerCalls = callsOn(fake, 'session_leave_history');
-		expect(answerCalls).toContainEqual(['eq', 'student.parent_id', 'parent1']);
+		expect(answerCalls).toContainEqual(['eq', 'student.registered_by_parent_id', 'parent1']);
 		expect(answerCalls).toContainEqual(['gte', 'class_sessions.class_days.day', '2026-10-01']);
 		expect(answerCalls).toContainEqual(['lte', 'class_sessions.class_days.day', '2026-10-31']);
 		expect(answerCalls.some((c) => c[0] === 'in')).toBe(false);

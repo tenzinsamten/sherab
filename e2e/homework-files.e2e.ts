@@ -3,6 +3,7 @@ import {
 	berlinToday,
 	createCalendarFixture,
 	env,
+	linkParent,
 	service,
 	signIn,
 	type CalendarFixture,
@@ -100,10 +101,7 @@ test.beforeAll(async () => {
 		await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 		'approve parent'
 	);
-	check(
-		await service.from('profiles').update({ parent_id: parent.id }).eq('id', fx.student.id),
-		'link student'
-	);
+	await linkParent(fx.student.id, parent.id);
 	otherTeacher = await createUser('teacher', 'teacher');
 });
 
@@ -115,12 +113,13 @@ test.afterAll(async () => {
 			const paths = await classObjects(classId);
 			if (paths.length) await service.storage.from(BUCKET).remove(paths);
 		}
-		await service.from('profiles').update({ parent_id: null }).eq('id', fx.student.id);
 	}
+	// The fixture's students before the parent: a parent with linked
+	// children cannot be deleted (student_parents, AD-10).
+	await fx?.cleanup();
 	for (const user of [parent, otherTeacher]) {
 		if (user) await service.auth.admin.deleteUser(user.id);
 	}
-	await fx?.cleanup();
 });
 
 /** Waits for hydration: every page here marks its new-UI root. */

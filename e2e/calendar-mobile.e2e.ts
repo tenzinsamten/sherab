@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 import {
 	createCalendarFixture,
 	fixtureTeam,
+	linkParent,
 	openCalendar,
 	service,
 	signIn,
@@ -64,10 +65,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', fx.student.id),
-			'link student'
-		);
+		await linkParent(fx.student.id, parent.id);
 		child2 = await createUser('student', 'child2');
 		check(
 			await service
@@ -77,12 +75,12 @@ test.beforeAll(async () => {
 					status: 'approved',
 					registration_name: child2Name(),
 					display_name: child2Name(),
-					parent_id: parent.id,
 					team_id: await team.id()
 				})
 				.eq('id', child2.id),
 			'set up child 2'
 		);
+		await linkParent(child2.id, parent.id);
 		const enrolled = check(
 			await service
 				.from('class_enrollments')
@@ -107,14 +105,18 @@ test.beforeAll(async () => {
 
 async function cleanup() {
 	const problems: string[] = [];
-	if (fx) {
-		await service.from('profiles').update({ parent_id: null }).eq('id', fx.student.id);
-	}
-	for (const id of extraUsers.slice()) {
-		const { error } = await service.auth.admin.deleteUser(id);
-		if (error) problems.push(`delete user ${id}: ${error.message}`);
-		else extraUsers.splice(extraUsers.indexOf(id), 1);
-	}
+	// Children before the parent: a parent with linked children cannot be
+	// deleted (student_parents, AD-10). child2 first, then the fixture
+	// (its student and classes), then the parent.
+	const deleteExtra = async (keep: (id: string) => boolean) => {
+		for (const id of extraUsers.slice()) {
+			if (keep(id)) continue;
+			const { error } = await service.auth.admin.deleteUser(id);
+			if (error) problems.push(`delete user ${id}: ${error.message}`);
+			else extraUsers.splice(extraUsers.indexOf(id), 1);
+		}
+	};
+	await deleteExtra((id) => id === parent?.id);
 	const teamProblem = await team.remove();
 	if (teamProblem) problems.push(teamProblem);
 	try {
@@ -122,6 +124,7 @@ async function cleanup() {
 	} catch (error) {
 		problems.push(String(error));
 	}
+	await deleteExtra(() => false);
 	if (problems.length) throw new Error(problems.join('; '));
 }
 

@@ -6,6 +6,7 @@ import {
 	berlinToday,
 	env,
 	fixtureTeam,
+	linkParent,
 	postedFields,
 	service,
 	signIn,
@@ -226,13 +227,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service
-				.from('profiles')
-				.update({ parent_id: parent.id })
-				.in('id', [students[0].id, students[1].id]),
-			'link parent'
-		);
+		for (const s of [students[0], students[1]]) await linkParent(s.id, parent.id);
 		const asParent = createClient<Database>(env.PUBLIC_SUPABASE_URL, env.PUBLIC_SUPABASE_ANON_KEY, {
 			auth: { autoRefreshToken: false, persistSession: false }
 		});

@@ -40,6 +40,7 @@ import {
 	signedFileUrl as signedHomeworkFileUrl
 } from './homework-files';
 import type { Database } from './../supabase/database.types';
+import { linkParent } from './testing/link-parent';
 
 const adminClient = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 	auth: { autoRefreshToken: false, persistSession: false }
@@ -610,6 +611,26 @@ async function createApprovedParent(
 	return { id: data.user.id, email, password };
 }
 
+/**
+ * spec-second-parent: a parent login whose parents row stays pending. Since
+ * 0054 a parent with linked children cannot be rejected, so a linked parent
+ * who is not approved is a pending one, linked with the service role.
+ */
+async function createPendingParent(
+	email = `ssp-pending-parent-${crypto.randomUUID()}@example.test`
+) {
+	const password = crypto.randomUUID();
+	const { data, error } = await adminClient.auth.admin.createUser({
+		email,
+		password,
+		email_confirm: true,
+		app_metadata: { role: 'parent' },
+		user_metadata: { display_name: 'Pending Parent' }
+	});
+	if (error || !data.user) throw new Error(`Failed to create parent: ${error?.message}`);
+	return { id: data.user.id, email, password };
+}
+
 /** One approved parent shared by every signUpStudent() call without its own guardian email. */
 let sharedParent: ReturnType<typeof createApprovedParent> | null = null;
 function defaultParent() {
@@ -750,7 +771,7 @@ describe.skipIf(!reachable)(
 			const { data: profile } = await adminClient
 				.from('profiles')
 				.select(
-					'email, status, class_id, registration_name, display_name, team_id, guardian_email, parent_id, email_confirmed_at'
+					'email, status, class_id, registration_name, display_name, team_id, guardian_email, registered_by_parent_id, email_confirmed_at'
 				)
 				.eq('id', id!)
 				.single();
@@ -762,7 +783,7 @@ describe.skipIf(!reachable)(
 			expect(profile?.display_name).toBe(registrationName);
 			expect(profile?.team_id).toBeNull();
 			expect(profile?.guardian_email).toBe(parent.email);
-			expect(profile?.parent_id).toBe(parent.id);
+			expect(profile?.registered_by_parent_id).toBe(parent.id);
 			// Story 7-2: synthetic, pre-confirmed auth email; no mail is sent.
 			expect(profile?.email).toMatch(/^pending-[0-9a-f-]+@students\.internal\.invalid$/);
 			expect(profile?.email_confirmed_at).not.toBeNull();
@@ -811,7 +832,7 @@ describe.skipIf(!reachable)(
 					.from('profiles')
 					.select('id')
 					.eq('role', 'student')
-					.eq('parent_id', parentId);
+					.eq('registered_by_parent_id', parentId);
 				if (error) throw new Error(`count students: ${error.message}`);
 				return (data ?? []).length;
 			}
@@ -996,10 +1017,12 @@ describe.skipIf(!reachable)(
 
 				const { data: rows } = await adminClient
 					.from('profiles')
-					.select('parent_id, status, class_id')
+					.select('registered_by_parent_id, status, class_id')
 					.in('id', [ofP.id!, ofQ.id!]);
 				expect(rows).toHaveLength(2);
-				expect(new Set(rows?.map((r) => r.parent_id))).toEqual(new Set([parentP.id, parentQ.id]));
+				expect(new Set(rows?.map((r) => r.registered_by_parent_id))).toEqual(
+					new Set([parentP.id, parentQ.id])
+				);
 				expect(rows?.every((r) => r.status === 'pending' && r.class_id === classAId)).toBe(true);
 			});
 
@@ -1053,10 +1076,12 @@ describe.skipIf(!reachable)(
 				}
 				const { data: rows } = await adminClient
 					.from('profiles')
-					.select('parent_id, registration_name')
+					.select('registered_by_parent_id, registration_name')
 					.in('id', ids);
 				expect(rows).toHaveLength(2);
-				expect(rows?.every((r) => r.parent_id === null && r.registration_name === name)).toBe(true);
+				expect(
+					rows?.every((r) => r.registered_by_parent_id === null && r.registration_name === name)
+				).toBe(true);
 			});
 
 			it('the index also refuses moving a student under a parent who already has that name', async () => {
@@ -1078,7 +1103,7 @@ describe.skipIf(!reachable)(
 
 				const { error } = await adminClient
 					.from('profiles')
-					.update({ parent_id: parentP.id, guardian_email: parentP.email })
+					.update({ registered_by_parent_id: parentP.id, guardian_email: parentP.email })
 					.eq('id', ofQ.id!);
 				expect(error?.code).toBe('23505');
 				expect(error?.message).toContain('profiles_student_parent_name_unique');
@@ -1359,12 +1384,12 @@ describe.skipIf(!reachable)(
 
 			const { data: rows } = await adminClient
 				.from('profiles')
-				.select('id, status, parent_id')
+				.select('id, status, registered_by_parent_id')
 				.in('id', [child1.id!, child2.id!]);
 			expect(rows).toHaveLength(2);
 			for (const row of rows ?? []) {
 				expect(row.status).toBe('pending');
-				expect(row.parent_id).toBe(parent.id);
+				expect(row.registered_by_parent_id).toBe(parent.id);
 			}
 		});
 
@@ -9189,7 +9214,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 	async function profileOf(id: string) {
 		const { data } = await adminClient
 			.from('profiles')
-			.select('status, parent_id, guardian_email, role')
+			.select('status, registered_by_parent_id, guardian_email, role')
 			.eq('id', id)
 			.maybeSingle();
 		return data;
@@ -9262,11 +9287,11 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 
 		const { data: profile } = await adminClient
 			.from('profiles')
-			.select('status, parent_id, guardian_email, email')
+			.select('status, registered_by_parent_id, guardian_email, email')
 			.eq('id', id!)
 			.single();
 		expect(profile?.status).toBe('pending');
-		expect(profile?.parent_id).toBe(parent.id);
+		expect(profile?.registered_by_parent_id).toBe(parent.id);
 		expect(profile?.guardian_email).toBe(typed.trim());
 		// The second step replaced the placeholder address with the username's.
 		expect(profile?.email).toBe(studentUsernameToEmail(credentials.username));
@@ -9432,7 +9457,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 				(
 					await adminClient
 						.from('profiles')
-						.select('email, class_id, team_id, parent_id, status')
+						.select('email, class_id, team_id, registered_by_parent_id, status')
 						.eq('id', id!)
 						.single()
 				).data;
@@ -9442,7 +9467,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 				{ email: `hijack-${crypto.randomUUID().slice(0, 8)}@${STUDENT_EMAIL_DOMAIN}` },
 				{ class_id: otherClass!.id },
 				{ team_id: teamId },
-				{ parent_id: otherParent.id }
+				{ registered_by_parent_id: otherParent.id }
 			];
 			if (status === 'rejected') attempts.push({ status: 'pending' });
 			for (const values of attempts) {
@@ -9555,7 +9580,10 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 			ids.push(id!);
 		}
 		for (const id of ids) {
-			expect(await profileOf(id)).toMatchObject({ status: 'pending', parent_id: parent.id });
+			expect(await profileOf(id)).toMatchObject({
+				status: 'pending',
+				registered_by_parent_id: parent.id
+			});
 		}
 	});
 
@@ -9629,7 +9657,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		expect(await profileOf(data.user!.id)).toMatchObject({
 			role: 'student',
 			status: 'pending',
-			parent_id: null
+			registered_by_parent_id: null
 		});
 	});
 
@@ -9653,10 +9681,13 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 
 		const { data: after } = await parentClient.rpc('linked_children');
 		expect(after).toEqual([{ id, name: registrationName, status: 'approved' }]);
-		expect(await profileOf(id!)).toMatchObject({ status: 'approved', parent_id: parent.id });
+		expect(await profileOf(id!)).toMatchObject({
+			status: 'approved',
+			registered_by_parent_id: parent.id
+		});
 	});
 
-	it('Guard: the assigned teacher hits the guard trigger for parent_id, guardian_email and role; student and parent updates have no effect; the service role can change them', async () => {
+	it('Guard: the assigned teacher hits the guard trigger for registered_by_parent_id, guardian_email and role; student and parent updates have no effect; the service role can change them', async () => {
 		const parent = await createApprovedParent();
 		const otherParent = await createApprovedParent();
 		const pendingName = studentName('Guard Pending');
@@ -9669,7 +9700,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		// The assigned teacher's registration-review update (USING passes):
 		// each link column alone, so only the guard can refuse it.
 		for (const change of [
-			{ parent_id: otherParent.id },
+			{ registered_by_parent_id: otherParent.id },
 			{ guardian_email: otherParent.email },
 			{ role: 'teacher' as const }
 		]) {
@@ -9682,7 +9713,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		}
 		expect(await profileOf(pendingId!)).toMatchObject({
 			status: 'pending',
-			parent_id: parent.id,
+			registered_by_parent_id: parent.id,
 			guardian_email: parent.email,
 			role: 'student'
 		});
@@ -9701,26 +9732,26 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		for (const client of [student, parentClient]) {
 			await client
 				.from('profiles')
-				.update({ parent_id: otherParent.id, guardian_email: otherParent.email })
+				.update({ registered_by_parent_id: otherParent.id, guardian_email: otherParent.email })
 				.eq('id', approvedId!);
 		}
 		expect(await profileOf(approvedId!)).toMatchObject({
-			parent_id: parent.id,
+			registered_by_parent_id: parent.id,
 			guardian_email: parent.email
 		});
 
 		// Trusted path (service role; 7-6's approval trigger is security definer).
 		const { error: serviceError } = await adminClient
 			.from('profiles')
-			.update({ parent_id: otherParent.id, guardian_email: otherParent.email })
+			.update({ registered_by_parent_id: otherParent.id, guardian_email: otherParent.email })
 			.eq('id', pendingId!);
 		expect(serviceError).toBeNull();
-		expect(await profileOf(pendingId!)).toMatchObject({ parent_id: otherParent.id });
+		expect(await profileOf(pendingId!)).toMatchObject({ registered_by_parent_id: otherParent.id });
 
 		// An unassigned teacher is filtered out by RLS before the guard.
 		const { data: unassigned } = await otherTeacher.client
 			.from('profiles')
-			.update({ parent_id: parent.id })
+			.update({ registered_by_parent_id: parent.id })
 			.eq('id', pendingId!)
 			.select('id');
 		expect(unassigned ?? []).toEqual([]);
@@ -9776,7 +9807,7 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		expect(anon.error).not.toBeNull();
 	});
 
-	it('A parent who is no longer approved: is_parent_of is false and linked_children() is empty', async () => {
+	it('A parent who is not approved: is_parent_of is false and linked_children() is empty; a parent with a linked child cannot be rejected (0054)', async () => {
 		const parent = await createApprovedParent();
 		const childName = studentName('No Longer');
 		const { id: childId } = await signUpStudent({
@@ -9788,14 +9819,20 @@ describe.skipIf(!reachable)('7-2 parent-first registration (requires local Supab
 		const parentClient = await signIn(parent.email, parent.password);
 		expect((await parentClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(true);
 
+		// spec-second-parent: the admin removes the links first.
 		const { error: rejectError } = await adminClient
 			.from('parents')
 			.update({ status: 'rejected' })
 			.eq('id', parent.id);
-		expect(rejectError).toBeNull();
+		expect(rejectError?.hint).toBe('parent_has_links');
+		expect((await parentClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(true);
 
-		expect((await parentClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(false);
-		const { data: children, error } = await parentClient.rpc('linked_children');
+		// A linked parent who is not approved (pending) gets nothing.
+		const pending = await createPendingParent();
+		await linkParent(adminClient, childId!, pending.id);
+		const pendingClient = await signIn(pending.email, pending.password);
+		expect((await pendingClient.rpc('is_parent_of', { p_student_id: childId! })).data).toBe(false);
+		const { data: children, error } = await pendingClient.rpc('linked_children');
 		expect(error).toBeNull();
 		expect(children).toEqual([]);
 	});
@@ -10397,18 +10434,25 @@ describe.skipIf(!reachable)('7-3 parent reads (requires local Supabase)', () => 
 		expect(await snapshot()).toEqual(before);
 	});
 
-	it('Revoked: a parent set to rejected reads nothing any more', async () => {
+	it('Not approved: a linked parent who is not approved reads nothing; one with a linked child cannot be rejected (0054)', async () => {
 		const parent = await createApprovedParent();
 		const kid = await child(parent.email);
 		const hw = await seedChildData(kid);
-		const client = await signIn(parent.email, parent.password);
-		expect((await readsOf(client, kid, hw)).profile).toEqual([{ id: kid }]);
+		const approvedClient = await signIn(parent.email, parent.password);
+		expect((await readsOf(approvedClient, kid, hw)).profile).toEqual([{ id: kid }]);
 
+		// spec-second-parent: rejecting needs the links removed first.
 		const { error } = await adminClient
 			.from('parents')
 			.update({ status: 'rejected' })
 			.eq('id', parent.id);
-		expect(error).toBeNull();
+		expect(error?.hint).toBe('parent_has_links');
+		expect((await readsOf(approvedClient, kid, hw)).profile).toEqual([{ id: kid }]);
+
+		// A pending parent with an active link to the same child.
+		const pending = await createPendingParent();
+		await linkParent(adminClient, kid, pending.id);
+		const client = await signIn(pending.email, pending.password);
 
 		expect(await readsOf(client, kid, hw)).toEqual({
 			history: [],
@@ -11430,6 +11474,31 @@ describe.skipIf(!reachable)('7-5 sick leave decisions (requires local Supabase)'
 		}
 	});
 
+	it('Self-decision (has_link_to): a teacher or admin with a pending parents row linked to the student is refused (42501) and the queue flags their own child', async () => {
+		for (const role of ['teacher', 'admin'] as const) {
+			const pendingDual = await createSignedInUser(role);
+			const { error: rowError } = await adminClient
+				.from('parents')
+				.insert({ id: pendingDual.id, status: 'pending' });
+			if (rowError) throw new Error(`Failed to add parents row: ${rowError.message}`);
+			const s = await sickYesterday(role === 'teacher' ? pendingDual.id : teacher.id);
+			await linkParent(adminClient, s.kid, pendingDual.id);
+			expect((await pendingDual.client.rpc('is_parent_of', { p_student_id: s.kid })).data).toBe(
+				false
+			);
+
+			const refused = await decide(pendingDual.client, s.sessionId, s.kid, 'approved');
+			expect(refused.error?.code).toBe('42501');
+			expect(await decisionsFor(s.sessionId, s.kid)).toEqual([]);
+
+			const { data: queue, error } = await pendingDual.client.rpc('sick_leave_queue');
+			expect(error).toBeNull();
+			expect(
+				queue?.filter((r) => r.student_id === s.kid).map((r) => [r.decision, r.own_child])
+			).toEqual([[null, true]]);
+		}
+	});
+
 	it('Other teacher: a teacher of another class is refused (42501) and sees nothing in the queue', async () => {
 		const s = await sickYesterday();
 		const outsider = await createSignedInUser('teacher');
@@ -12046,6 +12115,26 @@ describe.skipIf(!reachable)('7-6 deletion requests (requires local Supabase)', (
 		const { data: req, error } = await request(dual.client, kid);
 		expect(error).toBeNull();
 		const refused = await decide(dual.client, req!.id, 'approved');
+		expect(refused.error?.code).toBe('42501');
+		expect(await requestRow(req!.id)).toMatchObject({ status: 'pending', student_id: kid });
+		const { data: profile } = await adminClient.from('profiles').select('id').eq('id', kid);
+		expect(profile).toEqual([{ id: kid }]);
+	});
+
+	it('Self-decision (has_link_to): an admin with a pending parents row linked to the child cannot approve', async () => {
+		const pendingAdmin = await createSignedInUser('admin');
+		const { error: rowError } = await adminClient
+			.from('parents')
+			.insert({ id: pendingAdmin.id, status: 'pending' });
+		if (rowError) throw new Error(`Failed to add parents row: ${rowError.message}`);
+		const p = await newParent();
+		const cls = await createClass('Pending own child');
+		const kid = await child(p.email, cls);
+		await linkParent(adminClient, kid, pendingAdmin.id);
+		const { data: req, error } = await request(p.client, kid);
+		expect(error).toBeNull();
+
+		const refused = await decide(pendingAdmin.client, req!.id, 'approved');
 		expect(refused.error?.code).toBe('42501');
 		expect(await requestRow(req!.id)).toMatchObject({ status: 'pending', student_id: kid });
 		const { data: profile } = await adminClient.from('profiles').select('id').eq('id', kid);
@@ -13022,6 +13111,28 @@ describe.skipIf(!reachable)('B12a class join requests (requires local Supabase)'
 		expect(await mine(s.client)).toEqual([[other.name, 'pending']]);
 	});
 
+	it('Own child (has_link_to): a teacher of the class with a pending parents row linked to the student sees own_child and is refused', async () => {
+		const pendingDual = await createSignedInUser('teacher');
+		const { error: rowError } = await adminClient
+			.from('parents')
+			.insert({ id: pendingDual.id, status: 'pending' });
+		if (rowError) throw new Error(`Failed to add parents row: ${rowError.message}`);
+		const home = await createClass('Home');
+		const target = await createClass('Target', pendingDual.id);
+		const kid = await student(home.id);
+		await linkParent(adminClient, kid.id, pendingDual.id);
+		expect((await request(kid.client, target.code)).error).toBeNull();
+		const id = await pendingId(kid.id, target.id);
+
+		const { data: queue } = await pendingDual.client.rpc('list_class_join_requests');
+		expect(queue?.filter((r) => r.student_id === kid.id).map((r) => r.own_child)).toEqual([true]);
+
+		const refused = await decide(pendingDual.client, id, 'approved');
+		expect(refused.error?.code).toBe('42501');
+		expect(await enrolled(kid.id, target.id)).toEqual([]);
+		expect((await requestsOf(kid.id))[0].status).toBe('pending');
+	});
+
 	it("Own child: a teacher of the class or an admin who is the student's parent is refused; another admin decides", async () => {
 		const dual = await createSignedInUser('teacher');
 		const { error: parentError } = await adminClient
@@ -13305,10 +13416,10 @@ describe.skipIf(!reachable)('B14a request parent access (requires local Supabase
 		const kid = await child(home.id, teacher.email);
 		const { data: link } = await adminClient
 			.from('profiles')
-			.select('parent_id')
+			.select('registered_by_parent_id')
 			.eq('id', kid.id)
 			.single();
-		expect(link).toEqual({ parent_id: teacher.id });
+		expect(link).toEqual({ registered_by_parent_id: teacher.id });
 		expect((await teacher.client.rpc('is_parent_of', { p_student_id: kid.id })).data).toBe(true);
 	});
 
@@ -13507,10 +13618,10 @@ describe.skipIf(!reachable)(
 			expect(await parentRow(parent.id)).toEqual([{ status: 'approved' }]);
 			const { data: link } = await adminClient
 				.from('profiles')
-				.select('parent_id')
+				.select('registered_by_parent_id')
 				.eq('id', kid.id)
 				.single();
-			expect(link).toEqual({ parent_id: parent.id });
+			expect(link).toEqual({ registered_by_parent_id: parent.id });
 
 			// The same password still signs in; the login is a teacher and a parent.
 			const promoted = await signIn(parent.email, parent.password);
@@ -14046,6 +14157,28 @@ describe.skipIf(!reachable)('#92 push notifications (requires local Supabase)', 
 		);
 		// Without an instance there is nothing to announce.
 		expect(await targets('added', [hw.id, other.id])).toEqual([]);
+	});
+
+	it('spec-second-parent: every actively linked parent gets the notice; a removed link does not', async () => {
+		const a = await family();
+		const second = await createApprovedParent();
+		await linkParent(adminClient, a.studentId, second.id);
+		const secondClient = await signIn(second.email, second.password);
+		await subscribe(a.parentClient);
+		await subscribe(secondClient);
+		const hw = await homework(addDays(today, 3), [a.studentId]);
+
+		expect(await targets('added', [hw.id], hw.id)).toEqual(
+			[row(hw.id, a.studentId, a.parentId), row(hw.id, a.studentId, second.id)].sort()
+		);
+
+		const { error } = await adminClient
+			.from('student_parents')
+			.update({ removed_at: new Date().toISOString(), removed_by: teacher.id })
+			.eq('student_id', a.studentId)
+			.eq('parent_id', second.id);
+		expect(error).toBeNull();
+		expect(await targets('added', [hw.id], hw.id)).toEqual([row(hw.id, a.studentId, a.parentId)]);
 	});
 
 	it('added: the row carries what the notice shows', async () => {
@@ -15394,19 +15527,23 @@ describe.skipIf(!reachable)('#97 team students (requires local Supabase)', () =>
 		expect(await viewable(other.client)).toEqual([]);
 	});
 
-	it('Parent who is no longer approved: refused for the team of their child', async () => {
-		const former = await newParent();
+	it('Parent who is not approved: refused for the team of their child', async () => {
+		const approved = await newParent();
 		const team = await createTeam('Team Former Parent');
-		await student({
+		const kid = await student({
 			registrationName: name('Former Kid'),
 			teamId: team,
-			parentEmail: former.email
+			parentEmail: approved.email
 		});
-		expect((await studentsOf(former.client, team)).error).toBeNull();
+		expect((await studentsOf(approved.client, team)).error).toBeNull();
 
-		await setStatus('parents', former.id, 'rejected');
-		await expectRefused(former.client, team);
-		expect(await viewable(former.client)).toEqual([]);
+		// spec-second-parent (0054): a parent with a linked child cannot be
+		// rejected, so the parent who is not approved is a pending one.
+		const pending = await createPendingParent();
+		await linkParent(adminClient, kid, pending.id);
+		const pendingClient = await signIn(pending.email, pending.password);
+		await expectRefused(pendingClient, team);
+		expect(await viewable(pendingClient)).toEqual([]);
 	});
 
 	it('Pending or rejected student, signed out: refused for every team', async () => {
@@ -17177,3 +17314,468 @@ describe.skipIf(!reachable)('0053 homework files (requires local Supabase)', () 
 		expect(left ?? []).toEqual([]);
 	});
 });
+
+describe.skipIf(!reachable)(
+	'spec-second-parent story 1: student_parents (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let teamId: string;
+
+		const name = (label: string) => `SSP1 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+		async function signIn(email: string, password: string): Promise<Client> {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		/** A child registered by `parent` through the sign-up, then approved. */
+		async function child(parentEmail: string, approve = true) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName: name('Kid'),
+				guardianEmail: parentEmail
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			if (approve) {
+				const { error: approveError } = await adminClient
+					.from('profiles')
+					.update({ status: 'approved', team_id: teamId })
+					.eq('id', id);
+				if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			}
+			return id;
+		}
+
+		async function activeLinks(studentId: string) {
+			const { data, error } = await adminClient
+				.from('student_parents')
+				.select('parent_id, slot, invited_by, removed_at')
+				.eq('student_id', studentId)
+				.is('removed_at', null)
+				.order('slot');
+			if (error) throw new Error(`read links: ${error.message}`);
+			return data ?? [];
+		}
+
+		/** A child of parent A with parent B linked in slot 2. */
+		async function twoParentFamily() {
+			const a = await createApprovedParent();
+			const b = await createApprovedParent();
+			const studentId = await child(a.email);
+			await linkParent(adminClient, studentId, b.id);
+			return { a, b, studentId };
+		}
+
+		const removeLink = (studentId: string, parentId: string) =>
+			adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', studentId)
+				.eq('parent_id', parentId)
+				.is('removed_at', null)
+				.select('id');
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacher = await createSignedInUser('teacher');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({ name: name('Class'), code: `P${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			await adminClient
+				.from('class_teachers')
+				.insert({ class_id: classId, teacher_id: teacher.id });
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('Sign-up: the profile records who registered it and a slot-1 link is created in the same transaction', async () => {
+			const parent = await createApprovedParent();
+			const id = await child(parent.email, false);
+
+			const { data: profile } = await adminClient
+				.from('profiles')
+				.select('registered_by_parent_id')
+				.eq('id', id)
+				.single();
+			expect(profile).toEqual({ registered_by_parent_id: parent.id });
+			expect(await activeLinks(id)).toEqual([
+				{ parent_id: parent.id, slot: 1, invited_by: null, removed_at: null }
+			]);
+		});
+
+		it('Sign-up: no approved parent for the guardian email rolls back the profile and the link', async () => {
+			const registrationName = name('Orphan');
+			const { error } = await signUpStudent({
+				classId,
+				registrationName,
+				guardianEmail: `ssp-nobody-${crypto.randomUUID()}@example.test`
+			});
+			expect(error).not.toBeNull();
+			const { data } = await adminClient
+				.from('profiles')
+				.select('id')
+				.eq('registration_name', registrationName);
+			expect(data).toEqual([]);
+		});
+
+		it('Third link: slot 3, a duplicate active slot and a duplicate active parent are refused', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+			const c = await createApprovedParent();
+
+			const slot3 = await adminClient
+				.from('student_parents')
+				.insert({ student_id: studentId, parent_id: c.id, slot: 3 as 1 });
+			expect(slot3.error?.code).toBe('23514');
+
+			const sameSlot = await adminClient
+				.from('student_parents')
+				.insert({ student_id: studentId, parent_id: c.id, slot: 2 });
+			expect(sameSlot.error?.code).toBe('23505');
+			expect(sameSlot.error?.message).toContain('student_parents_active_slot_unique');
+
+			// A removed slot is free again, but the same parent twice is not.
+			expect((await removeLink(studentId, b.id)).error).toBeNull();
+			const samePerson = await adminClient
+				.from('student_parents')
+				.insert({ student_id: studentId, parent_id: a.id, slot: 2 });
+			expect(samePerson.error?.code).toBe('23505');
+			expect(samePerson.error?.message).toContain('student_parents_active_parent_unique');
+
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([a.id]);
+		});
+
+		it('Last link: deleting or removing the only active link of an existing student is refused', async () => {
+			const parent = await createApprovedParent();
+			const studentId = await child(parent.email);
+
+			const deleted = await adminClient
+				.from('student_parents')
+				.delete()
+				.eq('student_id', studentId);
+			expect(deleted.error?.hint).toBe('last_parent_link');
+			const removed = await removeLink(studentId, parent.id);
+			expect(removed.error?.hint).toBe('last_parent_link');
+
+			expect(await activeLinks(studentId)).toEqual([
+				{ parent_id: parent.id, slot: 1, invited_by: null, removed_at: null }
+			]);
+		});
+
+		it('Concurrent removals: of two removals at once, exactly one succeeds and one link stays', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+
+			const results = await Promise.all([removeLink(studentId, a.id), removeLink(studentId, b.id)]);
+			const failed = results.filter((r) => r.error);
+			expect(failed).toHaveLength(1);
+			expect(failed[0].error?.hint).toBe('last_parent_link');
+			expect(await activeLinks(studentId)).toHaveLength(1);
+		});
+
+		it('Removed row: set once and never changed again', async () => {
+			const { b, studentId } = await twoParentFamily();
+			expect((await removeLink(studentId, b.id)).error).toBeNull();
+
+			const { data: removed } = await adminClient
+				.from('student_parents')
+				.select('id, removed_at')
+				.eq('student_id', studentId)
+				.eq('parent_id', b.id)
+				.single();
+			expect(removed?.removed_at).not.toBeNull();
+
+			for (const change of [
+				{ removed_at: null },
+				{ removed_at: new Date(Date.now() + 60_000).toISOString() },
+				{ removed_by: teacher.id },
+				{ slot: 1 as const }
+			]) {
+				const { error } = await adminClient
+					.from('student_parents')
+					.update(change)
+					.eq('id', removed!.id);
+				expect(error?.code, JSON.stringify(change)).toBe('42501');
+			}
+			const { data: after } = await adminClient
+				.from('student_parents')
+				.select('removed_at, removed_by')
+				.eq('id', removed!.id)
+				.single();
+			expect(after).toEqual({ removed_at: removed!.removed_at, removed_by: admin.id });
+		});
+
+		it('Removal without removed_by is refused (the audit)', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+			const { error } = await adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString() })
+				.eq('student_id', studentId)
+				.eq('parent_id', b.id);
+			expect(error?.code).toBe('23514');
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([a.id, b.id]);
+		});
+
+		it('Insert: a link to a non-student, to a profile without a parents row, or already removed is refused', async () => {
+			const parent = await createApprovedParent();
+			const studentId = await child(parent.email);
+			const other = await createApprovedParent();
+			const noParentsRow = await createSignedInUser('teacher');
+
+			const toTeacher = await adminClient
+				.from('student_parents')
+				.insert({ student_id: teacher.id, parent_id: other.id, slot: 1 });
+			expect(toTeacher.error?.code).toBe('23514');
+			expect(toTeacher.error?.message).toContain('needs a student');
+
+			const withoutRow = await adminClient
+				.from('student_parents')
+				.insert({ student_id: studentId, parent_id: noParentsRow.id, slot: 2 });
+			expect(withoutRow.error?.code).toBe('23514');
+			expect(withoutRow.error?.message).toContain('needs a parent account');
+
+			const removed = await adminClient.from('student_parents').insert({
+				student_id: studentId,
+				parent_id: other.id,
+				slot: 2,
+				removed_at: new Date().toISOString(),
+				removed_by: admin.id
+			});
+			expect(removed.error?.code).toBe('23514');
+
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([parent.id]);
+		});
+
+		it('Active link: only removal is allowed, not moving it to another student or parent', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+			const other = await createApprovedParent();
+			for (const change of [{ parent_id: other.id }, { student_id: a.id }, { slot: 2 as const }]) {
+				const { error } = await adminClient
+					.from('student_parents')
+					.update(change)
+					.eq('student_id', studentId)
+					.eq('parent_id', a.id);
+				expect(error?.code, JSON.stringify(change)).toBe('42501');
+			}
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([a.id, b.id]);
+		});
+
+		it('Student deleted: the links cascade and the delete succeeds', async () => {
+			const { studentId } = await twoParentFamily();
+			const { error } = await adminClient.auth.admin.deleteUser(studentId);
+			expect(error).toBeNull();
+			const { data } = await adminClient
+				.from('student_parents')
+				.select('id')
+				.eq('student_id', studentId);
+			expect(data).toEqual([]);
+		});
+
+		it('Parent revoked: an approved parent with links cannot be rejected or deleted', async () => {
+			const parent = await createApprovedParent();
+			await child(parent.email);
+
+			const rejected = await adminClient
+				.from('parents')
+				.update({ status: 'rejected' })
+				.eq('id', parent.id);
+			expect(rejected.error?.hint).toBe('parent_has_links');
+			// Through the admin's own update policy too.
+			const viaAdmin = await admin.client
+				.from('parents')
+				.update({ status: 'rejected' })
+				.eq('id', parent.id);
+			expect(viaAdmin.error?.hint).toBe('parent_has_links');
+
+			const deletedRow = await adminClient.from('parents').delete().eq('id', parent.id);
+			expect(deletedRow.error?.hint).toBe('parent_has_links');
+			const deletedUser = await adminClient.auth.admin.deleteUser(parent.id);
+			expect(deletedUser.error).not.toBeNull();
+
+			const { data } = await adminClient.from('parents').select('status').eq('id', parent.id);
+			expect(data).toEqual([{ status: 'approved' }]);
+		});
+
+		it('Parent revoked: a pending parent with an active link cannot be rejected', async () => {
+			const parent = await createApprovedParent();
+			const studentId = await child(parent.email);
+			const pending = await createPendingParent();
+			await linkParent(adminClient, studentId, pending.id);
+
+			const { error } = await adminClient
+				.from('parents')
+				.update({ status: 'rejected' })
+				.eq('id', pending.id);
+			expect(error?.hint).toBe('parent_has_links');
+			const { data } = await adminClient.from('parents').select('status').eq('id', pending.id);
+			expect(data).toEqual([{ status: 'pending' }]);
+		});
+
+		it('Parent without links: a pending parent can still be rejected', async () => {
+			const pending = await createPendingParent();
+			const { error } = await adminClient
+				.from('parents')
+				.update({ status: 'rejected' })
+				.eq('id', pending.id);
+			expect(error).toBeNull();
+		});
+
+		it('RLS: each active parent sees the active links of their child, the admin sees all; others, the student and clients writing see nothing', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+			const stranger = await createApprovedParent();
+			const clientA = await signIn(a.email, a.password);
+			const clientB = await signIn(b.email, b.password);
+			const strangerClient = await signIn(stranger.email, stranger.password);
+			const read = async (client: Client) =>
+				(
+					await client
+						.from('student_parents')
+						.select('parent_id')
+						.eq('student_id', studentId)
+						.order('slot')
+				).data?.map((r) => r.parent_id) ?? [];
+
+			expect(await read(clientA)).toEqual([a.id, b.id]);
+			expect(await read(clientB)).toEqual([a.id, b.id]);
+			expect(await read(admin.client)).toEqual([a.id, b.id]);
+			expect(await read(strangerClient)).toEqual([]);
+			expect(await read(teacher.client)).toEqual([]);
+
+			const password = crypto.randomUUID();
+			const { data: auth } = await adminClient.auth.admin.updateUserById(studentId, { password });
+			const studentClient = await signIn(auth.user!.email!, password);
+			expect(await read(studentClient)).toEqual([]);
+
+			// No client writes: not the parent, not the admin.
+			for (const client of [clientA, admin.client]) {
+				const insert = await client
+					.from('student_parents')
+					.insert({ student_id: studentId, parent_id: stranger.id, slot: 2 });
+				expect(insert.error).not.toBeNull();
+				await client
+					.from('student_parents')
+					.update({ removed_at: new Date().toISOString() })
+					.eq('student_id', studentId);
+				await client.from('student_parents').delete().eq('student_id', studentId);
+			}
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([a.id, b.id]);
+
+			// After B's link is removed, B no longer reads the links, A reads
+			// only the active one, and the admin still reads both.
+			expect((await removeLink(studentId, b.id)).error).toBeNull();
+			expect(await read(clientB)).toEqual([]);
+			expect(await read(clientA)).toEqual([a.id]);
+			expect(await read(admin.client)).toEqual([a.id, b.id]);
+		});
+
+		it('Both parents: is_parent_of and linked_children cover the second parent; a removed link loses access', async () => {
+			const { a, b, studentId } = await twoParentFamily();
+			const clientA = await signIn(a.email, a.password);
+			const clientB = await signIn(b.email, b.password);
+			for (const client of [clientA, clientB]) {
+				expect((await client.rpc('is_parent_of', { p_student_id: studentId })).data).toBe(true);
+				expect((await client.rpc('linked_children')).data?.map((c) => c.id)).toEqual([studentId]);
+				expect((await client.rpc('has_link_to', { p_student_id: studentId })).data).toBe(true);
+			}
+
+			expect((await removeLink(studentId, b.id)).error).toBeNull();
+			expect((await clientB.rpc('is_parent_of', { p_student_id: studentId })).data).toBe(false);
+			expect((await clientB.rpc('linked_children')).data).toEqual([]);
+			expect((await clientB.rpc('has_link_to', { p_student_id: studentId })).data).toBe(false);
+			expect((await clientA.rpc('is_parent_of', { p_student_id: studentId })).data).toBe(true);
+		});
+
+		it('Guard: a teacher cannot change registered_by_parent_id; the link is not moved by it', async () => {
+			const parent = await createApprovedParent();
+			const other = await createApprovedParent();
+			const studentId = await child(parent.email, false);
+
+			const { error } = await teacher.client
+				.from('profiles')
+				.update({ registered_by_parent_id: other.id })
+				.eq('id', studentId)
+				.select('id');
+			expect(error?.message).toContain('cannot be changed here');
+
+			// The service role may change it, and it grants nothing (AD-10).
+			expect(
+				(
+					await adminClient
+						.from('profiles')
+						.update({ registered_by_parent_id: other.id })
+						.eq('id', studentId)
+				).error
+			).toBeNull();
+			expect((await activeLinks(studentId)).map((l) => l.parent_id)).toEqual([parent.id]);
+			const otherClient = await signIn(other.email, other.password);
+			expect((await otherClient.rpc('linked_children')).data).toEqual([]);
+		});
+
+		it('has_link_to: a pending teacher-parent cannot approve their own pending child; another teacher can', async () => {
+			const teacherParent = await createSignedInUser('teacher');
+			const otherTeacher = await createSignedInUser('teacher');
+			for (const id of [teacherParent.id, otherTeacher.id]) {
+				await adminClient.from('class_teachers').insert({ class_id: classId, teacher_id: id });
+			}
+			// A pending parents row, as request_parent_access() makes it.
+			expect(
+				(await adminClient.from('parents').insert({ id: teacherParent.id, status: 'pending' }))
+					.error
+			).toBeNull();
+
+			const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+				email: `ssp-own-${crypto.randomUUID()}@${STUDENT_EMAIL_DOMAIN}`,
+				password: crypto.randomUUID(),
+				email_confirm: true,
+				app_metadata: { role: 'student' },
+				user_metadata: { class_id: classId, registration_name: name('Own Kid') }
+			});
+			if (createError || !created.user) throw new Error(`create student: ${createError?.message}`);
+			const kid = created.user.id;
+			await linkParent(adminClient, kid, teacherParent.id);
+
+			// is_parent_of alone would not stop them: they are not an approved parent.
+			expect((await teacherParent.client.rpc('is_parent_of', { p_student_id: kid })).data).toBe(
+				false
+			);
+			expect((await teacherParent.client.rpc('has_link_to', { p_student_id: kid })).data).toBe(
+				true
+			);
+
+			const decide = (client: Client, reviewer: string) =>
+				client
+					.from('profiles')
+					.update({
+						status: 'approved',
+						reviewed_by: reviewer,
+						reviewed_at: new Date().toISOString()
+					})
+					.eq('id', kid)
+					.select('status');
+			const own = await decide(teacherParent.client, teacherParent.id);
+			expect(own.error?.code).toBe('42501');
+			const { data: still } = await adminClient
+				.from('profiles')
+				.select('status')
+				.eq('id', kid)
+				.single();
+			expect(still).toEqual({ status: 'pending' });
+
+			const other = await decide(otherTeacher.client, otherTeacher.id);
+			expect(other.error).toBeNull();
+			expect(other.data).toEqual([{ status: 'approved' }]);
+		});
+	}
+);

@@ -5,6 +5,7 @@ import {
 	berlinToday,
 	env,
 	fixtureTeam,
+	linkParent,
 	isoWeekday,
 	postedFields,
 	renderedFonts,
@@ -185,10 +186,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', students[0].id),
-			'link parent'
-		);
+		await linkParent(students[0].id, parent.id);
 		const asParent = createClient<Database>(env.PUBLIC_SUPABASE_URL, env.PUBLIC_SUPABASE_ANON_KEY, {
 			auth: { autoRefreshToken: false, persistSession: false }
 		});

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import type { Database } from './../supabase/database.types';
+import { linkParent } from './testing/link-parent';
 
 // The real service-role client, wrapped so a refusal can be shown to never
 // reach the privileged call.
@@ -214,14 +215,8 @@ describe.skipIf(!reachable)('resetStudentPin (#88, requires local Supabase)', ()
 				.in('id', [teacherA.id, parent.id]),
 			'approve parents'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', studentA.id),
-			'link parent'
-		);
-		check(
-			await service.from('profiles').update({ parent_id: teacherA.id }).eq('id', ownChild.id),
-			'link own child'
-		);
+		await linkParent(service, studentA.id, parent.id);
+		await linkParent(service, ownChild.id, teacherA.id);
 	}, 60_000);
 
 	afterAll(async () => {

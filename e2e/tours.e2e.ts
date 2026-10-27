@@ -2,6 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import {
 	berlinToday,
 	fixtureTeam,
+	linkParent,
 	helpSheet,
 	openCalendar,
 	openAccountMenu,
@@ -159,10 +160,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', student.id),
-			'link parent'
-		);
+		await linkParent(student.id, parent.id);
 
 		childless = await createUser('parent', 'childless');
 		check(
@@ -177,12 +175,12 @@ test.beforeAll(async () => {
 				.update({
 					class_id: classId,
 					status: 'pending',
-					registration_name: `E2E101 Waiting ${tag}`,
-					parent_id: parent.id
+					registration_name: `E2E101 Waiting ${tag}`
 				})
 				.eq('id', waiting.id),
 			'waiting registration'
 		);
+		await linkParent(waiting.id, parent.id);
 
 		const due = plusDays(today, 5);
 		const assignment = check(

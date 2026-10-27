@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { currentSchoolYear, formatSchoolYear } from '../src/lib/school-year';
-import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
+import { fixtureTeam, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Breadcrumbs on nested pages (#61; new component system since mobile-first story 3): the I/O matrix rows "Navigate up",
@@ -188,10 +188,7 @@ test.beforeAll(async () => {
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', student.id),
-			'link parent'
-		);
+		await linkParent(student.id, parent.id);
 
 		({ assignment: assignmentId, instance: instanceId } = await giveHomework(
 			classId,

@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { berlinToday, isoWeekday, service, signIn, type TestUser } from './fixtures';
+import { berlinToday, isoWeekday, linkParent, service, signIn, type TestUser } from './fixtures';
 
 /**
  * Not a test: takes the screenshots shown on /help (#87) into
@@ -178,10 +178,7 @@ test.beforeAll(async () => {
 
 		child = await addStudent('Tenzin Dolma');
 		childId = child.id;
-		check(
-			await service.from('profiles').update({ parent_id: parent.id }).eq('id', childId),
-			'link child'
-		);
+		await linkParent(childId, parent.id);
 		for (const name of ['Sonam Wangmo', 'Karma Dorjee', 'Dawa Yangzom']) {
 			await addStudent(name);
 		}

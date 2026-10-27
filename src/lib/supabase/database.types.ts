@@ -990,7 +990,7 @@ export type Database = {
 					guardian_consent_given_at: string | null;
 					guardian_email: string | null;
 					id: string;
-					parent_id: string | null;
+					registered_by_parent_id: string | null;
 					registration_name: string | null;
 					reviewed_at: string | null;
 					reviewed_by: string | null;
@@ -1008,7 +1008,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id: string;
-					parent_id?: string | null;
+					registered_by_parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
 					reviewed_by?: string | null;
@@ -1026,7 +1026,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id?: string;
-					parent_id?: string | null;
+					registered_by_parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
 					reviewed_by?: string | null;
@@ -1044,8 +1044,8 @@ export type Database = {
 						referencedColumns: ['id'];
 					},
 					{
-						foreignKeyName: 'profiles_parent_id_fkey';
-						columns: ['parent_id'];
+						foreignKeyName: 'profiles_registered_by_parent_id_fkey';
+						columns: ['registered_by_parent_id'];
 						isOneToOne: false;
 						referencedRelation: 'parents';
 						referencedColumns: ['id'];
@@ -1216,6 +1216,68 @@ export type Database = {
 					{
 						foreignKeyName: 'sick_leave_decisions_decided_by_fkey';
 						columns: ['decided_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
+			student_parents: {
+				Row: {
+					id: string;
+					invited_by: string | null;
+					linked_at: string;
+					parent_id: string;
+					removed_at: string | null;
+					removed_by: string | null;
+					slot: 1 | 2;
+					student_id: string;
+				};
+				Insert: {
+					id?: string;
+					invited_by?: string | null;
+					linked_at?: string;
+					parent_id: string;
+					removed_at?: string | null;
+					removed_by?: string | null;
+					slot: 1 | 2;
+					student_id: string;
+				};
+				Update: {
+					id?: string;
+					invited_by?: string | null;
+					linked_at?: string;
+					parent_id?: string;
+					removed_at?: string | null;
+					removed_by?: string | null;
+					slot?: 1 | 2;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'student_parents_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'student_parents_parent_id_fkey';
+						columns: ['parent_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'student_parents_invited_by_fkey';
+						columns: ['invited_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'student_parents_removed_by_fkey';
+						columns: ['removed_by'];
 						isOneToOne: false;
 						referencedRelation: 'profiles';
 						referencedColumns: ['id'];
@@ -1474,6 +1536,7 @@ export type Database = {
 				Args: { p_class_id: string; p_syllabus: string; p_links: HomeworkReferenceLink[] };
 				Returns: undefined;
 			};
+			has_link_to: { Args: { p_student_id: string }; Returns: boolean };
 			is_admin: { Args: never; Returns: boolean };
 			is_parent: { Args: never; Returns: boolean };
 			is_parent_of: { Args: { p_student_id: string }; Returns: boolean };

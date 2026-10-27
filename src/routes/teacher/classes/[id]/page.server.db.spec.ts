@@ -13,6 +13,7 @@ import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { todayInBerlin } from '$lib/berlin-date';
 import { STUDENT_EMAIL_DOMAIN } from '$lib/server/temp-password';
 import type { Database } from '$lib/supabase/database.types';
+import { linkParent } from '$lib/server/testing/link-parent';
 import { load } from './+page.server';
 
 const service = createClient<Database>(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -168,7 +169,6 @@ describe.skipIf(!reachable)(
 					.update({
 						class_id: classId,
 						status: 'approved',
-						parent_id: parent.id,
 						registration_name: 'TL106 Kid',
 						display_name: 'TL106 Kid',
 						team_id: teamId
@@ -176,6 +176,7 @@ describe.skipIf(!reachable)(
 					.eq('id', kid.id),
 				'set up kid'
 			);
+			await linkParent(service, kid.id, parent.id);
 			const enrolled = check(
 				await service
 					.from('class_enrollments')
