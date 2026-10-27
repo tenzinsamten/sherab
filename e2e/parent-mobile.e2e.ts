@@ -425,6 +425,8 @@ for (const viewport of VIEWPORTS) {
 				);
 				expect(await latestAnswer(offset)).toMatchObject({ answer: 'on_leave' });
 				await expect(sessionRow(page, offset)).toContainText('On leave ·');
+				// spec-second-parent story 2: the answer names its setter.
+				await expect(sessionRow(page, offset).getByTestId('leave-set-by')).toHaveText('Set by you');
 				// Focus is back on the Preview button.
 				await expect(page.getByRole('button', { name: 'Preview' })).toBeFocused();
 			} finally {
@@ -609,6 +611,8 @@ for (const viewport of VIEWPORTS) {
 			// Focus moves to the pending status that replaced the button.
 			await expect(page.locator('#deletion-status')).toContainText('Pending');
 			await expect(page.locator('#deletion-status')).toBeFocused();
+			// spec-second-parent story 2: the pending request names its requester.
+			await expect(page.getByTestId('deletion-requested-by')).toHaveText('Requested by you');
 		} finally {
 			await page.context().close();
 		}

@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page.server';
 
+/** An active student_parents row as the load reads it (spec-second-parent story 2). */
+function link(
+	parentId: string,
+	studentId: string,
+	student: {
+		display_name: string | null;
+		registration_name: string | null;
+		status: 'pending' | 'approved' | 'rejected';
+	} | null
+) {
+	return { parent_id: parentId, student_id: studentId, student };
+}
+
+const LINK_SELECT =
+	'parent_id, student_id, student:profiles!student_parents_student_id_fkey ( display_name, registration_name, status )';
+
 /**
  * #52 admin Parents list. `load()` is a plain async function taking
  * `locals`, so a mocked `locals.supabase` chain is enough (same pattern as
@@ -8,13 +24,14 @@ import { load } from './+page.server';
  */
 type ChainResult = { data?: unknown; error: unknown };
 
-function fakeLocals(results: { parents: ChainResult; profiles?: ChainResult }) {
+function fakeLocals(results: { parents: ChainResult; links?: ChainResult }) {
 	type Call = {
 		table: string;
 		select?: string;
 		eqArgs?: unknown[];
 		inArgs?: unknown[];
 		notArgs?: unknown[];
+		isArgs?: unknown[];
 	};
 	const calls: Call[] = [];
 	const makeChain = (table: string, result: ChainResult) => {
@@ -37,6 +54,10 @@ function fakeLocals(results: { parents: ChainResult; profiles?: ChainResult }) {
 				call.notArgs = args;
 				return chain;
 			},
+			is: (...args: unknown[]) => {
+				call.isArgs = args;
+				return chain;
+			},
 			then: (resolve: (value: ChainResult) => unknown) => resolve(result)
 		};
 		return chain;
@@ -46,7 +67,7 @@ function fakeLocals(results: { parents: ChainResult; profiles?: ChainResult }) {
 			from: (table: string) =>
 				makeChain(
 					table,
-					table === 'parents' ? results.parents : (results.profiles ?? { data: [], error: null })
+					table === 'parents' ? results.parents : (results.links ?? { data: [], error: null })
 				)
 		}
 	} as unknown as Parameters<typeof load>[0]['locals'];
@@ -77,22 +98,14 @@ describe('admin parents +page.server.ts load', () => {
 				],
 				error: null
 			},
-			profiles: {
+			links: {
 				data: [
-					{
-						id: 'c2',
-						registered_by_parent_id: 'p1',
-						display_name: null,
-						registration_name: 'Pema',
-						status: 'pending'
-					},
-					{
-						id: 'c1',
-						registered_by_parent_id: 'p1',
+					link('p1', 'c2', { display_name: null, registration_name: 'Pema', status: 'pending' }),
+					link('p1', 'c1', {
 						display_name: 'Anna',
 						registration_name: 'Anna R',
 						status: 'approved'
-					}
+					})
 				],
 				error: null
 			}
@@ -118,16 +131,63 @@ describe('admin parents +page.server.ts load', () => {
 			loadError: false
 		});
 		const parentsCall = calls.find((c) => c.table === 'parents');
-		const childrenCall = calls.find((c) => c.table === 'profiles');
+		const childrenCall = calls.find((c) => c.table === 'student_parents');
 		expect(parentsCall?.select).toBe(
 			'id, status, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )'
 		);
-		expect(childrenCall?.select).toBe(
-			'id, registered_by_parent_id, display_name, registration_name, status'
-		);
-		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
-		expect(childrenCall?.notArgs).toEqual(['registered_by_parent_id', 'is', null]);
+		expect(childrenCall?.select).toBe(LINK_SELECT);
+		expect(childrenCall?.isArgs).toEqual(['removed_at', null]);
 		expect(childrenCall?.inArgs).toBeUndefined();
+		expect(JSON.stringify(calls)).not.toContain('registered_by_parent_id');
+	});
+
+	it('a child with two linked parents is listed under both (spec-second-parent story 2)', async () => {
+		const anna = { display_name: 'Anna', registration_name: 'Anna', status: 'approved' as const };
+		const { locals } = fakeLocals({
+			parents: {
+				data: [
+					parentRow('pa', 'approved', {
+						display_name: 'A',
+						email: 'a@example.com',
+						email_confirmed_at: 'x'
+					}),
+					parentRow('pb', 'approved', {
+						display_name: 'B',
+						email: 'b@example.com',
+						email_confirmed_at: 'x'
+					})
+				],
+				error: null
+			},
+			links: { data: [link('pa', 'c1', anna), link('pb', 'c1', anna)], error: null }
+		});
+
+		const result = await run(locals);
+		if (!result) throw new Error('no result');
+
+		expect(result.parents.map((p: { id: string }) => p.id)).toEqual(['pa', 'pb']);
+		for (const p of result.parents) {
+			expect(p.children).toEqual([{ id: 'c1', name: 'Anna', status: 'approved' }]);
+		}
+	});
+
+	it('a link whose student the admin cannot read is skipped', async () => {
+		const { locals } = fakeLocals({
+			parents: {
+				data: [
+					parentRow('pa', 'approved', {
+						display_name: 'A',
+						email: 'a@example.com',
+						email_confirmed_at: 'x'
+					})
+				],
+				error: null
+			},
+			links: { data: [link('pa', 'c1', null)], error: null }
+		});
+
+		const result = await run(locals);
+		expect(result?.parents[0].children).toEqual([]);
 	});
 
 	it('orders pending, then approved, then rejected, each by name (email fallback)', async () => {
@@ -183,7 +243,7 @@ describe('admin parents +page.server.ts load', () => {
 		const result = await run(locals);
 
 		expect(result).toEqual({ parents: [], pendingCount: 0, loadError: false });
-		expect(calls.map((c) => c.table)).toEqual(['parents', 'profiles']);
+		expect(calls.map((c) => c.table)).toEqual(['parents', 'student_parents']);
 	});
 
 	it('maps the children of 1 000 parents with no id list in the query (CAP-5)', async () => {
@@ -199,23 +259,21 @@ describe('admin parents +page.server.ts load', () => {
 				),
 				error: null
 			},
-			profiles: {
+			links: {
 				data: [
-					...ids.map((id) => ({
-						id: `c-${id}`,
-						registered_by_parent_id: id,
-						display_name: `Child ${id}`,
-						registration_name: null,
-						status: 'approved'
-					})),
+					...ids.map((id) =>
+						link(id, `c-${id}`, {
+							display_name: `Child ${id}`,
+							registration_name: null,
+							status: 'approved'
+						})
+					),
 					// RLS may still return a child of a parent not listed; it is not shown.
-					{
-						id: 'c-orphan',
-						registered_by_parent_id: 'gone',
+					link('gone', 'c-orphan', {
 						display_name: 'Orphan',
 						registration_name: null,
 						status: 'approved'
-					}
+					})
 				],
 				error: null
 			}
@@ -229,10 +287,9 @@ describe('admin parents +page.server.ts load', () => {
 		for (const p of result.parents) {
 			expect(p.children).toEqual([{ id: `c-${p.id}`, name: `Child ${p.id}`, status: 'approved' }]);
 		}
-		const childrenCall = calls.find((c) => c.table === 'profiles');
+		const childrenCall = calls.find((c) => c.table === 'student_parents');
 		expect(childrenCall?.inArgs).toBeUndefined();
-		expect(childrenCall?.eqArgs).toEqual(['role', 'student']);
-		expect(childrenCall?.notArgs).toEqual(['registered_by_parent_id', 'is', null]);
+		expect(childrenCall?.isArgs).toEqual(['removed_at', null]);
 	});
 
 	it('sets loadError and no rows when the parents query fails', async () => {
@@ -245,7 +302,7 @@ describe('admin parents +page.server.ts load', () => {
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const { locals } = fakeLocals({
 			parents: { data: [], error: null },
-			profiles: { data: null, error: { message: 'boom' } }
+			links: { data: null, error: { message: 'boom' } }
 		});
 
 		expect(await run(locals)).toEqual({ parents: [], pendingCount: 0, loadError: false });
@@ -265,7 +322,7 @@ describe('admin parents +page.server.ts load', () => {
 				],
 				error: null
 			},
-			profiles: { data: null, error: { message: 'boom' } }
+			links: { data: null, error: { message: 'boom' } }
 		});
 
 		expect(await run(locals)).toEqual({ parents: [], pendingCount: 0, loadError: true });

@@ -22,6 +22,7 @@ function makeChain(result: ChainResult) {
 		select: () => chain,
 		eq: () => chain,
 		neq: () => chain,
+		is: () => chain,
 		order: () => chain,
 		range: () => chain,
 		then: (resolve: (value: ChainResult) => unknown) => resolve(result)
@@ -120,26 +121,21 @@ describe('admin dashboard +page.server.ts load', () => {
 		expect(result).toMatchObject({ pendingRequestsCount: 5, loadError: false });
 	});
 
-	it('adds pending deletion requests the admin did not submit (Story 7-6)', async () => {
-		const locals = fakeLocals({
-			deletion_requests: [{ data: [], count: 4, error: null }]
-		}) as unknown as { supabase: { from: (t: string) => Record<string, unknown> } };
-		const neqCalls: unknown[][] = [];
-		const from = locals.supabase.from;
-		locals.supabase.from = (table: string) => {
-			const chain = from(table);
-			if (table === 'deletion_requests') {
-				const neq = chain.neq as (...args: unknown[]) => unknown;
-				chain.neq = (...args: unknown[]) => {
-					neqCalls.push(args);
-					return neq(...args);
-				};
-			}
-			return chain;
-		};
-		const result = await load({ locals } as unknown as Parameters<typeof load>[0]);
-		expect(result).toMatchObject({ pendingRequestsCount: 4, loadError: false });
-		expect(neqCalls).toEqual([['requested_by', 'admin-1']]);
+	it('adds pending deletion requests, never for a child the admin is linked to (Story 7-6, spec-second-parent story 2)', async () => {
+		// k2: the admin is the second parent and the other parent asked; it is
+		// still the admin's own child (has_link_to), so it is not counted.
+		const result = await load({
+			locals: fakeLocals({
+				deletion_requests: [
+					{
+						data: [{ student_id: 'k1' }, { student_id: 'k2' }, { student_id: 'k3' }],
+						error: null
+					}
+				],
+				student_parents: [{ data: [{ student_id: 'k2' }], error: null }]
+			})
+		} as Parameters<typeof load>[0]);
+		expect(result).toMatchObject({ pendingRequestsCount: 2, loadError: false });
 
 		const failed = await load({
 			locals: fakeLocals({
@@ -147,6 +143,15 @@ describe('admin dashboard +page.server.ts load', () => {
 			})
 		} as Parameters<typeof load>[0]);
 		expect(failed).toMatchObject({ loadError: true });
+
+		// Without the admin's links, no deletion is counted (any could be their own child).
+		const linksFailed = await load({
+			locals: fakeLocals({
+				deletion_requests: [{ data: [{ student_id: 'k1' }], error: null }],
+				student_parents: [{ data: null, error: { message: 'x' } }]
+			})
+		} as Parameters<typeof load>[0]);
+		expect(linksFailed).toMatchObject({ pendingRequestsCount: 0, loadError: true });
 	});
 
 	it('adds pending Sick leave the admin may decide, never their own child (Story 7-5)', async () => {

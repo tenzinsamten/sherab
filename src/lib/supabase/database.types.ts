@@ -1432,6 +1432,11 @@ export type Database = {
 			};
 		};
 		Functions: {
+			actor_display_name: {
+				Args: { p_student_id: string; p_actor_id: string };
+				/** null when the caller may not read the student or the actor was never linked to them. */
+				Returns: string | null;
+			};
 			student_registration_state: {
 				Args: { p_guardian_email: string; p_registration_name: string };
 				Returns: string;

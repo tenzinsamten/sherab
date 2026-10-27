@@ -511,6 +511,14 @@
 									? m.deletion_status_pending()
 									: m.deletion_status_rejected()}
 							</Badge>
+							{#if data.deletion.status === 'pending' && data.deletion.requestedBy}
+								<!-- spec-second-parent story 2: both parents see who asked. -->
+								<span class="{ui.muted} ms-2" data-testid="deletion-requested-by">
+									{data.deletion.requestedBy.self
+										? m.deletion_requested_by_you()
+										: m.deletion_requested_by({ name: data.deletion.requestedBy.name })}
+								</span>
+							{/if}
 						</p>
 					{/if}
 					{#if data.deletion?.status !== 'pending'}
@@ -828,7 +836,10 @@
 								</p>
 								<p class="{ui.muted} wrap-break-word">{session.className}</p>
 							</div>
-							<div class="flex" data-tour={sessionTour(session, 'session-answer')}>
+							<div
+								class="flex flex-wrap items-center gap-x-2 gap-y-1"
+								data-tour={sessionTour(session, 'session-answer')}
+							>
 								<span class="sr-only">{m.leave_answer_label()}:</span>
 								{#if session.answer === 'on_leave'}
 									<Badge variant="warning" class="text-sm">
@@ -851,6 +862,14 @@
 									</Badge>
 								{:else}
 									<Badge variant="outline" class="text-sm">{answerLabel(null)}</Badge>
+								{/if}
+								{#if session.answer && session.answeredBy}
+									<!-- spec-second-parent story 2: which parent set the answer. -->
+									<span class="{ui.muted} text-sm" data-testid="leave-set-by">
+										{session.answeredBy.self
+											? m.leave_set_by_you()
+											: m.leave_set_by({ name: session.answeredBy.name })}
+									</span>
 								{/if}
 							</div>
 							{#if session.decision}

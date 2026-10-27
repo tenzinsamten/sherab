@@ -10,6 +10,8 @@ import { actions, load } from './+page.server';
  */
 const CHILD = '11111111-2222-4333-8444-555555555555';
 const SESSION = '66666666-7777-4888-8999-000000000000';
+/** The signed-in parent viewing the page (load). */
+const VIEWER = 'p1';
 
 type Result = { data: unknown; error: unknown };
 
@@ -18,6 +20,8 @@ function fakeSupabase(opts: {
 	tables?: Record<string, Result>;
 	rpc?: Record<string, Result>;
 	insert?: Result;
+	/** spec-second-parent story 2: actor_display_name() per actor id (missing = null). */
+	actorNames?: Record<string, string | null>;
 }) {
 	const calls: { table: string; method: string; args: unknown[] }[] = [];
 	const inserted: unknown[] = [];
@@ -83,10 +87,12 @@ function fakeSupabase(opts: {
 		c.then = (resolve: (value: Result) => unknown) => resolve(sorted());
 		return c;
 	}
-	const rpc = vi.fn(async (fn: string) =>
+	const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) =>
 		fn === 'linked_children'
 			? { data: opts.linked ?? [], error: null }
-			: (opts.rpc?.[fn] ?? { data: null, error: null })
+			: fn === 'actor_display_name' && opts.actorNames
+				? { data: opts.actorNames[String(args?.p_actor_id)] ?? null, error: null }
+				: (opts.rpc?.[fn] ?? { data: null, error: null })
 	);
 	return {
 		calls,
@@ -113,7 +119,11 @@ type LoadResult = {
 	child: { id: string; name: string };
 	tab: string;
 	sessions: Record<string, unknown>[];
-	deletion: { status: string; requestedAt: string } | null;
+	deletion: {
+		status: string;
+		requestedAt: string;
+		requestedBy: { self: boolean; name?: string } | null;
+	} | null;
 	deletionLoadError: boolean;
 	loadError: boolean;
 	streak: { currentStreak: number } | null;
@@ -154,7 +164,7 @@ function runLoad(
 		params: { id },
 		url: new URL(`http://localhost/parent/children/${id}${search}`),
 		parent: async () => ({ parentStatus }),
-		locals: { supabase: fake.client }
+		locals: { supabase: fake.client, safeGetSession: async () => ({ user: { id: VIEWER } }) }
 	} as unknown as Parameters<typeof load>[0]) as Promise<LoadResult>;
 }
 
@@ -278,6 +288,75 @@ describe('parent child leave page: sessions', () => {
 				['in', 'class_session_id', ['s2', 's1']]
 			])
 		);
+	});
+
+	it('names the setter of each current answer, once per distinct parent (spec-second-parent story 2)', async () => {
+		const row = (id: string) => ({
+			id,
+			day: '2099-10-04',
+			class_name: 'Alphabet',
+			start_time: null,
+			duration_minutes: null,
+			starts_at: future
+		});
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			actorNames: { pB: 'Pema', [VIEWER]: 'Me' },
+			tables: {
+				class_enrollments: { data: [{ class_id: 'k1' }], error: null },
+				class_sessions_effective: {
+					data: [row('a'), row('b'), row('c'), row('d'), row('e')],
+					error: null
+				},
+				session_leave_history: {
+					data: [
+						// Newest first: only the first row per session counts.
+						{
+							class_session_id: 'a',
+							answer: 'on_leave',
+							classification: 'planned',
+							answered_by: 'pB'
+						},
+						{ class_session_id: 'a', answer: 'coming', classification: null, answered_by: VIEWER },
+						{ class_session_id: 'b', answer: 'coming', classification: null, answered_by: VIEWER },
+						{ class_session_id: 'c', answer: 'coming', classification: null, answered_by: 'pB' },
+						{ class_session_id: 'd', answer: 'coming', classification: null, answered_by: null }
+					],
+					error: null
+				}
+			}
+		});
+		const { sessions } = await runLoad(fake);
+		expect(sessions.map((s) => [s.id, s.answeredBy])).toEqual([
+			['a', { self: false, name: 'Pema' }],
+			['b', { self: true }],
+			['c', { self: false, name: 'Pema' }],
+			['d', null],
+			['e', null]
+		]);
+		const nameCalls = fake.rpc.mock.calls.filter(([fn]) => fn === 'actor_display_name');
+		expect(nameCalls).toEqual([['actor_display_name', { p_student_id: CHILD, p_actor_id: 'pB' }]]);
+		expect(
+			fake.calls.find((c) => c.table === 'session_leave_history' && c.method === 'select')?.args
+		).toEqual(['class_session_id, answer, classification, answered_by']);
+	});
+
+	it('a setter whose name resolves to null gets no label (single-parent families too)', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			actorNames: {},
+			tables: {
+				...tables,
+				session_leave_history: {
+					data: [
+						{ class_session_id: 's1', answer: 'coming', classification: null, answered_by: 'x' }
+					],
+					error: null
+				}
+			}
+		});
+		const { sessions } = await runLoad(fake);
+		expect(sessions.find((s) => s.id === 's1')?.answeredBy).toBeNull();
 	});
 
 	it('offers Sick for yesterday and today only, shows the decision and locks a decided session', async () => {
@@ -652,7 +731,11 @@ describe('parent child page: deletion request (Story 7-6)', () => {
 				}
 			});
 			const result = await runLoad(fake);
-			expect(result.deletion).toEqual({ status, requestedAt: '2026-09-27T08:00:00Z' });
+			expect(result.deletion).toEqual({
+				status,
+				requestedAt: '2026-09-27T08:00:00Z',
+				requestedBy: null
+			});
 			expect(
 				fake.calls
 					.filter((c) => c.table === 'deletion_requests')
@@ -664,6 +747,54 @@ describe('parent child page: deletion request (Story 7-6)', () => {
 				])
 			);
 		}
+	});
+
+	it('names the requester of a pending request: "you" for the viewer, the name for the other parent', async () => {
+		const pending = (requestedBy: string) =>
+			fakeSupabase({
+				linked: [approvedChild],
+				actorNames: { pA: 'Dolma', [VIEWER]: 'Me' },
+				tables: {
+					deletion_requests: {
+						data: [
+							{ status: 'pending', requested_at: '2026-09-27T08:00:00Z', requested_by: requestedBy }
+						],
+						error: null
+					}
+				}
+			});
+		const byOther = pending('pA');
+		expect((await runLoad(byOther)).deletion?.requestedBy).toEqual({ self: false, name: 'Dolma' });
+		expect(byOther.rpc).toHaveBeenCalledWith('actor_display_name', {
+			p_student_id: CHILD,
+			p_actor_id: 'pA'
+		});
+		expect(
+			byOther.calls.find((c) => c.table === 'deletion_requests' && c.method === 'select')?.args
+		).toEqual(['status, requested_at, requested_by']);
+
+		const byMe = pending(VIEWER);
+		expect((await runLoad(byMe)).deletion?.requestedBy).toEqual({ self: true });
+		expect(byMe.rpc).not.toHaveBeenCalledWith('actor_display_name', expect.anything());
+
+		// A name that resolves to null (e.g. the caller may not read it): no label.
+		const unnamed = pending('gone');
+		expect((await runLoad(unnamed)).deletion?.requestedBy).toBeNull();
+	});
+
+	it('a rejected request names no one', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			actorNames: { pA: 'Dolma' },
+			tables: {
+				deletion_requests: {
+					data: [{ status: 'rejected', requested_at: '2026-09-27T08:00:00Z', requested_by: 'pA' }],
+					error: null
+				}
+			}
+		});
+		expect((await runLoad(fake)).deletion?.requestedBy).toBeNull();
+		expect(fake.rpc).not.toHaveBeenCalledWith('actor_display_name', expect.anything());
 	});
 
 	it('no request -> null; a read error flags only the deletion card', async () => {

@@ -13,13 +13,20 @@ type ParentRow = {
 	} | null;
 };
 
-type ChildRow = {
-	id: string;
-	registered_by_parent_id: string | null;
-	display_name: string | null;
-	registration_name: string | null;
-	status: ChildStatus;
+/** An active student_parents link with its student embedded. */
+type LinkRow = {
+	parent_id: string;
+	student_id: string;
+	student: {
+		display_name: string | null;
+		registration_name: string | null;
+		status: ChildStatus;
+	} | null;
 };
+
+/** Embeds the linked student; student_parents -> profiles has four FK paths. */
+const LINK_COLUMNS =
+	'parent_id, student_id, student:profiles!student_parents_student_id_fkey ( display_name, registration_name, status )';
 
 /**
  * #52: same embed shape as /requests' PARENT_COLUMNS. parents -> profiles has
@@ -41,18 +48,16 @@ const STATUS_ORDER: Record<ParentStatus, number> = { pending: 0, approved: 1, re
  * profiles admin select) is the real barrier.
  */
 export const load: PageServerLoad = async ({ locals: { supabase } }) => {
-	// CAP-5: one round trip. The children are every student with a parent,
-	// not `registered_by_parent_id IN (<all ids>)`, which grows the URL with each parent
-	// and fails at a few hundred. RLS (profiles admin select) still limits
-	// the rows; a child whose parent is not listed is never shown.
+	// CAP-5: one round trip. The children are every active student_parents
+	// link (spec-second-parent story 2, AD-12: a child with two parents is
+	// listed under both), not `parent_id IN (<all ids>)`, which grows the URL
+	// with each parent and fails at a few hundred. RLS (student_parents and
+	// profiles admin select) still limits the rows; a child whose parent is
+	// not listed is never shown.
 	const [{ data: parentRows, error: parentsError }, { data: childData, error: childrenError }] =
 		await Promise.all([
 			supabase.from('parents').select(PARENT_COLUMNS),
-			supabase
-				.from('profiles')
-				.select('id, registered_by_parent_id, display_name, registration_name, status')
-				.eq('role', 'student')
-				.not('registered_by_parent_id', 'is', null)
+			supabase.from('student_parents').select(LINK_COLUMNS).is('removed_at', null)
 		]);
 
 	if (parentsError) {
@@ -66,18 +71,18 @@ export const load: PageServerLoad = async ({ locals: { supabase } }) => {
 		// error -- as before, when the children read was skipped then.
 		if (rows.length > 0) return { parents: [], pendingCount: 0, loadError: true };
 	}
-	const childRows = (childData ?? []) as unknown as ChildRow[];
+	const linkRows = (childData ?? []) as unknown as LinkRow[];
 
 	const childrenByParent = new Map<string, { id: string; name: string; status: ChildStatus }[]>();
-	for (const child of childRows) {
-		if (!child.registered_by_parent_id) continue;
-		const list = childrenByParent.get(child.registered_by_parent_id) ?? [];
+	for (const link of linkRows) {
+		if (!link.student) continue;
+		const list = childrenByParent.get(link.parent_id) ?? [];
 		list.push({
-			id: child.id,
-			name: child.display_name || child.registration_name || '',
-			status: child.status
+			id: link.student_id,
+			name: link.student.display_name || link.student.registration_name || '',
+			status: link.student.status
 		});
-		childrenByParent.set(child.registered_by_parent_id, list);
+		childrenByParent.set(link.parent_id, list);
 	}
 
 	const parents = rows

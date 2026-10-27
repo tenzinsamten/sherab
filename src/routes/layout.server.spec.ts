@@ -40,6 +40,9 @@ function runLoad(opts: {
 	pendingParents?: number;
 	pendingDeletions?: number;
 	deletionError?: unknown;
+	/** spec-second-parent story 2: the caller's active student_parents links. */
+	ownLinks?: string[];
+	linksError?: unknown;
 	parentCountError?: unknown;
 	sickQueue?: { data: unknown; error: unknown };
 	joinQueue?: { data: unknown; error: unknown };
@@ -71,16 +74,30 @@ function runLoad(opts: {
 			then: (resolve: (value: Result) => unknown) =>
 				resolve(
 					head
-						? table === 'deletion_requests'
-							? { count: opts.pendingDeletions ?? 0, error: opts.deletionError ?? null }
-							: {
-									count:
-										table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
-									error: table === 'parents' ? (opts.parentCountError ?? null) : null
+						? {
+								count:
+									table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
+								error: table === 'parents' ? (opts.parentCountError ?? null) : null
+							}
+						: table === 'deletion_requests'
+							? {
+									data: opts.deletionError
+										? null
+										: Array.from({ length: opts.pendingDeletions ?? 0 }, (_, i) => ({
+												student_id: `k${i}`
+											})),
+									error: opts.deletionError ?? null
 								}
-						: table === 'badges_earned'
-							? (opts.unseen ?? { data: [], error: null })
-							: { data: null, error: null }
+							: table === 'student_parents'
+								? {
+										data: opts.linksError
+											? null
+											: (opts.ownLinks ?? []).map((id) => ({ student_id: id })),
+										error: opts.linksError ?? null
+									}
+								: table === 'badges_earned'
+									? (opts.unseen ?? { data: [], error: null })
+									: { data: null, error: null }
 				),
 			maybeSingle: async (): Promise<Result> =>
 				table === 'profiles'
@@ -175,10 +192,35 @@ describe('root layout: nav badge count', () => {
 		expect(await result).toMatchObject({ pendingRequestsCount: 8, loadError: false });
 		expect(
 			calls.filter((c) => c.table === 'deletion_requests').map((c) => [c.method, ...c.args])
+		).toEqual([['eq', 'status', 'pending']]);
+	});
+
+	it('never counts a deletion request for a child the admin is linked to (spec-second-parent story 2)', async () => {
+		// k1 is the admin's child (the admin is a linked parent), whoever asked.
+		const { result, calls } = runLoad({
+			role: 'admin',
+			pendingDeletions: 3,
+			ownLinks: ['k1'],
+			sickQueue: { data: [], error: null }
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 2, loadError: false });
+		expect(
+			calls.filter((c) => c.table === 'student_parents').map((c) => [c.method, ...c.args])
 		).toEqual([
-			['eq', 'status', 'pending'],
-			['neq', 'requested_by', 'u1']
+			['eq', 'parent_id', 'u1'],
+			['is', 'removed_at', null]
 		]);
+	});
+
+	it("flags a load error when the admin's links cannot be read", async () => {
+		// No deletion is counted then: any of them could be the admin's own child.
+		const { result } = runLoad({
+			role: 'admin',
+			pendingDeletions: 2,
+			linksError: { message: 'boom' },
+			sickQueue: { data: [], error: null }
+		});
+		expect(await result).toMatchObject({ pendingRequestsCount: 0, loadError: true });
 	});
 
 	it('never asks a teacher about deletion requests', async () => {
@@ -444,14 +486,21 @@ function runRounds(opts: {
 					head
 						? {
 								count:
-									table === 'parents'
-										? (opts.pendingParents ?? 0)
-										: table === 'deletion_requests'
-											? (opts.pendingDeletions ?? 0)
-											: (opts.pendingStudents ?? 0),
-								error: table === 'deletion_requests' ? (opts.countError ?? null) : null
+									table === 'parents' ? (opts.pendingParents ?? 0) : (opts.pendingStudents ?? 0),
+								error: null
 							}
-						: (opts.unseen ?? { data: [], error: null })
+						: table === 'deletion_requests'
+							? {
+									data: opts.countError
+										? null
+										: Array.from({ length: opts.pendingDeletions ?? 0 }, (_, i) => ({
+												student_id: `k${i}`
+											})),
+									error: opts.countError ?? null
+								}
+							: table === 'student_parents'
+								? { data: [], error: null }
+								: (opts.unseen ?? { data: [], error: null })
 				).then(resolve, reject)
 		};
 		return c;
@@ -511,11 +560,12 @@ describe('root layout: two rounds of queries (CAP-3)', () => {
 		expect(rounds).toEqual([
 			['parents.maybeSingle', 'profiles.maybeSingle', 'profiles.single'],
 			[
-				'deletion_requests.count',
+				'deletion_requests',
 				'parents.count',
 				'profiles.count',
 				'rpc.list_class_join_requests',
-				'rpc.sick_leave_queue'
+				'rpc.sick_leave_queue',
+				'student_parents'
 			]
 		]);
 		expect(data).toMatchObject({
@@ -530,7 +580,7 @@ describe('root layout: two rounds of queries (CAP-3)', () => {
 	it('every admin count has started before any of them resolves', async () => {
 		const { rounds } = await runRounds({ role: 'admin' });
 		// The whole second round was in flight at once, with none released yet.
-		expect(rounds[1]).toHaveLength(5);
+		expect(rounds[1]).toHaveLength(6);
 		expect(rounds).toHaveLength(2);
 	});
 

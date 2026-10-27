@@ -1,6 +1,7 @@
 import { fetchAllHistoryRows } from '$lib/server/history-rows';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
 import { loadSickLeave } from '$lib/server/leave';
+import { countDecidableDeletions } from '$lib/server/own-children';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -11,14 +12,13 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
-	// Story 7-6: pending deletion requests, never the admin's own child's
-	// (only the child's parent submits, so those are the admin's own rows) --
-	// the same count as +layout.server.ts's nav badge.
-	let pendingDeletions = supabase
-		.from('deletion_requests')
-		.select('id', { count: 'exact', head: true })
-		.eq('status', 'pending');
-	if (user) pendingDeletions = pendingDeletions.neq('requested_by', user.id);
+	// Story 7-6: pending deletion requests, never for a child the admin is
+	// linked to, whichever parent submitted (spec-second-parent story 2,
+	// has_link_to) -- the same count as +layout.server.ts's nav badge.
+	// Signed out (the admin layout redirects first), RLS returns no rows anyway.
+	const pendingDeletions = user
+		? countDecidableDeletions(supabase, user.id)
+		: Promise.resolve({ count: 0, error: false });
 
 	const [
 		{ count: classesCount, error: classesError },

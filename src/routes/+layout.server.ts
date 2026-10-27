@@ -2,6 +2,7 @@ import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import { loadSickLeave } from '$lib/server/leave';
 import { loadClassJoinRequests } from '$lib/server/class-join';
 import { getCapabilities } from '$lib/server/capabilities';
+import { countDecidableDeletions } from '$lib/server/own-children';
 import { shapeNewBadges, type NewBadge } from '$lib/server/badges';
 import {
 	ACTIVE_ROLE_COOKIE,
@@ -109,20 +110,16 @@ export const load: LayoutServerLoad = async ({
 			: null,
 		// Story 7-1: pending parent accounts are admin-only requests.
 		// parents_select_own_or_admin gives a teacher no rows anyway.
-		// Story 7-6: pending deletion requests (admin-only queue), never the
-		// admin's own child's -- only the child's parent submits, so those are
-		// exactly the rows the admin requested.
+		// Story 7-6: pending deletion requests (admin-only queue), never for a
+		// child the admin is linked to, whichever parent submitted
+		// (spec-second-parent story 2: has_link_to, AD-4).
 		isAdmin
 			? Promise.all([
 					supabase
 						.from('parents')
 						.select('id', { count: 'exact', head: true })
 						.eq('status', 'pending'),
-					supabase
-						.from('deletion_requests')
-						.select('id', { count: 'exact', head: true })
-						.eq('status', 'pending')
-						.neq('requested_by', user.id)
+					countDecidableDeletions(supabase, user.id)
 				])
 			: null,
 		wantsBadges
@@ -150,8 +147,8 @@ export const load: LayoutServerLoad = async ({
 			{ count: parentCount, error: parentCountErr },
 			{ count: deletionCount, error: deletionCountErr }
 		] = adminCounts;
-		pendingRequestsCount += (parentCount ?? 0) + (deletionCount ?? 0);
-		countError = countError || Boolean(parentCountErr) || Boolean(deletionCountErr);
+		pendingRequestsCount += (parentCount ?? 0) + deletionCount;
+		countError = countError || Boolean(parentCountErr) || deletionCountErr;
 	}
 
 	// A failed badge read shows nothing: no dialog, no error.

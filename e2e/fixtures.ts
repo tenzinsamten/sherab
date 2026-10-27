@@ -43,8 +43,7 @@ export type TestUser = { id: string; email: string; password: string };
  * spec-second-parent (AD-10): links a student to a parent with the service
  * role. The first link (slot 1) also sets profiles.registered_by_parent_id,
  * as the sign-up does; a second link goes to slot 2 and leaves that column
- * alone. registered_by_parent_id is not meant for access, but until story 2
- * /calendar and the admin parents page still read it. Every other parent
+ * alone. registered_by_parent_id is never read for access: every parent
  * check reads the student_parents link. The parent needs a parents row.
  *
  * A student keeps at least one link while they exist, so tests never unlink:

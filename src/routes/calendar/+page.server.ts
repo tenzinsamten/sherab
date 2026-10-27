@@ -200,25 +200,31 @@ type SessionRow = {
 
 /**
  * The parent branch's reads (#58, #104h), all started at once: children from
- * linked_children(), the enrollments of the caller's children (embedded
- * profiles.registered_by_parent_id = caller), and their answers on this month's sessions
- * (embedded class_days.day in the month, profiles.registered_by_parent_id = caller).
+ * linked_children(), the enrollments of the caller's children, and their
+ * answers on this month's sessions (embedded class_days.day in the month).
+ * spec-second-parent story 2: "the caller's children" is the caller's own
+ * active student_parents link (embedded, removed_at null), never
+ * registered_by_parent_id, so a slot-2 parent sees the same as slot 1.
  */
+const OWN_LINK = 'student_parents!student_parents_student_id_fkey!inner(parent_id)';
+
 function readParentView(supabase: SupabaseClient, userId: string, first: string, last: string) {
 	return Promise.all([
 		supabase.rpc('linked_children'),
 		supabase
 			.from('class_enrollments')
 			.select(
-				'class_id, student_id, student:profiles!class_enrollments_student_id_fkey!inner(registered_by_parent_id)'
+				`class_id, student_id, student:profiles!class_enrollments_student_id_fkey!inner(${OWN_LINK})`
 			)
-			.eq('student.registered_by_parent_id', userId),
+			.eq('student.student_parents.parent_id', userId)
+			.is('student.student_parents.removed_at', null),
 		supabase
 			.from('session_leave_history')
 			.select(
-				'class_session_id, student_id, answer, class_sessions!inner(class_days!inner(day)), student:profiles!session_leave_history_student_id_fkey!inner(registered_by_parent_id)'
+				`class_session_id, student_id, answer, class_sessions!inner(class_days!inner(day)), student:profiles!session_leave_history_student_id_fkey!inner(${OWN_LINK})`
 			)
-			.eq('student.registered_by_parent_id', userId)
+			.eq('student.student_parents.parent_id', userId)
+			.is('student.student_parents.removed_at', null)
 			.gte('class_sessions.class_days.day', first)
 			.lte('class_sessions.class_days.day', last)
 			.order('answered_at', { ascending: false })

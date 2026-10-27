@@ -37,6 +37,13 @@ export type SickDecision = 'approved' | 'rejected';
 /** Story 7-6: the latest deletion request for the child (no withdrawal; a rejected one can be followed by a new one). */
 export type DeletionStatus = 'pending' | 'rejected';
 
+/**
+ * spec-second-parent story 2: the parent behind a leave answer or a deletion
+ * request. `self` is the viewer; otherwise the name from actor_display_name().
+ * null (on the field) when the actor is unknown or their name resolves to null.
+ */
+export type ActorLabel = { self: true } | { self: false; name: string };
+
 export type ChildSession = {
 	id: string;
 	day: string;
@@ -50,6 +57,8 @@ export type ChildSession = {
 	classification: LeaveClassification | null;
 	/** Story 7-5: the decision on this session's Sick. Once set, the answers are locked. */
 	decision: SickDecision | null;
+	/** spec-second-parent story 2: which parent set the current answer (null = no label). */
+	answeredBy: ActorLabel | null;
 	/**
 	 * Story 7-5 (decision 2): Sick can be offered -- the session is dated
 	 * yesterday or today (Berlin), so still inside the database's Sick window
@@ -149,9 +158,16 @@ export type ChildSectionErrors = {
  * Every section is read whatever the tab, so switching tabs never shows a
  * stale error.
  */
-export const load: PageServerLoad = async ({ params, url, parent, locals: { supabase } }) => {
+export const load: PageServerLoad = async ({
+	params,
+	url,
+	parent,
+	locals: { supabase, safeGetSession }
+}) => {
 	const { parentStatus } = await parent();
 	const child = await loadLinkedChild(supabase, parentStatus, params.id);
+	const { user } = await safeGetSession();
+	const viewerId = user?.id ?? null;
 
 	const { data: enrollments, error: enrollmentsError } = await supabase
 		.from('class_enrollments')
@@ -181,7 +197,11 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 		const sessionIds = (rows ?? []).flatMap((r) => (r.id ? [r.id] : []));
 		const current = new Map<
 			string,
-			{ answer: LeaveAnswer; classification: LeaveClassification | null }
+			{
+				answer: LeaveAnswer;
+				classification: LeaveClassification | null;
+				answeredBy: string | null;
+			}
 		>();
 		const decisions = new Map<string, SickDecision>();
 		if (sessionIds.length > 0) {
@@ -189,7 +209,7 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 				await Promise.all([
 					supabase
 						.from('session_leave_history')
-						.select('class_session_id, answer, classification')
+						.select('class_session_id, answer, classification, answered_by')
 						.eq('student_id', child.id)
 						.in('class_session_id', sessionIds)
 						.order('answered_at', { ascending: false })
@@ -207,13 +227,20 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 				if (!current.has(a.class_session_id)) {
 					current.set(a.class_session_id, {
 						answer: a.answer,
-						classification: a.classification
+						classification: a.classification,
+						answeredBy: a.answered_by
 					});
 				}
 			}
 		}
 
 		const now = Date.now();
+		const setters = await actorLabels(
+			supabase,
+			child.id,
+			[...current.values()].map((c) => c.answeredBy),
+			viewerId
+		);
 		sessions = (rows ?? []).flatMap((r) =>
 			r.id && r.day
 				? [
@@ -227,6 +254,7 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 							answer: current.get(r.id)?.answer ?? null,
 							classification: current.get(r.id)?.classification ?? null,
 							decision: decisions.get(r.id) ?? null,
+							answeredBy: setters.get(current.get(r.id)?.answeredBy ?? '') ?? null,
 							sickOpen: r.day >= yesterday && r.day <= today && !decisions.has(r.id)
 						}
 					]
@@ -234,17 +262,26 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 		);
 	}
 
-	// Story 7-6: the latest deletion request (RLS: the requester / parent).
-	// An approved one erases the child, so the page is gone by then.
+	// Story 7-6: the latest deletion request (RLS: the child's active parents,
+	// spec-second-parent AD-9). An approved one erases the child, so the page
+	// is gone by then. Story 2: it names the parent who asked.
 	const { data: requests, error: requestsError } = await supabase
 		.from('deletion_requests')
-		.select('status, requested_at')
+		.select('status, requested_at, requested_by')
 		.eq('student_id', child.id)
 		.order('requested_at', { ascending: false });
 	const latest = (requests ?? [])[0];
+	const requesters =
+		latest?.status === 'pending'
+			? await actorLabels(supabase, child.id, [latest.requested_by], viewerId)
+			: new Map<string, ActorLabel>();
 	const deletion =
 		latest && (latest.status === 'pending' || latest.status === 'rejected')
-			? { status: latest.status as DeletionStatus, requestedAt: latest.requested_at }
+			? {
+					status: latest.status as DeletionStatus,
+					requestedAt: latest.requested_at,
+					requestedBy: requesters.get(latest.requested_by ?? '') ?? null
+				}
 			: null;
 
 	// B11: the leave period's class choice, straight from the enrollments.
@@ -281,6 +318,40 @@ export const load: PageServerLoad = async ({ params, url, parent, locals: { supa
 };
 
 type Client = App.Locals['supabase'];
+
+/**
+ * spec-second-parent story 2 (AD-12): a label per distinct actor id. The
+ * viewer is "you"; anyone else is named by actor_display_name(), once per
+ * id, all at once. A null name, a failed call or a null id gets no label.
+ */
+async function actorLabels(
+	supabase: Client,
+	studentId: string,
+	actorIds: (string | null)[],
+	viewerId: string | null
+): Promise<Map<string, ActorLabel>> {
+	const labels = new Map<string, ActorLabel>();
+	const others = new Set<string>();
+	for (const id of actorIds) {
+		if (!id) continue;
+		if (id === viewerId) labels.set(id, { self: true });
+		else others.add(id);
+	}
+	const named = await Promise.all(
+		[...others].map(async (id) => {
+			const { data, error } = await supabase.rpc('actor_display_name', {
+				p_student_id: studentId,
+				p_actor_id: id
+			});
+			if (error) console.error('parent child page: actor_display_name failed', error.message);
+			return [id, error ? null : data] as const;
+		})
+	);
+	for (const [id, name] of named) {
+		if (name) labels.set(id, { self: false, name });
+	}
+	return labels;
+}
 
 /**
  * The read-only sections for one child. Homework reuses the student's own

@@ -1,8 +1,10 @@
 /**
  * #104h (CAP-4): the calendar load against a real local Supabase instance,
  * like rls.spec.ts. The student and parent reads filter through embedded
- * resources (class_sessions -> class_days.day, profiles.registered_by_parent_id) under the
- * caller's RLS, which a fake client cannot check. Skipped when local
+ * resources (class_sessions -> class_days.day) and, for a parent, on the
+ * caller's own active student_parents link (spec-second-parent story 2, so a
+ * slot-2 parent sees the same) under the caller's RLS, which a fake client
+ * cannot check. Skipped when local
  * Supabase isn't reachable. Every user, class, team and class day it creates
  * is removed again.
  */
@@ -186,6 +188,7 @@ describe.skipIf(!reachable)('calendar load on the real DB (#104h, requires local
 
 	let parent: Login;
 	let parentClient: Client;
+	let parentB: Login;
 	let anna: Login;
 	let bodhi: Login;
 	let pema: Login;
@@ -207,6 +210,17 @@ describe.skipIf(!reachable)('calendar load on the real DB (#104h, requires local
 			await service.from('parents').update({ status: 'approved' }).eq('id', parent.id),
 			'approve parent'
 		);
+		// spec-second-parent story 2: B is linked to anna and bodhi as slot 2,
+		// and never registered them.
+		parentB = await createLogin('parent', 'parentb');
+		check(
+			await service.from('parents').upsert([{ id: parentB.id }], { onConflict: 'id' }),
+			'add parents row B'
+		);
+		check(
+			await service.from('parents').update({ status: 'approved' }).eq('id', parentB.id),
+			'approve parent B'
+		);
 		classA = await createClass('A');
 		classB = await createClass('B');
 		classC = await createClass('C');
@@ -217,6 +231,8 @@ describe.skipIf(!reachable)('calendar load on the real DB (#104h, requires local
 		sessionB = await sessionFor(classB, day);
 		sessionC = await sessionFor(classC, day);
 		otherSessionA = await sessionFor(classA, otherDay);
+		await linkParent(service, anna.id, parentB.id);
+		await linkParent(service, bodhi.id, parentB.id);
 
 		parentClient = await signedIn(parent);
 		const answer = async (sessionId: string, studentId: string, value: 'coming' | 'on_leave') =>
@@ -263,6 +279,17 @@ describe.skipIf(!reachable)('calendar load on the real DB (#104h, requires local
 			[sessionA]: [{ childId: anna.id, name: 'CAL104 anna', answer: 'coming' }],
 			[sessionB]: [{ childId: bodhi.id, name: 'CAL104 bodhi', answer: 'on_leave' }]
 		});
+	});
+
+	it('a slot-2 parent sees the same enrollments and answers as the first parent', async () => {
+		const [a, b] = await Promise.all([
+			runLoad(parentClient, parent.id, 'parent', month),
+			runLoad(await signedIn(parentB), parentB.id, 'parent', month)
+		]);
+		expect(b.loadError).toBe(false);
+		expect(b.children).toEqual(a.children);
+		expect(sessionIdsOf(b)).toEqual([sessionA, sessionB].sort());
+		expect(b.childAnswers).toEqual(a.childAnswers);
 	});
 
 	it('?child= narrows the parent view to that child', async () => {

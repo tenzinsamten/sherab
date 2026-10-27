@@ -45,6 +45,7 @@ function fakeSupabase(
 			select: record('select'),
 			eq: record('eq'),
 			in: record('in'),
+			is: record('is'),
 			gte: record('gte'),
 			lte: record('lte'),
 			order: record('order'),
@@ -881,14 +882,35 @@ describe('calendar load: student and parent reads in one batch (#104h)', () => {
 			s2: [{ childId: 'b', name: 'Bodhi', answer: 'sick' }]
 		});
 		expect(r.loadError).toBe(false);
+		// spec-second-parent story 2: both reads filter on the caller's own
+		// active student_parents link, never on registered_by_parent_id.
 		const enrollCalls = callsOn(fake, 'class_enrollments');
-		expect(enrollCalls).toContainEqual(['eq', 'student.registered_by_parent_id', 'parent1']);
+		expect(enrollCalls).toContainEqual(['eq', 'student.student_parents.parent_id', 'parent1']);
+		expect(enrollCalls).toContainEqual(['is', 'student.student_parents.removed_at', null]);
 		expect(enrollCalls.some((c) => c[0] === 'in')).toBe(false);
 		const answerCalls = callsOn(fake, 'session_leave_history');
-		expect(answerCalls).toContainEqual(['eq', 'student.registered_by_parent_id', 'parent1']);
+		expect(answerCalls).toContainEqual(['eq', 'student.student_parents.parent_id', 'parent1']);
+		expect(answerCalls).toContainEqual(['is', 'student.student_parents.removed_at', null]);
 		expect(answerCalls).toContainEqual(['gte', 'class_sessions.class_days.day', '2026-10-01']);
 		expect(answerCalls).toContainEqual(['lte', 'class_sessions.class_days.day', '2026-10-31']);
 		expect(answerCalls.some((c) => c[0] === 'in')).toBe(false);
+		expect(JSON.stringify([...enrollCalls, ...answerCalls])).not.toContain(
+			'registered_by_parent_id'
+		);
+	});
+
+	it('parent: a slot-2 parent reads through their own link', async () => {
+		// Whoever registered the child plays no part: the filter is the
+		// caller's own active student_parents link.
+		const { fake, result } = run('parent', 'parentB', parentResults);
+		const r = await result;
+		expect(sessionIds(r).sort()).toEqual(['s1', 's2']);
+		expect(r.childAnswers.s2).toEqual([{ childId: 'b', name: 'Bodhi', answer: 'sick' }]);
+		expect(callsOn(fake, 'class_enrollments')).toContainEqual([
+			'eq',
+			'student.student_parents.parent_id',
+			'parentB'
+		]);
 	});
 
 	it('parent, ?child=: only that child’s classes and answers', async () => {

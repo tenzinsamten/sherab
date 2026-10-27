@@ -874,7 +874,13 @@ describe('load: deletion requests section (Story 7-6)', () => {
 	 * one -- chosen by the status filter the query applied, never by call
 	 * order. A deletion_requests query with neither filter gets an error.
 	 */
-	function loadWith(role: 'admin' | 'teacher', deletions: Result[], teams: Result = ok([])) {
+	function loadWith(
+		role: 'admin' | 'teacher',
+		deletions: Result[],
+		teams: Result = ok([]),
+		/** spec-second-parent story 2: the admin's active student_parents rows. */
+		links: Result = ok([])
+	) {
 		const queried: string[] = [];
 		const calls: { table: string; query: number; method: string; args: unknown[] }[] = [];
 		let queryCount = 0;
@@ -883,7 +889,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 			const query = queryCount++;
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order', 'limit', 'range']) {
+			for (const method of ['select', 'eq', 'is', 'gte', 'lte', 'in', 'order', 'limit', 'range']) {
 				chain[method] = (...args: unknown[]) => {
 					calls.push({ table, query, method, args });
 					own.push([method, ...args]);
@@ -894,6 +900,7 @@ describe('load: deletion requests section (Story 7-6)', () => {
 				own.some((c) => JSON.stringify(c) === JSON.stringify(expected));
 			const result = (): Result => {
 				if (table === 'teams') return teams;
+				if (table === 'student_parents') return links;
 				if (table !== 'deletion_requests') return { data: [], error: null };
 				if (has(['eq', 'status', 'pending'])) return deletions[0];
 				if (has(['in', 'status', ['approved', 'rejected']])) return deletions[1] ?? deletions[0];
@@ -942,18 +949,23 @@ describe('load: deletion requests section (Story 7-6)', () => {
 	});
 
 	it('maps pending rows (own child flagged) and de-identified decided rows', async () => {
-		const { run } = loadWith('admin', [
-			ok([row({}), row({ id: 'r2', requested_by: 'admin1' })]),
-			ok([
-				row({
-					id: 'r3',
-					student_id: null,
-					student: null,
-					status: 'approved',
-					reviewed_at: '2026-09-27T09:00:00Z'
-				})
-			])
-		]);
+		const { run } = loadWith(
+			'admin',
+			[
+				ok([row({}), row({ id: 'r2', student_id: 'k2', requested_by: 'admin1' })]),
+				ok([
+					row({
+						id: 'r3',
+						student_id: null,
+						student: null,
+						status: 'approved',
+						reviewed_at: '2026-09-27T09:00:00Z'
+					})
+				])
+			],
+			ok([]),
+			ok([{ student_id: 'k2' }])
+		);
 		const result = await run;
 		expect(result.deletionPending).toEqual([
 			{
@@ -971,6 +983,53 @@ describe('load: deletion requests section (Story 7-6)', () => {
 			expect.objectContaining({ id: 'r3', status: 'approved', studentName: null })
 		]);
 		expect(result.loadError).toBe(false);
+	});
+
+	it("own child follows the admin's links, not the requester (spec-second-parent story 2)", async () => {
+		// k1: the admin is the second parent, the other parent asked.
+		// k3: the admin asked once but is no longer linked (the link was removed).
+		const { run, calls } = loadWith(
+			'admin',
+			[
+				ok([
+					row({ id: 'r1', student_id: 'k1', requested_by: 'p1' }),
+					row({ id: 'r3', student_id: 'k3', requested_by: 'admin1' })
+				]),
+				ok([])
+			],
+			ok([]),
+			ok([{ student_id: 'k1' }])
+		);
+		const result = await run;
+		expect(result.deletionPending).toEqual([
+			expect.objectContaining({ id: 'r1', ownChild: true }),
+			expect.objectContaining({ id: 'r3', ownChild: false })
+		]);
+		const linkCalls = calls
+			.filter((c) => c.table === 'student_parents')
+			.map((c) => [c.method, ...c.args]);
+		expect(linkCalls).toEqual([
+			['select', 'student_id'],
+			['eq', 'parent_id', 'admin1'],
+			['is', 'removed_at', null]
+		]);
+	});
+
+	it("flags a load error when the admin's links cannot be read", async () => {
+		// A pending request is there, but without the links it is not shown:
+		// it could be the admin's own child.
+		const { run } = loadWith(
+			'admin',
+			[ok([row({})]), ok([row({ id: 'r3', status: 'rejected' })])],
+			ok([]),
+			{
+				data: null,
+				error: { message: 'boom' }
+			}
+		);
+		const result = await run;
+		expect(result.loadError).toBe(true);
+		expect(result).toMatchObject({ deletionPending: [], deletionDecided: [] });
 	});
 
 	it('filters the pending query by pending and the decided query by approved / rejected', async () => {
@@ -1179,7 +1238,18 @@ describe('load: parent queue marks staff requests (B14a, #68)', () => {
 		const from = (table: string) => {
 			const own: unknown[][] = [];
 			const chain: Record<string, unknown> = {};
-			for (const method of ['select', 'eq', 'gte', 'lte', 'in', 'order', 'neq', 'limit', 'range']) {
+			for (const method of [
+				'select',
+				'eq',
+				'is',
+				'gte',
+				'lte',
+				'in',
+				'order',
+				'neq',
+				'limit',
+				'range'
+			]) {
 				chain[method] = (...args: unknown[]) => {
 					own.push([method, ...args]);
 					return chain;

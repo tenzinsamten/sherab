@@ -13,6 +13,7 @@ import {
 	takenStudentUsernames
 } from '$lib/server/student-credentials';
 import { getCapabilities } from '$lib/server/capabilities';
+import { ownLinkedIds, readOwnLinkedStudentIds } from '$lib/server/own-children';
 import { loadSickLeave, loadUpcomingLeave, sickDecisionErrorMessage } from '$lib/server/leave';
 import { classJoinDecisionErrorMessage, loadClassJoinRequests } from '$lib/server/class-join';
 import * as m from '$lib/paraglide/messages.js';
@@ -86,7 +87,7 @@ type DeletionRow = {
 const DELETION_COLUMNS =
 	'id, student_id, requested_by, status, requested_at, reviewed_at, student:profiles!deletion_requests_student_id_fkey ( display_name, registration_name ), requester:profiles!deletion_requests_requested_by_fkey ( display_name, email )';
 
-function toDeletion(row: unknown, viewerId: string) {
+function toDeletion(row: unknown, ownChildIds: Set<string>) {
 	const r = row as DeletionRow;
 	return {
 		id: r.id,
@@ -97,9 +98,10 @@ function toDeletion(row: unknown, viewerId: string) {
 		requesterName: r.requester?.display_name || r.requester?.email || '',
 		requestedAt: r.requested_at,
 		reviewedAt: r.reviewed_at,
-		// Only the child's parent submits, so the requester is the parent: the
-		// admin never decides for their own child (the policy refuses it too).
-		ownChild: r.requested_by !== null && r.requested_by === viewerId
+		// spec-second-parent story 2 (AD-4, has_link_to): a child the admin is
+		// linked to, whichever parent submitted. The admin never decides for
+		// their own child (the policy refuses it too).
+		ownChild: r.student_id !== null && ownChildIds.has(r.student_id)
 	};
 }
 
@@ -186,32 +188,40 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 	let deletionDecided: ReturnType<typeof toDeletion>[] = [];
 	let deletionError = false;
 	if (profile.role === 'admin') {
-		const [pendingParents, decidedParents, pendingDeletions, decidedDeletions] = await Promise.all([
-			supabase
-				.from('parents')
-				.select(PARENT_COLUMNS)
-				.eq('status', 'pending')
-				.order('created_at', { ascending: true }),
-			supabase
-				.from('parents')
-				.select(PARENT_COLUMNS)
-				.in('status', ['approved', 'rejected'])
-				.order('reviewed_at', { ascending: false }),
-			// Story 7-6: the deletion queue is admin-only (teachers have no access).
-			supabase
-				.from('deletion_requests')
-				.select(DELETION_COLUMNS)
-				.eq('status', 'pending')
-				.order('requested_at', { ascending: true }),
-			supabase
-				.from('deletion_requests')
-				.select(DELETION_COLUMNS)
-				.in('status', ['approved', 'rejected'])
-				.order('reviewed_at', { ascending: false })
-		]);
-		deletionPending = (pendingDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
-		deletionDecided = (decidedDeletions.data ?? []).map((r) => toDeletion(r, session.user.id));
-		deletionError = Boolean(pendingDeletions.error || decidedDeletions.error);
+		const [pendingParents, decidedParents, pendingDeletions, decidedDeletions, ownLinks] =
+			await Promise.all([
+				supabase
+					.from('parents')
+					.select(PARENT_COLUMNS)
+					.eq('status', 'pending')
+					.order('created_at', { ascending: true }),
+				supabase
+					.from('parents')
+					.select(PARENT_COLUMNS)
+					.in('status', ['approved', 'rejected'])
+					.order('reviewed_at', { ascending: false }),
+				// Story 7-6: the deletion queue is admin-only (teachers have no access).
+				supabase
+					.from('deletion_requests')
+					.select(DELETION_COLUMNS)
+					.eq('status', 'pending')
+					.order('requested_at', { ascending: true }),
+				supabase
+					.from('deletion_requests')
+					.select(DELETION_COLUMNS)
+					.in('status', ['approved', 'rejected'])
+					.order('reviewed_at', { ascending: false }),
+				// The admin's own children, computed once for every deletion row.
+				readOwnLinkedStudentIds(supabase, session.user.id)
+			]);
+		// Without the admin's links an own child cannot be told apart, so the
+		// queue stays empty (and flagged) rather than offer a decision on it.
+		if (!ownLinks.error) {
+			const ownChildIds = ownLinkedIds(ownLinks);
+			deletionPending = (pendingDeletions.data ?? []).map((r) => toDeletion(r, ownChildIds));
+			deletionDecided = (decidedDeletions.data ?? []).map((r) => toDeletion(r, ownChildIds));
+		}
+		deletionError = Boolean(pendingDeletions.error || decidedDeletions.error || ownLinks.error);
 		parentsPending = (pendingParents.data ?? []).map((r) => toParent(r, session.user.id));
 		parentsDecided = (decidedParents.data ?? []).map((r) => toParent(r, session.user.id));
 		parentsError = Boolean(pendingParents.error || decidedParents.error);
