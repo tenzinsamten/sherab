@@ -998,7 +998,8 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
 - **Built:** "Repeats" select (every 1-4 weeks) on `/admin/classes` create and `/calendar` class schedules; streak rule unchanged (off weeks already skipped), covered by a new test.
 
 ## 52. Chrome on Android: "app cannot be installed"
-- **Status:** built 2026-10-25, not yet committed; to verify on the phone after deploy. Verified
+- **Status:** done 2026-10-25, merged to main (`b9acaca`); installed and working on Android
+  Chrome (user). Verified
   after a reset: 1733 unit tests, check and build exit 0; `_routes.json` 12 rules; in
   `npm run preview` the manifest, `sw.js`, the workbox file and the icons return 200. Also added a
   192px icon (`static/icon-192.png`).
