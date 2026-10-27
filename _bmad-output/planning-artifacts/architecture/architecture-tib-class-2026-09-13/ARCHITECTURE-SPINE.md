@@ -4,12 +4,12 @@ type: architecture-spine
 purpose: build-substrate
 altitude: feature
 paradigm: 'RLS-Gated Direct-Access BaaS with Function Sidecar'
-scope: 'Sherab (Munich Tibetan Sunday School Class Tracker) - v1 plus calendar (CAP-9/10) and Parent Role (CAP-11 to CAP-13)'
+scope: 'Sherab (Munich Tibetan Sunday School Class Tracker) - v1 plus calendar (CAP-9/10), Parent Role (CAP-11 to CAP-13) and second parent per student (spec-second-parent)'
 status: final
 created: '2026-09-13'
-updated: '2026-09-26'
+updated: '2026-10-27'
 binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13]
-sources: ['../../../specs/spec-class-tracker/SPEC.md', '../../prds/prd-tib-class-2026-09-26/prd.md', '../../prds/prd-tib-class-2026-09-26/addendum.md']
+sources: ['../../../specs/spec-class-tracker/SPEC.md', '../../prds/prd-tib-class-2026-09-26/prd.md', '../../prds/prd-tib-class-2026-09-26/addendum.md', '../../../specs/spec-second-parent/SPEC.md']
 companions: []
 ---
 
@@ -63,10 +63,10 @@ flowchart LR
 - **Prevents:** a client granting itself a privileged role at sign-up; divergent "who can see this class" or "is this a parent" checks per feature; two features encoding the Teacher/Admin + Parent dual role differently; a route guard that locks out a teacher-parent or lets a pending parent in; a teacher approving or deciding anything about their own child; a routine update reshuffling a student's fixed-for-the-year team
 - **Rule:**
   - Supabase Auth is the sole identity provider. `profiles` (PK = auth user id) carries the login's **primary** `role` (`admin`, `teacher`, `student`, or `parent` for a parent-only login). Privileged roles (`admin`, `teacher`, `student`) are set only from `raw_app_meta_data` or the Admin API — **never from client-supplied `raw_user_meta_data`**. Client metadata may carry at most `parent`, and a sign-up with no valid role is refused, never defaulted to `teacher` (existing hole logged as issue #50).
-  - **Parent capability is held only by an approved row in `parents`** (PK = auth user id, `pending`/`approved`/`rejected`, approvable only after the email is confirmed) — never inferred from `profiles.role`. A parent-only login is created by a server action. A signed-in teacher or admin requests parent capability by an RLS-guarded insert of their own `pending` row. When the admin creates a teacher whose email already has a parent-only login, that login is promoted, not duplicated. Rejecting a parent deletes the `parents` row and, for a parent-only login, the auth user, so the email can register again.
-  - Every RLS check resolves through the shared helpers `is_admin()`, `is_teacher_of_class()`, `is_parent()`, `is_parent_of(student_id)` (caller holds an approved `parents` row, the student's `parent_id` is the caller, and the student is approved), and `is_parent_in_class(class_id)` — never a locally invented check. `linked_children()` returns the caller's pending and approved children (name and status only) for the landing page; rejected children are excluded.
+  - **Parent capability is held only by an approved row in `parents`** (PK = auth user id, `pending`/`approved`/`rejected`, approvable only after the email is confirmed) — never inferred from `profiles.role`. A parent-only login is created by a server action. A signed-in teacher or admin requests parent capability by an RLS-guarded insert of their own `pending` row. When the admin creates a teacher whose email already has a parent-only login, that login is promoted, not duplicated. Rejecting a parent deletes the `parents` row and, for a parent-only login, the auth user, so the email can register again. A `parents` row with active links can't be rejected, revoked, or deleted until the admin removes those links (AD-10).
+  - Every RLS check resolves through the shared helpers `is_admin()`, `is_teacher_of_class()`, `is_parent()`, `is_parent_of(student_id)` (caller holds an approved `parents` row and an active `student_parents` link to the student, and the student is approved), and `is_parent_in_class(class_id)`, plus `has_link_to(student_id)` for self-decision guards — never a locally invented check. `linked_children()` returns the caller's actively linked pending and approved children (name and status only) for the landing page; rejected children are excluded.
   - RLS evaluates the union of everything a login holds; the role switcher is presentation only. Route guards read one `getCapabilities()` helper (primary role + parent status), never `profiles.role` alone.
-  - No approval or decision about a student (registration, Sick leave, guardian email change, deletion) is accepted from an actor who `is_parent_of` that student — enforced in the policy's `WITH CHECK`.
+  - No approval or decision about a student (registration, Sick leave, deletion, link removal) is accepted from an actor who `has_link_to` that student (an active link, whatever the parent's or student's approval status) — enforced in the policy's `WITH CHECK` or the deciding function. A teacher-parent who is pending, or whose child is still pending, therefore can't decide their own child either.
   - A student's `team_id` may only be set **from `NULL`** through the normal client update path; changing an already-set `team_id` requires an explicit admin-only override path.
 
 ### AD-5 — History-as-append
@@ -97,19 +97,30 @@ flowchart LR
 
 - **Binds:** CAP-8
 - **Prevents:** "all of that student's records are gone" silently destroying the only record that an approved deletion ever happened; a parent-submitted request taking a different path from a student-submitted one
-- **Rule:** One `deletion_requests` queue serves both submitters; each row records `requested_by` (the student, or their parent checked by `is_parent_of`). The cascade is a trigger on the admin's approval of the request. The row survives the cascade but is de-identified — `student_id`, and `requested_by` when it was the student, are replaced with a non-identifying placeholder, while the submitter's role, `admin_id`, `requested_at`, and `approved_at` remain as a minimal accountability trail. This is the one explicit carve-out to "all records gone"; every other student-owned table is a hard delete. The parent's own account is not part of the cascade.
+- **Rule:** One `deletion_requests` queue serves both submitters; each row records `requested_by` (the student, or their parent checked by `is_parent_of`). The cascade is a trigger on the admin's approval of the request. The row survives the cascade but is de-identified — `student_id`, and `requested_by` when it was the student, are replaced with a non-identifying placeholder, while the submitter's role, `admin_id`, `requested_at`, and `approved_at` remain as a minimal accountability trail. This is the one explicit carve-out to "all records gone"; every other student-owned table is a hard delete. The parent's own account is not part of the cascade. SELECT is the student, `is_parent_of(student_id)`, or the admin. The `requested_by = auth.uid()` clause is dropped, so both active parents see a pending request and who made it (AD-12's `actor_display_name`), and a removed parent no longer does; the one-pending-per-student index stays, and the app maps its violation to "already requested". A request survives its requester's link removal.
 
 ### AD-10 — Parent↔child link
 
-- **Binds:** CAP-1, CAP-12, CAP-13
-- **Prevents:** a live email-text match drifting on case/whitespace or a guardian-email typo; RLS policies matching emails; a child silently moving to another parent; deleting a parent account wiping children without admin approval
-- **Rule:** The link is a stored foreign key `profiles.parent_id → parents.id` with `ON DELETE RESTRICT`, set once at sign-up (AD-11). RLS never matches on email text; `guardian_email` stays on the profile as a display copy only. `parent_id`, `guardian_email`, and `role` are writable only by trusted paths (a guard trigger rejects any other change, including through the teacher's registration-review update). `parent_id` changes only when the admin approves a `guardian_email_change_requests` row, whose trigger applies the new email and new `parent_id` together.
+- **Binds:** CAP-1, CAP-12, CAP-13, spec-second-parent
+- **Prevents:** a live email-text match drifting on case/whitespace or a guardian-email typo; RLS policies matching emails; checks that OR across two parent columns; a third parent from two accepts racing; a student left with no parent; a re-invite undoing an admin's removal; deleting a parent account wiping children
+- **Rule:**
+  - Links live in `student_parents` (`student_id`, `parent_id`, `slot` 1 or 2, `invited_by`, `linked_at`, `removed_by`, `removed_at`). Partial `UNIQUE(student_id, slot)` and `UNIQUE(student_id, parent_id)` where `removed_at is null` make a third active link impossible, whatever the concurrency. Removed rows are kept. Every parent check reads active links through AD-4's helpers; RLS never matches on email text.
+  - `student_parents.student_id` cascades on student deletion. `student_parents.parent_id` references `profiles(id)` with `ON DELETE RESTRICT`, and `invited_by` and `removed_by` are `ON DELETE SET NULL`. A `parents` row with active links cannot leave `approved` or be deleted: the admin removes its links first. Link removal is therefore the only way a link ends, apart from deleting the student.
+  - A deferred constraint trigger on UPDATE and DELETE of `student_parents` locks the student's `profiles` row (`FOR UPDATE`), recounts active links, and refuses zero while the student still exists. Concurrent removals therefore serialize, and student deletion passes. The rule is enforced on link changes only, so service-role fixtures may create a student with no link.
+  - Only the trusted sign-up path (AD-11) and the invite accept (AD-16) create links; parents never write `student_parents`. Only the admin removes a link, through a security-definer function. It sets `removed_by`/`removed_at` once (a removed row is never changed again) and refuses when `has_link_to` makes the admin a parent of that student.
+  - Lock order is the same everywhere: the parent's `parents` row, then the student's `profiles` row. RPCs that lock or write are `VOLATILE`, so PostgREST calls them by POST and not read-only.
+  - `profiles.parent_id` is renamed `registered_by_parent_id`, and its FK becomes `ON DELETE SET NULL`. It is set once at sign-up, used only by the one-student-per-parent-and-name rule (0042) and for "registered by" display, and **never read for access**. The same migration does four things:
+    - inserts one link per non-null value (slot 1, `invited_by` null, `linked_at` = the profile's `created_at`);
+    - recreates every database function whose body names `parent_id` on top of the links (guard trigger, `handle_new_user`, `is_parent_of`, `linked_children`, `student_registration_state`, the 0037 push recipients);
+    - ends with a `pg_proc.prosrc` check that raises if `parent_id` still appears;
+    - stops before changing anything if a row would break the new rules.
+  - Story 1 owns the database functions, and story 2 the TypeScript readers. `registered_by_parent_id`, `guardian_email`, and `role` are writable only by trusted paths (guard trigger). `guardian_email` stays a display copy; contact lists come from the links (AD-12).
 
 ### AD-11 — Student registration identity
 
 - **Binds:** CAP-1, CAP-12
 - **Prevents:** Supabase Auth's unique-email rule colliding between siblings and their parent; anonymous visitors reading `parents`; a student created without a parent because the check and the insert ran separately; Auth sending mail to a synthetic address
-- **Rule:** A student's auth user carries a synthetic email (the existing student email domain) from the moment they register, created by a server action through the Admin API with the email pre-confirmed and a random, unshared password; real login credentials are minted at teacher approval, as today. The parent match happens **inside the auth-user insert trigger**: it sets `parent_id` or raises, rolling back the whole sign-up. The server action's pre-check exists only to show the "No parent account found" message and returns only found/not-found. Student approval no longer requires `email_confirmed_at`; the 0006 guardian-email confirmation flow is retired.
+- **Rule:** A student's auth user carries a synthetic email (the existing student email domain) from the moment they register, created by a server action through the Admin API with the email pre-confirmed and a random, unshared password; real login credentials are minted at teacher approval, as today. The parent match happens **inside the auth-user insert trigger**: it sets `registered_by_parent_id` and inserts the slot-1 `student_parents` link, or raises, rolling back the whole sign-up. It also raises, with the stable hint `already_invited`, when the registering parent has a live invite (AD-16), an active link, or a removed link for a student with the same trimmed, case-insensitive `registration_name`. It locks that `parents` row so concurrent registrations by one parent serialize. `student_registration_state()` (0042, service role) is the single `/join` pre-check. It returns `invited` for the same cases, and `/join` maps both it and the hint to one message pointing at the invite. Student approval no longer requires `email_confirmed_at`; the 0006 guardian-email confirmation flow is retired.
 
 ### AD-12 — Parent read access
 
@@ -120,7 +131,10 @@ flowchart LR
   - **Class-keyed tables** (`classes`, `class_sessions`, homework assignments and instances via the targeting helpers) use `is_parent_in_class(class_id)`.
   - **Classmates are never returned to a parent:** the parent variant of `class_people` returns teachers only, and the masked leave function (AD-14) excludes parents. The leaderboard shows team totals only.
   - Functions that treat `auth.uid()` as "the student" take an explicit student id and check self-or-parent. Open and Overdue counts come from one `homework_counts(student_id)` function shared by the student page, the parent card, and the admin view.
-  - Parents get **no** INSERT/UPDATE/DELETE policy anywhere except `session_leave_history` (AD-13), `deletion_requests` (AD-9), and their own `parents` request (AD-4).
+  - Parents get **no** INSERT/UPDATE/DELETE policy anywhere except `session_leave_history` (AD-13), `deletion_requests` (AD-9), and their own `parents` request (AD-4). They create and cancel invites only through AD-16's functions and never write `student_parents`.
+  - Every parent-recipient or parent-scoped query (push recipients, parent calendar, admin parents page) joins active `student_parents` links, never `registered_by_parent_id`.
+  - `student_parent_contacts(student_id)` (security definer) returns both active parents' display name and email to the student's class teachers, the admin, and the student's linked parents, and to no one else.
+  - `student_parents` SELECT is limited to the student's active parents and the admin. `actor_display_name(student_id, actor_id)` (security definer) is the single way to name the parent behind a leave answer or deletion request, and it covers removed links too. It answers anyone who may read that row; no new `profiles` policy exposes co-parents.
 
 ### AD-13 — Session leave
 
@@ -130,6 +144,7 @@ flowchart LR
   - Leave lives in `session_leave_history` (append-only, keyed by `class_session_id` + `student_id`: `coming` / `on_leave` / `sick`). Only `is_parent_of(student_id)` may insert. The database enforces the cutoffs using AD-15's session start: `coming`/`on_leave` until the session starts, `sick` until the end of the following day (Europe/Berlin). A BEFORE INSERT trigger stamps `planned` / `short_notice` via `classify_leave()`; the client never supplies it.
   - Sick decisions live in `sick_leave_decisions`, keyed by `(class_session_id, student_id)` — not by a leave row — and are made by any teacher of the class or the admin (subject to AD-4's self-approval guard). [ASSUMPTION] A rejection is final for that session.
   - A daily `pg_cron` catch-up job approves every undecided Sick answer whose session started at least 14 days ago, recorded with a system actor.
+  - All of this holds per `(class_session_id, student_id)`, whichever linked parent writes: a Sick rejection is final for both parents. `answered_by` (0027, AD-5-stamped) identifies the parent and is shown in parent and teacher views through `actor_display_name` (AD-12).
   - Leave rows of a session deleted by schedule regeneration are deleted with it ([ASSUMPTION]; regeneration only touches future sessions). This replaces story 6-3's student-set leave.
 - [ASSUMPTION] The classification is frozen at insert: changing the notice period later or moving the session doesn't reclassify existing leave. PRD Open Question 4 is still open; revisit when it's decided.
 
@@ -145,6 +160,28 @@ flowchart LR
 - **Prevents:** the FR-9 "Planned or Short-Notice" preview disagreeing with what the database stores; cutoffs computed differently in the UI, the insert trigger, and the auto-approval job
 - **Rule:** One SQL function `session_starts_at(class_session_id)` resolves a session's start (session override, else class default, in Europe/Berlin). `classify_leave()` (used by the insert trigger) and `preview_leave()` (the RPC the UI calls before saving) both build on it; no other code computes session start, cutoffs, or classification. [ASSUMPTION] A session with no time set starts at 00:00 local on its day.
 
+### AD-16 — Parent invites
+
+- **Binds:** spec-second-parent
+- **Prevents:** an email-matching RLS policy; an invite form that reveals whether an email has an account; a stale invite linking someone after its inviter was removed; two pending invites or a third parent for one child
+- **Rule:**
+  - Invites live in `parent_invites` (`student_id`, `invited_email` stored `lower(btrim())`, `invited_by`, `created_at`, `expires_at`, `status` `pending`/`accepted`/`cancelled`/`expired`). A partial unique index allows one `pending` row per student. [ASSUMPTION] The lifetime is the `app_settings` value `parent_invite_days`, default 30.
+  - **One live-invite predicate** (`status = 'pending'`, `expires_at > now()`, inviter still actively linked) is used by create, list, accept, and the CAP-5 sign-up check. An index predicate cannot use `now()`, so create locks the student row and marks expired or orphaned `pending` rows `expired` before inserting. No scheduled job is needed.
+  - Every write, and the invitee's read, goes through `VOLATILE` security-definer functions (create, cancel, list mine, accept). There is no client write policy and no policy that matches email. SELECT is open to the student's linked parents and the admin.
+  - Create requires the caller to be `is_parent_of` an approved student. Its distinct refusals are exactly four, and none depends on whether the email has an account:
+    - not your child;
+    - the child already has two parents;
+    - the email is the caller's own, or belongs to a linked parent;
+    - an invite is already pending.
+  - Accept locks the caller's `parents` row and then the student's `profiles` row, and re-checks everything in one transaction:
+    - the invite is live;
+    - the student is approved and has fewer than two active links;
+    - the caller holds an approved `parents` row, and their confirmed `auth.users` email equals `invited_email`;
+    - the caller has no removed link to that student;
+    - the caller has no active link or registered child with the same `registration_name`.
+    - If all pass, it inserts the link into the free slot and marks the invite accepted.
+  - Removing a link cancels the student's pending invites from that parent (trigger on removal). Rejecting the student cancels its pending invites, and deleting it cascades them.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -158,7 +195,7 @@ flowchart LR
 
 | Name | Version |
 | --- | --- |
-| SvelteKit | **2.x, pinned** — @vite-pwa/sveltekit's peer range is still `^1.3.1 \|\| ^2.0.1` and SvelteKit 3 is pre-release (re-verified 2026-09-26); re-verify before crossing to 3.x |
+| SvelteKit | **2.x, pinned** — SvelteKit 3.0.0 shipped 2026-10-01 (3.1.0 latest), but @vite-pwa/sveltekit 1.1.0 still peers `^1.3.1 \|\| ^2.0.1` (re-verified 2026-10-27); move to 3.x only once the PWA plugin supports it |
 | Supabase (Postgres + Auth + Storage + `pg_cron`) | managed, current |
 | @vite-pwa/sveltekit | 1.x (1.1.0 current, re-verified 2026-09-26) |
 | Paraglide (Inlang) | 2.x, via `svelte add paraglide` |
@@ -173,8 +210,10 @@ erDiagram
   CLASSES ||--o{ CLASS_ENROLLMENTS : "enrolls"
   PROFILES ||--o{ CLASS_ENROLLMENTS : "student in"
   PROFILES ||--o| PARENTS : "may hold parent capability"
-  PARENTS ||--o{ PROFILES : "linked children (parent_id, restrict)"
-  PROFILES ||--o{ GUARDIAN_EMAIL_CHANGE_REQUESTS : "requests"
+  PARENTS ||--o{ STUDENT_PARENTS : "linked (max 2 active per student)"
+  PROFILES ||--o{ STUDENT_PARENTS : "student has 1-2 parents"
+  PARENTS ||--o{ PROFILES : "registered_by_parent_id (display + 0042 only)"
+  PROFILES ||--o{ PARENT_INVITES : "invites for student"
   PROFILES ||--o{ ATTENDANCE_RECORDS : "has"
   PROFILES ||--o{ SKILL_STATUS_HISTORY : "has"
   CLASSES ||--o{ HOMEWORK_ASSIGNMENTS : "scoped to"
@@ -193,7 +232,7 @@ erDiagram
   PROFILES ||--o{ DELETION_REQUESTS : "about / requested by"
 ```
 
-Entity names and relationships only — column-level shape is seed the code owns once migrations exist. `STUDENT_STREAKS`, `BADGES_EARNED` and `CLASS_SESSIONS` are written only by DB triggers (AD-3). `APP_SETTINGS` (admin-tunable values, not shown) is a flat key/value table. **Team leaderboard rank is deliberately absent** — it is a read-time computed view (`SUM` of member streaks per team), never a stored column. `PARENTS`, `DELETION_REQUESTS`, `GUARDIAN_EMAIL_CHANGE_REQUESTS` and the leave tables are not built yet; `ATTENDANCE_RECORDS` is still keyed by `session_date` until story 6-2 re-keys it to sessions.
+Entity names and relationships only — column-level shape is seed the code owns once migrations exist. `STUDENT_STREAKS`, `BADGES_EARNED` and `CLASS_SESSIONS` are written only by DB triggers (AD-3). `APP_SETTINGS` (admin-tunable values, not shown) is a flat key/value table. **Team leaderboard rank is deliberately absent** — it is a read-time computed view (`SUM` of member streaks per team), never a stored column. `PARENTS` (0023), `DELETION_REQUESTS` (0029) and the leave tables (0027, 0028) are built, and `ATTENDANCE_RECORDS` is keyed by session (0045). `STUDENT_PARENTS` and `PARENT_INVITES` are new with spec-second-parent.
 
 ```text
 messages/              # Paraglide message files (de, en, bo)
@@ -211,18 +250,19 @@ supabase/
 
 | Capability | Lives in | Governed by |
 | --- | --- | --- |
-| CAP-1 Account & registration | `profiles`, `class_teachers`, sign-up trigger, server-action account operations, `guardian_email_change_requests` | AD-2, AD-4, AD-5, AD-10, AD-11 |
+| CAP-1 Account & registration | `profiles`, `class_teachers`, sign-up trigger, server-action account operations | AD-2, AD-4, AD-5, AD-10, AD-11 |
 | CAP-2 Roster & skill tracking | `attendance_records`, `skill_status_history` (notes visible to parent), direct-lane RLS | AD-2, AD-4, AD-5, AD-12 |
 | CAP-3 Homework assignment & tracking | `homework_assignments`, `homework_instances` (UNIQUE-constrained), `homework_status_history` + `pg_cron` recurrence job; `homework_counts()` | AD-2, AD-3, AD-5, AD-8, AD-12 |
 | CAP-4 Streaks | `student_streaks`, written only by `recompute_student_streak` via triggers (incl. leave, cancellation) | AD-3, AD-13 |
 | CAP-5 Badges | `badges_earned`, trigger-written only | AD-3 |
 | CAP-6 Team leaderboard | `teams`, set-once `profiles.team_id` + rank as a read-time function | AD-2, AD-3, AD-4, AD-12 |
-| CAP-7 Admin oversight | cross-class read via admin-role RLS; approves students, parents, guardian email changes, deletions | AD-2, AD-4 |
+| CAP-7 Admin oversight | cross-class read via admin-role RLS; approves students, parents, deletions; removes parent links | AD-2, AD-4, AD-10 |
 | CAP-8 Data privacy & deletion | `deletion_requests` (student or parent submits) + cascade trigger on admin approval | AD-2, AD-3, AD-5, AD-9 |
 | CAP-9 Class days `[ADOPTED]` | `class_days`, admin-written | AD-2 |
 | CAP-10 Class schedules & sessions `[ADOPTED]` | class schedule columns + trigger-created `class_sessions`; `session_starts_at()` | AD-2, AD-3, AD-15 |
 | CAP-11 Session leave | `session_leave_history`, `sick_leave_decisions`, masked classmate read function, `pg_cron` auto-approval | AD-3, AD-5, AD-13, AD-14, AD-15 |
-| CAP-12 Parent accounts | `parents` (admin-approved), `profiles.parent_id`, custom SMTP for confirmation | AD-4, AD-6, AD-10, AD-11 |
+| CAP-12 Parent accounts | `parents` (admin-approved), `student_parents`, `profiles.registered_by_parent_id`, custom SMTP for confirmation | AD-4, AD-6, AD-10, AD-11 |
+| spec-second-parent Second parent | `student_parents` (slot 1/2), `parent_invites` + invite functions, `student_parent_contacts()`, admin link removal | AD-4, AD-9, AD-10, AD-11, AD-12, AD-13, AD-16 |
 | CAP-13 Parent child view | per-table parent SELECT policies, `linked_children()`, `parent/` route tree | AD-2, AD-4, AD-12, AD-14 |
 
 ## Deferred
@@ -235,7 +275,8 @@ supabase/
 - **Parent account after its last child leaves** (PRD OQ3) — the account survives for now; no lifecycle rule.
 - **Parent email-access recovery** (PRD OQ5) — handled manually by the admin until decided.
 - **GDPR controller, retention, legal basis** (PRD OQ1) — a go-live precondition for the Parent role, not an architecture decision; no retention jobs are designed in yet.
-- **Parent notifications** — PRD non-goal; no email/push beyond Supabase Auth's own emails.
+- **Parent notifications beyond homework push** — homework push (#92) reaches both parents through active links (AD-12); any other parent email or push is still a non-goal.
+- **Guardian-email change flow** — `guardian_email_change_requests` was never built. When it is, it must act on `student_parents`, saying which link it replaces and never creating a third.
 - **Staging environment** — deferred until there's a second maintainer or usage beyond the free tier; revisit then.
 - **Offline sync** — explicit SPEC.md non-goal.
 - **UI/UX design system and role switcher placement** — owned by `bmad-ux`, not this spine.

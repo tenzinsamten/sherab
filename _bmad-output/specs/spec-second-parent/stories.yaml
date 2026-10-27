@@ -1,0 +1,42 @@
+- id: "1"
+  title: Link model and migration
+  description: >-
+    Store parent links so a student has one or two parents, with the limits
+    and deletion rules in SPEC Constraints enforced in the database, and the
+    shared helpers reading the links; rebuild every database function that
+    names parent_id (incl. 0037 push, 0042) on the links, per spine AD-10.
+    Existing single-parent students migrate with no visible change.
+  invoke_dev_with: >-
+    Requires the AD-10 and AD-12 architecture amendment first. Add new tables
+    and columns to src/lib/supabase/database.types.ts by hand; never
+    regenerate it with supabase:types.
+- id: "2"
+  title: Second parent sees everything
+  description: >-
+    CAP-3: move the TypeScript readers (src/ rows of brownfield.md) to the
+    link model, show a pending deletion request on both parents' pages, and
+    show which parent set each leave answer.
+  invoke_dev_with: >-
+    Test with links created by service-role fixtures; the invite flow comes
+    in story 3.
+- id: "3"
+  title: Invites
+  description: >-
+    CAP-1 and CAP-2: a linked parent invites, sees, and cancels an invite;
+    the invitee accepts on /parent through a trusted function within 30 days.
+  done_checkpoint: true
+- id: "4"
+  title: Admin and teacher views
+  description: >-
+    CAP-4 and CAP-6: the admin sees both parents with inviter and date and
+    removes a link; teachers see both parents as contacts and who set each
+    leave answer.
+  spec_checkpoint: true
+  done_checkpoint: true
+- id: "5"
+  title: Join duplicate check
+  description: >-
+    CAP-5: /join refuses to register a child the registering parent was
+    already invited to and points them to the invite.
+  spec_checkpoint: true
+  done_checkpoint: true
