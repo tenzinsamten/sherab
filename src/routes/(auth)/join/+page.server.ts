@@ -24,11 +24,14 @@ import type { Actions, PageServerLoad } from './$types';
 /**
  * #98: the refusal for a parent who already has a student with this name.
  * An approved child is sent to "Join another class" (which keeps the team);
- * a pending or rejected one waits for the teacher.
+ * a pending or rejected one waits for the teacher. Story 5 (spec-second-
+ * parent): a child the parent was invited to, or is linked to, is sent to
+ * the invite on the parent page.
  */
 function duplicateMessage(state: StudentRegistrationState): string | null {
 	if (state === 'approved') return m.join_error_already_student();
 	if (state === 'pending' || state === 'rejected') return m.join_error_duplicate();
+	if (state === 'invited') return m.join_error_already_invited();
 	return null;
 }
 

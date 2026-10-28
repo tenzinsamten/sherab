@@ -384,6 +384,37 @@ describe('join register (Story 7-2)', () => {
 		}
 	);
 
+	it('story 5: refuses with the already-invited message when the parent was invited to or is linked to a child with this name', async () => {
+		approvedParentExists.mockResolvedValue(true);
+		studentRegistrationState.mockResolvedValue('invited');
+		const { e, cookies } = registerEvent();
+
+		expect(m.join_error_already_invited()).toContain('Invites');
+		expect(m.join_error_already_invited()).not.toBe(m.join_error_duplicate());
+		expect(await actions.register(e)).toMatchObject({
+			status: 400,
+			data: { error: m.join_error_already_invited(), guardianEmail: 'Pema@Example.com' }
+		});
+		expect(createUser).not.toHaveBeenCalled();
+		expect(cookies.set).not.toHaveBeenCalled();
+	});
+
+	it('story 5 race: createUser fails and the re-read state is invited, so the already-invited message is shown', async () => {
+		approvedParentExists.mockResolvedValue(true);
+		studentRegistrationState.mockResolvedValueOnce('available').mockResolvedValueOnce('invited');
+		createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Database error' } });
+		const { e, cookies } = registerEvent();
+
+		expect(await actions.register(e)).toMatchObject({
+			status: 400,
+			data: { error: m.join_error_already_invited(), guardianEmail: 'Pema@Example.com' }
+		});
+		expect(createUser).toHaveBeenCalledTimes(1);
+		expect(studentRegistrationState).toHaveBeenCalledTimes(2);
+		expect(approvedParentExists).toHaveBeenCalledTimes(1);
+		expect(cookies.set).not.toHaveBeenCalled();
+	});
+
 	it('#98 race: when the state re-read fails after a failed createUser, the generic error is shown in the form', async () => {
 		approvedParentExists.mockResolvedValue(true);
 		studentRegistrationState

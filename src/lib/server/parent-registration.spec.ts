@@ -109,7 +109,7 @@ describe('studentRegistrationState', () => {
 		]);
 	});
 
-	it.each(['available', 'pending', 'rejected', 'approved'] as const)(
+	it.each(['available', 'pending', 'rejected', 'approved', 'invited'] as const)(
 		'returns the answer %s',
 		async (answer) => {
 			const { client } = fakeClient({ data: answer, error: null });

@@ -18863,3 +18863,253 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)(
+	'spec-second-parent story 5: /join refuses a child the parent was invited to (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		type Parent = { id: string; email: string; client: Client };
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let teamId: string;
+
+		const name = (label: string) => `SSP5 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+		const freshEmail = (label: string) =>
+			`ssp5-${label.toLowerCase()}-${crypto.randomUUID()}@example.test`;
+
+		async function newParent(label: string): Promise<Parent> {
+			const email = freshEmail(label);
+			const p = await createApprovedParent(email);
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password: p.password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return { id: p.id, email, client };
+		}
+
+		/** A child registered by `parent` through the sign-up and approved. */
+		async function child(parent: Parent, registrationName: string) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName,
+				guardianEmail: parent.email
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			return id;
+		}
+
+		async function stateOf(guardianEmail: string, registrationName: string) {
+			const { data, error } = await adminClient.rpc('student_registration_state', {
+				p_guardian_email: guardianEmail,
+				p_registration_name: registrationName
+			});
+			if (error) throw new Error(`student_registration_state: ${error.message}`);
+			return data;
+		}
+
+		/** Students with this name (trimmed, case-insensitive), whoever registered them. */
+		async function studentsNamed(registrationName: string) {
+			const { data, error } = await adminClient
+				.from('profiles')
+				.select('id')
+				.eq('role', 'student')
+				.ilike('registration_name', registrationName.trim());
+			if (error) throw new Error(`count students: ${error.message}`);
+			return (data ?? []).length;
+		}
+
+		/** A's child `kidName` with a pending invite from A for B's email. */
+		async function invitedFamily() {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const kidName = name('Tenzin');
+			const kid = await child(a, kidName);
+			const { data: inviteId, error } = await a.client.rpc('create_parent_invite', {
+				p_student_id: kid,
+				p_email: b.email
+			});
+			if (error || !inviteId) throw new Error(`Failed to invite: ${error?.message}`);
+			return { a, b, kid, kidName, inviteId: inviteId as string };
+		}
+
+		/** The /join sign-up for B, run directly (the trigger is the enforcement). */
+		const register = (p: Parent, registrationName: string) =>
+			signUpStudent({ classId, registrationName, guardianEmail: p.email });
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({ name: name('Class'), code: `J${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('Live invite: B registering "tenzin " with B\'s email is invited at the pre-check and refused by the sign-up', async () => {
+			const { b, kidName } = await invitedFamily();
+			const padded = ` ${kidName.toLowerCase()} `;
+
+			expect(await stateOf(` ${b.email.toUpperCase()} `, padded)).toBe('invited');
+			const { error, id } = await register(b, padded);
+			expect(error).not.toBeNull();
+			expect(id).toBeNull();
+			expect(await studentsNamed(kidName)).toBe(1);
+		});
+
+		it('Accepted: B with an active link registering "TENZIN" is invited and refused', async () => {
+			const { b, kid, kidName, inviteId } = await invitedFamily();
+			const { data: linked, error: acceptError } = await b.client.rpc('accept_parent_invite', {
+				p_invite_id: inviteId
+			});
+			expect(acceptError).toBeNull();
+			expect(linked).toBe(kid);
+
+			expect(await stateOf(b.email, kidName.toUpperCase())).toBe('invited');
+			expect((await register(b, kidName.toUpperCase())).error).not.toBeNull();
+			expect(await studentsNamed(kidName)).toBe(1);
+		});
+
+		it("Removed link: after the admin removed B's link, B registering the name is invited and refused", async () => {
+			const { b, kid, kidName, inviteId } = await invitedFamily();
+			expect(
+				(await b.client.rpc('accept_parent_invite', { p_invite_id: inviteId })).error
+			).toBeNull();
+			const { error: removeError } = await admin.client.rpc('remove_parent_link', {
+				p_student_id: kid,
+				p_parent_id: b.id
+			});
+			expect(removeError).toBeNull();
+
+			expect(await stateOf(b.email, kidName)).toBe('invited');
+			expect((await register(b, kidName)).error).not.toBeNull();
+			expect(await studentsNamed(kidName)).toBe(1);
+		});
+
+		it('Different name: B with an invite for Tenzin registers Pema as today', async () => {
+			const { b } = await invitedFamily();
+			const other = name('Pema');
+
+			expect(await stateOf(b.email, other)).toBe('available');
+			const { error, id } = await register(b, other);
+			expect(error).toBeNull();
+			expect(id).not.toBeNull();
+		});
+
+		it('Not live: a cancelled or an expired invite, and no link, does not block B', async () => {
+			const cancelled = await invitedFamily();
+			expect(
+				(
+					await cancelled.a.client.rpc('cancel_parent_invite', {
+						p_invite_id: cancelled.inviteId
+					})
+				).error
+			).toBeNull();
+			expect(await stateOf(cancelled.b.email, cancelled.kidName)).toBe('available');
+			expect((await register(cancelled.b, cancelled.kidName)).error).toBeNull();
+			expect(await studentsNamed(cancelled.kidName)).toBe(2);
+
+			const expired = await invitedFamily();
+			const past = Date.now() - 2 * 86_400_000;
+			const { error: expireError } = await adminClient
+				.from('parent_invites')
+				.update({
+					created_at: new Date(past - 86_400_000).toISOString(),
+					expires_at: new Date(past).toISOString()
+				})
+				.eq('id', expired.inviteId);
+			expect(expireError).toBeNull();
+			expect(await stateOf(expired.b.email, expired.kidName)).toBe('available');
+			expect((await register(expired.b, expired.kidName)).error).toBeNull();
+			expect(await studentsNamed(expired.kidName)).toBe(2);
+		});
+
+		it('Other parent: C, with no invite or link, registers Tenzin as today', async () => {
+			const { kidName } = await invitedFamily();
+			const c = await newParent('C');
+
+			expect(await stateOf(c.email, kidName)).toBe('available');
+			expect((await register(c, kidName)).error).toBeNull();
+			expect(await studentsNamed(kidName)).toBe(2);
+		});
+
+		it('Trigger backstop: the sign-up is refused even when the invite appears after the pre-check said available', async () => {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const kidName = name('Tenzin');
+			const kid = await child(a, kidName);
+
+			// The /join pre-check passes ...
+			expect(await stateOf(b.email, kidName)).toBe('available');
+			// ... then A invites B before the sign-up runs.
+			expect(
+				(await a.client.rpc('create_parent_invite', { p_student_id: kid, p_email: b.email })).error
+			).toBeNull();
+
+			expect((await register(b, kidName)).error).not.toBeNull();
+			// The re-check /join makes after the failed createUser.
+			expect(await stateOf(b.email, kidName)).toBe('invited');
+			expect(await studentsNamed(kidName)).toBe(1);
+		});
+
+		it('Own child: a child B registered keeps the #98 answers and refusal', async () => {
+			const b = await newParent('B');
+			const kidName = name('Tenzin');
+			const { id, error } = await register(b, kidName);
+			expect(error).toBeNull();
+
+			expect(await stateOf(b.email, kidName)).toBe('pending');
+			expect((await register(b, kidName)).error).not.toBeNull();
+
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id!);
+			expect(approveError).toBeNull();
+			expect(await stateOf(b.email, kidName)).toBe('approved');
+			expect((await register(b, kidName)).error).not.toBeNull();
+			expect(await studentsNamed(kidName)).toBe(1);
+		});
+
+		it('No account leak: the answer for an invited email without an account matches any unknown email', async () => {
+			const a = await newParent('A');
+			const kidName = name('Tenzin');
+			const kid = await child(a, kidName);
+			const invitedNobody = freshEmail('nobody');
+			expect(
+				(
+					await a.client.rpc('create_parent_invite', {
+						p_student_id: kid,
+						p_email: invitedNobody
+					})
+				).error
+			).toBeNull();
+
+			expect(await stateOf(invitedNobody, kidName)).toBe('available');
+			expect(await stateOf(freshEmail('unknown'), kidName)).toBe('available');
+			const withInvite = await register(
+				{ id: '', email: invitedNobody, client: anonClient() },
+				kidName
+			);
+			const withoutInvite = await register(
+				{ id: '', email: freshEmail('unknown'), client: anonClient() },
+				kidName
+			);
+			expect(withInvite.error).not.toBeNull();
+			expect(withInvite.error?.message).toBe(withoutInvite.error?.message);
+			expect(withInvite.error?.status).toBe(withoutInvite.error?.status);
+		});
+	}
+);

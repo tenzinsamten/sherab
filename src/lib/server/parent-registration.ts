@@ -69,7 +69,13 @@ export async function approvedParentExists(
 	return (parents ?? []).length > 0;
 }
 
-const STUDENT_REGISTRATION_STATES = ['available', 'pending', 'rejected', 'approved'] as const;
+const STUDENT_REGISTRATION_STATES = [
+	'available',
+	'pending',
+	'rejected',
+	'approved',
+	'invited'
+] as const;
 
 export type StudentRegistrationState = (typeof STUDENT_REGISTRATION_STATES)[number];
 
@@ -80,8 +86,10 @@ function isStudentRegistrationState(value: unknown): value is StudentRegistratio
 /**
  * #98: whether the approved parent with `guardianEmail` already has a
  * student called `name` (both trimmed, case-insensitive, in any class):
- * `'available'` when not, otherwise that student's status. Service-role call
- * of student_registration_state() (0042), which only the service role may
+ * `'available'` when not, otherwise that student's status. `'invited'`
+ * (spec-second-parent story 5, 0058) when the parent has no such registered
+ * child but has a live invite for, or an active or removed link to, a
+ * student with that name. Service-role call of student_registration_state() (0042), which only the service role may
  * run. The unique index profiles_student_parent_name_unique is the
  * enforcement; this is the friendly lookup for /join. Throws on a read
  * error or an unknown answer, so the caller never mistakes it for "free".

@@ -545,6 +545,7 @@
 	"join_error_missing_fields": "Es fehlt etwas — geh zurück und prüfe jeden Schritt.",
 	"join_error_consent_required": "Die Einwilligung der Erziehungsberechtigten ist erforderlich, um fortzufahren.",
 	"join_error_duplicate": "Für diesen Namen gibt es mit dieser Eltern-E-Mail-Adresse bereits eine Anmeldung, die auf die Entscheidung einer Lehrkraft wartet oder abgelehnt wurde. Du musst dich für eine weitere Klasse nicht noch einmal anmelden: Sobald die Anmeldung angenommen ist, melde dich an und nutze „Einer weiteren Klasse beitreten“ in „Meine Klassen“. Eine abgelehnte Anmeldung muss die Lehrkraft der Klasse löschen, an die sie geschickt wurde.",
+	"join_error_already_invited": "Diese Eltern-E-Mail-Adresse wurde bereits für ein Kind mit diesem Namen eingeladen oder ist oder war mit einem verbunden. Bitte melde das Kind nicht noch einmal an. Wenn es eine Einladung gibt, melde dich als Elternteil an und nimm sie unter „Einladungen“ auf der Startseite an.",
 	"join_error_already_student": "Zu dieser Eltern-E-Mail-Adresse gibt es bereits ein Schülerkonto mit diesem Namen. Melde dich mit diesem Konto an und nutze „Einer weiteren Klasse beitreten“ in „Meine Klassen“, um diese Klasse hinzuzufügen.",
 	"join_error_no_parent": "Kein Elternkonto gefunden. Prüfe, ob die E-Mail-Adresse stimmt, oder bitte deine Eltern, sich zuerst zu registrieren.",
 	"join_error_generic": "Beim Absenden deiner Anmeldung ist etwas schiefgelaufen. Bitte erneut versuchen.",
