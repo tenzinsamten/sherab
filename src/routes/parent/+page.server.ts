@@ -1,5 +1,10 @@
+import { fail, redirect } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages.js';
+import { acceptInviteErrorMessage, type MyParentInvite } from '$lib/server/parent-invites';
 import { loadStudentClasses } from '$lib/server/student-homework';
-import type { PageServerLoad } from './$types';
+import type { Actions, PageServerLoad } from './$types';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type LinkedChild =
 	| { id: string; name: string; status: 'pending' }
@@ -35,7 +40,23 @@ export const load: PageServerLoad = async ({ parent, locals: { supabase } }) => 
 
 	let children: LinkedChild[] = [];
 	let loadError = false;
+	// spec-second-parent story 3: the invites for this login's confirmed email
+	// (list_my_parent_invites: approved parents only), even with no children.
+	let invites: MyParentInvite[] = [];
+	let invitesLoadError = false;
 	if (state === 'approved') {
+		const { data: inviteRows, error: invitesError } = await supabase.rpc('list_my_parent_invites');
+		if (invitesError) {
+			console.error('parent load: list_my_parent_invites failed', invitesError.message);
+			invitesLoadError = true;
+		}
+		invites = (inviteRows ?? []).map((i) => ({
+			id: i.id,
+			childName: i.child_name || m.parent_invites_unnamed_child(),
+			invitedBy: i.invited_by_name || null,
+			expiresAt: i.expires_at
+		}));
+
 		const { data, error } = await supabase.rpc('linked_children');
 		if (error) {
 			console.error('parent load: linked_children failed', error.message);
@@ -72,5 +93,41 @@ export const load: PageServerLoad = async ({ parent, locals: { supabase } }) => 
 		);
 	}
 
-	return { state, email: profile?.email ?? session?.user.email ?? '', children, loadError };
+	return {
+		state,
+		email: profile?.email ?? session?.user.email ?? '',
+		children,
+		loadError,
+		invites,
+		invitesLoadError
+	};
+};
+
+export const actions: Actions = {
+	/**
+	 * spec-second-parent story 3 (AD-16): the invitee accepts an invite
+	 * (accept_parent_invite). The database re-checks everything and links the
+	 * child; the reloaded page then lists it.
+	 */
+	acceptInvite: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const formData = await request.formData();
+		const inviteId = String(formData.get('inviteId') ?? '');
+		if (!UUID_PATTERN.test(inviteId)) {
+			return fail(400, { inviteId, acceptError: m.parent_invites_error_failed() });
+		}
+
+		const { error: rpcError } = await supabase.rpc('accept_parent_invite', {
+			p_invite_id: inviteId
+		});
+		if (rpcError) {
+			return fail(rpcError.code === '42501' ? 403 : 400, {
+				inviteId,
+				acceptError: acceptInviteErrorMessage(rpcError)
+			});
+		}
+		return { action: 'acceptInvite' as const, success: true };
+	}
 };

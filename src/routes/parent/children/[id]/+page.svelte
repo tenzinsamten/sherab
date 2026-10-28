@@ -5,6 +5,7 @@
 	import Info from '@lucide/svelte/icons/info';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
@@ -151,7 +152,23 @@
 		} else if (form && 'deletionError' in form && form.deletionError) {
 			focusNext = 'deletion-request';
 		}
+		// spec-second-parent story 3: the invite card.
+		if (form && 'action' in form && form.action === 'inviteParent' && form.success) {
+			showToast('success', m.invite_sent());
+			focusNext = 'invite-status';
+		} else if (form && 'action' in form && form.action === 'cancelInvite' && form.success) {
+			showToast('success', m.invite_cancelled());
+			focusNext = 'invite-email';
+		} else if (form && 'inviteError' in form && form.inviteError) {
+			// A refused invite keeps its email (back to the field); a refused cancel does not.
+			focusNext = 'inviteEmail' in form ? 'invite-email' : 'invite-cancel';
+		}
 	});
+
+	// The email typed before a refused invite stays in the field.
+	let inviteEmail = $derived(
+		form && 'inviteEmail' in form && typeof form.inviteEmail === 'string' ? form.inviteEmail : ''
+	);
 
 	// ── B11: leave period ─────────────────────────────────────────────────
 	type RangeResult = Extract<NonNullable<ActionData>, { action: 'previewLeaveRange' }>;
@@ -496,6 +513,103 @@
 					</ul>
 				{/if}
 			</section>
+
+			{#if data.inviteLoadError}
+				<section
+					class="{ui.card} flex flex-col gap-3"
+					aria-labelledby="invite-heading"
+					data-testid="invite-card"
+				>
+					<h2 id="invite-heading" class="text-lg leading-snug font-bold">{m.invite_heading()}</h2>
+					<EmptyState header={m.load_error_generic()} icon={Info} />
+				</section>
+			{:else if data.invite}
+				<!-- spec-second-parent story 3: invite the child's second parent. -->
+				<section
+					class="{ui.card} flex flex-col gap-3"
+					aria-labelledby="invite-heading"
+					data-testid="invite-card"
+				>
+					<h2 id="invite-heading" class="text-lg leading-snug font-bold">{m.invite_heading()}</h2>
+					{#if data.invite.kind === 'pending'}
+						<p
+							role="status"
+							id="invite-status"
+							tabindex="-1"
+							class="flex flex-col gap-1 outline-none"
+						>
+							<span><Badge variant="secondary">{m.invite_pending_status()}</Badge></span>
+							<span class="{ui.muted} wrap-break-word" data-testid="invite-pending">
+								{m.invite_pending_detail({
+									email: data.invite.email,
+									date: formatInstant(data.invite.expiresAt)
+								})}
+							</span>
+						</p>
+						<form
+							method="POST"
+							action="?tab=overview&/cancelInvite"
+							use:enhance={pending.submit('cancelInvite')}
+						>
+							<input type="hidden" name="inviteId" value={data.invite.id} />
+							<Button
+								id="invite-cancel"
+								type="submit"
+								variant="outline"
+								class={touchButton}
+								disabled={pending.busy}
+								aria-busy={pending.is('cancelInvite') || undefined}
+							>
+								{@render spinner('cancelInvite')}
+								{m.invite_cancel()}
+							</Button>
+						</form>
+					{:else}
+						<p class={ui.muted}>{m.invite_intro({ name: data.child.name })}</p>
+						<form
+							method="POST"
+							action="?tab=overview&/inviteParent"
+							use:enhance={pending.submit('inviteParent')}
+							novalidate
+							class="flex flex-col gap-3"
+						>
+							<div class={fieldClass}>
+								<Label for="invite-email" class={fieldLabel}>{m.invite_email_label()}</Label>
+								<Input
+									id="invite-email"
+									name="email"
+									type="email"
+									autocomplete="off"
+									inputmode="email"
+									required
+									value={inviteEmail}
+									aria-invalid={(form && 'inviteError' in form && Boolean(form.inviteError)) ||
+										undefined}
+									aria-describedby={form && 'inviteError' in form && form.inviteError
+										? 'invite-error'
+										: undefined}
+								/>
+							</div>
+							<Button
+								type="submit"
+								class={touchButton}
+								disabled={pending.busy}
+								aria-busy={pending.is('inviteParent') || undefined}
+							>
+								{#if pending.is('inviteParent')}
+									{@render spinner('inviteParent')}
+								{:else}
+									<UserPlus aria-hidden="true" />
+								{/if}
+								{m.invite_submit()}
+							</Button>
+						</form>
+					{/if}
+					{#if form && 'inviteError' in form && form.inviteError}
+						<p id="invite-error" class={ui.error} role="alert">{form.inviteError}</p>
+					{/if}
+				</section>
+			{/if}
 
 			<section class="{ui.card} flex flex-col gap-3" aria-labelledby="deletion-heading">
 				<h2 id="deletion-heading" class="text-lg leading-snug font-bold">{m.deletion_heading()}</h2>

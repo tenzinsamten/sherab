@@ -28,6 +28,12 @@ import {
 	type StudentHomeworkItem,
 	type TeamStanding
 } from '$lib/server/student-homework';
+import { isValidParentEmail } from '$lib/server/parent-registration';
+import {
+	cancelInviteErrorMessage,
+	inviteParentErrorMessage,
+	type InviteCard
+} from '$lib/server/parent-invites';
 import type { LeaveRangeOutcome } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -169,6 +175,22 @@ export const load: PageServerLoad = async ({
 	const { user } = await safeGetSession();
 	const viewerId = user?.id ?? null;
 
+	// spec-second-parent story 3: the invite card's reads start with the first
+	// reads and are awaited where the card is built.
+	const inviteReads = Promise.all([
+		supabase
+			.from('student_parents')
+			.select('parent_id')
+			.eq('student_id', child.id)
+			.is('removed_at', null),
+		supabase
+			.from('parent_invites')
+			.select('id, invited_email, expires_at')
+			.eq('student_id', child.id)
+			.eq('status', 'pending')
+			.gt('expires_at', new Date().toISOString())
+	]);
+
 	const { data: enrollments, error: enrollmentsError } = await supabase
 		.from('class_enrollments')
 		.select('class_id')
@@ -284,6 +306,25 @@ export const load: PageServerLoad = async ({
 				}
 			: null;
 
+	// spec-second-parent story 3: the invite card. A form while the child has
+	// one active parent and no live invite, the pending invite while there is
+	// one, nothing once there are two parents (RLS: the child's active parents).
+	const [{ data: links, error: linksError }, { data: invites, error: invitesError }] =
+		await inviteReads;
+	const inviteLoadError = Boolean(linksError || invitesError);
+	const pendingInvite = (invites ?? [])[0];
+	const invite: InviteCard =
+		inviteLoadError || (links ?? []).length >= 2
+			? null
+			: pendingInvite
+				? {
+						kind: 'pending',
+						id: pendingInvite.id,
+						email: pendingInvite.invited_email,
+						expiresAt: pendingInvite.expires_at
+					}
+				: { kind: 'form' };
+
 	// B11: the leave period's class choice, straight from the enrollments.
 	let rangeClasses: { id: string; name: string }[] = [];
 	let rangeLoadError = Boolean(enrollmentsError);
@@ -310,6 +351,8 @@ export const load: PageServerLoad = async ({
 		sessions,
 		deletion,
 		deletionLoadError: Boolean(requestsError),
+		invite,
+		inviteLoadError,
 		loadError,
 		rangeClasses,
 		rangeLoadError,
@@ -766,5 +809,60 @@ export const actions: Actions = {
 			return fail(400, { deletionError: m.deletion_error_failed() });
 		}
 		return { action: 'requestDeletion' as const, success: true };
+	},
+
+	/**
+	 * spec-second-parent story 3 (AD-16): invites a second parent by email
+	 * (create_parent_invite). The answer is the same whether or not the email
+	 * has an account; the database refuses a child that is not the caller's,
+	 * a child with two parents, the caller's or a linked parent's email, and
+	 * a second pending invite. No email is sent.
+	 */
+	inviteParent: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const formData = await request.formData();
+		const email = String(formData.get('email') ?? '').trim();
+		if (!UUID_PATTERN.test(params.id)) {
+			return fail(400, { inviteError: m.invite_error_failed(), inviteEmail: email });
+		}
+		if (!isValidParentEmail(email)) {
+			return fail(400, { inviteError: m.invite_error_email(), inviteEmail: email });
+		}
+
+		const { error: rpcError } = await supabase.rpc('create_parent_invite', {
+			p_student_id: params.id,
+			p_email: email
+		});
+		if (rpcError) {
+			return fail(rpcError.code === '42501' ? 403 : 400, {
+				inviteError: inviteParentErrorMessage(rpcError),
+				inviteEmail: email
+			});
+		}
+		return { action: 'inviteParent' as const, success: true };
+	},
+
+	/** spec-second-parent story 3: any active parent cancels the pending invite. */
+	cancelInvite: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const formData = await request.formData();
+		const inviteId = String(formData.get('inviteId') ?? '');
+		if (!UUID_PATTERN.test(inviteId)) {
+			return fail(400, { inviteError: m.invite_cancel_error_failed() });
+		}
+
+		const { error: rpcError } = await supabase.rpc('cancel_parent_invite', {
+			p_invite_id: inviteId
+		});
+		if (rpcError) {
+			return fail(rpcError.code === '42501' ? 403 : 400, {
+				inviteError: cancelInviteErrorMessage(rpcError)
+			});
+		}
+		return { action: 'cancelInvite' as const, success: true };
 	}
 };

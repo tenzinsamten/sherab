@@ -854,6 +854,51 @@ export type Database = {
 					}
 				];
 			};
+			parent_invites: {
+				Row: {
+					created_at: string;
+					expires_at: string;
+					id: string;
+					invited_by: string | null;
+					invited_email: string;
+					status: ParentInviteStatus;
+					student_id: string;
+				};
+				Insert: {
+					created_at?: string;
+					expires_at: string;
+					id?: string;
+					invited_by?: string | null;
+					invited_email: string;
+					status?: ParentInviteStatus;
+					student_id: string;
+				};
+				Update: {
+					created_at?: string;
+					expires_at?: string;
+					id?: string;
+					invited_by?: string | null;
+					invited_email?: string;
+					status?: ParentInviteStatus;
+					student_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'parent_invites_student_id_fkey';
+						columns: ['student_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'parent_invites_invited_by_fkey';
+						columns: ['invited_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			parents: {
 				Row: {
 					created_at: string;
@@ -1801,6 +1846,29 @@ export type Database = {
 					name_de: string | null;
 				}[];
 			};
+			create_parent_invite: {
+				Args: { p_student_id: string; p_email: string };
+				/** The new invite's id. */
+				Returns: string;
+			};
+			cancel_parent_invite: {
+				Args: { p_invite_id: string };
+				Returns: undefined;
+			};
+			list_my_parent_invites: {
+				Args: never;
+				Returns: {
+					id: string;
+					child_name: string | null;
+					invited_by_name: string | null;
+					expires_at: string;
+				}[];
+			};
+			accept_parent_invite: {
+				Args: { p_invite_id: string };
+				/** The student now linked. */
+				Returns: string;
+			};
 		};
 		Enums: {
 			parent_status: 'pending' | 'approved' | 'rejected';
@@ -1964,3 +2032,5 @@ export type LeaveRangeOutcome =
 	| 'sick'
 	/** Refused at save time for another reason (e.g. the session was deleted). */
 	| 'skipped';
+/** spec-second-parent (AD-16): parent_invites.status (0056). */
+export type ParentInviteStatus = 'pending' | 'accepted' | 'cancelled' | 'expired';

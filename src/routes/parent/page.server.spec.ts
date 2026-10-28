@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load as layoutLoad } from './+layout.server';
-import { load as pageLoad } from './+page.server';
+import { actions, load as pageLoad } from './+page.server';
 
 function fakeSupabase(role: string, parentStatus: string | null) {
 	return {
@@ -63,12 +63,16 @@ function runPage(
 	opts: {
 		tables?: Record<string, TableResult>;
 		counts?: Record<string, RpcResult>;
+		/** spec-second-parent story 3: list_my_parent_invites(). */
+		invites?: RpcResult;
 	} = {}
 ) {
 	const rpc = vi.fn(async (name: string, args?: { p_student_id?: string }) =>
 		name === 'homework_counts'
 			? (opts.counts?.[args?.p_student_id ?? ''] ?? { data: [], error: null })
-			: rpcResult
+			: name === 'list_my_parent_invites'
+				? (opts.invites ?? { data: [], error: null })
+				: rpcResult
 	);
 	const from = vi.fn((table: string) =>
 		tableChain(opts.tables?.[table] ?? { data: [], error: null })
@@ -116,7 +120,9 @@ describe('parent page state', () => {
 			state,
 			email: 'p@example.com',
 			children: [],
-			loadError: false
+			loadError: false,
+			invites: [],
+			invitesLoadError: false
 		});
 	});
 });
@@ -208,6 +214,8 @@ describe('parent child cards (Story 7-3)', () => {
 			state: 'approved',
 			email: 'p@example.com',
 			loadError: false,
+			invites: [],
+			invitesLoadError: false,
 			children: [
 				{
 					id: 'c1',
@@ -262,6 +270,119 @@ describe('parent child cards (Story 7-3)', () => {
 		expect(result).toMatchObject({
 			loadError: true,
 			children: [{ id: 'c1', classes: [] }, { id: 'c2' }]
+		});
+	});
+});
+
+describe('parent page invites (spec-second-parent story 3)', () => {
+	const confirmed = '2026-01-01T00:00:00Z';
+	const INVITE = '11111111-2222-4333-8444-555555555555';
+
+	it('reads list_my_parent_invites() only for an approved parent, even with no children', async () => {
+		const pending = runPage('pending', confirmed);
+		await pending;
+		expect(pending.rpc).not.toHaveBeenCalledWith('list_my_parent_invites');
+
+		const approved = runPage(
+			'approved',
+			confirmed,
+			{ data: [], error: null },
+			{
+				invites: {
+					data: [
+						{
+							id: INVITE,
+							child_name: 'Dawa',
+							invited_by_name: 'Pema',
+							expires_at: '2026-02-01T00:00:00Z'
+						},
+						{
+							id: 'i2',
+							child_name: null,
+							invited_by_name: null,
+							expires_at: '2026-02-02T00:00:00Z'
+						}
+					],
+					error: null
+				}
+			}
+		);
+		expect(await approved).toMatchObject({
+			children: [],
+			invitesLoadError: false,
+			invites: [
+				{ id: INVITE, childName: 'Dawa', invitedBy: 'Pema', expiresAt: '2026-02-01T00:00:00Z' },
+				{ id: 'i2', childName: 'A child', invitedBy: null, expiresAt: '2026-02-02T00:00:00Z' }
+			]
+		});
+		expect(approved.rpc).toHaveBeenCalledWith('list_my_parent_invites');
+	});
+
+	it('flags an invites load error without touching the children', async () => {
+		const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const result = await runPage(
+				'approved',
+				confirmed,
+				{ data: [], error: null },
+				{
+					invites: { data: null, error: { message: 'boom' } }
+				}
+			);
+			expect(result).toMatchObject({ invites: [], invitesLoadError: true, loadError: false });
+		} finally {
+			log.mockRestore();
+		}
+	});
+
+	function acceptEvent(inviteId: string, result: { error: unknown }) {
+		const body = new FormData();
+		body.append('inviteId', inviteId);
+		const rpc = vi.fn(async () => ({ data: null, ...result }));
+		const event = {
+			request: new Request('http://localhost/parent', { method: 'POST', body }),
+			locals: {
+				supabase: { rpc },
+				safeGetSession: async () => ({ user: { id: 'p1' } })
+			}
+		} as unknown as Parameters<typeof actions.acceptInvite>[0];
+		return { event, rpc };
+	}
+
+	it('accepts through accept_parent_invite()', async () => {
+		const { event, rpc } = acceptEvent(INVITE, { error: null });
+		expect(await actions.acceptInvite(event)).toEqual({ action: 'acceptInvite', success: true });
+		expect(rpc).toHaveBeenCalledWith('accept_parent_invite', { p_invite_id: INVITE });
+	});
+
+	it('refuses a malformed id without a call', async () => {
+		const { event, rpc } = acceptEvent('nope', { error: null });
+		expect(await actions.acceptInvite(event)).toMatchObject({
+			status: 400,
+			data: { acceptError: 'Could not accept the invite. Please try again.' }
+		});
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[{ code: '42501' }, 403, "You can't accept this invite."],
+		[{ code: '22023', hint: 'invite_not_live' }, 400, 'This invite can no longer be accepted.'],
+		[{ code: '22023', hint: 'child_has_two_parents' }, 400, 'This child already has two parents.'],
+		[
+			{ code: '22023', hint: 'removed_parent' },
+			400,
+			"The admin removed your link to this child, so this invite can't be accepted."
+		],
+		[
+			{ code: '22023', hint: 'duplicate_child_name' },
+			400,
+			'You already have a child with this name.'
+		]
+	])('maps a refusal %o', async (error, status, message) => {
+		const { event } = acceptEvent(INVITE, { error });
+		expect(await actions.acceptInvite(event)).toMatchObject({
+			status,
+			data: { inviteId: INVITE, acceptError: message }
 		});
 	});
 });

@@ -18083,3 +18083,491 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)(
+	'spec-second-parent story 3: parent invites (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		type Parent = { id: string; email: string; client: Client; name: string };
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let teamId: string;
+
+		const name = (label: string) => `SSP3 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+		const freshEmail = (label: string) =>
+			`ssp3-${label.toLowerCase()}-${crypto.randomUUID()}@example.test`;
+
+		async function signIn(email: string, password: string): Promise<Client> {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		/** An approved parent with a distinct display name, signed in. */
+		async function newParent(label: string, email = freshEmail(label)): Promise<Parent> {
+			const p = await createApprovedParent(email);
+			const displayName = name(label);
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ display_name: displayName })
+				.eq('id', p.id);
+			if (error) throw new Error(`Failed to name parent: ${error.message}`);
+			return { id: p.id, email, client: await signIn(email, p.password), name: displayName };
+		}
+
+		/** A child registered by `parent` through the sign-up and approved. */
+		async function child(parent: Parent, registrationName = name('Kid')) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName,
+				guardianEmail: parent.email
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			return id;
+		}
+
+		const invite = (p: Parent, studentId: string, email: string) =>
+			p.client.rpc('create_parent_invite', { p_student_id: studentId, p_email: email });
+		const cancel = (p: Parent, inviteId: string) =>
+			p.client.rpc('cancel_parent_invite', { p_invite_id: inviteId });
+		const accept = (p: Parent, inviteId: string) =>
+			p.client.rpc('accept_parent_invite', { p_invite_id: inviteId });
+		const listMine = (p: Parent) => p.client.rpc('list_my_parent_invites');
+
+		async function inviteRow(id: string) {
+			const { data, error } = await adminClient
+				.from('parent_invites')
+				.select('student_id, invited_email, invited_by, status, created_at, expires_at')
+				.eq('id', id)
+				.single();
+			if (error || !data) throw new Error(`read invite: ${error?.message}`);
+			return data;
+		}
+
+		async function activeLinks(studentId: string) {
+			const { data, error } = await adminClient
+				.from('student_parents')
+				.select('parent_id, slot, invited_by')
+				.eq('student_id', studentId)
+				.is('removed_at', null)
+				.order('slot');
+			if (error) throw new Error(`read links: ${error.message}`);
+			return data ?? [];
+		}
+
+		const removeLink = (studentId: string, parentId: string) =>
+			adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', studentId)
+				.eq('parent_id', parentId)
+				.is('removed_at', null)
+				.select('id');
+
+		/** A's only child with a pending invite for B's email. */
+		async function invitedFamily() {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const kid = await child(a);
+			const { data: inviteId, error } = await invite(a, kid, b.email);
+			if (error || !inviteId) throw new Error(`Failed to invite: ${error?.message}`);
+			return { a, b, kid, inviteId };
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({ name: name('Class'), code: `I${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('Invite: the only parent invites a padded, mixed-case email; it is stored normalised with a 30-day expiry and shown to A', async () => {
+			const a = await newParent('A');
+			const kid = await child(a);
+			const email = freshEmail('B');
+			const before = Date.now();
+
+			const { data: id, error } = await invite(a, kid, `  ${email.toUpperCase()} `);
+			expect(error).toBeNull();
+			expect(typeof id).toBe('string');
+
+			const row = await inviteRow(id!);
+			expect(row).toMatchObject({
+				student_id: kid,
+				invited_email: email,
+				invited_by: a.id,
+				status: 'pending'
+			});
+			const days = (Date.parse(row.expires_at) - before) / 86_400_000;
+			expect(days).toBeGreaterThan(29.9);
+			expect(days).toBeLessThan(30.1);
+
+			// What the child page reads (RLS: the child's active parents).
+			const { data: seen } = await a.client
+				.from('parent_invites')
+				.select('id, invited_email, status')
+				.eq('student_id', kid);
+			expect(seen).toEqual([{ id, invited_email: email, status: 'pending' }]);
+		});
+
+		it('Refusals: not your child, two parents, own or linked email, a second invite', async () => {
+			const { a, b, kid } = await invitedFamily();
+			const c = await newParent('C');
+
+			const notMine = await invite(c, kid, freshEmail('X'));
+			expect(notMine.error).toMatchObject({ code: '42501', hint: 'not_your_child' });
+
+			const own = await invite(a, kid, ` ${a.email.toUpperCase()}`);
+			expect(own.error).toMatchObject({ code: '22023', hint: 'own_or_linked_email' });
+
+			const second = await invite(a, kid, freshEmail('Y'));
+			expect(second.error).toMatchObject({ code: '22023', hint: 'invite_pending' });
+
+			// Two parents: refused for either of them, whatever the email.
+			const kid2 = await child(a);
+			await linkParent(adminClient, kid2, b.id);
+			for (const p of [a, b]) {
+				const full = await invite(p, kid2, freshEmail('Z'));
+				expect(full.error).toMatchObject({ code: '22023', hint: 'child_has_two_parents' });
+			}
+
+			// The email check is per child: B is linked to kid2, not to kid3.
+			const kid3 = await child(a);
+			const linkedElsewhere = await invite(a, kid3, b.email);
+			expect(linkedElsewhere.error).toBeNull();
+
+			// No client write path.
+			const direct = await a.client.from('parent_invites').insert({
+				student_id: kid3,
+				invited_email: freshEmail('direct'),
+				invited_by: a.id,
+				expires_at: new Date(Date.now() + 86_400_000).toISOString()
+			});
+			expect(direct.error).not.toBeNull();
+			const { data: tampered } = await a.client
+				.from('parent_invites')
+				.update({ status: 'accepted' })
+				.eq('student_id', kid3)
+				.select('id');
+			expect(tampered ?? []).toEqual([]);
+			const { data: deleted } = await a.client
+				.from('parent_invites')
+				.delete()
+				.eq('student_id', kid3)
+				.select('id');
+			expect(deleted ?? []).toEqual([]);
+			const { data: kept } = await adminClient
+				.from('parent_invites')
+				.select('status')
+				.eq('student_id', kid3);
+			expect(kept).toEqual([{ status: 'pending' }]);
+		});
+
+		it('Lifetime: the invite expires after parent_invite_days', async () => {
+			const a = await newParent('A');
+			const kid = await child(a);
+			const setDays = (days: number) =>
+				adminClient
+					.from('app_settings')
+					.update({ value: { days } })
+					.eq('key', 'parent_invite_days')
+					.select('key')
+					.single();
+			try {
+				expect((await setDays(7)).error).toBeNull();
+				const before = Date.now();
+				const { data: id, error } = await invite(a, kid, freshEmail('week'));
+				expect(error).toBeNull();
+				const days = (Date.parse((await inviteRow(id!)).expires_at) - before) / 86_400_000;
+				expect(days).toBeGreaterThan(6.9);
+				expect(days).toBeLessThan(7.1);
+			} finally {
+				await setDays(30);
+			}
+		});
+
+		it('Unconfirmed email: an approved parent whose matching address is not confirmed lists nothing and cannot accept', async () => {
+			const a = await newParent('A');
+			const kid = await child(a);
+			const c = await newParent('C');
+			// C asks to change the login email to the invited address; until
+			// that is confirmed, auth.users.email stays the old, confirmed one.
+			const unconfirmed = freshEmail('unconfirmed');
+			const { error: changeError } = await c.client.auth.updateUser({ email: unconfirmed });
+			expect(changeError).toBeNull();
+			const { data: inviteId, error } = await invite(a, kid, unconfirmed);
+			expect(error).toBeNull();
+
+			expect((await listMine(c)).data).toEqual([]);
+			expect((await accept(c, inviteId!)).error).toMatchObject({ code: '42501' });
+			expect((await inviteRow(inviteId!)).status).toBe('pending');
+		});
+
+		it('Unknown email: the same success as an email with an account', async () => {
+			const a = await newParent('A');
+			const known = await newParent('Known');
+			const kid1 = await child(a);
+			const kid2 = await child(a);
+
+			const withAccount = await invite(a, kid1, known.email);
+			const withoutAccount = await invite(a, kid2, freshEmail('nobody'));
+			expect(withAccount.error).toBeNull();
+			expect(withoutAccount.error).toBeNull();
+			expect(typeof withAccount.data).toBe('string');
+			expect(typeof withoutAccount.data).toBe('string');
+			expect(withAccount.status).toBe(withoutAccount.status);
+		});
+
+		it('Cancel: A cancels, the invite is gone and a new one can be made; others cannot cancel', async () => {
+			const { a, kid, inviteId } = await invitedFamily();
+			const c = await newParent('C');
+
+			expect((await cancel(c, inviteId)).error).toMatchObject({ code: '42501' });
+			expect((await cancel(a, inviteId)).error).toBeNull();
+			expect((await inviteRow(inviteId)).status).toBe('cancelled');
+			expect((await cancel(a, inviteId)).error).toMatchObject({
+				code: '22023',
+				hint: 'invite_not_live'
+			});
+
+			const { data: live } = await a.client
+				.from('parent_invites')
+				.select('id')
+				.eq('student_id', kid)
+				.eq('status', 'pending');
+			expect(live).toEqual([]);
+			expect((await invite(a, kid, freshEmail('again'))).error).toBeNull();
+		});
+
+		it('Accept: B lists the invite and accepting links B in slot 2, invited by A', async () => {
+			const { a, b, kid, inviteId } = await invitedFamily();
+
+			const { data: mine, error } = await listMine(b);
+			expect(error).toBeNull();
+			expect(mine).toEqual([
+				{
+					id: inviteId,
+					child_name: expect.any(String),
+					invited_by_name: a.name,
+					expires_at: expect.any(String)
+				}
+			]);
+
+			const { data: accepted, error: acceptError } = await accept(b, inviteId);
+			expect(acceptError).toBeNull();
+			expect(accepted).toBe(kid);
+			expect((await inviteRow(inviteId)).status).toBe('accepted');
+			expect(await activeLinks(kid)).toEqual([
+				{ parent_id: a.id, slot: 1, invited_by: null },
+				{ parent_id: b.id, slot: 2, invited_by: a.id }
+			]);
+
+			const { data: children } = await b.client.rpc('linked_children');
+			expect(children?.map((c) => c.id)).toEqual([kid]);
+			expect((await listMine(b)).data).toEqual([]);
+
+			// A's card: two parents now, so nothing to invite.
+			const { data: links } = await a.client
+				.from('student_parents')
+				.select('parent_id')
+				.eq('student_id', kid)
+				.is('removed_at', null);
+			expect(links).toHaveLength(2);
+		});
+
+		it('Wrong email: an approved parent with another email lists nothing and cannot accept', async () => {
+			const { b, inviteId } = await invitedFamily();
+			const c = await newParent('C');
+
+			expect((await listMine(c)).data).toEqual([]);
+			expect((await accept(c, inviteId)).error).toMatchObject({ code: '42501' });
+			// Neither may C read the row.
+			const { data: rows } = await c.client.from('parent_invites').select('id').eq('id', inviteId);
+			expect(rows).toEqual([]);
+			expect((await inviteRow(inviteId)).status).toBe('pending');
+			expect((await listMine(b)).data).toHaveLength(1);
+
+			// A pending parent with the invited email lists nothing and cannot accept.
+			const a2 = await newParent('A2');
+			const kid2 = await child(a2);
+			const waiting = await createPendingParent(freshEmail('waiting'));
+			const { data: waitingInvite } = await invite(a2, kid2, waiting.email);
+			const waitingClient = await signIn(waiting.email, waiting.password);
+			expect((await waitingClient.rpc('list_my_parent_invites')).data).toEqual([]);
+			expect(
+				(await waitingClient.rpc('accept_parent_invite', { p_invite_id: waitingInvite! })).error
+			).toMatchObject({ code: '42501' });
+		});
+
+		it('Not live: expired, cancelled, or the inviter link removed -> not listed, accept refused', async () => {
+			// Expired.
+			const expired = await invitedFamily();
+			const { error: ageError } = await adminClient
+				.from('parent_invites')
+				.update({
+					created_at: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+					expires_at: new Date(Date.now() - 86_400_000).toISOString()
+				})
+				.eq('id', expired.inviteId);
+			expect(ageError).toBeNull();
+			expect((await listMine(expired.b)).data).toEqual([]);
+			expect((await accept(expired.b, expired.inviteId)).error).toMatchObject({
+				code: '22023',
+				hint: 'invite_not_live'
+			});
+			// A new invite retires the stale row.
+			expect((await invite(expired.a, expired.kid, freshEmail('new'))).error).toBeNull();
+			expect((await inviteRow(expired.inviteId)).status).toBe('expired');
+
+			// Cancelled.
+			const cancelled = await invitedFamily();
+			expect((await cancel(cancelled.a, cancelled.inviteId)).error).toBeNull();
+			expect((await listMine(cancelled.b)).data).toEqual([]);
+			expect((await accept(cancelled.b, cancelled.inviteId)).error).toMatchObject({
+				hint: 'invite_not_live'
+			});
+
+			// The inviter's link removed: the removal cancels the invite.
+			const a = await newParent('A');
+			const x = await newParent('X');
+			const b = await newParent('B');
+			const kid = await child(a);
+			await linkParent(adminClient, kid, x.id);
+			const { data: row, error: insertError } = await adminClient
+				.from('parent_invites')
+				.insert({
+					student_id: kid,
+					invited_email: b.email,
+					invited_by: x.id,
+					expires_at: new Date(Date.now() + 86_400_000).toISOString()
+				})
+				.select('id')
+				.single();
+			expect(insertError).toBeNull();
+			expect((await removeLink(kid, x.id)).error).toBeNull();
+			expect((await inviteRow(row!.id)).status).toBe('cancelled');
+			expect((await listMine(b)).data).toEqual([]);
+			expect((await accept(b, row!.id)).error).toMatchObject({ hint: 'invite_not_live' });
+
+			// A pending row whose inviter is not linked is not live either.
+			const kid2 = await child(a);
+			const { data: orphan } = await adminClient
+				.from('parent_invites')
+				.insert({
+					student_id: kid2,
+					invited_email: b.email,
+					invited_by: x.id,
+					expires_at: new Date(Date.now() + 86_400_000).toISOString()
+				})
+				.select('id')
+				.single();
+			expect((await listMine(b)).data).toEqual([]);
+			expect((await accept(b, orphan!.id)).error).toMatchObject({ hint: 'invite_not_live' });
+		});
+
+		it('Race: two accepts at once, or an accept with two links already, never make three links', async () => {
+			const { b, kid, inviteId } = await invitedFamily();
+			const bAgain = await signIn(b.email, await resetPassword(b.id));
+			const results = await Promise.all([
+				accept(b, inviteId),
+				bAgain.rpc('accept_parent_invite', { p_invite_id: inviteId })
+			]);
+			expect(results.filter((r) => r.error === null)).toHaveLength(1);
+			expect(results.find((r) => r.error)?.error).toMatchObject({ hint: 'invite_not_live' });
+			expect(await activeLinks(kid)).toHaveLength(2);
+
+			const late = await invitedFamily();
+			const x = await newParent('X');
+			await linkParent(adminClient, late.kid, x.id);
+			expect((await accept(late.b, late.inviteId)).error).toMatchObject({
+				code: '22023',
+				hint: 'child_has_two_parents'
+			});
+			expect(await activeLinks(late.kid)).toHaveLength(2);
+		});
+
+		it("Removed parent: B's earlier link was removed, so B cannot accept a new invite", async () => {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const kid = await child(a);
+			await linkParent(adminClient, kid, b.id);
+			expect((await removeLink(kid, b.id)).error).toBeNull();
+
+			const { data: inviteId, error } = await invite(a, kid, b.email);
+			expect(error).toBeNull();
+			expect((await accept(b, inviteId!)).error).toMatchObject({
+				code: '22023',
+				hint: 'removed_parent'
+			});
+			expect((await activeLinks(kid)).map((l) => l.parent_id)).toEqual([a.id]);
+		});
+
+		it('Same name: B already has a child with the same registration_name', async () => {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const shared = name('Tenzin');
+			const kid = await child(a, shared);
+			await child(b, ` ${shared.toLowerCase()} `);
+
+			const { data: inviteId, error } = await invite(a, kid, b.email);
+			expect(error).toBeNull();
+			expect((await accept(b, inviteId!)).error).toMatchObject({
+				code: '22023',
+				hint: 'duplicate_child_name'
+			});
+			expect(await activeLinks(kid)).toHaveLength(1);
+		});
+
+		it('Student rejected: the pending invite becomes cancelled', async () => {
+			const { b, kid, inviteId } = await invitedFamily();
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ status: 'rejected' })
+				.eq('id', kid);
+			expect(error).toBeNull();
+			expect((await inviteRow(inviteId)).status).toBe('cancelled');
+			expect((await listMine(b)).data).toEqual([]);
+		});
+
+		it('The admin reads every invite; deleting the student removes its invites', async () => {
+			const { kid, inviteId } = await invitedFamily();
+			const { data: seen } = await admin.client
+				.from('parent_invites')
+				.select('id')
+				.eq('id', inviteId);
+			expect(seen).toEqual([{ id: inviteId }]);
+
+			const { error } = await adminClient.auth.admin.deleteUser(kid);
+			expect(error).toBeNull();
+			const { data: gone } = await adminClient
+				.from('parent_invites')
+				.select('id')
+				.eq('id', inviteId);
+			expect(gone).toEqual([]);
+		});
+
+		async function resetPassword(id: string) {
+			const password = crypto.randomUUID();
+			const { error } = await adminClient.auth.admin.updateUserById(id, { password });
+			if (error) throw new Error(`reset password: ${error.message}`);
+			return password;
+		}
+	}
+);

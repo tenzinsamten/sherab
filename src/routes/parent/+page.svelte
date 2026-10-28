@@ -1,25 +1,44 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { enhance } from '$app/forms';
+	import Check from '@lucide/svelte/icons/check';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Hourglass from '@lucide/svelte/icons/hourglass';
 	import Info from '@lucide/svelte/icons/info';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Mail from '@lucide/svelte/icons/mail';
 	import Users from '@lucide/svelte/icons/users';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
-	import { num } from '$lib/format';
+	import { formatInstant, num } from '$lib/format';
+	import { showToast } from '$lib/toast';
+	import { createPending } from '$lib/pending.svelte';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ui } from '$lib/ui/classes';
-	import type { PageProps } from './$types';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
 	 * The parent dashboard: one card per linked child (mobile-first story 3:
 	 * stacked on a phone, two columns on a tablet). A child still waiting for
 	 * approval is a plain card, not a link.
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	// spec-second-parent story 3: an accepted invite links the child, which the
+	// reloaded page lists.
+	const pending = createPending();
+	$effect(() => {
+		if (form && 'action' in form && form.action === 'acceptInvite' && form.success) {
+			showToast('success', m.parent_invites_accepted());
+		}
+	});
+	let acceptError = $derived(
+		form && 'acceptError' in form && form.acceptError
+			? { inviteId: form.inviteId, message: form.acceptError }
+			: null
+	);
 
 	const childCard = `${ui.card} flex h-full flex-col gap-3`;
 
@@ -44,6 +63,67 @@
 			<Badge variant="warning">{m.parent_status_pending()}</Badge>
 		{/if}
 	</header>
+
+	{#if data.state === 'approved' && (data.invites.length > 0 || data.invitesLoadError)}
+		<!-- spec-second-parent story 3: invites for this login's email, above
+		     everything else, so an invitee with no children sees them too. -->
+		<section
+			class="{ui.card} flex flex-col gap-3"
+			aria-labelledby="invites-heading"
+			data-testid="invites-card"
+		>
+			<h2 id="invites-heading" class={ui.cardTitle}>{m.parent_invites_heading()}</h2>
+			{#if data.invitesLoadError}
+				<EmptyState header={m.load_error_generic()} icon={Info} />
+			{:else}
+				<p class={ui.muted}>{m.parent_invites_intro()}</p>
+				<ul class={ui.rows}>
+					{#each data.invites as invite (invite.id)}
+						<li
+							class="flex flex-wrap items-center justify-between gap-3 py-3"
+							data-testid="invite-row"
+						>
+							<div class="flex min-w-0 flex-col gap-0.5">
+								<strong class="wrap-break-word">
+									{m.parent_invites_item({
+										child: invite.childName,
+										inviter: invite.invitedBy ?? m.parent_invites_unnamed_inviter()
+									})}
+								</strong>
+								<span class={ui.muted}>
+									{m.parent_invites_expires({ date: formatInstant(invite.expiresAt) })}
+								</span>
+							</div>
+							<form
+								method="POST"
+								action="?/acceptInvite"
+								use:enhance={pending.submit(`accept-${invite.id}`)}
+								class="w-full md:w-auto"
+							>
+								<input type="hidden" name="inviteId" value={invite.id} />
+								<Button
+									type="submit"
+									class="{ui.touch} w-full md:w-auto"
+									disabled={pending.busy}
+									aria-busy={pending.is(`accept-${invite.id}`) || undefined}
+								>
+									{#if pending.is(`accept-${invite.id}`)}
+										<LoaderCircle class="animate-spin" aria-hidden="true" />
+									{:else}
+										<Check aria-hidden="true" />
+									{/if}
+									{m.parent_invites_accept()}
+								</Button>
+							</form>
+							{#if acceptError?.inviteId === invite.id}
+								<p class="{ui.error} w-full" role="alert">{acceptError.message}</p>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 
 	{#if data.state === 'unconfirmed'}
 		<section class={ui.card}>

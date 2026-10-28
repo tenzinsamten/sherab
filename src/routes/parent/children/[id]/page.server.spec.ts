@@ -55,7 +55,7 @@ function fakeSupabase(opts: {
 			});
 			return { ...result, data: rows };
 		};
-		for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'range']) {
+		for (const method of ['select', 'eq', 'in', 'is', 'gt', 'gte', 'lte', 'order', 'range']) {
 			c[method] = (...args: unknown[]) => {
 				calls.push({ table, method, args });
 				if (method === 'order') {
@@ -63,7 +63,12 @@ function fakeSupabase(opts: {
 					orderKeys.push({ column: args[0] as string, ascending: options?.ascending ?? true });
 				}
 				const [column, value] = args as [string, unknown];
-				if (method === 'eq') filter((row) => !(column in row) || row[column] === value);
+				if (method === 'eq' || method === 'is') {
+					filter((row) => !(column in row) || row[column] === value);
+				}
+				if (method === 'gt') {
+					filter((row) => !(column in row) || String(row[column]) > String(value));
+				}
 				if (method === 'in') {
 					filter((row) => !(column in row) || (value as unknown[]).includes(row[column]));
 				}
@@ -1256,5 +1261,118 @@ describe('parent child page: detail sections', () => {
 	])('tabs: %s -> %s', async (search, tab) => {
 		const fake = fakeSupabase({ linked: [approvedChild] });
 		expect((await runLoad(fake, CHILD, 'approved', search)).tab).toBe(tab);
+	});
+});
+
+describe('parent child page: invite card (spec-second-parent story 3)', () => {
+	const INVITE = '99999999-8888-4777-8666-555555555555';
+	const future = new Date(Date.now() + 86_400_000).toISOString();
+
+	it.each([
+		['one parent, no invite -> the form', [{ parent_id: 'p1' }], [], { kind: 'form' }],
+		[
+			'one parent, a pending invite -> the invite',
+			[{ parent_id: 'p1' }],
+			[{ id: INVITE, invited_email: 'b@x.de', expires_at: future }],
+			{ kind: 'pending', id: INVITE, email: 'b@x.de', expiresAt: future }
+		],
+		['two parents -> nothing', [{ parent_id: 'p1' }, { parent_id: 'p2' }], [], null]
+	])('%s', async (_label, links, invites, expected) => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: {
+				student_parents: { data: links, error: null },
+				parent_invites: { data: invites, error: null }
+			}
+		});
+		const result = (await runLoad(fake)) as unknown as Record<string, unknown>;
+		expect(result.invite).toEqual(expected);
+		expect(result.inviteLoadError).toBe(false);
+		// Only the child's active links and live (pending, unexpired) invites.
+		expect(fake.calls).toContainEqual({
+			table: 'student_parents',
+			method: 'is',
+			args: ['removed_at', null]
+		});
+		expect(fake.calls).toContainEqual({
+			table: 'parent_invites',
+			method: 'eq',
+			args: ['status', 'pending']
+		});
+		expect(fake.calls.some((c) => c.table === 'parent_invites' && c.method === 'gt')).toBe(true);
+	});
+
+	it('a failed link read flags the card instead of showing the form', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: { student_parents: { data: null, error: { message: 'boom' } } }
+		});
+		const result = (await runLoad(fake)) as unknown as Record<string, unknown>;
+		expect(result).toMatchObject({ invite: null, inviteLoadError: true });
+	});
+
+	it('a read error flags the card instead of showing the form', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: { parent_invites: { data: null, error: { message: 'boom' } } }
+		});
+		const result = (await runLoad(fake)) as unknown as Record<string, unknown>;
+		expect(result).toMatchObject({ invite: null, inviteLoadError: true });
+	});
+
+	it('inviteParent trims the email and calls create_parent_invite()', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.inviteParent(event({ email: ' B@x.de ' }, fake));
+		expect(result).toEqual({ action: 'inviteParent', success: true });
+		expect(fake.rpc).toHaveBeenCalledWith('create_parent_invite', {
+			p_student_id: CHILD,
+			p_email: 'B@x.de'
+		});
+	});
+
+	it('inviteParent refuses an invalid email before any call', async () => {
+		const fake = fakeSupabase({});
+		const result = await actions.inviteParent(event({ email: 'not-an-email' }, fake));
+		expect(result).toMatchObject({
+			status: 400,
+			data: { inviteError: m.invite_error_email(), inviteEmail: 'not-an-email' }
+		});
+		expect(fake.rpc).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[{ code: '42501', hint: 'not_your_child' }, 403, m.invite_error_not_your_child()],
+		[{ code: '22023', hint: 'child_has_two_parents' }, 400, m.invite_error_two_parents()],
+		[{ code: '22023', hint: 'own_or_linked_email' }, 400, m.invite_error_own_email()],
+		[{ code: '22023', hint: 'invite_pending' }, 400, m.invite_error_pending()]
+	])('inviteParent maps a refusal %o', async (error, status, message) => {
+		const fake = fakeSupabase({ rpc: { create_parent_invite: { data: null, error } } });
+		const result = await actions.inviteParent(event({ email: 'b@x.de' }, fake));
+		expect(result).toMatchObject({ status, data: { inviteError: message, inviteEmail: 'b@x.de' } });
+	});
+
+	it('cancelInvite calls cancel_parent_invite() and maps its refusals', async () => {
+		const ok = fakeSupabase({});
+		expect(await actions.cancelInvite(event({ inviteId: INVITE }, ok))).toEqual({
+			action: 'cancelInvite',
+			success: true
+		});
+		expect(ok.rpc).toHaveBeenCalledWith('cancel_parent_invite', { p_invite_id: INVITE });
+
+		const stale = fakeSupabase({
+			rpc: {
+				cancel_parent_invite: { data: null, error: { code: '22023', hint: 'invite_not_live' } }
+			}
+		});
+		expect(await actions.cancelInvite(event({ inviteId: INVITE }, stale))).toMatchObject({
+			status: 400,
+			data: { inviteError: m.invite_cancel_error_not_live() }
+		});
+
+		const bad = fakeSupabase({});
+		expect(await actions.cancelInvite(event({ inviteId: 'x' }, bad))).toMatchObject({
+			status: 400
+		});
+		expect(bad.rpc).not.toHaveBeenCalled();
 	});
 });
