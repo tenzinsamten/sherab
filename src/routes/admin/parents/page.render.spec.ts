@@ -1,5 +1,6 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
+import { formatInstant } from '$lib/format';
 import * as m from '$lib/paraglide/messages.js';
 import Page from './+page.svelte';
 
@@ -9,14 +10,39 @@ import Page from './+page.svelte';
  * while a parent waits, the danger message on a load error and the empty
  * state. No iX is left.
  */
+type Child = {
+	id: string;
+	name: string;
+	status: 'pending' | 'approved' | 'rejected' | null;
+	linkedAt: string;
+	invitedBy: string | null;
+	coParent: string | null;
+	canRemove: boolean;
+};
+
 type Parent = {
 	id: string;
 	name: string;
 	email: string;
 	status: 'pending' | 'approved' | 'rejected';
 	emailConfirmedAt: string | null;
-	children: { id: string; name: string; status: 'pending' | 'approved' | 'rejected' | null }[];
+	children: Child[];
 };
+
+const LINKED_AT = '2026-09-01T10:00:00Z';
+
+function child(id: string, name: string, overrides: Partial<Child> = {}): Child {
+	return {
+		id,
+		name,
+		status: 'approved',
+		linkedAt: LINKED_AT,
+		invitedBy: null,
+		coParent: null,
+		canRemove: false,
+		...overrides
+	};
+}
 
 function parent(id: string, overrides: Partial<Parent> = {}): Parent {
 	return {
@@ -69,20 +95,77 @@ describe('admin parents (+page.svelte)', () => {
 			parents: [
 				parent('a', {
 					children: [
-						{ id: 'c1', name: 'Anna', status: 'approved' },
-						{ id: 'c2', name: 'Pema', status: 'pending' },
-						{ id: 'c3', name: 'Tenzin', status: 'rejected' }
+						child('c1', 'Anna'),
+						child('c2', 'Pema', { status: 'pending' }),
+						child('c3', 'Tenzin', { status: 'rejected' })
 					]
 				}),
 				parent('b')
 			]
 		});
 		const a = row(body, 'Parent a');
-		expect(a).toContain('<span>Anna</span>, <span>Pema</span>');
+		expect(a.match(/data-testid="parent-child"/g)).toHaveLength(3);
+		expect(a).toContain('>Anna</span>');
+		expect(a).toContain('>Pema</span>');
 		expect(a).toContain(` ${m.parents_child_pending()}`);
 		expect(a).toContain(` ${m.parents_child_rejected()}`);
 		expect(a).toContain(m.parents_col_children());
 		expect(row(body, 'Parent b')).toContain('—');
+	});
+
+	it('shows who registered or invited each parent, the link date and the co-parent (story 4)', () => {
+		const body = renderPage({
+			parents: [
+				parent('a', {
+					name: 'Dolma',
+					children: [child('c1', 'Anna', { coParent: 'Karma', canRemove: true })]
+				}),
+				parent('b', {
+					name: 'Karma',
+					children: [
+						child('c1', 'Anna', {
+							linkedAt: '2026-09-02T10:00:00Z',
+							invitedBy: 'Dolma',
+							coParent: 'Dolma',
+							canRemove: true
+						})
+					]
+				})
+			]
+		});
+		const a = row(body, 'Dolma');
+		expect(a).toContain(m.parents_link_registered());
+		expect(a).toContain(m.parents_link_since({ date: formatInstant(LINKED_AT) }));
+		expect(a).toContain(m.parents_link_co_parent({ name: 'Karma' }));
+		const b = row(body, 'Karma');
+		expect(b).toContain(m.parents_link_invited_by({ name: 'Dolma' }));
+		expect(b).toContain(m.parents_link_since({ date: formatInstant('2026-09-02T10:00:00Z') }));
+		expect(b).toContain(m.parents_link_co_parent({ name: 'Dolma' }));
+		for (const r of [a, b]) {
+			expect(r).toContain('action="?/removeParentLink"');
+			expect(r).toContain('name="studentId" value="c1"');
+			expect(r).toContain(m.parents_link_remove());
+		}
+		expect(a).toContain('name="parentId" value="a"');
+		expect(b).toContain('name="parentId" value="b"');
+	});
+
+	it("no co-parent and no Remove for a child with one parent or the admin's own child", () => {
+		const body = renderPage({
+			parents: [
+				parent('a', { name: 'Dolma', children: [child('c1', 'Anna')] }),
+				parent('o', {
+					name: 'Own',
+					children: [child('c2', 'Pema', { coParent: 'Admin', canRemove: false })]
+				})
+			]
+		});
+		const a = row(body, 'Dolma');
+		expect(a).not.toContain('data-testid="parent-child-co-parent"');
+		expect(a).not.toContain('removeParentLink');
+		const own = row(body, 'Own');
+		expect(own).toContain(m.parents_link_co_parent({ name: 'Admin' }));
+		expect(own).not.toContain('removeParentLink');
 	});
 
 	it('links to Requests while a parent waits, and not otherwise', () => {

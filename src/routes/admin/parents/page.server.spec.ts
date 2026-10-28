@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { load } from './+page.server';
+import { actions, load } from './+page.server';
 
-/** An active student_parents row as the load reads it (spec-second-parent story 2). */
+const LINKED_AT = '2026-10-01T10:00:00Z';
+const ADMIN_ID = 'admin-1';
+
+type Person = { display_name: string | null; email: string | null } | null;
+
+/** An active student_parents row as the load reads it (spec-second-parent stories 2 and 4). */
 function link(
 	parentId: string,
 	studentId: string,
@@ -9,13 +14,35 @@ function link(
 		display_name: string | null;
 		registration_name: string | null;
 		status: 'pending' | 'approved' | 'rejected';
-	} | null
+	} | null,
+	extra: { linked_at?: string; parent?: Person; inviter?: Person } = {}
 ) {
-	return { parent_id: parentId, student_id: studentId, student };
+	return {
+		parent_id: parentId,
+		student_id: studentId,
+		linked_at: extra.linked_at ?? LINKED_AT,
+		student,
+		parent: extra.parent ?? {
+			display_name: `Parent ${parentId}`,
+			email: `${parentId}@example.com`
+		},
+		inviter: extra.inviter ?? null
+	};
 }
 
+/** A child row as the load returns it, for a child with one parent. */
+const child = (id: string, name: string, status: 'pending' | 'approved' | 'rejected') => ({
+	id,
+	name,
+	status,
+	linkedAt: LINKED_AT,
+	invitedBy: null,
+	coParent: null,
+	canRemove: false
+});
+
 const LINK_SELECT =
-	'parent_id, student_id, student:profiles!student_parents_student_id_fkey ( display_name, registration_name, status )';
+	'parent_id, student_id, linked_at, student:profiles!student_parents_student_id_fkey ( display_name, registration_name, status ), parent:profiles!student_parents_parent_id_fkey ( display_name, email ), inviter:profiles!student_parents_invited_by_fkey ( display_name, email )';
 
 /**
  * #52 admin Parents list. `load()` is a plain async function taking
@@ -24,7 +51,7 @@ const LINK_SELECT =
  */
 type ChainResult = { data?: unknown; error: unknown };
 
-function fakeLocals(results: { parents: ChainResult; links?: ChainResult }) {
+function fakeLocals(results: { parents: ChainResult; links?: ChainResult; own?: ChainResult }) {
 	type Call = {
 		table: string;
 		select?: string;
@@ -58,7 +85,13 @@ function fakeLocals(results: { parents: ChainResult; links?: ChainResult }) {
 				call.isArgs = args;
 				return chain;
 			},
-			then: (resolve: (value: ChainResult) => unknown) => resolve(result)
+			// The admin's own links (readOwnLinkedStudentIds) filter on parent_id.
+			then: (resolve: (value: ChainResult) => unknown) =>
+				resolve(
+					table === 'student_parents' && call.eqArgs?.[0] === 'parent_id'
+						? (results.own ?? { data: [], error: null })
+						: result
+				)
 		};
 		return chain;
 	};
@@ -69,7 +102,8 @@ function fakeLocals(results: { parents: ChainResult; links?: ChainResult }) {
 					table,
 					table === 'parents' ? results.parents : (results.links ?? { data: [], error: null })
 				)
-		}
+		},
+		safeGetSession: async () => ({ user: { id: ADMIN_ID } })
 	} as unknown as Parameters<typeof load>[0]['locals'];
 	return { locals, calls };
 }
@@ -121,17 +155,14 @@ describe('admin parents +page.server.ts load', () => {
 					name: 'Dolma',
 					email: 'dolma@example.com',
 					emailConfirmedAt: '2026-01-01T00:00:00Z',
-					children: [
-						{ id: 'c1', name: 'Anna', status: 'approved' },
-						{ id: 'c2', name: 'Pema', status: 'pending' }
-					]
+					children: [child('c1', 'Anna', 'approved'), child('c2', 'Pema', 'pending')]
 				}
 			],
 			pendingCount: 0,
 			loadError: false
 		});
 		const parentsCall = calls.find((c) => c.table === 'parents');
-		const childrenCall = calls.find((c) => c.table === 'student_parents');
+		const childrenCall = calls.find((c) => c.table === 'student_parents' && !c.eqArgs);
 		expect(parentsCall?.select).toBe(
 			'id, status, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )'
 		);
@@ -141,34 +172,115 @@ describe('admin parents +page.server.ts load', () => {
 		expect(JSON.stringify(calls)).not.toContain('registered_by_parent_id');
 	});
 
-	it('a child with two linked parents is listed under both (spec-second-parent story 2)', async () => {
-		const anna = { display_name: 'Anna', registration_name: 'Anna', status: 'approved' as const };
-		const { locals } = fakeLocals({
-			parents: {
-				data: [
-					parentRow('pa', 'approved', {
-						display_name: 'A',
-						email: 'a@example.com',
-						email_confirmed_at: 'x'
-					}),
-					parentRow('pb', 'approved', {
-						display_name: 'B',
-						email: 'b@example.com',
-						email_confirmed_at: 'x'
-					})
-				],
-				error: null
-			},
-			links: { data: [link('pa', 'c1', anna), link('pb', 'c1', anna)], error: null }
-		});
+	const anna = { display_name: 'Anna', registration_name: 'Anna', status: 'approved' as const };
+	const twoParents = () => ({
+		data: [
+			parentRow('pa', 'approved', {
+				display_name: 'A',
+				email: 'a@example.com',
+				email_confirmed_at: 'x'
+			}),
+			parentRow('pb', 'approved', {
+				display_name: 'B',
+				email: 'b@example.com',
+				email_confirmed_at: 'x'
+			})
+		],
+		error: null
+	});
+	/** A registered the child; B was invited by A a day later. */
+	const familyLinks = () => ({
+		data: [
+			link('pa', 'c1', anna, {
+				linked_at: '2026-09-01T10:00:00Z',
+				parent: { display_name: 'A', email: 'a@example.com' }
+			}),
+			link('pb', 'c1', anna, {
+				linked_at: '2026-09-02T10:00:00Z',
+				parent: { display_name: null, email: 'b@example.com' },
+				inviter: { display_name: 'A', email: 'a@example.com' }
+			})
+		],
+		error: null
+	});
+
+	it('a child with two parents: inviter, link date, co-parent and Remove under both (stories 2 and 4)', async () => {
+		const { locals, calls } = fakeLocals({ parents: twoParents(), links: familyLinks() });
 
 		const result = await run(locals);
 		if (!result) throw new Error('no result');
 
 		expect(result.parents.map((p: { id: string }) => p.id)).toEqual(['pa', 'pb']);
-		for (const p of result.parents) {
-			expect(p.children).toEqual([{ id: 'c1', name: 'Anna', status: 'approved' }]);
-		}
+		expect(result.parents[0].children).toEqual([
+			{
+				id: 'c1',
+				name: 'Anna',
+				status: 'approved',
+				linkedAt: '2026-09-01T10:00:00Z',
+				invitedBy: null,
+				coParent: 'b@example.com',
+				canRemove: true
+			}
+		]);
+		expect(result.parents[1].children).toEqual([
+			{
+				id: 'c1',
+				name: 'Anna',
+				status: 'approved',
+				linkedAt: '2026-09-02T10:00:00Z',
+				invitedBy: 'A',
+				coParent: 'A',
+				canRemove: true
+			}
+		]);
+		const ownCall = calls.find((c) => c.table === 'student_parents' && c.eqArgs);
+		expect(ownCall?.eqArgs).toEqual(['parent_id', ADMIN_ID]);
+		expect(ownCall?.isArgs).toEqual(['removed_at', null]);
+	});
+
+	it("no Remove for the admin's own child (AD-4)", async () => {
+		const { locals } = fakeLocals({
+			parents: twoParents(),
+			links: familyLinks(),
+			own: { data: [{ student_id: 'c1' }], error: null }
+		});
+
+		const result = await run(locals);
+		for (const p of result?.parents ?? []) expect(p.children[0].canRemove).toBe(false);
+	});
+
+	it("no Remove anywhere when the admin's own links cannot be read", async () => {
+		const { locals } = fakeLocals({
+			parents: twoParents(),
+			links: familyLinks(),
+			own: { data: null, error: { message: 'boom' } }
+		});
+
+		const result = await run(locals);
+		expect(result?.loadError).toBe(false);
+		for (const p of result?.parents ?? []) expect(p.children[0].canRemove).toBe(false);
+	});
+
+	it('a child with one parent left has no co-parent and no Remove (acceptance)', async () => {
+		const { locals } = fakeLocals({
+			parents: twoParents(),
+			links: { data: [familyLinks().data[0]], error: null }
+		});
+
+		const result = await run(locals);
+		if (!result) throw new Error('no result');
+		expect(result.parents[0].children).toEqual([
+			{
+				id: 'c1',
+				name: 'Anna',
+				status: 'approved',
+				linkedAt: '2026-09-01T10:00:00Z',
+				invitedBy: null,
+				coParent: null,
+				canRemove: false
+			}
+		]);
+		expect(result.parents[1].children).toEqual([]);
 	});
 
 	it('a link whose student the admin cannot read is skipped', async () => {
@@ -243,7 +355,7 @@ describe('admin parents +page.server.ts load', () => {
 		const result = await run(locals);
 
 		expect(result).toEqual({ parents: [], pendingCount: 0, loadError: false });
-		expect(calls.map((c) => c.table)).toEqual(['parents', 'student_parents']);
+		expect(calls.map((c) => c.table)).toEqual(['parents', 'student_parents', 'student_parents']);
 	});
 
 	it('maps the children of 1 000 parents with no id list in the query (CAP-5)', async () => {
@@ -285,9 +397,9 @@ describe('admin parents +page.server.ts load', () => {
 		expect(result.loadError).toBe(false);
 		expect(result.parents).toHaveLength(1000);
 		for (const p of result.parents) {
-			expect(p.children).toEqual([{ id: `c-${p.id}`, name: `Child ${p.id}`, status: 'approved' }]);
+			expect(p.children).toEqual([child(`c-${p.id}`, `Child ${p.id}`, 'approved')]);
 		}
-		const childrenCall = calls.find((c) => c.table === 'student_parents');
+		const childrenCall = calls.find((c) => c.table === 'student_parents' && !c.eqArgs);
 		expect(childrenCall?.inArgs).toBeUndefined();
 		expect(childrenCall?.isArgs).toEqual(['removed_at', null]);
 	});
@@ -326,5 +438,79 @@ describe('admin parents +page.server.ts load', () => {
 		});
 
 		expect(await run(locals)).toEqual({ parents: [], pendingCount: 0, loadError: true });
+	});
+});
+
+const STUDENT = '11111111-1111-4111-8111-111111111111';
+const PARENT = '22222222-2222-4222-8222-222222222222';
+
+/** spec-second-parent story 4: the removeParentLink action. */
+describe('admin parents removeParentLink action', () => {
+	function actionEvent(
+		fields: Record<string, string>,
+		rpcResult: { error: unknown } = { error: null },
+		user: { id: string } | null = { id: ADMIN_ID }
+	) {
+		const rpc = vi.fn(async () => rpcResult);
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const event = {
+			request: new Request('http://localhost/admin/parents?/removeParentLink', {
+				method: 'POST',
+				body
+			}),
+			locals: { supabase: { rpc }, safeGetSession: async () => ({ user }) }
+		} as unknown as Parameters<typeof actions.removeParentLink>[0];
+		return { event, rpc };
+	}
+
+	it('calls remove_parent_link with the two ids', async () => {
+		const { event, rpc } = actionEvent({ studentId: STUDENT, parentId: PARENT });
+
+		expect(await actions.removeParentLink(event)).toEqual({ linkRemoved: true });
+		expect(rpc).toHaveBeenCalledWith('remove_parent_link', {
+			p_student_id: STUDENT,
+			p_parent_id: PARENT
+		});
+	});
+
+	it('refuses a malformed id without calling the database', async () => {
+		const { event, rpc } = actionEvent({ studentId: 'nope', parentId: PARENT });
+
+		const result = await actions.removeParentLink(event);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: "You can't remove this parent link." }
+		});
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
+	it('refuses without a session', async () => {
+		const { event, rpc } = actionEvent({ studentId: STUDENT, parentId: PARENT }, undefined, null);
+
+		expect(await actions.removeParentLink(event)).toMatchObject({ status: 401 });
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			{ code: '42501', hint: 'own_child' },
+			403,
+			"You can't remove a parent link of your own child."
+		],
+		[{ code: '42501' }, 403, "You can't remove this parent link."],
+		[
+			{ code: '22023', hint: 'last_parent_link' },
+			400,
+			"This is the child's only parent link, so it can't be removed."
+		],
+		[{ code: '22023', hint: 'link_removed' }, 400, 'This parent link is already removed.']
+	])('maps the refusal %o', async (err, status, message) => {
+		const { event } = actionEvent({ studentId: STUDENT, parentId: PARENT }, { error: err });
+
+		expect(await actions.removeParentLink(event)).toMatchObject({
+			status,
+			data: { error: message }
+		});
 	});
 });

@@ -1,29 +1,51 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Unlink from '@lucide/svelte/icons/unlink';
 	import Users from '@lucide/svelte/icons/users';
-	import { num } from '$lib/format';
+	import { enhance } from '$app/forms';
+	import { formatInstant, num } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/toast';
+	import { createConfirm } from '$lib/confirm.svelte';
+	import { createPending } from '$lib/pending.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
 	import { ui } from '$lib/ui/classes';
-	import type { PageProps } from './$types';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
-	 * Every parent account, its status and children (read-only).
+	 * Every parent account, its status and children.
 	 * Mobile-first story 9: stacked cards below 80em, a full table from 80em
 	 * (the Requests pattern); in a card, the children carry their column's
 	 * name as a label.
+	 * spec-second-parent story 4 (CAP-4): each child shows who invited the
+	 * parent (or that they registered the child), the link date and the
+	 * co-parent; a child with two parents, not the admin's own, offers Remove
+	 * for this parent's link, after a confirmation naming both.
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const pending = createPending();
+	const confirm = createConfirm();
+
+	// Errors toast app-wide (+layout.svelte); the success toast is this page's.
+	$effect(() => {
+		const result = form;
+		if (!result) return;
+		untrack(() => {
+			if ('linkRemoved' in result && result.linkRemoved)
+				showToast('success', m.parents_link_removed_success());
+		});
+	});
 
 	let hydrated = $state(false);
 	onMount(() => {
 		hydrated = true;
 	});
-
-	// An expression, not literal text, so Svelte keeps the space: "Anna, Pema".
-	const SEPARATOR = ', ';
 
 	function childMarker(status: 'pending' | 'approved' | 'rejected' | null) {
 		if (status === 'pending') return m.parents_child_pending();
@@ -123,12 +145,77 @@
 									{#if parent.children.length === 0}
 										<span class={ui.muted}>—</span>
 									{:else}
-										{#each parent.children as child, i (child.id)}
-											{@const marker = childMarker(child.status)}
-											{#if i > 0}{SEPARATOR}{/if}<span>{child.name}</span>{#if marker}<span
-													class={ui.muted}>{` ${marker}`}</span
-												>{/if}
-										{/each}
+										<ul class="flex min-w-0 flex-col gap-3">
+											{#each parent.children as child (child.id)}
+												{@const marker = childMarker(child.status)}
+												{@const key = `removeParentLink:${parent.id}:${child.id}`}
+												<li class="flex min-w-0 flex-col gap-1" data-testid="parent-child">
+													<p class="wrap-break-word">
+														<span class="font-medium">{child.name}</span>{#if marker}<span
+																class={ui.muted}>{` ${marker}`}</span
+															>{/if}
+													</p>
+													<p
+														class="text-sm wrap-break-word {ui.muted}"
+														data-testid="parent-child-link"
+													>
+														{child.invitedBy === null
+															? m.parents_link_registered()
+															: m.parents_link_invited_by({ name: child.invitedBy })}
+														<span aria-hidden="true">·</span>
+														{m.parents_link_since({ date: formatInstant(child.linkedAt) })}
+													</p>
+													{#if child.coParent !== null}
+														<p
+															class="text-sm wrap-anywhere {ui.muted}"
+															data-testid="parent-child-co-parent"
+														>
+															{m.parents_link_co_parent({ name: child.coParent })}
+														</p>
+													{/if}
+													{#if child.canRemove}
+														<form
+															method="POST"
+															action="?/removeParentLink"
+															class="mt-1"
+															use:enhance={pending.submit(key, {
+																confirm: () =>
+																	confirm.ask(
+																		m.parents_link_remove_confirm({
+																			parent: parent.name,
+																			child: child.name
+																		}),
+																		m.parents_link_remove(),
+																		{ destructive: true }
+																	)
+															})}
+														>
+															<input type="hidden" name="studentId" value={child.id} />
+															<input type="hidden" name="parentId" value={parent.id} />
+															<Button
+																type="submit"
+																variant="outline"
+																class="{ui.touch} gap-2"
+																aria-label={m.parents_link_remove_label({
+																	parent: parent.name,
+																	child: child.name
+																})}
+																aria-busy={pending.is(key) || undefined}
+																disabled={pending.busy}
+																data-testid="remove-parent-link"
+															>
+																{#if pending.is(key)}
+																	<LoaderCircle class="animate-spin" aria-hidden="true" />
+																{:else}
+																	<Unlink aria-hidden="true" />
+																{/if}
+																{m.parents_link_remove()}
+															</Button>
+														</form>
+													{/if}
+												</li>
+											{/each}
+										</ul>
 									{/if}
 								</td>
 							</tr>
@@ -139,3 +226,5 @@
 		</section>
 	{/if}
 </div>
+
+<ConfirmDialog {confirm} />

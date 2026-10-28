@@ -1869,6 +1869,10 @@ export type Database = {
 				/** The student now linked. */
 				Returns: string;
 			};
+			remove_parent_link: {
+				Args: { p_student_id: string; p_parent_id: string };
+				Returns: undefined;
+			};
 		};
 		Enums: {
 			parent_status: 'pending' | 'approved' | 'rejected';

@@ -611,3 +611,6 @@
 - source_spec: `_bmad-output/specs/spec-second-parent/stories/1-link-model-and-migration.md`
   summary: Add a repeatable migration test for 0054 that applies migrations up to 0053, seeds linked, unlinked and non-approved-parent students, applies 0054 and asserts the pre-check raise and the slot-1 backfill.
   evidence: supabase:reset applies 0054 before any data exists, so the test suite cannot exercise the backfill; it was verified once by hand. A regression in the backfill would pass every test.
+- source_spec: none
+  summary: spec-second-parent story 4 CAP-6 — teachers and the admin see both linked parents as the child's contacts (student_parent_contacts, AD-12) and which parent set each leave or sick answer.
+  evidence: Split from story 4 "Admin and teacher views" at the bmad-build scope check (2026-10-28): CAP-6 ships independently of CAP-4 (admin view and link removal), which goes first.

@@ -18571,3 +18571,295 @@ describe.skipIf(!reachable)(
 		}
 	}
 );
+
+describe.skipIf(!reachable)(
+	'spec-second-parent story 4: admin removes a parent link (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		type Parent = { id: string; email: string; client: Client; name: string };
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let teamId: string;
+
+		const name = (label: string) => `SSP4 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+		async function signIn(email: string, password: string): Promise<Client> {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		/** An approved parent with a distinct display name, signed in. */
+		async function newParent(label: string): Promise<Parent> {
+			const email = `ssp4-${label.toLowerCase()}-${crypto.randomUUID()}@example.test`;
+			const p = await createApprovedParent(email);
+			const displayName = name(label);
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ display_name: displayName })
+				.eq('id', p.id);
+			if (error) throw new Error(`Failed to name parent: ${error.message}`);
+			return { id: p.id, email, client: await signIn(email, p.password), name: displayName };
+		}
+
+		/** A child registered by `parent` through the sign-up and approved. */
+		async function child(parentEmail: string) {
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName: name('Kid'),
+				guardianEmail: parentEmail
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			return id;
+		}
+
+		/** A registered the child; A invited B and B accepted (slot 2, invited by A). */
+		async function family() {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const kid = await child(a.email);
+			const { data: inviteId, error } = await a.client.rpc('create_parent_invite', {
+				p_student_id: kid,
+				p_email: b.email
+			});
+			if (error || !inviteId) throw new Error(`Failed to invite: ${error?.message}`);
+			const { error: acceptError } = await b.client.rpc('accept_parent_invite', {
+				p_invite_id: inviteId
+			});
+			if (acceptError) throw new Error(`Failed to accept: ${acceptError.message}`);
+			return { a, b, kid };
+		}
+
+		async function activeLinks(studentId: string) {
+			const { data, error } = await adminClient
+				.from('student_parents')
+				.select('parent_id')
+				.eq('student_id', studentId)
+				.is('removed_at', null)
+				.order('slot');
+			if (error) throw new Error(`read links: ${error.message}`);
+			return (data ?? []).map((l) => l.parent_id);
+		}
+
+		const removeLink = (client: Client, studentId: string, parentId: string) =>
+			client.rpc('remove_parent_link', { p_student_id: studentId, p_parent_id: parentId });
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacher = await createSignedInUser('teacher');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({ name: name('Class'), code: `R${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			const { error: teacherError } = await adminClient
+				.from('class_teachers')
+				.insert({ class_id: classId, teacher_id: teacher.id });
+			if (teacherError) throw new Error(`Failed to assign teacher: ${teacherError.message}`);
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('View: the admin reads both links with the inviter and the link date', async () => {
+			const { a, b, kid } = await family();
+
+			// The admin parents page's read.
+			const { data, error } = await admin.client
+				.from('student_parents')
+				.select(
+					'parent_id, linked_at, parent:profiles!student_parents_parent_id_fkey ( display_name, email ), inviter:profiles!student_parents_invited_by_fkey ( display_name, email )'
+				)
+				.eq('student_id', kid)
+				.is('removed_at', null)
+				.order('slot');
+			expect(error).toBeNull();
+			expect(data).toEqual([
+				{
+					parent_id: a.id,
+					linked_at: expect.any(String),
+					parent: { display_name: a.name, email: a.email },
+					inviter: null
+				},
+				{
+					parent_id: b.id,
+					linked_at: expect.any(String),
+					parent: { display_name: b.name, email: b.email },
+					inviter: { display_name: a.name, email: a.email }
+				}
+			]);
+		});
+
+		it("Remove: the admin removes B; B loses the child at once, A is unchanged, B's deletion request survives", async () => {
+			const { a, b, kid } = await family();
+			const { data: req, error: reqError } = await b.client
+				.from('deletion_requests')
+				.insert({ student_id: kid })
+				.select('id')
+				.single();
+			expect(reqError).toBeNull();
+
+			const before = Date.now();
+			expect((await removeLink(admin.client, kid, b.id)).error).toBeNull();
+
+			const { data: rows } = await adminClient
+				.from('student_parents')
+				.select('parent_id, removed_by, removed_at')
+				.eq('student_id', kid)
+				.order('slot');
+			expect(rows?.[0]).toEqual({ parent_id: a.id, removed_by: null, removed_at: null });
+			expect(rows?.[1]).toMatchObject({ parent_id: b.id, removed_by: admin.id });
+			expect(Date.parse(rows![1].removed_at!)).toBeGreaterThan(before - 5000);
+
+			const { data: bChildren } = await b.client.rpc('linked_children');
+			expect(bChildren ?? []).toEqual([]);
+			const { data: bProfile } = await b.client.from('profiles').select('id').eq('id', kid);
+			expect(bProfile ?? []).toEqual([]);
+			const { data: bLinks } = await b.client
+				.from('student_parents')
+				.select('id')
+				.eq('student_id', kid);
+			expect(bLinks ?? []).toEqual([]);
+
+			const { data: aChildren } = await a.client.rpc('linked_children');
+			expect(aChildren?.map((c) => c.id)).toEqual([kid]);
+			const { data: aProfile } = await a.client.from('profiles').select('id').eq('id', kid);
+			expect(aProfile).toEqual([{ id: kid }]);
+
+			// AD-9: B's request stays for the admin to decide.
+			const { data: kept } = await adminClient
+				.from('deletion_requests')
+				.select('status, requested_by')
+				.eq('id', req!.id)
+				.single();
+			expect(kept).toEqual({ status: 'pending', requested_by: b.id });
+		});
+
+		it('Last link: refused after B was removed, and for a child with one parent', async () => {
+			const { a, b, kid } = await family();
+			expect((await removeLink(admin.client, kid, b.id)).error).toBeNull();
+			expect((await removeLink(admin.client, kid, a.id)).error).toMatchObject({
+				code: '22023',
+				hint: 'last_parent_link'
+			});
+			expect(await activeLinks(kid)).toEqual([a.id]);
+
+			const only = await newParent('Only');
+			const kid2 = await child(only.email);
+			expect((await removeLink(admin.client, kid2, only.id)).error).toMatchObject({
+				code: '22023',
+				hint: 'last_parent_link'
+			});
+			expect(await activeLinks(kid2)).toEqual([only.id]);
+		});
+
+		it('Concurrent: removing A and B at once leaves one link', async () => {
+			const { a, b, kid } = await family();
+			const admin2 = await createSignedInUser('admin');
+			const results = await Promise.all([
+				removeLink(admin.client, kid, a.id),
+				removeLink(admin2.client, kid, b.id)
+			]);
+			expect(results.filter((r) => r.error === null)).toHaveLength(1);
+			const refused = results.find((r) => r.error)?.error;
+			expect(refused?.hint).toBe('last_parent_link');
+			expect(['22023', '23514']).toContain(refused?.code);
+			expect(await activeLinks(kid)).toHaveLength(1);
+		});
+
+		it('Admin is co-parent: the admin linked to the child cannot remove either link', async () => {
+			const a = await newParent('A');
+			const dual = await createSignedInUser('admin');
+			const { error: rowError } = await adminClient
+				.from('parents')
+				.insert({ id: dual.id, status: 'approved' });
+			if (rowError) throw new Error(`Failed to make parent: ${rowError.message}`);
+			const kid = await child(a.email);
+			await linkParent(adminClient, kid, dual.id);
+
+			for (const parentId of [a.id, dual.id]) {
+				expect((await removeLink(dual.client, kid, parentId)).error).toMatchObject({
+					code: '42501',
+					hint: 'own_child'
+				});
+			}
+			expect(await activeLinks(kid)).toEqual([a.id, dual.id]);
+		});
+
+		it('Not admin: a parent or a teacher is refused and nothing changes', async () => {
+			const { a, b, kid } = await family();
+			for (const client of [a.client, b.client, teacher.client]) {
+				for (const parentId of [a.id, b.id]) {
+					expect((await removeLink(client, kid, parentId)).error).toMatchObject({
+						code: '42501'
+					});
+				}
+			}
+			expect((await removeLink(anonClient(), kid, b.id)).error).not.toBeNull();
+			expect(await activeLinks(kid)).toEqual([a.id, b.id]);
+
+			// No client write path on the table, for the admin either.
+			const { data: direct } = await admin.client
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', kid)
+				.eq('parent_id', b.id)
+				.select('id');
+			expect(direct ?? []).toEqual([]);
+			expect(await activeLinks(kid)).toEqual([a.id, b.id]);
+		});
+
+		it('Already removed or unknown: link_removed, or 42501 for ids with no link', async () => {
+			const { a, b, kid } = await family();
+			expect((await removeLink(admin.client, kid, b.id)).error).toBeNull();
+			expect((await removeLink(admin.client, kid, b.id)).error).toMatchObject({
+				code: '22023',
+				hint: 'link_removed'
+			});
+
+			const stranger = await newParent('Stranger');
+			expect((await removeLink(admin.client, kid, stranger.id)).error).toMatchObject({
+				code: '42501'
+			});
+			expect(
+				(await removeLink(admin.client, crypto.randomUUID(), crypto.randomUUID())).error
+			).toMatchObject({ code: '42501' });
+			expect(await activeLinks(kid)).toEqual([a.id]);
+		});
+
+		it("Invites: B's pending invite becomes cancelled when B is removed", async () => {
+			const { a, b, kid } = await family();
+			// With two parents the invite function refuses a new invite, so the
+			// pending row B sent out is made with the service role.
+			const { error: insertError } = await adminClient.from('parent_invites').insert({
+				student_id: kid,
+				invited_email: `ssp4-c-${crypto.randomUUID()}@example.test`,
+				invited_by: b.id,
+				expires_at: new Date(Date.now() + 86_400_000).toISOString()
+			});
+			expect(insertError).toBeNull();
+
+			expect((await removeLink(admin.client, kid, b.id)).error).toBeNull();
+			const { data: invites } = await adminClient
+				.from('parent_invites')
+				.select('status')
+				.eq('student_id', kid)
+				.eq('invited_by', b.id);
+			expect(invites).toEqual([{ status: 'cancelled' }]);
+			expect(await activeLinks(kid)).toEqual([a.id]);
+		});
+	}
+);
