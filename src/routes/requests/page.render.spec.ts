@@ -311,4 +311,33 @@ describe('requests (+page.svelte)', () => {
 			expect(m.requests_empty_body()).not.toMatch(/[A-Za-z]/);
 		});
 	});
+
+	it('CAP-6: the Sick queue, its history and Upcoming leave say which parent set each answer', () => {
+		const body = renderPage({
+			sickPending: [{ ...sick, setByName: 'Parent B' }],
+			sickDecided: [{ ...decidedSick, setByName: 'Parent A' }],
+			upcomingLeave: [
+				{
+					sessionId: 'sess2',
+					studentId: 'st3',
+					studentName: 'Tashi',
+					className: 'Class A',
+					day: '2026-11-02',
+					startTime: null,
+					classification: 'planned',
+					setByName: 'Parent B'
+				}
+			]
+		} as never);
+		const sickCard = body.slice(at(body, 'requests-sick'), at(body, 'requests-upcoming-leave'));
+		expect(sickCard).toContain(m.leave_set_by({ name: 'Parent B' }));
+		const upcoming = body.slice(at(body, 'requests-upcoming-leave'), at(body, 'requests-history'));
+		expect(upcoming).toContain(m.leave_set_by({ name: 'Parent B' }));
+		expect(history(body)).toContain(m.leave_set_by({ name: 'Parent A' }));
+	});
+
+	it('CAP-6: an answer whose setter is unknown shows no label', () => {
+		const body = renderPage({ sickPending: [{ ...sick, setByName: null }] } as never);
+		expect(body).not.toContain('data-testid="leave-set-by"');
+	});
 });

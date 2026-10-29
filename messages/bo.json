@@ -925,6 +925,8 @@
 	"roster_leave_label": "ཚོགས་ཐེངས་འདིའི་དགོངས་ཞུའི་ལན།",
 	"roster_upcoming_leave_heading": "ཡོང་རྒྱུའི་གུང་གསེང་",
 	"roster_upcoming_leave_empty": "རྗེས་མའི་བདུན་ཕྲག་ ༡༢ རིང་གུང་གསེང་སྙན་ཞུ་རྒྱབ་མི་འདུག།",
+	"roster_parents_heading": "ཕ་མ།",
+	"roster_parents_none": "ཕ་མའི་འབྲེལ་གཏུག་མེད།",
 	"leave_error_sick_closed": "ན་ཚ་ནི་ཚོགས་ཐེངས་རྗེས་ཀྱི་ཉིན་མཇུག་བར་དུ་ཁོ་ན་གཞག་ཐུབ།",
 	"leave_error_decided": "ན་ཚའི་དགོངས་ཞུ་འདི་ཐག་གཅོད་བྱས་ཟིན། ལན་སླར་བསྒྱུར་མི་ཐུབ།",
 	"leave_decision_pending": "སྒུག་བཞིན་པ།",

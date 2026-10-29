@@ -598,7 +598,8 @@ describe('loadSickLeave', () => {
 		decision,
 		decided_at: decidedAt,
 		decided_by_system: id === 'c',
-		own_child: id === 'b'
+		own_child: id === 'b',
+		answered_by_name: null
 	});
 
 	it('splits pending from decided (newest decision first)', async () => {
@@ -629,13 +630,43 @@ describe('loadSickLeave', () => {
 		const result = await loadSickLeave({ rpc } as unknown as Parameters<typeof loadSickLeave>[0]);
 		expect(result).toEqual({ sickPending: [], sickDecided: [], sickError: true });
 	});
+
+	it("CAP-6: maps answered_by_name to the row's setter, in the one sick_leave_queue call", async () => {
+		const rpc = vi.fn(async () => ({
+			data: [
+				{ ...row('a', null, null), answered_by_name: 'Parent B' },
+				{ ...row('b', null, null), answered_by_name: null },
+				{ ...row('c', 'approved', '2026-09-01T00:00:00Z'), answered_by_name: 'Parent A' }
+			],
+			error: null
+		}));
+		const result = await loadSickLeave({ rpc } as unknown as Parameters<typeof loadSickLeave>[0]);
+		expect(rpc).toHaveBeenCalledTimes(1);
+		expect(result.sickPending.map((r) => [r.studentId, r.setByName])).toEqual([
+			['k-a', 'Parent B'],
+			['k-b', null]
+		]);
+		expect(result.sickDecided.map((r) => r.setByName)).toEqual(['Parent A']);
+	});
 });
 
 describe('loadUpcomingLeave (#107)', () => {
 	type Calls = { table: string; method: string; args: unknown[] }[];
 	/** A fake client: each table answers `results[table]` (or fails with `errors[table]`), .range() slices. */
-	function fake(results: Record<string, unknown[]>, errors: Record<string, unknown> = {}) {
+	function fake(
+		results: Record<string, unknown[]>,
+		errors: Record<string, unknown> = {},
+		/** actor_display_name answers, keyed `${student}:${actor}` (missing = null). */
+		names: Record<string, string> = {},
+		/** actor_display_name fails for every call. */
+		namesError: { message: string } | null = null
+	) {
 		const calls: Calls = [];
+		const rpc = async (fn: string, args: { p_student_id: string; p_actor_id: string }) => {
+			calls.push({ table: 'rpc', method: fn, args: [args] });
+			if (namesError) return { data: null, error: namesError };
+			return { data: names[`${args.p_student_id}:${args.p_actor_id}`] ?? null, error: null };
+		};
 		function chain(table: string) {
 			let data = results[table] ?? [];
 			const c: Record<string, unknown> = {};
@@ -656,14 +687,21 @@ describe('loadUpcomingLeave (#107)', () => {
 		}
 		return {
 			calls,
-			client: { from: chain } as unknown as Parameters<typeof loadUpcomingLeave>[0]
+			client: { from: chain, rpc } as unknown as Parameters<typeof loadUpcomingLeave>[0]
 		};
 	}
-	const answer = (session: string, student: string, value: string, classification = 'planned') => ({
+	const answer = (
+		session: string,
+		student: string,
+		value: string,
+		classification = 'planned',
+		answeredBy: string | null = null
+	) => ({
 		class_session_id: session,
 		student_id: student,
 		answer: value,
-		classification: value === 'on_leave' ? classification : null
+		classification: value === 'on_leave' ? classification : null,
+		answered_by: answeredBy
 	});
 	const session = (id: string, day: string, start: string | null, cancelled = false) => ({
 		id,
@@ -739,6 +777,60 @@ describe('loadUpcomingLeave (#107)', () => {
 		);
 		expect(result.upcomingLeave.map((r) => [r.sessionId, r.studentName])).toEqual([
 			['s1', 'Tashi']
+		]);
+	});
+
+	it('CAP-6: each row names its setter, resolved once per (student, actor); an unknown name shows none', async () => {
+		const { client, calls } = fake(
+			{
+				session_leave_history: [
+					answer('s1', 'k1', 'on_leave', 'planned', 'pB'),
+					answer('s2', 'k1', 'on_leave', 'planned', 'pB'),
+					answer('s1', 'k2', 'on_leave', 'planned', 'pX')
+				],
+				class_sessions_effective: [
+					session('s1', '2099-01-03', null),
+					session('s2', '2099-01-10', null)
+				],
+				profiles: [
+					{ id: 'k1', display_name: 'Pema', registration_name: null },
+					{ id: 'k2', display_name: 'Dawa', registration_name: null }
+				]
+			},
+			{},
+			{ 'k1:pB': 'Parent B' }
+		);
+		const result = await loadUpcomingLeave(client, 'a1', true);
+		expect(result.upcomingLeave.map((r) => [r.sessionId, r.studentName, r.setByName])).toEqual([
+			['s1', 'Dawa', null],
+			['s1', 'Pema', 'Parent B'],
+			['s2', 'Pema', 'Parent B']
+		]);
+		const leaveSelect = calls.find(
+			(c) => c.table === 'session_leave_history' && c.method === 'select'
+		);
+		expect(String(leaveSelect?.args[0])).toContain('answered_by');
+		expect(calls.filter((c) => c.table === 'rpc').map((c) => c.args[0])).toEqual([
+			{ p_student_id: 'k1', p_actor_id: 'pB' },
+			{ p_student_id: 'k2', p_actor_id: 'pX' }
+		]);
+	});
+
+	it('CAP-6: a failed actor_display_name still lists the rows, with no label and no error', async () => {
+		const { client } = fake(
+			{
+				session_leave_history: [answer('s1', 'k1', 'on_leave', 'planned', 'pB')],
+				class_sessions_effective: [session('s1', '2099-01-03', null)],
+				profiles: [{ id: 'k1', display_name: 'Pema', registration_name: null }]
+			},
+			{},
+			{},
+			{ message: 'boom' }
+		);
+		const result = await loadUpcomingLeave(client, 'a1', true);
+		expect(result.upcomingLeaveError).toBe(false);
+		expect(result.upcomingLeave.map((r) => [r.sessionId, r.studentName, r.setByName])).toEqual([
+			['s1', 'Pema', null]
 		]);
 	});
 

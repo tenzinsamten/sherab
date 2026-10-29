@@ -548,6 +548,13 @@
 										{row.className} ·
 										<time datetime={row.day}>{formatDay(row.day)}</time>
 										· {row.startTime ?? m.calendar_status_unset()}
+										{#if row.setByName}
+											<!-- spec-second-parent CAP-6: which parent set the answer. -->
+											·
+											<span data-testid="leave-set-by"
+												>{m.leave_set_by({ name: row.setByName })}</span
+											>
+										{/if}
 									</p>
 								</td>
 								<td role="cell" class={tdActions}>
@@ -899,6 +906,13 @@
 										{row.className} ·
 										<time datetime={row.day}>{formatDay(row.day)}</time>
 										· {row.startTime ?? m.calendar_status_unset()}
+										{#if row.setByName}
+											<!-- spec-second-parent CAP-6: which parent set the answer. -->
+											·
+											<span data-testid="leave-set-by"
+												>{m.leave_set_by({ name: row.setByName })}</span
+											>
+										{/if}
 									</p>
 								</td>
 							</tr>
@@ -1014,6 +1028,11 @@
 												· {row.startTime ?? m.calendar_status_unset()}
 												{#if row.decidedBySystem}
 													· {m.requests_sick_auto()}
+												{/if}
+												{#if row.setByName}
+													· <span data-testid="leave-set-by"
+														>{m.leave_set_by({ name: row.setByName })}</span
+													>
 												{/if}
 											</p>
 										</td>

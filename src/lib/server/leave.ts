@@ -4,6 +4,7 @@ import { toHhMm } from '$lib/server/calendar';
 import { todayInBerlin } from '$lib/berlin-date';
 import { studentDisplayName } from '$lib/server/enrollments';
 import { addDays } from '$lib/server/student-homework';
+import { actorKey, actorNames } from '$lib/server/actor-labels';
 
 /**
  * Stories 7-4, 7-5: maps a session_leave_history insert or preview_leave
@@ -68,6 +69,8 @@ type SickQueueRow = {
 	decided_at: string | null;
 	decided_by_system: boolean;
 	own_child: boolean;
+	/** CAP-6 (0059): actor_display_name of the parent who set the answer. */
+	answered_by_name: string | null;
 };
 
 export type SickRow = {
@@ -83,6 +86,8 @@ export type SickRow = {
 	decidedBySystem: boolean;
 	/** The viewer is the student's parent: never decision controls (AD-4). */
 	ownChild: boolean;
+	/** CAP-6: the parent who set the Sick answer; null shows no label. */
+	setByName: string | null;
 };
 
 /** How many decided Sick rows the DECIDED history shows. */
@@ -99,7 +104,8 @@ function toSick(r: SickQueueRow): SickRow {
 		decision: r.decision,
 		decidedAt: r.decided_at,
 		decidedBySystem: r.decided_by_system,
-		ownChild: r.own_child
+		ownChild: r.own_child,
+		setByName: r.answered_by_name
 	};
 }
 
@@ -130,6 +136,8 @@ export type UpcomingLeaveRow = {
 	/** `HH:MM`, null = no time set. */
 	startTime: string | null;
 	classification: 'planned' | 'short_notice' | null;
+	/** CAP-6: the parent who set the answer (actor_display_name); null shows no label. */
+	setByName: string | null;
 };
 
 /** #107: how far ahead the upcoming On leave list looks (as the parent's leave page). */
@@ -169,13 +177,19 @@ export async function loadUpcomingLeave(
 	const today = todayInBerlin();
 	const current = new Map<
 		string,
-		{ sessionId: string; studentId: string; answer: string; classification: string | null }
+		{
+			sessionId: string;
+			studentId: string;
+			answer: string;
+			classification: string | null;
+			answeredBy: string | null;
+		}
 	>();
 	for (let from = 0; ; from += LEAVE_PAGE_SIZE) {
 		let query = supabase
 			.from('session_leave_history')
 			.select(
-				'class_session_id, student_id, answer, classification, class_sessions!inner(class_id, class_days!inner(day))'
+				'class_session_id, student_id, answer, classification, answered_by, class_sessions!inner(class_id, class_days!inner(day))'
 			)
 			.gte('class_sessions.class_days.day', today)
 			.lte('class_sessions.class_days.day', addDays(today, UPCOMING_LEAVE_DAYS));
@@ -192,7 +206,8 @@ export async function loadUpcomingLeave(
 					sessionId: r.class_session_id,
 					studentId: r.student_id,
 					answer: r.answer,
-					classification: r.classification
+					classification: r.classification,
+					answeredBy: r.answered_by ?? null
 				});
 			}
 		}
@@ -204,12 +219,17 @@ export async function loadUpcomingLeave(
 
 	const sessionIds = [...new Set(onLeave.map((a) => a.sessionId))];
 	const studentIds = [...new Set(onLeave.map((a) => a.studentId))];
-	const [sessionsResult, studentsResult] = await Promise.all([
+	const [sessionsResult, studentsResult, setterNames] = await Promise.all([
 		supabase
 			.from('class_sessions_effective')
 			.select('id, day, start_time, cancelled, class_name, class_name_bo, class_name_de')
 			.in('id', sessionIds),
-		supabase.from('profiles').select('id, display_name, registration_name').in('id', studentIds)
+		supabase.from('profiles').select('id, display_name, registration_name').in('id', studentIds),
+		// CAP-6: once per distinct (student, actor).
+		actorNames(
+			supabase,
+			onLeave.map((a) => ({ studentId: a.studentId, actorId: a.answeredBy }))
+		)
 	]);
 	if (sessionsResult.error || studentsResult.error) return failed;
 
@@ -231,7 +251,10 @@ export async function loadUpcomingLeave(
 				classification:
 					a.classification === 'planned' || a.classification === 'short_notice'
 						? a.classification
-						: null
+						: null,
+				setByName: a.answeredBy
+					? (setterNames.get(actorKey(a.studentId, a.answeredBy)) ?? null)
+					: null
 			}
 		];
 	});

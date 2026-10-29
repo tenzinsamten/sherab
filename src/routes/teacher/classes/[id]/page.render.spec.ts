@@ -47,6 +47,8 @@ function data(overrides: Record<string, unknown> = {}) {
 		],
 		leaveAnswers: { 'new:s2': 'on_leave' },
 		upcomingLeave: [],
+		parentContacts: {},
+		contactsError: false,
 		currentSkills: {},
 		homeworkCounts: { open: 1, total: 2 },
 		syllabusCounts: { total: 0, hasCurrent: false },
@@ -108,5 +110,25 @@ describe('teacher class page (+page.svelte)', () => {
 		expect(empty).toContain(m.class_code_label());
 		const copy = empty.match(/<[^>]*class="[^"]*copy-field[\s\S]*?<\/button>/)?.[0] ?? '';
 		expect(copy).toContain('ABC123');
+	});
+
+	it('CAP-6: the upcoming-leave card says which parent set each answer, and nothing when unknown', () => {
+		const body = renderPage({
+			upcomingLeave: [
+				{
+					sessionId: 'next',
+					day: '2099-01-03',
+					startTime: null,
+					entries: [
+						{ studentId: 's1', answer: 'on_leave', setByName: 'Parent B' },
+						{ studentId: 's2', answer: 'sick', setByName: null }
+					]
+				}
+			]
+		});
+		const entries = body.match(/data-testid="upcoming-leave-entry"[\s\S]*?<\/li>/g) ?? [];
+		expect(entries).toHaveLength(2);
+		expect(entries[0]).toContain(m.leave_set_by({ name: 'Parent B' }));
+		expect(entries[1]).not.toContain('data-testid="leave-set-by"');
 	});
 });

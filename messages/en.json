@@ -925,6 +925,8 @@
 	"roster_leave_label": "Leave answer for this session",
 	"roster_upcoming_leave_heading": "Upcoming leave",
 	"roster_upcoming_leave_empty": "No leave reported for the next 12 weeks.",
+	"roster_parents_heading": "Parents",
+	"roster_parents_none": "No parent contact",
 	"leave_error_sick_closed": "Sick can be set only until the end of the day after the session.",
 	"leave_error_decided": "This Sick leave has been decided. The answer can no longer be changed.",
 	"leave_decision_pending": "Pending",

@@ -15,6 +15,7 @@ import { todayInBerlin } from '$lib/berlin-date';
 import { loadAssignmentIndex } from '$lib/server/homework-view';
 import { addDays } from '$lib/server/student-homework';
 import { pickCurrentSkillStatuses, type SkillHistoryRow } from '$lib/server/skill-status';
+import { actorKey, actorNames } from '$lib/server/actor-labels';
 import type { SkillArea, SkillLevel } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -44,8 +45,16 @@ type UpcomingLeave = {
 	sessionId: string;
 	day: string;
 	startTime: string | null;
-	entries: { studentId: string; answer: Exclude<LeaveAnswer, 'coming'> }[];
+	entries: {
+		studentId: string;
+		answer: Exclude<LeaveAnswer, 'coming'>;
+		/** CAP-6: the parent who set the answer (actor_display_name); null shows no label. */
+		setByName: string | null;
+	}[];
 };
+
+/** CAP-6 (AD-12): one of a student's active parents, from student_parent_contacts. */
+type ParentContact = { parentId: string; displayName: string | null; email: string };
 
 /** How many recent sessions the picker offers. */
 const MARKABLE_SESSION_LIMIT = 60;
@@ -129,6 +138,8 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 	// upcoming) session, keyed `${sessionId}:${studentId}`. RLS lets a teacher
 	// of the class read its sessions' rows (sick stays visible to teachers).
 	const leaveAnswers: Record<string, LeaveAnswer> = {};
+	// CAP-6: who set each current answer, same keys (null = unknown).
+	const leaveSetters: Record<string, string | null> = {};
 	let leaveError = false;
 	// Today's session is in both lists.
 	const leaveSessionIds = [...new Set([...markableSessions, ...upcomingSessions].map((s) => s.id))];
@@ -138,7 +149,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		for (let from = 0; ; from += LEAVE_PAGE_SIZE) {
 			const { data: answers, error: answersError } = await supabase
 				.from('session_leave_history')
-				.select('class_session_id, student_id, answer')
+				.select('class_session_id, student_id, answer, answered_by')
 				.in('class_session_id', leaveSessionIds)
 				.in('student_id', studentIds)
 				.order('answered_at', { ascending: false })
@@ -150,22 +161,65 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			}
 			// Newest first: the first row per (session, student) is current.
 			for (const a of answers ?? []) {
-				leaveAnswers[`${a.class_session_id}:${a.student_id}`] ??= a.answer;
+				const key = `${a.class_session_id}:${a.student_id}`;
+				if (key in leaveAnswers) continue;
+				leaveAnswers[key] = a.answer;
+				leaveSetters[key] = a.answered_by ?? null;
 			}
 			if ((answers ?? []).length < LEAVE_PAGE_SIZE) break;
 		}
 	}
 
 	// #106: only the leave itself is listed; Coming is the default answer.
-	const upcomingLeave: UpcomingLeave[] = upcomingSessions.flatMap((s) => {
+	const upcomingRaw = upcomingSessions.flatMap((s) => {
 		const entries = students.flatMap((student) => {
-			const answer = leaveAnswers[`${s.id}:${student.id}`];
-			return answer === 'on_leave' || answer === 'sick' ? [{ studentId: student.id, answer }] : [];
+			const key = `${s.id}:${student.id}`;
+			const answer = leaveAnswers[key];
+			return answer === 'on_leave' || answer === 'sick'
+				? [{ studentId: student.id, answer, setBy: leaveSetters[key] ?? null }]
+				: [];
 		});
-		return entries.length > 0
-			? [{ sessionId: s.id, day: s.day, startTime: s.startTime, entries }]
-			: [];
+		return entries.length > 0 ? [{ session: s, entries }] : [];
 	});
+
+	// CAP-6: the setter's name once per distinct (student, actor), and both
+	// active parents of every roster student in one call (AD-12).
+	const [setterNames, contactsResult] = await Promise.all([
+		actorNames(
+			supabase,
+			upcomingRaw.flatMap((u) =>
+				u.entries.map((e) => ({ studentId: e.studentId, actorId: e.setBy }))
+			)
+		),
+		studentIds.length > 0
+			? supabase.rpc('student_parent_contacts', { p_student_ids: studentIds })
+			: Promise.resolve({ data: [], error: null })
+	]);
+	const upcomingLeave: UpcomingLeave[] = upcomingRaw.map(({ session: s, entries }) => ({
+		sessionId: s.id,
+		day: s.day,
+		startTime: s.startTime,
+		entries: entries.map(({ studentId, answer, setBy }) => ({
+			studentId,
+			answer,
+			setByName: setBy ? (setterNames.get(actorKey(studentId, setBy)) ?? null) : null
+		}))
+	}));
+	const parentContacts: Record<string, ParentContact[]> = {};
+	const contactsError = Boolean(contactsResult.error);
+	if (contactsError) {
+		console.error(
+			'teacher class page: student_parent_contacts failed',
+			contactsResult.error?.message
+		);
+	}
+	for (const c of contactsResult.data ?? []) {
+		(parentContacts[c.student_id] ??= []).push({
+			parentId: c.parent_id,
+			displayName: c.display_name,
+			email: c.email
+		});
+	}
 
 	let skillHistory: SkillHistoryRow[] = [];
 	// #102: the current mark per session and student (attendance_current, the
@@ -287,6 +341,9 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		markableSessions,
 		leaveAnswers,
 		upcomingLeave,
+		parentContacts,
+		/** CAP-6: the contacts could not be read; the panels say so instead of "No parent contact". */
+		contactsError,
 		currentSkills,
 		homeworkCounts: {
 			open: homeworkIndex.entries.filter((e) => e.open).length,

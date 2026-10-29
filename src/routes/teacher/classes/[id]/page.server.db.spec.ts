@@ -100,8 +100,9 @@ type LoadResult = {
 	upcomingLeave: {
 		sessionId: string;
 		day: string;
-		entries: { studentId: string; answer: string }[];
+		entries: { studentId: string; answer: string; setByName: string | null }[];
 	}[];
+	parentContacts: Record<string, { parentId: string; displayName: string | null; email: string }[]>;
 	loadError: boolean;
 };
 
@@ -237,9 +238,17 @@ describe.skipIf(!reachable)(
 			expect(result.loadError).toBe(false);
 			expect(result.students.map((s) => s.id)).toEqual([kid.id]);
 			expect(result.upcomingLeave.map((s) => [s.sessionId, s.day, s.entries])).toEqual([
-				[session, day, [{ studentId: kid.id, answer: 'on_leave' }]],
-				[rangeSession, rangeDay, [{ studentId: kid.id, answer: 'on_leave' }]]
+				[session, day, [{ studentId: kid.id, answer: 'on_leave', setByName: parent.email }]],
+				[
+					rangeSession,
+					rangeDay,
+					[{ studentId: kid.id, answer: 'on_leave', setByName: parent.email }]
+				]
 			]);
+			// CAP-6: the child's parent as a contact (student_parent_contacts).
+			expect(result.parentContacts).toEqual({
+				[kid.id]: [{ parentId: parent.id, displayName: parent.email, email: parent.email }]
+			});
 		});
 	}
 );

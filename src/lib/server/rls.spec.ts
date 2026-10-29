@@ -19113,3 +19113,248 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+describe.skipIf(!reachable)(
+	'spec-second-parent CAP-6: parent contacts and leave setters (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		type Parent = { id: string; email: string; client: Client; name: string };
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let otherTeacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let otherClassId: string;
+		let teamId: string;
+
+		const name = (label: string) => `CAP6 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+		/** A random far-future day (class days are unique school-wide). */
+		const futureDay = () =>
+			`${3000 + Math.floor(Math.random() * 6000)}-07-0${1 + Math.floor(Math.random() * 9)}`;
+
+		async function signIn(email: string, password: string): Promise<Client> {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		/** An approved parent with a distinct display name, signed in. */
+		async function newParent(label: string): Promise<Parent> {
+			const p = await createApprovedParent();
+			const displayName = name(label);
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ display_name: displayName })
+				.eq('id', p.id);
+			if (error) throw new Error(`Failed to name parent: ${error.message}`);
+			return {
+				id: p.id,
+				email: p.email,
+				client: await signIn(p.email, p.password),
+				name: displayName
+			};
+		}
+
+		/** A child registered by A through the sign-up and approved; B linked in slot 2 unless `withB` is false. */
+		async function family(withB = true, cls = classId) {
+			const a = await newParent('A');
+			const b = await newParent('B');
+			const { id, error } = await signUpStudent({
+				classId: cls,
+				registrationName: name('Kid'),
+				guardianEmail: a.email
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			if (withB) await linkParent(adminClient, id, b.id);
+			return { a, b, kid: id };
+		}
+
+		const contacts = (client: Client, studentIds: string[]) =>
+			client.rpc('student_parent_contacts', { p_student_ids: studentIds });
+
+		const row = (studentId: string, p: Parent) => ({
+			student_id: studentId,
+			parent_id: p.id,
+			display_name: p.name,
+			email: p.email
+		});
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacher = await createSignedInUser('teacher');
+			otherTeacher = await createSignedInUser('teacher');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({ name: name('Class'), code: `C${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			const { data: other, error: otherError } = await adminClient
+				.from('classes')
+				.insert({ name: name('Other'), code: `O${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+				.select('id')
+				.single();
+			if (otherError || !other) throw new Error(`Failed to create class: ${otherError?.message}`);
+			otherClassId = other.id;
+			await adminClient.from('class_teachers').insert([
+				{ class_id: classId, teacher_id: teacher.id },
+				{ class_id: other.id, teacher_id: otherTeacher.id }
+			]);
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it("Two parents: the class teacher reads A's and B's names and emails, in slot order", async () => {
+			const { a, b, kid } = await family();
+			const { data, error } = await contacts(teacher.client, [kid]);
+			expect(error).toBeNull();
+			expect(data).toEqual([row(kid, a), row(kid, b)]);
+		});
+
+		it('One parent: only A is listed', async () => {
+			const { a, kid } = await family(false);
+			expect((await contacts(teacher.client, [kid])).data).toEqual([row(kid, a)]);
+		});
+
+		it("Removed parent: after B's link is removed, only A is listed", async () => {
+			const { a, b, kid } = await family();
+			const { error: removeError } = await adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', kid)
+				.eq('parent_id', b.id)
+				.is('removed_at', null)
+				.select('id')
+				.single();
+			expect(removeError).toBeNull();
+			for (const client of [teacher.client, admin.client, a.client]) {
+				expect((await contacts(client, [kid])).data).toEqual([row(kid, a)]);
+			}
+			// The removed parent no longer sees the child's contacts.
+			expect((await contacts(b.client, [kid])).data).toEqual([]);
+		});
+
+		it('Other teacher: a teacher of another class gets no rows for the child', async () => {
+			const { kid } = await family();
+			const { data, error } = await contacts(otherTeacher.client, [kid]);
+			expect(error).toBeNull();
+			expect(data).toEqual([]);
+		});
+
+		it('Mixed ids: the teacher gets rows for their own-class child only', async () => {
+			const own = await family();
+			const other = await family(true, otherClassId);
+			const { data, error } = await contacts(teacher.client, [own.kid, other.kid]);
+			expect(error).toBeNull();
+			expect(data).toEqual([row(own.kid, own.a), row(own.kid, own.b)]);
+		});
+
+		it('Student caller: the student calling for themself gets no rows', async () => {
+			const { kid } = await family();
+			const password = crypto.randomUUID();
+			const { data: user } = await adminClient.auth.admin.updateUserById(kid, { password });
+			const kidClient = await signIn(user.user!.email!, password);
+			const { data, error } = await contacts(kidClient, [kid]);
+			expect(error).toBeNull();
+			expect(data).toEqual([]);
+		});
+
+		it('Parent caller: A gets rows for their own child only', async () => {
+			const { a, b, kid } = await family();
+			const other = await family();
+			const { data, error } = await contacts(a.client, [kid, other.kid]);
+			expect(error).toBeNull();
+			expect(data).toEqual([row(kid, a), row(kid, b)]);
+		});
+
+		it('Admin caller: rows for any student', async () => {
+			const one = await family();
+			const two = await family(false);
+			const { data, error } = await contacts(admin.client, [one.kid, two.kid]);
+			expect(error).toBeNull();
+			const expected = [row(one.kid, one.a), row(one.kid, one.b), row(two.kid, two.a)].sort(
+				(x, y) => x.student_id.localeCompare(y.student_id)
+			);
+			expect(data).toEqual(expected);
+		});
+
+		it('Anonymous callers cannot call it', async () => {
+			const { kid } = await family();
+			const anon = await contacts(anonClient(), [kid]);
+			expect(anon.data).toBeNull();
+			expect(anon.error).not.toBeNull();
+		});
+
+		it('Leave setter: B marks a session on leave; the teacher reads the answer and names B', async () => {
+			const { b, kid } = await family();
+			const sessionId = await sessionFor(classId, futureDay());
+			const { error } = await b.client
+				.from('session_leave_history')
+				.insert({ class_session_id: sessionId, student_id: kid, answer: 'on_leave' });
+			expect(error).toBeNull();
+			const { data: seen } = await teacher.client
+				.from('session_leave_history')
+				.select('answer, answered_by')
+				.eq('class_session_id', sessionId)
+				.eq('student_id', kid);
+			expect(seen).toEqual([{ answer: 'on_leave', answered_by: b.id }]);
+			for (const client of [teacher.client, admin.client]) {
+				const { data: setter } = await client.rpc('actor_display_name', {
+					p_student_id: kid,
+					p_actor_id: b.id
+				});
+				expect(setter).toBe(b.name);
+			}
+		});
+
+		it('Sick setter: B reports sick; sick_leave_queue names B for the teacher and the admin', async () => {
+			const { b, kid } = await family();
+			// Sick is open for a session dated today or yesterday only.
+			const sessionId = await sessionFor(classId, todayInBerlin());
+			const { error } = await b.client
+				.from('session_leave_history')
+				.insert({ class_session_id: sessionId, student_id: kid, answer: 'sick' });
+			expect(error).toBeNull();
+			for (const client of [teacher.client, admin.client]) {
+				const { data: queue, error: queueError } = await client.rpc('sick_leave_queue');
+				expect(queueError).toBeNull();
+				const mine = (queue ?? []).filter(
+					(r) => r.student_id === kid && r.class_session_id === sessionId
+				);
+				expect(mine.map((r) => r.answered_by_name)).toEqual([b.name]);
+			}
+		});
+
+		it('Unknown name: a setter without a display name gives a null answered_by_name', async () => {
+			const { b, kid } = await family();
+			// Sick is open for a session dated today or yesterday only.
+			const sessionId = await sessionFor(classId, todayInBerlin());
+			const { error } = await b.client
+				.from('session_leave_history')
+				.insert({ class_session_id: sessionId, student_id: kid, answer: 'sick' });
+			expect(error).toBeNull();
+			const { error: clearError } = await adminClient
+				.from('profiles')
+				.update({ display_name: null })
+				.eq('id', b.id);
+			expect(clearError).toBeNull();
+			const { data: queue } = await teacher.client.rpc('sick_leave_queue');
+			const mine = (queue ?? []).filter(
+				(r) => r.student_id === kid && r.class_session_id === sessionId
+			);
+			expect(mine).toHaveLength(1);
+			expect(mine[0].answered_by_name).toBeNull();
+		});
+	}
+);

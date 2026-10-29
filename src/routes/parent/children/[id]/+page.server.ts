@@ -13,6 +13,7 @@ import {
 	type BadgeProgress,
 	type StudentBadge
 } from '$lib/server/badges';
+import { actorLabels, type ActorLabel } from '$lib/server/actor-labels';
 import { toHhMm } from '$lib/server/calendar';
 import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
 import { loadLinkedChild } from '$lib/server/linked-child';
@@ -43,12 +44,7 @@ export type SickDecision = 'approved' | 'rejected';
 /** Story 7-6: the latest deletion request for the child (no withdrawal; a rejected one can be followed by a new one). */
 export type DeletionStatus = 'pending' | 'rejected';
 
-/**
- * spec-second-parent story 2: the parent behind a leave answer or a deletion
- * request. `self` is the viewer; otherwise the name from actor_display_name().
- * null (on the field) when the actor is unknown or their name resolves to null.
- */
-export type ActorLabel = { self: true } | { self: false; name: string };
+export type { ActorLabel };
 
 export type ChildSession = {
 	id: string;
@@ -361,40 +357,6 @@ export const load: PageServerLoad = async ({
 };
 
 type Client = App.Locals['supabase'];
-
-/**
- * spec-second-parent story 2 (AD-12): a label per distinct actor id. The
- * viewer is "you"; anyone else is named by actor_display_name(), once per
- * id, all at once. A null name, a failed call or a null id gets no label.
- */
-async function actorLabels(
-	supabase: Client,
-	studentId: string,
-	actorIds: (string | null)[],
-	viewerId: string | null
-): Promise<Map<string, ActorLabel>> {
-	const labels = new Map<string, ActorLabel>();
-	const others = new Set<string>();
-	for (const id of actorIds) {
-		if (!id) continue;
-		if (id === viewerId) labels.set(id, { self: true });
-		else others.add(id);
-	}
-	const named = await Promise.all(
-		[...others].map(async (id) => {
-			const { data, error } = await supabase.rpc('actor_display_name', {
-				p_student_id: studentId,
-				p_actor_id: id
-			});
-			if (error) console.error('parent child page: actor_display_name failed', error.message);
-			return [id, error ? null : data] as const;
-		})
-	);
-	for (const [id, name] of named) {
-		if (name) labels.set(id, { self: false, name });
-	}
-	return labels;
-}
 
 /**
  * The read-only sections for one child. Homework reuses the student's own

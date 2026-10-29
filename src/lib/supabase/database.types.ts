@@ -1482,6 +1482,16 @@ export type Database = {
 				/** null when the caller may not read the student or the actor was never linked to them. */
 				Returns: string | null;
 			};
+			student_parent_contacts: {
+				Args: { p_student_ids: string[] };
+				/** Active parents only, ordered by student and slot; students the caller may not see are left out. */
+				Returns: {
+					student_id: string;
+					parent_id: string;
+					display_name: string | null;
+					email: string;
+				}[];
+			};
 			student_registration_state: {
 				Args: { p_guardian_email: string; p_registration_name: string };
 				Returns: string;
@@ -1723,6 +1733,8 @@ export type Database = {
 					decided_at: string | null;
 					decided_by_system: boolean;
 					own_child: boolean;
+					/** The parent who set the Sick answer (actor_display_name); null when unknown. */
+					answered_by_name: string | null;
 				}[];
 			};
 			child_attendance: {

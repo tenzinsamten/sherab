@@ -75,6 +75,34 @@ function event(
 	} as unknown as Parameters<typeof actions.markAttendance>[0];
 }
 
+/**
+ * CAP-6: a fake `supabase.rpc` for load. actor_display_name answers from
+ * `names` (keyed `${student}:${actor}`, missing = null);
+ * student_parent_contacts answers `contacts`, or fails with `contactsError`.
+ * `calls` records every call.
+ */
+function fakeRpc(
+	names: Record<string, string | null> = {},
+	contacts: Record<string, string | null>[] = [],
+	contactsError: { code: string; message: string } | null = null,
+	/** actor_display_name fails for every call. */
+	namesError: { code: string; message: string } | null = null
+) {
+	const calls: { fn: string; args: Record<string, unknown> }[] = [];
+	const rpc = async (fn: string, args: Record<string, unknown>) => {
+		calls.push({ fn, args });
+		if (fn === 'actor_display_name') {
+			if (namesError) return { data: null, error: namesError };
+			return { data: names[`${args.p_student_id}:${args.p_actor_id}`] ?? null, error: null };
+		}
+		if (fn === 'student_parent_contacts') {
+			return contactsError ? { data: null, error: contactsError } : { data: contacts, error: null };
+		}
+		throw new Error(`unexpected rpc ${fn}`);
+	};
+	return { rpc, calls };
+}
+
 const openSession = { id: SESSION_ID, class_id: CLASS_ID, day: '2026-09-20', cancelled: false };
 
 describe('markAttendance', () => {
@@ -398,10 +426,12 @@ describe('load: leave answers (Story 7-4)', () => {
 	 * today on (#106), or fails with `upcomingError`.
 	 */
 	async function runLoad(
-		leaveRows: Record<string, string>[],
+		leaveRows: Record<string, string | null>[],
 		upcoming: Record<string, string | null>[] = [],
-		upcomingError: { code: string } | null = null
+		upcomingError: { code: string } | null = null,
+		fake: ReturnType<typeof fakeRpc> = fakeRpc()
 	) {
+		const { rpc } = fake;
 		vi.mocked(loadClassRoster).mockResolvedValueOnce({
 			students: [
 				{ id: 's1', displayName: 'Dawa' },
@@ -447,10 +477,12 @@ describe('load: leave answers (Story 7-4)', () => {
 
 		const data = (await load({
 			params: { id: CLASS_ID },
-			locals: { supabase: { from: chain }, safeGetSession: async () => ({ session: {} }) }
+			locals: { supabase: { from: chain, rpc }, safeGetSession: async () => ({ session: {} }) }
 		} as unknown as Parameters<typeof load>[0])) as {
 			leaveAnswers: Record<string, string>;
 			upcomingLeave: unknown[];
+			parentContacts: Record<string, unknown[]>;
+			contactsError: boolean;
 			loadError: boolean;
 		};
 		const leaveCalls = calls
@@ -459,7 +491,7 @@ describe('load: leave answers (Story 7-4)', () => {
 		const sessionCalls = calls
 			.filter((c) => c.table === 'class_sessions_effective')
 			.map(({ method, args }) => [method, ...args]);
-		return { data, leaveCalls, sessionCalls };
+		return { data, leaveCalls, sessionCalls, rpcCalls: fake.calls };
 	}
 
 	it("keys each student's current answer by session and student, newest row first", async () => {
@@ -540,7 +572,7 @@ describe('load: leave answers (Story 7-4)', () => {
 					sessionId: 'sB',
 					day: '2026-09-20',
 					startTime: '10:00:00',
-					entries: [{ studentId: 's1', answer: 'on_leave' }]
+					entries: [{ studentId: 's1', answer: 'on_leave', setByName: null }]
 				}
 			]);
 		});
@@ -560,15 +592,15 @@ describe('load: leave answers (Story 7-4)', () => {
 					day: '2099-01-03',
 					startTime: '10:00:00',
 					entries: [
-						{ studentId: 's1', answer: 'on_leave' },
-						{ studentId: 's2', answer: 'sick' }
+						{ studentId: 's1', answer: 'on_leave', setByName: null },
+						{ studentId: 's2', answer: 'sick', setByName: null }
 					]
 				},
 				{
 					sessionId: 'sD',
 					day: '2099-01-10',
 					startTime: null,
-					entries: [{ studentId: 's1', answer: 'on_leave' }]
+					entries: [{ studentId: 's1', answer: 'on_leave', setByName: null }]
 				}
 			]);
 			expect(data.loadError).toBe(false);
@@ -591,6 +623,106 @@ describe('load: leave answers (Story 7-4)', () => {
 			const { data } = await runLoad([], [], { code: '08006' });
 			expect(data.upcomingLeave).toEqual([]);
 			expect(data.loadError).toBe(true);
+		});
+
+		it("CAP-6: reads answered_by and labels each entry with its setter's name, once per (student, actor)", async () => {
+			const fake = fakeRpc({ 's1:pB': 'Parent B', 's2:pA': 'Parent A' });
+			const { data, leaveCalls } = await runLoad(
+				[
+					{ class_session_id: 'sC', student_id: 's1', answer: 'on_leave', answered_by: 'pB' },
+					{ class_session_id: 'sD', student_id: 's1', answer: 'on_leave', answered_by: 'pB' },
+					{ class_session_id: 'sC', student_id: 's2', answer: 'sick', answered_by: 'pA' }
+				],
+				upcoming,
+				null,
+				fake
+			);
+			expect(leaveCalls).toEqual(
+				expect.arrayContaining([['select', 'class_session_id, student_id, answer, answered_by']])
+			);
+			expect(data.upcomingLeave).toEqual([
+				expect.objectContaining({
+					sessionId: 'sC',
+					entries: [
+						{ studentId: 's1', answer: 'on_leave', setByName: 'Parent B' },
+						{ studentId: 's2', answer: 'sick', setByName: 'Parent A' }
+					]
+				}),
+				expect.objectContaining({
+					sessionId: 'sD',
+					entries: [{ studentId: 's1', answer: 'on_leave', setByName: 'Parent B' }]
+				})
+			]);
+			const nameCalls = fake.calls.filter((c) => c.fn === 'actor_display_name');
+			expect(nameCalls.map((c) => c.args)).toEqual([
+				{ p_student_id: 's1', p_actor_id: 'pB' },
+				{ p_student_id: 's2', p_actor_id: 'pA' }
+			]);
+		});
+
+		it('CAP-6: a setter whose name resolves to null, or no setter, gets no label', async () => {
+			const { data } = await runLoad(
+				[
+					{ class_session_id: 'sC', student_id: 's1', answer: 'on_leave', answered_by: 'pX' },
+					{ class_session_id: 'sC', student_id: 's2', answer: 'sick', answered_by: null }
+				],
+				upcoming
+			);
+			expect(data.upcomingLeave).toEqual([
+				expect.objectContaining({
+					entries: [
+						{ studentId: 's1', answer: 'on_leave', setByName: null },
+						{ studentId: 's2', answer: 'sick', setByName: null }
+					]
+				})
+			]);
+		});
+	});
+
+	describe('setter names (CAP-6)', () => {
+		it('a failed actor_display_name still lists the entries, with no label and no load error', async () => {
+			const fake = fakeRpc({}, [], null, { code: '08006', message: 'down' });
+			const { data } = await runLoad(
+				[{ class_session_id: 'sC', student_id: 's1', answer: 'on_leave', answered_by: 'pB' }],
+				[{ id: 'sC', day: '2099-01-03', start_time: '10:00:00' }],
+				null,
+				fake
+			);
+			expect(data.upcomingLeave).toEqual([
+				expect.objectContaining({
+					sessionId: 'sC',
+					entries: [{ studentId: 's1', answer: 'on_leave', setByName: null }]
+				})
+			]);
+			expect(data.loadError).toBe(false);
+		});
+	});
+
+	describe('parent contacts (CAP-6)', () => {
+		it("reads every roster student's parents in one call and groups them by student, in slot order", async () => {
+			const fake = fakeRpc({}, [
+				{ student_id: 's1', parent_id: 'pA', display_name: 'Parent A', email: 'a@example.test' },
+				{ student_id: 's1', parent_id: 'pB', display_name: null, email: 'b@example.test' }
+			]);
+			const { data, rpcCalls } = await runLoad([], [], null, fake);
+			expect(rpcCalls.filter((c) => c.fn === 'student_parent_contacts')).toEqual([
+				{ fn: 'student_parent_contacts', args: { p_student_ids: ['s1', 's2'] } }
+			]);
+			expect(data.parentContacts).toEqual({
+				s1: [
+					{ parentId: 'pA', displayName: 'Parent A', email: 'a@example.test' },
+					{ parentId: 'pB', displayName: null, email: 'b@example.test' }
+				]
+			});
+			expect(data.loadError).toBe(false);
+		});
+
+		it('a failed contacts read sets contactsError, not the page load error, and lists no contacts', async () => {
+			const fake = fakeRpc({}, [], { code: '08006', message: 'down' });
+			const { data } = await runLoad([], [], null, fake);
+			expect(data.parentContacts).toEqual({});
+			expect(data.contactsError).toBe(true);
+			expect(data.loadError).toBe(false);
 		});
 	});
 });
@@ -626,6 +758,7 @@ describe('load: current attendance marks (#102)', () => {
 		/** The first row offset whose page fails (0 = the first page). */
 		failFrom = 0
 	) {
+		const { rpc } = fakeRpc();
 		vi.mocked(loadClassRoster).mockResolvedValueOnce({
 			students: [
 				{ id: 's1', displayName: 'Dawa' },
@@ -672,7 +805,7 @@ describe('load: current attendance marks (#102)', () => {
 
 		const data = (await load({
 			params: { id: CLASS_ID },
-			locals: { supabase: { from: chain }, safeGetSession: async () => ({ session: {} }) }
+			locals: { supabase: { from: chain, rpc }, safeGetSession: async () => ({ session: {} }) }
 		} as unknown as Parameters<typeof load>[0])) as {
 			currentMarks: Record<string, boolean>;
 			markedSessionIds: string[];

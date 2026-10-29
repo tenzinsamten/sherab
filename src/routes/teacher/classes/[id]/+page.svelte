@@ -447,6 +447,12 @@
 										>
 											<span class="min-w-0 wrap-break-word">{studentName(entry.studentId)}</span>
 											<Badge variant="warning">{leaveLabel(entry.answer)}</Badge>
+											{#if entry.setByName}
+												<!-- spec-second-parent CAP-6: which parent set the answer. -->
+												<span class="{ui.muted} text-sm" data-testid="leave-set-by">
+													{m.leave_set_by({ name: entry.setByName })}
+												</span>
+											{/if}
 										</li>
 									{/each}
 								</ul>
@@ -513,6 +519,30 @@
 											{m.badge_page_link()}
 										</a>
 									</p>
+									<!-- spec-second-parent CAP-6: the child's active parents (AD-12). -->
+									<div class="mb-3" data-testid="parent-contacts">
+										<h4 class="text-sm font-bold">{m.roster_parents_heading()}</h4>
+										{#if data.contactsError}
+											<p class="{ui.muted} text-sm">{m.load_error_generic()}</p>
+										{:else if !data.parentContacts[student.id]?.length}
+											<p class="{ui.muted} text-sm">{m.roster_parents_none()}</p>
+										{:else}
+											<ul class="flex flex-col gap-1">
+												{#each data.parentContacts[student.id] as contact (contact.parentId)}
+													<li class="min-w-0 wrap-break-word" data-testid="parent-contact">
+														{#if contact.displayName}
+															<span>{contact.displayName}</span> ·
+														{/if}
+														<a
+															href="mailto:{contact.email}"
+															class="{ui.link} inline-flex min-h-11 items-center break-all"
+															>{contact.email}</a
+														>
+													</li>
+												{/each}
+											</ul>
+										{/if}
+									</div>
 									<div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-4">
 										{#each skillAreas as area (area)}
 											{@const key = skillKey(student.id, area)}

@@ -614,3 +614,6 @@
 - source_spec: none
   summary: spec-second-parent story 4 CAP-6 — teachers and the admin see both linked parents as the child's contacts (student_parent_contacts, AD-12) and which parent set each leave or sick answer.
   evidence: Split from story 4 "Admin and teacher views" at the bmad-build scope check (2026-10-28): CAP-6 ships independently of CAP-4 (admin view and link removal), which goes first.
+- source_spec: `_bmad-output/implementation-artifacts/spec-second-parent-cap-6-teacher-contacts.md`
+  summary: The e2e "class members: Reset PIN shows the new PIN once; the student signs in with it, not with the old one (#88)" (e2e/teacher.e2e.ts:1290) fails: after the PIN reset the student's page stays on /student instead of going to /login.
+  evidence: Fails identically on baseline 35db857 (worktree run, 2026-10-29), so it predates CAP-6; not caused by this change.

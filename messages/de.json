@@ -925,6 +925,8 @@
 	"roster_leave_label": "Abwesenheitsantwort für diesen Termin",
 	"roster_upcoming_leave_heading": "Kommende Abwesenheiten",
 	"roster_upcoming_leave_empty": "Für die nächsten 12 Wochen ist keine Abwesenheit gemeldet.",
+	"roster_parents_heading": "Eltern",
+	"roster_parents_none": "Kein Elternkontakt",
 	"leave_error_sick_closed": "Krank kann nur bis zum Ende des Tages nach dem Termin gesetzt werden.",
 	"leave_error_decided": "Über diese Krankmeldung wurde entschieden. Die Antwort kann nicht mehr geändert werden.",
 	"leave_decision_pending": "Offen",
