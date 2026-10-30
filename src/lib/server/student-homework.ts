@@ -358,15 +358,23 @@ export function groupByClass(
 	return opts.includeEmpty ? groups : groups.filter((g) => g.items.length > 0);
 }
 
-/** The student's own "done" mark, shared by /student and the detail page. */
+/**
+ * A "done" mark. Without `studentId` it is the student's own mark, shared by
+ * /student and the detail page. spec-parent-managed-homework story 2: a
+ * linked parent passes `studentId` (the child) to mark it for a
+ * parent-managed child; the parent is the recorder.
+ */
 export async function markHomeworkDone({
 	request,
 	supabase,
-	user
+	user,
+	studentId
 }: {
 	request: Request;
 	supabase: Client;
 	user: App.SessionUser | null;
+	/** The child a parent marks for (default: the caller). */
+	studentId?: string;
 }) {
 	if (!user) {
 		return fail(401, { error: m.student_homework_error_not_signed_in() });
@@ -378,10 +386,11 @@ export async function markHomeworkDone({
 		return fail(400, { error: m.student_homework_error_mark_failed() });
 	}
 
-	// RLS-gated read first (homework_instances_select_admin_teacher_or_
-	// targeted_student): proves this instance is actually visible to the
-	// caller (i.e. they were targeted by it) before the insert below. This
-	// also supplies class_id, which the insert needs.
+	// RLS-gated read first: proves this instance is visible to the caller
+	// before the insert below -- a targeted student
+	// (homework_instances_select_admin_teacher_or_targeted_student), or a
+	// linked parent of a targeted child (is_parent_targeted_for_homework_
+	// instance, 0025). This also supplies class_id, which the insert needs.
 	const { data: instance, error: instanceError } = await supabase
 		.from('homework_instances')
 		.select('id, class_id')
@@ -393,18 +402,25 @@ export async function markHomeworkDone({
 	}
 
 	// RLS (homework_status_history_insert_admin_teacher_or_self_done) is the
-	// real barrier: requires a prior 'assigned' row targeting this exact
-	// student for this exact instance (I/O matrix: "Untargeted student
-	// attempts Done -> RLS rejects the insert").
+	// real barrier: the student's own row, or for a parent
+	// is_parent_managing(student_id) (0060); either way it requires a prior
+	// 'assigned' row targeting this exact student for this exact instance
+	// (I/O matrix: "Untargeted student attempts Done -> RLS rejects the
+	// insert").
 	const { error: insertError } = await supabase.from('homework_status_history').insert({
 		instance_id: instance.id,
-		student_id: user.id,
+		student_id: studentId ?? user.id,
 		class_id: instance.class_id,
 		status: 'done',
 		recorded_by: user.id
 	});
 
 	if (insertError) {
+		// A parent's mark refused by RLS: the child is not parent-managed (or
+		// not theirs). The student's own refusals keep their message.
+		if (studentId !== undefined && insertError.code === '42501') {
+			return fail(403, { error: m.child_managed_error_mark_not_allowed() });
+		}
 		return fail(400, { error: m.student_homework_error_mark_failed() });
 	}
 

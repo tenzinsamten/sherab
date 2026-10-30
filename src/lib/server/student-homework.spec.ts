@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import * as m from '$lib/paraglide/messages.js';
 import type { HomeworkHistoryRow } from './homework-status';
 import {
 	groupByClass,
 	isTodoVisible,
 	loadStudentHomework,
+	markHomeworkDone,
 	splitProgress,
 	teamRank,
 	weekStart,
@@ -272,5 +274,91 @@ describe('teamRank', () => {
 	it('is null without a team or when the team is not listed', () => {
 		expect(teamRank(teams, null)).toBeNull();
 		expect(teamRank(teams, 'gone')).toBeNull();
+	});
+});
+
+describe('markHomeworkDone (spec-parent-managed-homework story 2: studentId)', () => {
+	const INSTANCE = 'i1';
+	const CLASS = 'c1';
+
+	function fake(insertError: { code: string } | null = null) {
+		const inserted: unknown[] = [];
+		const client = {
+			from: (table: string) => {
+				if (table === 'homework_instances') {
+					const q = {
+						select: () => q,
+						eq: () => q,
+						single: async () => ({ data: { id: INSTANCE, class_id: CLASS }, error: null })
+					};
+					return q;
+				}
+				return {
+					insert: async (row: unknown) => {
+						inserted.push(row);
+						return { data: null, error: insertError };
+					}
+				};
+			}
+		};
+		return { inserted, client };
+	}
+
+	function request() {
+		const body = new FormData();
+		body.append('instanceId', INSTANCE);
+		return new Request('http://localhost/student/homework', { method: 'POST', body });
+	}
+
+	function run(f: ReturnType<typeof fake>, studentId?: string) {
+		return markHomeworkDone({
+			request: request(),
+			supabase: f.client as unknown as Parameters<typeof markHomeworkDone>[0]['supabase'],
+			user: { id: 'me' } as App.SessionUser,
+			studentId
+		});
+	}
+
+	it('without studentId keeps the student own row', async () => {
+		const f = fake();
+		expect(await run(f)).toEqual({ success: true, action: 'markDone' });
+		expect(f.inserted).toEqual([
+			{
+				instance_id: INSTANCE,
+				student_id: 'me',
+				class_id: CLASS,
+				status: 'done',
+				recorded_by: 'me'
+			}
+		]);
+	});
+
+	it('with studentId inserts for the child, recorded by the caller', async () => {
+		const f = fake();
+		expect(await run(f, 'child')).toEqual({ success: true, action: 'markDone' });
+		expect(f.inserted).toEqual([
+			{
+				instance_id: INSTANCE,
+				student_id: 'child',
+				class_id: CLASS,
+				status: 'done',
+				recorded_by: 'me'
+			}
+		]);
+	});
+
+	it('a 42501 is a 403 with the parent message only when studentId is given', async () => {
+		expect(await run(fake({ code: '42501' }))).toMatchObject({
+			status: 400,
+			data: { error: m.student_homework_error_mark_failed() }
+		});
+		expect(await run(fake({ code: '42501' }), 'child')).toMatchObject({
+			status: 403,
+			data: { error: m.child_managed_error_mark_not_allowed() }
+		});
+		expect(await run(fake({ code: 'XX000' }), 'child')).toMatchObject({
+			status: 400,
+			data: { error: m.student_homework_error_mark_failed() }
+		});
 	});
 });

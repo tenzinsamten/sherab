@@ -24,6 +24,7 @@ import {
 	addDays,
 	loadClassPeople,
 	loadStudentHomework,
+	markHomeworkDone,
 	teamRank,
 	type ClassPerson,
 	type StudentHomeworkItem,
@@ -408,7 +409,7 @@ async function loadChildDetails(
 			.order('badge_type')
 			.order('milestone', { ascending: true }),
 		supabase.rpc('badge_progress', { p_student_id: childId }),
-		supabase.from('profiles').select('team_id').eq('id', childId).maybeSingle(),
+		supabase.from('profiles').select('team_id, parent_managed').eq('id', childId).maybeSingle(),
 		supabase.rpc('team_leaderboard'),
 		supabase.rpc('child_attendance', { p_student_id: childId }),
 		supabase
@@ -506,6 +507,8 @@ async function loadChildDetails(
 		team,
 		teamId: team ? teamId : null,
 		leaderboard,
+		// spec-parent-managed-homework story 2: the parent marks homework done.
+		parentManaged: profileRow?.parent_managed ?? false,
 		homework: {
 			open: open.items.map(toChildItem),
 			done: done.items.map(toChildItem),
@@ -804,6 +807,48 @@ export const actions: Actions = {
 			});
 		}
 		return { action: 'inviteParent' as const, success: true };
+	},
+
+	/**
+	 * spec-parent-managed-homework story 2 (CAP-1): either linked parent turns
+	 * "I manage homework for this child" on or off (set_parent_managed, which
+	 * refuses anyone but a linked parent with 42501).
+	 */
+	setParentManaged: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+
+		const formData = await request.formData();
+		const on = String(formData.get('on') ?? '');
+		if (!UUID_PATTERN.test(params.id) || (on !== 'true' && on !== 'false')) {
+			return fail(400, { managedError: m.child_managed_error_failed() });
+		}
+
+		const { error: rpcError } = await supabase.rpc('set_parent_managed', {
+			p_student_id: params.id,
+			p_on: on === 'true'
+		});
+		if (rpcError) {
+			return rpcError.code === '42501'
+				? fail(403, { managedError: m.child_managed_error_not_allowed() })
+				: fail(400, { managedError: m.child_managed_error_failed() });
+		}
+		return { action: 'setParentManaged' as const, success: true, on: on === 'true' };
+	},
+
+	/**
+	 * spec-parent-managed-homework story 2 (CAP-2): a parent marks the child's
+	 * open homework done (the student's markHomeworkDone with the child's id;
+	 * the parent is the recorder). RLS refuses it unless the child is
+	 * parent-managed and linked to the caller (42501 -> 403).
+	 */
+	markDone: async ({ request, params, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+		if (!UUID_PATTERN.test(params.id)) {
+			return fail(400, { error: m.student_homework_error_mark_failed() });
+		}
+		return markHomeworkDone({ request, supabase, user, studentId: params.id });
 	},
 
 	/** spec-second-parent story 3: any active parent cancels the pending invite. */

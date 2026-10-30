@@ -6,7 +6,9 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import {
@@ -25,6 +27,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import MarkDoneForm from '$lib/components/MarkDoneForm.svelte';
 	import PageBreadcrumb from '$lib/components/PageBreadcrumb.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import StudentProgressTiles from '$lib/components/StudentProgressTiles.svelte';
@@ -89,6 +92,22 @@
 
 	const pending = createPending();
 
+	/**
+	 * spec-parent-managed-homework story 2: a refused toggle or Mark done
+	 * (e.g. the other parent turned managing off) reloads the page data, so
+	 * the card and the buttons show the current flag; the error stays.
+	 */
+	function refreshOnFailure(submit: SubmitFunction): SubmitFunction {
+		return async (input) => {
+			const after = await submit(input);
+			if (!after) return;
+			return async (opts) => {
+				await after(opts);
+				if (opts.result.type === 'failure') await invalidateAll();
+			};
+		};
+	}
+
 	// Without JavaScript (or before hydration) the period preview is shown in
 	// the page instead of a dialog.
 	let hydrated = $state(false);
@@ -136,7 +155,7 @@
 
 	// A failed answer also shows as a toast (the root layout toasts `form.error`).
 	let errorFor = $derived(
-		form && 'error' in form && form.error
+		form && 'error' in form && 'sessionId' in form && form.error
 			? { sessionId: form.sessionId, message: form.error }
 			: null
 	);
@@ -151,6 +170,16 @@
 			focusNext = 'deletion-status';
 		} else if (form && 'deletionError' in form && form.deletionError) {
 			focusNext = 'deletion-request';
+		}
+		// spec-parent-managed-homework story 2: the managing card and Mark done.
+		if (form && 'action' in form && form.action === 'setParentManaged' && form.success) {
+			showToast('success', form.on ? m.child_managed_saved_on() : m.child_managed_saved_off());
+			focusNext = 'managed-toggle';
+		} else if (form && 'managedError' in form && form.managedError) {
+			focusNext = 'managed-toggle';
+		}
+		if (form && 'action' in form && form.action === 'markDone' && form.success) {
+			showToast('success', m.student_homework_mark_done_success());
 		}
 		// spec-second-parent story 3: the invite card.
 		if (form && 'action' in form && form.action === 'inviteParent' && form.success) {
@@ -514,6 +543,50 @@
 				{/if}
 			</section>
 
+			<!-- spec-parent-managed-homework story 2 (CAP-1): either linked parent
+			     turns managing this child's homework on or off. -->
+			<section
+				class="{ui.card} flex flex-col gap-3"
+				aria-labelledby="managed-heading"
+				data-testid="managed-card"
+			>
+				<h2 id="managed-heading" class="text-lg leading-snug font-bold">
+					{m.child_managed_heading()}
+				</h2>
+				<p class={ui.muted}>{m.child_managed_explanation({ name: data.child.name })}</p>
+				<p data-testid="managed-status" data-on={data.parentManaged}>
+					<Badge variant={data.parentManaged ? 'success' : 'secondary'}>
+						{data.parentManaged
+							? m.child_managed_status_on({ name: data.child.name })
+							: m.child_managed_status_off({ name: data.child.name })}
+					</Badge>
+				</p>
+				<form
+					method="POST"
+					action="?tab=overview&/setParentManaged"
+					use:enhance={refreshOnFailure(pending.submit('setParentManaged'))}
+				>
+					<input type="hidden" name="on" value={data.parentManaged ? 'false' : 'true'} />
+					<Button
+						id="managed-toggle"
+						type="submit"
+						variant={data.parentManaged ? 'outline' : 'default'}
+						class={touchButton}
+						disabled={pending.busy}
+						aria-busy={pending.is('setParentManaged') || undefined}
+						aria-describedby={form && 'managedError' in form && form.managedError
+							? 'managed-error'
+							: undefined}
+					>
+						{@render spinner('setParentManaged')}
+						{data.parentManaged ? m.child_managed_turn_off() : m.child_managed_turn_on()}
+					</Button>
+				</form>
+				{#if form && 'managedError' in form && form.managedError}
+					<p id="managed-error" class={ui.error} role="alert">{form.managedError}</p>
+				{/if}
+			</section>
+
 			{#if data.inviteLoadError}
 				<section
 					class="{ui.card} flex flex-col gap-3"
@@ -696,7 +769,8 @@
 	{:else if data.tab === 'homework'}
 		<div class="grid items-start gap-4 md:grid-cols-2">
 			<section class={ui.card} aria-labelledby="open-heading">
-				<h2 id="open-heading" class={ui.cardTitle}>
+				<!-- Focus lands here once a marked item has left the list. -->
+				<h2 id="open-heading" class="{ui.cardTitle} outline-none" tabindex="-1">
 					{m.parent_card_open()}{data.errors.open ? '' : ` (${data.homework.open.length})`}
 				</h2>
 				{#if data.errors.open}
@@ -707,7 +781,7 @@
 						<p class={ui.muted}>{m.student_homework_empty()}</p>
 					{/if}
 				{:else}
-					{@render homeworkList(data.homework.open)}
+					{@render homeworkList(data.homework.open, data.parentManaged)}
 				{/if}
 			</section>
 
@@ -721,7 +795,7 @@
 						<p class={ui.muted}>{m.student_done_empty()}</p>
 					{/if}
 				{:else}
-					{@render homeworkList(data.homework.done)}
+					{@render homeworkList(data.homework.done, false)}
 					<Pager
 						page={data.homework.donePage}
 						pageCount={data.homework.donePageCount}
@@ -1282,7 +1356,9 @@
 	</div>
 {/snippet}
 
-{#snippet homeworkList(items: typeof data.homework.open)}
+<!-- spec-parent-managed-homework story 2: `canMark` (open items of a
+     parent-managed child) adds Mark done, posting to this tab. -->
+{#snippet homeworkList(items: typeof data.homework.open, canMark: boolean)}
 	<ul class={ui.rows}>
 		{#each items as item (item.instanceId)}
 			<li class="py-3">
@@ -1313,6 +1389,20 @@
 							</li>
 						{/each}
 					</ul>
+				{/if}
+				{#if canMark && item.status !== 'done' && item.status !== 'reviewed'}
+					<div class="mt-2">
+						<MarkDoneForm
+							instanceId={item.instanceId}
+							title={item.title}
+							{pending}
+							variant="outline"
+							class="w-full md:w-auto"
+							action="?tab=homework&/markDone"
+							onfailure={invalidateAll}
+							focusAfter={() => document.getElementById('open-heading')}
+						/>
+					</div>
 				{/if}
 			</li>
 		{/each}

@@ -83,10 +83,23 @@ function fakeSupabase(opts: {
 				error: result.error
 			};
 		};
+		c.single = async () => {
+			calls.push({ table, method: 'single', args: [] });
+			result = sorted();
+			return {
+				data: Array.isArray(result.data) ? (result.data[0] ?? null) : result.data,
+				error: result.error
+			};
+		};
 		c.insert = (row: unknown) => {
 			inserted.push(row);
 			const r = opts.insert ?? { data: null, error: null };
-			const ic = { select: () => ic, single: async () => r };
+			// Awaited directly (markHomeworkDone) or through select().single().
+			const ic = {
+				select: () => ic,
+				single: async () => r,
+				then: (resolve: (value: Result) => unknown) => resolve(r)
+			};
 			return ic;
 		};
 		c.then = (resolve: (value: Result) => unknown) => resolve(sorted());
@@ -1375,4 +1388,144 @@ describe('parent child page: invite card (spec-second-parent story 3)', () => {
 		});
 		expect(bad.rpc).not.toHaveBeenCalled();
 	});
+});
+
+describe('parent child page: managing homework (spec-parent-managed-homework story 2)', () => {
+	const INSTANCE = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+	const CLASS = 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+	function signedOut(fields: Record<string, string>, fake: ReturnType<typeof fakeSupabase>) {
+		const e = event(fields, fake) as unknown as { locals: Record<string, unknown> };
+		e.locals.safeGetSession = async () => ({ user: null });
+		return e as unknown as Parameters<typeof actions.setLeave>[0];
+	}
+
+	it.each([
+		['flag off', false],
+		['flag on', true]
+	])('load, %s -> parentManaged', async (_label, on) => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: {
+				profiles: { data: [{ id: CHILD, team_id: null, parent_managed: on }], error: null }
+			}
+		});
+		const result = (await runLoad(fake)) as unknown as Record<string, unknown>;
+		expect(result.parentManaged).toBe(on);
+		expect(fake.calls).toContainEqual({
+			table: 'profiles',
+			method: 'select',
+			args: ['team_id, parent_managed']
+		});
+	});
+
+	it('load: no readable profile -> parentManaged false', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: { profiles: { data: null, error: null } }
+		});
+		const result = (await runLoad(fake)) as unknown as Record<string, unknown>;
+		expect(result.parentManaged).toBe(false);
+	});
+
+	it.each([
+		['true', true],
+		['false', false]
+	])('setParentManaged on=%s calls set_parent_managed()', async (value, on) => {
+		const fake = fakeSupabase({});
+		const result = await actions.setParentManaged(event({ on: value }, fake));
+		expect(result).toEqual({ action: 'setParentManaged', success: true, on });
+		expect(fake.rpc).toHaveBeenCalledWith('set_parent_managed', {
+			p_student_id: CHILD,
+			p_on: on
+		});
+	});
+
+	it('setParentManaged maps a 42501 refusal to 403', async () => {
+		const fake = fakeSupabase({
+			rpc: { set_parent_managed: { data: null, error: { code: '42501' } } }
+		});
+		const result = await actions.setParentManaged(event({ on: 'true' }, fake));
+		expect(result).toMatchObject({
+			status: 403,
+			data: { managedError: m.child_managed_error_not_allowed() }
+		});
+	});
+
+	it('setParentManaged maps any other error to 400', async () => {
+		const fake = fakeSupabase({
+			rpc: { set_parent_managed: { data: null, error: { code: 'XX000' } } }
+		});
+		const result = await actions.setParentManaged(event({ on: 'false' }, fake));
+		expect(result).toMatchObject({
+			status: 400,
+			data: { managedError: m.child_managed_error_failed() }
+		});
+	});
+
+	it.each([[{}], [{ on: 'yes' }], [{ on: '' }], [{ on: 'TRUE' }]])(
+		'setParentManaged refuses bad input %o before any call',
+		async (fields) => {
+			const fake = fakeSupabase({});
+			const result = await actions.setParentManaged(event(fields, fake));
+			expect(result).toMatchObject({
+				status: 400,
+				data: { managedError: m.child_managed_error_failed() }
+			});
+			expect(fake.rpc).not.toHaveBeenCalled();
+		}
+	);
+
+	it('markDone inserts done for the child, recorded by the parent', async () => {
+		const fake = fakeSupabase({
+			tables: { homework_instances: { data: { id: INSTANCE, class_id: CLASS }, error: null } }
+		});
+		const result = await actions.markDone(event({ instanceId: INSTANCE }, fake));
+		expect(result).toEqual({ success: true, action: 'markDone' });
+		expect(fake.inserted).toEqual([
+			{
+				instance_id: INSTANCE,
+				student_id: CHILD,
+				class_id: CLASS,
+				status: 'done',
+				recorded_by: 'p1'
+			}
+		]);
+	});
+
+	it('markDone maps an RLS refusal (flag off / not linked) to 403', async () => {
+		const fake = fakeSupabase({
+			tables: { homework_instances: { data: { id: INSTANCE, class_id: CLASS }, error: null } },
+			insert: { data: null, error: { code: '42501' } }
+		});
+		const result = await actions.markDone(event({ instanceId: INSTANCE }, fake));
+		expect(result).toMatchObject({
+			status: 403,
+			data: { error: m.child_managed_error_mark_not_allowed() }
+		});
+	});
+
+	it('markDone with an unknown instance fails 400 before any insert', async () => {
+		const fake = fakeSupabase({
+			tables: { homework_instances: { data: null, error: { code: 'PGRST116' } } }
+		});
+		const result = await actions.markDone(event({ instanceId: INSTANCE }, fake));
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: m.student_homework_error_not_found() }
+		});
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it.each(['setParentManaged', 'markDone'] as const)(
+		'%s redirects to /login when signed out',
+		async (name) => {
+			const fake = fakeSupabase({});
+			await expect(
+				actions[name](signedOut({ on: 'true', instanceId: INSTANCE }, fake))
+			).rejects.toMatchObject({ status: 303, location: '/login' });
+			expect(fake.rpc).not.toHaveBeenCalled();
+			expect(fake.inserted).toEqual([]);
+		}
+	);
 });

@@ -11,7 +11,8 @@
 	import { ui } from '$lib/ui/classes';
 
 	/**
-	 * A homework's Mark done (#43, #91), posting to the page's `?/markDone`.
+	 * A homework's Mark done (#43, #91), posting to the page's `?/markDone`
+	 * (or `action`).
 	 * Mobile-first story 4: the question is a new alert dialog (it was iX's
 	 * confirm modal). The button is the form's submit button, so without
 	 * JavaScript it posts directly; with it, the click asks first and
@@ -27,7 +28,9 @@
 		pending,
 		variant = 'default',
 		class: className = '',
-		focusAfter
+		focusAfter,
+		action = '?/markDone',
+		onfailure
 	}: {
 		instanceId: string;
 		/** The homework's title, for the question. */
@@ -36,6 +39,10 @@
 		variant?: 'default' | 'outline';
 		class?: string;
 		focusAfter?: () => HTMLElement | null | undefined;
+		/** The action it posts to (the parent child page adds its tab). */
+		action?: string;
+		/** Runs after a refused save, before focus moves (e.g. reload the page data). */
+		onfailure?: () => unknown;
 	} = $props();
 
 	let key = $derived(`done:${instanceId}`);
@@ -70,6 +77,7 @@
 		if (!after) return;
 		return async (result) => {
 			await after(result);
+			if (result.result.type === 'failure') await onfailure?.();
 			await tick();
 			const active = document.activeElement;
 			if (active && active !== document.body && active.isConnected) return;
@@ -80,7 +88,7 @@
 	};
 </script>
 
-<form bind:this={form} method="POST" action="?/markDone" use:enhance={submit} class="min-w-0">
+<form bind:this={form} method="POST" {action} use:enhance={submit} class="min-w-0">
 	<input type="hidden" name="instanceId" value={instanceId} />
 	<Button
 		bind:ref={button}
