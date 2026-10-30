@@ -3134,6 +3134,464 @@ describe.skipIf(!reachable)(
 );
 
 describe.skipIf(!reachable)(
+	'spec-parent-managed-homework story 1: parent-managed flag and parent done marks (requires local Supabase)',
+	() => {
+		type Client = ReturnType<typeof anonClient>;
+		type Parent = { id: string; email: string; client: Client };
+		let admin: Awaited<ReturnType<typeof createSignedInUser>>;
+		let teacher: Awaited<ReturnType<typeof createSignedInUser>>;
+		let classId: string;
+		let teamId: string;
+
+		const name = (label: string) => `PMH ${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+		async function signIn(email: string, password: string): Promise<Client> {
+			const client = anonClient();
+			const { error } = await client.auth.signInWithPassword({ email, password });
+			if (error) throw new Error(`Failed to sign in: ${error.message}`);
+			return client;
+		}
+
+		async function newParent(): Promise<Parent> {
+			const p = await createApprovedParent();
+			return { id: p.id, email: p.email, client: await signIn(p.email, p.password) };
+		}
+
+		/** A child registered by A, approved, B linked in slot 2, and the child signed in. */
+		async function family() {
+			const a = await newParent();
+			const b = await newParent();
+			const { id, error } = await signUpStudent({
+				classId,
+				registrationName: name('Kid'),
+				guardianEmail: a.email
+			});
+			if (error || !id) throw new Error(`Failed to register child: ${error?.message}`);
+			const { error: approveError } = await adminClient
+				.from('profiles')
+				.update({ status: 'approved', team_id: teamId })
+				.eq('id', id);
+			if (approveError) throw new Error(`Failed to approve child: ${approveError.message}`);
+			await linkParent(adminClient, id, b.id);
+			const password = crypto.randomUUID();
+			const { data: user, error: pwError } = await adminClient.auth.admin.updateUserById(id, {
+				password
+			});
+			if (pwError || !user.user?.email) throw new Error(`Failed to set PIN: ${pwError?.message}`);
+			return { a, b, kid: { id, client: await signIn(user.user.email, password) } };
+		}
+
+		async function flagOf(studentId: string): Promise<boolean | undefined> {
+			const { data } = await adminClient
+				.from('profiles')
+				.select('parent_managed')
+				.eq('id', studentId)
+				.single();
+			return data?.parent_managed;
+		}
+
+		/** Fixture: sets the flag with the service role (the guard lets trusted paths pass). */
+		async function setFlag(studentId: string, on: boolean) {
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ parent_managed: on })
+				.eq('id', studentId);
+			if (error) throw new Error(`Failed to set the flag: ${error.message}`);
+		}
+
+		/** A fresh instance in the class with an 'assigned' row for the student (unless `assign` is false). */
+		async function openItem(studentId: string, assign = true, day = '2026-09-20'): Promise<string> {
+			const { data: assignment, error: assignmentError } = await teacher.client
+				.from('homework_assignments')
+				.insert({
+					class_id: classId,
+					title: name('Task'),
+					skill_area: 'language',
+					created_by: teacher.id
+				})
+				.select('id')
+				.single();
+			if (assignmentError || !assignment)
+				throw new Error(`Failed to create assignment: ${assignmentError?.message}`);
+			const { data: instance, error: instanceError } = await teacher.client
+				.from('homework_instances')
+				.insert({
+					assignment_id: assignment.id,
+					class_id: classId,
+					period_start: day,
+					due_date: day
+				})
+				.select('id')
+				.single();
+			if (instanceError || !instance)
+				throw new Error(`Failed to create instance: ${instanceError?.message}`);
+			if (assign) {
+				const { error } = await teacher.client.from('homework_status_history').insert({
+					instance_id: instance.id,
+					student_id: studentId,
+					class_id: classId,
+					status: 'assigned',
+					recorded_by: teacher.id
+				});
+				if (error) throw new Error(`Failed to assign: ${error.message}`);
+			}
+			return instance.id;
+		}
+
+		const mark = (
+			client: Client,
+			instanceId: string,
+			studentId: string,
+			recordedBy: string,
+			status: 'done' | 'reviewed' = 'done'
+		) =>
+			client
+				.from('homework_status_history')
+				.insert({
+					instance_id: instanceId,
+					student_id: studentId,
+					class_id: classId,
+					status,
+					recorded_by: recordedBy
+				})
+				.select('status, recorded_by')
+				.single();
+
+		async function statuses(instanceId: string, studentId: string) {
+			const { data } = await adminClient
+				.from('homework_status_history')
+				.select('status')
+				.eq('instance_id', instanceId)
+				.eq('student_id', studentId);
+			return (data ?? []).map((r) => r.status).sort();
+		}
+
+		beforeAll(async () => {
+			admin = await createSignedInUser('admin');
+			teacher = await createSignedInUser('teacher');
+			const { data: cls, error } = await adminClient
+				.from('classes')
+				.insert({
+					name: name('Class'),
+					code: `P${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+					badge_subject: 'language'
+				})
+				.select('id')
+				.single();
+			if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+			classId = cls.id;
+			const { error: ctError } = await adminClient
+				.from('class_teachers')
+				.insert({ class_id: classId, teacher_id: teacher.id });
+			if (ctError) throw new Error(`Failed to assign teacher: ${ctError.message}`);
+			const { data: team, error: teamError } = await adminClient
+				.from('teams')
+				.insert({ name: name('Team') })
+				.select('id')
+				.single();
+			if (teamError || !team) throw new Error(`Failed to create team: ${teamError?.message}`);
+			teamId = team.id;
+		}, 30000);
+
+		it('a new student is not parent-managed', async () => {
+			const { kid } = await family();
+			expect(await flagOf(kid.id)).toBe(false);
+		});
+
+		it('Parent A sets the flag; both A and B read it on', async () => {
+			const { a, b, kid } = await family();
+			const { error } = await a.client.rpc('set_parent_managed', {
+				p_student_id: kid.id,
+				p_on: true
+			});
+			expect(error).toBeNull();
+			for (const p of [a, b]) {
+				const { data, error: readError } = await p.client
+					.from('profiles')
+					.select('parent_managed')
+					.eq('id', kid.id)
+					.single();
+				expect(readError).toBeNull();
+				expect(data?.parent_managed).toBe(true);
+			}
+		});
+
+		it('Parent B turns the flag off', async () => {
+			const { a, b, kid } = await family();
+			expect(
+				(await a.client.rpc('set_parent_managed', { p_student_id: kid.id, p_on: true })).error
+			).toBeNull();
+			const { error } = await b.client.rpc('set_parent_managed', {
+				p_student_id: kid.id,
+				p_on: false
+			});
+			expect(error).toBeNull();
+			expect(await flagOf(kid.id)).toBe(false);
+		});
+
+		it('an unlinked parent, a teacher, the admin and the student cannot call set_parent_managed', async () => {
+			const { kid } = await family();
+			const stranger = await newParent();
+			for (const client of [stranger.client, teacher.client, admin.client, kid.client]) {
+				const { error } = await client.rpc('set_parent_managed', {
+					p_student_id: kid.id,
+					p_on: true
+				});
+				expect(error?.code).toBe('42501');
+			}
+			const anon = await anonClient().rpc('set_parent_managed', {
+				p_student_id: kid.id,
+				p_on: true
+			});
+			expect(anon.error).not.toBeNull();
+			expect(await flagOf(kid.id)).toBe(false);
+		});
+
+		it('a removed parent can no longer change the flag', async () => {
+			const { b, kid } = await family();
+			const { error: removeError } = await adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', kid.id)
+				.eq('parent_id', b.id)
+				.is('removed_at', null);
+			expect(removeError).toBeNull();
+			const { error } = await b.client.rpc('set_parent_managed', {
+				p_student_id: kid.id,
+				p_on: true
+			});
+			expect(error?.code).toBe('42501');
+			expect(await flagOf(kid.id)).toBe(false);
+		});
+
+		it('the teacher and the admin cannot change the flag through the registration review update', async () => {
+			// A pending student of the teacher's class: the one profiles row the
+			// teacher may update (profiles_update_registration_review).
+			const { id: pending, error: signUpError } = await signUpStudent({
+				classId,
+				registrationName: name('Pending')
+			});
+			if (signUpError || !pending) throw new Error(`Failed to register: ${signUpError?.message}`);
+			for (const client of [teacher.client, admin.client]) {
+				const { error } = await client
+					.from('profiles')
+					.update({ status: 'approved', team_id: teamId, parent_managed: true })
+					.eq('id', pending);
+				expect(error?.code).toBe('42501');
+				expect(error?.message).toMatch(/parent_managed/);
+			}
+			expect(await flagOf(pending)).toBe(false);
+		});
+
+		it('the student cannot set their own flag directly', async () => {
+			const { kid } = await family();
+			const { data, error } = await kid.client
+				.from('profiles')
+				.update({ parent_managed: true })
+				.eq('id', kid.id)
+				.select('id');
+			// No profiles update policy reaches the student's own row: no row changes.
+			expect(error ? [] : data).toEqual([]);
+			expect(await flagOf(kid.id)).toBe(false);
+		});
+
+		it('Parent A and Parent B each mark done for a parent-managed child; the row records the parent', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			for (const p of [a, b]) {
+				const instanceId = await openItem(kid.id);
+				const { data, error } = await mark(p.client, instanceId, kid.id, p.id);
+				expect(error).toBeNull();
+				expect(data).toEqual({ status: 'done', recorded_by: p.id });
+				expect(await statuses(instanceId, kid.id)).toEqual(['assigned', 'done']);
+			}
+		});
+
+		it('a parent done mark runs the streak and badge triggers as a self-mark does', async () => {
+			const { a, kid } = await family();
+			await setFlag(kid.id, true);
+			// This week: present at a session and the item's period, so the
+			// streak walk counts the week once the done mark lands.
+			const today = todayInBerlin();
+			const { error: attendanceError } = await adminClient.from('attendance_records').insert({
+				student_id: kid.id,
+				class_id: classId,
+				class_session_id: await sessionFor(classId, today),
+				present: true,
+				recorded_by: teacher.id
+			});
+			expect(attendanceError).toBeNull();
+			const instanceId = await openItem(kid.id, true, today);
+			const readStreak = async () =>
+				(
+					await adminClient
+						.from('student_streaks')
+						.select('current_streak, last_qualifying_week')
+						.eq('student_id', kid.id)
+						.maybeSingle()
+				).data;
+			expect((await readStreak())?.current_streak ?? 0).toBe(0);
+
+			const { error } = await mark(a.client, instanceId, kid.id, a.id);
+			expect(error).toBeNull();
+
+			const monday = new Date(`${today}T00:00:00Z`);
+			monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+			expect(await readStreak()).toEqual({
+				current_streak: 1,
+				last_qualifying_week: monday.toISOString().slice(0, 10)
+			});
+			const { data: badges } = await adminClient
+				.from('badges_earned')
+				.select('badge_type, milestone')
+				.eq('student_id', kid.id)
+				.eq('badge_type', 'homework');
+			expect(badges).toEqual([{ badge_type: 'homework', milestone: 1 }]);
+			const { data: progress } = await adminClient.rpc('badge_progress', {
+				p_student_id: kid.id
+			});
+			expect(progress?.find((r) => r.badge_type === 'homework')?.total).toBe(1);
+		});
+
+		it('a removed parent cannot mark done even when the flag is on', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			const { error: removeError } = await adminClient
+				.from('student_parents')
+				.update({ removed_at: new Date().toISOString(), removed_by: admin.id })
+				.eq('student_id', kid.id)
+				.eq('parent_id', b.id)
+				.is('removed_at', null);
+			expect(removeError).toBeNull();
+			const instanceId = await openItem(kid.id);
+			expect((await mark(b.client, instanceId, kid.id, b.id)).error?.code).toBe('42501');
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned']);
+			expect((await mark(a.client, instanceId, kid.id, a.id)).error).toBeNull();
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned', 'done']);
+		});
+
+		it('flag off: Parent A and Parent B are refused', async () => {
+			const { a, b, kid } = await family();
+			const instanceId = await openItem(kid.id);
+			for (const p of [a, b]) {
+				const { error } = await mark(p.client, instanceId, kid.id, p.id);
+				expect(error?.code).toBe('42501');
+			}
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned']);
+		});
+
+		it('flag turned off again: a parent is refused', async () => {
+			const { a, b, kid } = await family();
+			await a.client.rpc('set_parent_managed', { p_student_id: kid.id, p_on: true });
+			await b.client.rpc('set_parent_managed', { p_student_id: kid.id, p_on: false });
+			const instanceId = await openItem(kid.id);
+			for (const p of [a, b]) {
+				expect((await mark(p.client, instanceId, kid.id, p.id)).error?.code).toBe('42501');
+			}
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned']);
+		});
+
+		it('an unlinked parent is refused even when the flag is on', async () => {
+			const { kid } = await family();
+			await setFlag(kid.id, true);
+			const stranger = await newParent();
+			const instanceId = await openItem(kid.id);
+			const { error } = await mark(stranger.client, instanceId, kid.id, stranger.id);
+			expect(error?.code).toBe('42501');
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned']);
+		});
+
+		it('no assigned row: Parent A and Parent B are refused', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			const instanceId = await openItem(kid.id, false);
+			for (const p of [a, b]) {
+				expect((await mark(p.client, instanceId, kid.id, p.id)).error?.code).toBe('42501');
+			}
+			expect(await statuses(instanceId, kid.id)).toEqual([]);
+		});
+
+		it('reviewed: Parent A and Parent B are refused even after done', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			const instanceId = await openItem(kid.id);
+			expect((await mark(a.client, instanceId, kid.id, a.id)).error).toBeNull();
+			for (const p of [a, b]) {
+				const { error } = await mark(p.client, instanceId, kid.id, p.id, 'reviewed');
+				expect(error?.code).toBe('42501');
+			}
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned', 'done']);
+		});
+
+		it('recorded_by someone else: Parent A and Parent B are refused', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			const instanceId = await openItem(kid.id);
+			for (const [p, other] of [
+				[a, b.id],
+				[b, a.id],
+				[a, kid.id],
+				[b, teacher.id]
+			] as const) {
+				expect((await mark(p.client, instanceId, kid.id, other)).error?.code).toBe('42501');
+			}
+			expect(await statuses(instanceId, kid.id)).toEqual(['assigned']);
+		});
+
+		it('parents cannot update or delete history rows', async () => {
+			const { a, b, kid } = await family();
+			await setFlag(kid.id, true);
+			const instanceId = await openItem(kid.id);
+			expect((await mark(a.client, instanceId, kid.id, a.id)).error).toBeNull();
+			const before = await adminClient
+				.from('homework_status_history')
+				.select('*')
+				.eq('instance_id', instanceId)
+				.eq('student_id', kid.id)
+				.order('status');
+			for (const p of [a, b]) {
+				const updated = await p.client
+					.from('homework_status_history')
+					.update({ status: 'reviewed' })
+					.eq('instance_id', instanceId)
+					.eq('student_id', kid.id)
+					.select('id');
+				expect(updated.error ? [] : updated.data).toEqual([]);
+				const deleted = await p.client
+					.from('homework_status_history')
+					.delete()
+					.eq('instance_id', instanceId)
+					.eq('student_id', kid.id)
+					.select('id');
+				expect(deleted.error ? [] : deleted.data).toEqual([]);
+			}
+			const after = await adminClient
+				.from('homework_status_history')
+				.select('*')
+				.eq('instance_id', instanceId)
+				.eq('student_id', kid.id)
+				.order('status');
+			expect(after.data).toHaveLength(2);
+			expect(after.data).toEqual(before.data);
+		});
+
+		it('flag on: the student still self-marks and the teacher still marks done and reviewed', async () => {
+			const { kid } = await family();
+			await setFlag(kid.id, true);
+			const own = await openItem(kid.id);
+			expect((await mark(kid.client, own, kid.id, kid.id)).error).toBeNull();
+			const byTeacher = await openItem(kid.id);
+			expect((await mark(teacher.client, byTeacher, kid.id, teacher.id)).error).toBeNull();
+			expect(
+				(await mark(teacher.client, byTeacher, kid.id, teacher.id, 'reviewed')).error
+			).toBeNull();
+			expect(await statuses(own, kid.id)).toEqual(['assigned', 'done']);
+			expect(await statuses(byTeacher, kid.id)).toEqual(['assigned', 'done', 'reviewed']);
+		});
+	}
+);
+
+describe.skipIf(!reachable)(
 	'Story 3-2 recurring homework assignments (requires local Supabase)',
 	() => {
 		let admin: Awaited<ReturnType<typeof createSignedInUser>>;

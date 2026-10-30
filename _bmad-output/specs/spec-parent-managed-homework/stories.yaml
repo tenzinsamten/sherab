@@ -1,0 +1,38 @@
+- id: "1"
+  title: Parent-managed flag and database rule
+  description: >-
+    The database side of CAP-1 and CAP-2: the parent-managed flag on the
+    student, its trusted set function, the parent-managing helper, and the
+    homework_status_history insert rule's parent done branch, per SPEC
+    Constraints.
+  invoke_dev_with: >-
+    Requires the AD-12 architecture amendment first. Add new columns and
+    functions to src/lib/supabase/database.types.ts by hand; never
+    regenerate it with supabase:types. RLS tests cover every refusal in
+    CAP-2 for both linked parents.
+- id: "2"
+  title: Toggle and Mark done on the child page
+  description: >-
+    CAP-1 UI and CAP-2: on /parent/children/[id], the overview toggle and a
+    Mark done button on open items in the Homework tab for parent-managed
+    children.
+- id: "3"
+  title: Parent homework detail page
+  description: >-
+    CAP-3: /parent/children/[id]/homework/[instanceId] shows the full
+    homework and class details, with Mark done for a parent-managed child.
+  invoke_dev_with: >-
+    Reuse src/lib/server/homework-view.ts and the student detail page
+    layout; gate with loadLinkedChild().
+- id: "4"
+  title: Mark done from the parent homework list
+  description: >-
+    CAP-2 on /parent/homework: Mark done on rows for parent-managed
+    children, and each row links to the story 3 detail page.
+  done_checkpoint: true
+- id: "5"
+  title: Marked-by labels
+  description: >-
+    CAP-4: done items show "by you", the other parent's name, or the child's
+    name to parents; teacher marks show no label.
+  done_checkpoint: true

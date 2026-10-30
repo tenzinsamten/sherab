@@ -617,3 +617,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-second-parent-cap-6-teacher-contacts.md`
   summary: The e2e "class members: Reset PIN shows the new PIN once; the student signs in with it, not with the old one (#88)" (e2e/teacher.e2e.ts:1290) fails: after the PIN reset the student's page stays on /student instead of going to /login.
   evidence: Fails identically on baseline 35db857 (worktree run, 2026-10-29), so it predates CAP-6; not caused by this change.
+
+- source_spec: `_bmad-output/specs/spec-parent-managed-homework/stories/1-parent-managed-flag-and-database-rule.md`
+  summary: One homework item can get several `done` rows (parent A, parent B, the student), because homework_status_history has no unique key; decide whether to block repeats or pick one row for the story 5 "marked by" label.
+  evidence: Unverified medium. Pre-existing since 0013 (only `assigned` is guarded by hand); settle it by checking how homework-view.ts / history-rows.ts and badge counts behave with two `done` rows for one instance.

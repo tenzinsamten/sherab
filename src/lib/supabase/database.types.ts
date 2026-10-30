@@ -1035,6 +1035,7 @@ export type Database = {
 					guardian_consent_given_at: string | null;
 					guardian_email: string | null;
 					id: string;
+					parent_managed: boolean;
 					registered_by_parent_id: string | null;
 					registration_name: string | null;
 					reviewed_at: string | null;
@@ -1053,6 +1054,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id: string;
+					parent_managed?: boolean;
 					registered_by_parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
@@ -1071,6 +1073,7 @@ export type Database = {
 					guardian_consent_given_at?: string | null;
 					guardian_email?: string | null;
 					id?: string;
+					parent_managed?: boolean;
 					registered_by_parent_id?: string | null;
 					registration_name?: string | null;
 					reviewed_at?: string | null;
@@ -1600,6 +1603,11 @@ export type Database = {
 			is_admin: { Args: never; Returns: boolean };
 			is_parent: { Args: never; Returns: boolean };
 			is_parent_of: { Args: { p_student_id: string }; Returns: boolean };
+			is_parent_managing: { Args: { p_student_id: string }; Returns: boolean };
+			set_parent_managed: {
+				Args: { p_student_id: string; p_on: boolean };
+				Returns: undefined;
+			};
 			is_parent_in_class: { Args: { p_class_id: string }; Returns: boolean };
 			is_parent_targeted_for_homework_assignment: {
 				Args: { p_assignment_id: string };
