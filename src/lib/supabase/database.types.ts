@@ -227,6 +227,42 @@ export type Database = {
 					}
 				];
 			};
+			/** Story 9 (0065): a reader's thumbs up (1) or down (-1) on a post; each caller selects only their own rows. */
+			board_post_reactions: {
+				Row: {
+					created_at: string;
+					post_id: string;
+					updated_at: string;
+					user_id: string;
+					value: number;
+				};
+				/** Column grant (0065): post_id, user_id, value only. */
+				Insert: {
+					post_id: string;
+					user_id: string;
+					value: number;
+				};
+				/** Column grant (0065): value only. */
+				Update: {
+					value?: number;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'board_post_reactions_post_id_fkey';
+						columns: ['post_id'];
+						isOneToOne: false;
+						referencedRelation: 'board_posts';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'board_post_reactions_user_id_fkey';
+						columns: ['user_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			/** Story 6 (0062): board notices sent, per post and recipient. service_role only. */
 			board_push_log: {
 				Row: {
@@ -1734,6 +1770,11 @@ export type Database = {
 					display_name: string | null;
 					role: Database['public']['Enums']['user_role'];
 				}[];
+			};
+			/** Story 9 (0065): up and down counts of the given posts that have reactions; empty for a non-reader. */
+			board_reaction_counts: {
+				Args: { p_ids: string[] };
+				Returns: { post_id: string; up_count: number; down_count: number }[];
 			};
 			set_parent_managed: {
 				Args: { p_student_id: string; p_on: boolean };

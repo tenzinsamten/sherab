@@ -1447,5 +1447,12 @@
 	"board_error_title_required": "ཁ་བྱང་འབྲི་རོགས།",
 	"board_error_title_too_long": "ཁ་བྱང་ནི་ཡིག་འབྲུ་ ༡༢༠ ལས་མང་བ་མི་ཆོག",
 	"board_author_admin": "Sherab Admin",
-	"board_author_teacher": "དགེ་རྒན།"
+	"board_author_teacher": "དགེ་རྒན།",
+	"board_react_group_label": "ལན་འདེབས། འཕྲིན་ཡིག་འབྲི་མཁན། {author}",
+	"board_react_up_label": "འཕྲིན་ཡིག་འདི་ལ་དགའ།",
+	"board_react_down_label": "འཕྲིན་ཡིག་འདི་ལ་མི་དགའ།",
+	"board_react_error_invalid": "ལན་འདེབས་འདི་ནོར་འདུག",
+	"board_react_error_not_allowed": "ཁྱེད་ཀྱིས་བརྡ་ཁྱབ་པང་ལེབ་ཀྱི་འཕྲིན་ཡིག་ལ་ལན་འདེབས་བྱེད་མི་ཆོག",
+	"board_react_error_not_found": "འཕྲིན་ཡིག་འདི་རྙེད་མ་ཐུབ། དེ་བསུབས་ཟིན་པ་ཡིན་སྲིད།",
+	"board_react_error_failed": "ཁྱེད་ཀྱི་ལན་འདེབས་ཉར་མ་ཐུབ། ཡང་བསྐྱར་ཚོད་ལྟ་གནང་རོགས།"
 }

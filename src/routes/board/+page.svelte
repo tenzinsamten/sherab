@@ -33,6 +33,7 @@
 	import { ui } from '$lib/ui/classes';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { ActionData, PageProps } from './$types';
+	import type { BoardReactions } from './+page.server';
 
 	/**
 	 * The school message board (spec-parent-message-board story 3): posts
@@ -43,6 +44,8 @@
 	 * may still list PDF files).
 	 * Story 5: the author edits a post's body in place (while a poster) and
 	 * deletes it; an admin or a teacher deletes any post, after a question.
+	 * Story 9: every reader gives a post 👍 or 👎 (pressing it again takes it
+	 * back); both counts show to everyone, never who reacted.
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -195,6 +198,29 @@
 		const created = Date.parse(createdAt);
 		const updated = Date.parse(updatedAt);
 		return !Number.isNaN(created) && !Number.isNaN(updated) && updated - created > 60_000;
+	}
+
+	/** Story 9: the two reactions, in their order on the card. */
+	const REACTIONS = [
+		{
+			value: 'up',
+			mine: 1,
+			emoji: '👍',
+			count: (r: BoardReactions) => r.up,
+			label: m.board_react_up_label
+		},
+		{
+			value: 'down',
+			mine: -1,
+			emoji: '👎',
+			count: (r: BoardReactions) => r.down,
+			label: m.board_react_down_label
+		}
+	] as const;
+
+	/** Story 9: 👍 or 👎; no toast, the reloaded counts are the answer. */
+	function submitReaction(id: string): SubmitFunction {
+		return pending.submit(`react:${id}`, { reset: false });
 	}
 
 	function olderHref(before: string): string {
@@ -441,6 +467,45 @@
 						{/if}
 						<!-- Legacy PDF files from before story 8. -->
 						<BoardFiles files={boardPost.files} author={boardPost.authorName} />
+						<!-- Story 9: 👍 and 👎 with their counts, for every reader. Each button
+						     keeps its name; its visible count is read as its description. -->
+						<form
+							method="POST"
+							action="?/react"
+							use:enhance={submitReaction(boardPost.id)}
+							class="mt-3"
+							data-testid="board-post-reactions"
+						>
+							<input type="hidden" name="postId" value={boardPost.id} />
+							<div
+								role="group"
+								aria-label={m.board_react_group_label({ author: boardPost.authorName })}
+								class="flex flex-wrap gap-2"
+							>
+								{#each REACTIONS as reaction (reaction.value)}
+									{@const pressed = boardPost.reactions.mine === reaction.mine}
+									{@const countId = `board-react-${reaction.value}-count-${boardPost.id}`}
+									<Button
+										type="submit"
+										name="value"
+										value={reaction.value}
+										variant={pressed ? 'default' : 'outline'}
+										class="{ui.touch} gap-1.5 px-3 tabular-nums"
+										aria-pressed={pressed}
+										aria-label={reaction.label()}
+										aria-describedby={countId}
+										aria-busy={pending.is(`react:${boardPost.id}`) || undefined}
+										disabled={pending.busy || data.reactionsError}
+										data-testid="board-react-{reaction.value}"
+									>
+										<span aria-hidden="true">{reaction.emoji}</span>
+										<span id={countId} data-testid="board-react-{reaction.value}-count"
+											>{reaction.count(boardPost.reactions)}</span
+										>
+									</Button>
+								{/each}
+							</div>
+						</form>
 						{#if (canEdit && editingId !== boardPost.id) || canDelete}
 							<div class="mt-3 flex flex-wrap gap-2" data-testid="board-post-actions">
 								{#if canEdit && editingId !== boardPost.id}

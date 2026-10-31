@@ -35,6 +35,14 @@ function fakeSupabase(
 		/** Story 5: the delete's author read, and the caller's profile role. */
 		target?: Result;
 		profile?: Result;
+		/** Story 9: the counts RPC and the caller's own reactions in the load. */
+		counts?: Result;
+		mineReactions?: Result;
+		/** Story 9: the react action's read of the current reaction, and its writes. */
+		reaction?: Result;
+		reactionInsert?: Result;
+		reactionUpdate?: Result;
+		reactionDelete?: Result;
 	} = {}
 ) {
 	const rpcCalls: { fn: string; args?: unknown }[] = [];
@@ -49,8 +57,10 @@ function fakeSupabase(
 	const rpcResults: Record<string, Result> = {
 		is_board_reader: options.reader ?? { data: true, error: null },
 		is_board_poster: options.poster ?? { data: false, error: null },
-		board_author_names: options.names ?? { data: [], error: null }
+		board_author_names: options.names ?? { data: [], error: null },
+		board_reaction_counts: options.counts ?? { data: [], error: null }
 	};
+	const reactionCalls: Call[] = [];
 
 	function chain(initial: Result) {
 		let result = initial;
@@ -103,6 +113,7 @@ function fakeSupabase(
 		},
 		from: (table: string) => {
 			if (table === 'board_post_files') return filesChain();
+			if (table === 'board_post_reactions') return reactionsChain();
 			if (table === 'profiles') {
 				const p = {
 					select: () => p,
@@ -160,9 +171,52 @@ function fakeSupabase(
 		};
 		return c;
 	}
+	function reactionsChain() {
+		let result: Result = options.mineReactions ?? { data: [], error: null };
+		const record =
+			(name: string) =>
+			(...args: unknown[]) => {
+				reactionCalls.push([name, ...args]);
+				return c;
+			};
+		const write = (name: string, answer: Result | undefined, fallback: Result) => {
+			log.push(`board_post_reactions:${name}`);
+			result = answer ?? fallback;
+		};
+		const c = {
+			select: record('select'),
+			in: record('in'),
+			eq: record('eq'),
+			maybeSingle: () => {
+				reactionCalls.push(['maybeSingle']);
+				result = options.reaction ?? { data: null, error: null };
+				return c;
+			},
+			insert: (row: unknown) => {
+				reactionCalls.push(['insert', row]);
+				write('insert', options.reactionInsert, { data: null, error: null });
+				return c;
+			},
+			update: (values: unknown) => {
+				reactionCalls.push(['update', values]);
+				write('update', options.reactionUpdate, { data: [{ value: 1 }], error: null });
+				return c;
+			},
+			delete: () => {
+				reactionCalls.push(['delete']);
+				write('delete', options.reactionDelete, { data: null, error: null });
+				return c;
+			},
+			then: (resolve: (value: Result) => unknown, reject?: (e: unknown) => unknown) =>
+				Promise.resolve(result).then(resolve, reject)
+		};
+		return c;
+	}
+
 	return {
 		supabase,
 		rpcCalls,
+		reactionCalls,
 		postCalls,
 		inserted,
 		fileCalls,
@@ -1317,6 +1371,267 @@ describe('/board push on a new post (story 6)', () => {
 		expect(edited).toEqual({ edited: POST_ID });
 		const deleted = await actions.delete(formEvent(fakeSupabase(), 'delete', { postId: POST_ID }));
 		expect(deleted).toEqual({ deleted: POST_ID });
+		expect(announceBoardPost).not.toHaveBeenCalled();
+	});
+});
+
+describe('/board reactions in the load (story 9)', () => {
+	type Loaded = { posts: { id: string; reactions: unknown }[] };
+
+	it('one counts call and one own-reactions read for the page; counts and mine per post', async () => {
+		const fake = fakeSupabase({
+			posts: { data: [row(1), row(2), row(3)], error: null },
+			counts: {
+				data: [
+					{ post_id: 'p1', up_count: 3, down_count: 1 },
+					{ post_id: 'p2', up_count: 0, down_count: 2 }
+				],
+				error: null
+			},
+			mineReactions: { data: [{ post_id: 'p2', value: -1 }], error: null }
+		});
+		const data = (await runLoad(fake)) as unknown as Loaded;
+		expect(data.posts.map((p) => [p.id, p.reactions])).toEqual([
+			['p1', { up: 3, down: 1, mine: null }],
+			['p2', { up: 0, down: 2, mine: -1 }],
+			['p3', { up: 0, down: 0, mine: null }]
+		]);
+		const counts = fake.rpcCalls.filter((c) => c.fn === 'board_reaction_counts');
+		expect(counts).toEqual([{ fn: 'board_reaction_counts', args: { p_ids: ['p1', 'p2', 'p3'] } }]);
+		expect(fake.reactionCalls).toEqual([
+			['select', 'post_id, value'],
+			['eq', 'user_id', 'u1'],
+			['in', 'post_id', ['p1', 'p2', 'p3']]
+		]);
+	});
+
+	it('no posts: no reactions read', async () => {
+		const fake = fakeSupabase({ posts: { data: [], error: null } });
+		const data = (await runLoad(fake)) as unknown as { reactionsError: boolean };
+		expect(data.reactionsError).toBe(false);
+		expect(fake.rpcCalls.map((c) => c.fn)).not.toContain('board_reaction_counts');
+		expect(fake.reactionCalls).toEqual([]);
+	});
+
+	it('the counts read fails: zero counts, no own reaction, logged; the page renders', async () => {
+		const spy = consoleError();
+		const fake = fakeSupabase({
+			posts: { data: [row(1)], error: null },
+			counts: { data: null, error: { message: 'boom' } },
+			mineReactions: { data: [{ post_id: 'p1', value: 1 }], error: null }
+		});
+		const data = (await runLoad(fake)) as unknown as Loaded & {
+			loadError: boolean;
+			reactionsError: boolean;
+		};
+		expect(data.loadError).toBe(false);
+		expect(data.reactionsError).toBe(true);
+		expect(data.posts[0].reactions).toEqual({ up: 0, down: 0, mine: null });
+		expect(spy).toHaveBeenCalledWith(expect.stringContaining('board reactions'));
+	});
+
+	it('the own-reactions read fails: zero counts, no own reaction, logged', async () => {
+		const spy = consoleError();
+		const fake = fakeSupabase({
+			posts: { data: [row(1)], error: null },
+			counts: { data: [{ post_id: 'p1', up_count: 2, down_count: 0 }], error: null },
+			mineReactions: { data: null, error: { message: 'boom' } }
+		});
+		const data = (await runLoad(fake)) as unknown as Loaded & { reactionsError: boolean };
+		expect(data.reactionsError).toBe(true);
+		expect(data.posts[0].reactions).toEqual({ up: 0, down: 0, mine: null });
+		expect(spy).toHaveBeenCalledWith(expect.stringContaining('board reactions'));
+	});
+});
+
+describe('/board react action (story 9)', () => {
+	const react = (event: never) => actions.react(event) as Promise<unknown>;
+	const fields = (value: string, postId = POST_ID) => ({ postId, value });
+	const writes = (fake: ReturnType<typeof fakeSupabase>) =>
+		fake.log.filter((entry) => entry.startsWith('board_post_reactions:'));
+
+	it('not signed in: 401, nothing sent', async () => {
+		const fake = fakeSupabase();
+		const result = await react(formEvent(fake, 'react', fields('up'), { user: null }));
+		expect(result).toMatchObject({ status: 401, data: { error: m.board_error_not_signed_in() } });
+		expect(fake.reactionCalls).toEqual([]);
+	});
+
+	it('bad input (value=love, a bad id, nothing): 400, nothing sent', async () => {
+		const fake = fakeSupabase();
+		for (const f of [
+			fields('love'),
+			fields('up', 'p1'),
+			fields('', POST_ID),
+			{ postId: POST_ID }
+		]) {
+			const result = await react(formEvent(fake, 'react', f));
+			expect(result).toMatchObject({
+				status: 400,
+				data: { error: m.board_react_error_invalid() }
+			});
+		}
+		expect(fake.reactionCalls).toEqual([]);
+	});
+
+	it('first 👍: inserts {post_id, user_id: the signed-in user, value: 1}', async () => {
+		const fake = fakeSupabase();
+		const result = await react(formEvent(fake, 'react', { ...fields('up'), user_id: 'forged' }));
+		expect(result).toEqual({ reacted: true });
+		expect(fake.reactionCalls).toContainEqual([
+			'insert',
+			{ post_id: POST_ID, user_id: 'u1', value: 1 }
+		]);
+		expect(writes(fake)).toEqual(['board_post_reactions:insert']);
+		expect(fake.reactionCalls.slice(0, 4)).toEqual([
+			['select', 'value'],
+			['eq', 'post_id', POST_ID],
+			['eq', 'user_id', 'u1'],
+			['maybeSingle']
+		]);
+	});
+
+	it('👍 again while mine is 1: deletes the own row', async () => {
+		const fake = fakeSupabase({
+			reaction: { data: { value: 1 }, error: null },
+			reactionDelete: { data: [{ value: 1 }], error: null }
+		});
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toEqual({ reacted: true });
+		expect(writes(fake)).toEqual(['board_post_reactions:delete']);
+		// Only while it still has this value (another tab may have switched it).
+		expect(fake.reactionCalls.slice(-5)).toEqual([
+			['delete'],
+			['eq', 'post_id', POST_ID],
+			['eq', 'user_id', 'u1'],
+			['eq', 'value', 1],
+			['select', 'value']
+		]);
+	});
+
+	it('👍 again, but another tab switched it to 👎 meanwhile: nothing deleted, set to 👍', async () => {
+		const fake = fakeSupabase({
+			reaction: { data: { value: 1 }, error: null },
+			reactionDelete: { data: [], error: null },
+			reactionUpdate: { data: [{ value: 1 }], error: null }
+		});
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toEqual({ reacted: true });
+		expect(writes(fake)).toEqual(['board_post_reactions:delete', 'board_post_reactions:update']);
+		expect(fake.reactionCalls).toContainEqual(['update', { value: 1 }]);
+	});
+
+	it('the delete fails: mapped like any refusal (42501 403, other 500)', async () => {
+		const spy = consoleError();
+		for (const [error, status] of [
+			[{ code: '42501', message: 'rls' }, 403],
+			[{ message: 'down' }, 500]
+		] as const) {
+			const fake = fakeSupabase({
+				reaction: { data: { value: 1 }, error: null },
+				reactionDelete: { data: null, error }
+			});
+			const result = await react(formEvent(fake, 'react', fields('up')));
+			expect(result).toMatchObject({ status });
+			expect(writes(fake)).toEqual(['board_post_reactions:delete']);
+		}
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('the switch update fails: mapped like any refusal (42501 403, other 500)', async () => {
+		const spy = consoleError();
+		for (const [error, status, message] of [
+			[{ code: '42501', message: 'rls' }, 403, m.board_react_error_not_allowed()],
+			[{ message: 'down' }, 500, m.board_react_error_failed()]
+		] as const) {
+			const fake = fakeSupabase({
+				reaction: { data: { value: 1 }, error: null },
+				reactionUpdate: { data: null, error }
+			});
+			const result = await react(formEvent(fake, 'react', fields('down')));
+			expect(result).toMatchObject({ status, data: { error: message } });
+			expect(writes(fake)).toEqual(['board_post_reactions:update']);
+		}
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('the switch update matches no row (removed in another tab): inserts it again', async () => {
+		const fake = fakeSupabase({
+			reaction: { data: { value: 1 }, error: null },
+			reactionUpdate: { data: [], error: null }
+		});
+		const result = await react(formEvent(fake, 'react', fields('down')));
+		expect(result).toEqual({ reacted: true });
+		expect(writes(fake)).toEqual(['board_post_reactions:update', 'board_post_reactions:insert']);
+		expect(fake.reactionCalls).toContainEqual([
+			'insert',
+			{ post_id: POST_ID, user_id: 'u1', value: -1 }
+		]);
+	});
+
+	it('23505, then the retry update matches no row: 409', async () => {
+		const fake = fakeSupabase({
+			reactionInsert: { data: null, error: { code: '23505', message: 'dup' } },
+			reactionUpdate: { data: [], error: null }
+		});
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toMatchObject({ status: 409, data: { error: m.board_react_error_failed() } });
+		expect(writes(fake)).toEqual(['board_post_reactions:insert', 'board_post_reactions:update']);
+	});
+
+	it('switch: 👎 while mine is 1 updates the value to -1', async () => {
+		const fake = fakeSupabase({ reaction: { data: { value: 1 }, error: null } });
+		const result = await react(formEvent(fake, 'react', fields('down')));
+		expect(result).toEqual({ reacted: true });
+		expect(writes(fake)).toEqual(['board_post_reactions:update']);
+		expect(fake.reactionCalls).toContainEqual(['update', { value: -1 }]);
+		expect(fake.reactionCalls).toContainEqual(['eq', 'user_id', 'u1']);
+	});
+
+	it('added meanwhile in another tab (23505): switches by update', async () => {
+		const fake = fakeSupabase({
+			reactionInsert: { data: null, error: { code: '23505', message: 'dup' } },
+			reactionUpdate: { data: [{ value: -1 }], error: null }
+		});
+		const result = await react(formEvent(fake, 'react', fields('down')));
+		expect(result).toEqual({ reacted: true });
+		expect(writes(fake)).toEqual(['board_post_reactions:insert', 'board_post_reactions:update']);
+	});
+
+	it('a non-reader (42501): 403 with a localized message', async () => {
+		const fake = fakeSupabase({
+			reactionInsert: { data: null, error: { code: '42501', message: 'rls' } }
+		});
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toMatchObject({
+			status: 403,
+			data: { error: m.board_react_error_not_allowed() }
+		});
+	});
+
+	it('a deleted post (23503): 404 with a localized message', async () => {
+		const fake = fakeSupabase({
+			reactionInsert: { data: null, error: { code: '23503', message: 'fk' } }
+		});
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toMatchObject({
+			status: 404,
+			data: { error: m.board_react_error_not_found() }
+		});
+	});
+
+	it('any other error: 500, logged', async () => {
+		const spy = consoleError();
+		const fake = fakeSupabase({ reaction: { data: null, error: { message: 'down' } } });
+		const result = await react(formEvent(fake, 'react', fields('up')));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_react_error_failed() } });
+		expect(writes(fake)).toEqual([]);
+		expect(spy).toHaveBeenCalled();
+	});
+
+	it('never announces a push', async () => {
+		const fake = fakeSupabase();
+		await react(formEvent(fake, 'react', fields('up')));
 		expect(announceBoardPost).not.toHaveBeenCalled();
 	});
 });

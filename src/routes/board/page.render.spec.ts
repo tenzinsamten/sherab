@@ -13,6 +13,7 @@ type Data = {
 	olderBefore: string | null;
 	paged: boolean;
 	loadError: boolean;
+	reactionsError: boolean;
 };
 
 function draw(data: Partial<Data>) {
@@ -26,6 +27,7 @@ function draw(data: Partial<Data>) {
 				olderBefore: null,
 				paged: false,
 				loadError: false,
+				reactionsError: false,
 				...data
 			},
 			form: null
@@ -48,7 +50,8 @@ const post = (id: string, authorName: string, text: string) => ({
 	mine: false,
 	image: null as { id: string; name: string } | null,
 	files: [] as { id: string; name: string; size: number }[],
-	long: false
+	long: false,
+	reactions: { up: 0, down: 0, mine: null as 1 | -1 | null }
 });
 
 describe('board (+page.svelte)', () => {
@@ -283,6 +286,96 @@ describe('board (+page.svelte)', () => {
 			for (const updatedAt of [createdAt, '2026-10-30T09:16:00.000000+00:00']) {
 				expect(at(updatedAt)).not.toContain('data-testid="board-post-edited"');
 			}
+		});
+	});
+
+	describe('reactions (story 9)', () => {
+		const button = (body: string, value: 'up' | 'down') =>
+			body.match(
+				new RegExp(`<button[^>]*data-testid="board-react-${value}"[^>]*>[\\s\\S]*?</button>`)
+			)![0];
+
+		it('every reader, students included, sees 👍 and 👎 with "0" counts, none pressed', () => {
+			const body = draw({ canPost: false, canModerate: false, posts: [post('p1', 'Pema', 'Hi')] });
+			const up = button(body, 'up');
+			const down = button(body, 'down');
+			expect(up).toContain('👍');
+			expect(down).toContain('👎');
+			expect(up).toMatch(/data-testid="board-react-up-count"[^>]*>0</);
+			expect(down).toMatch(/data-testid="board-react-down-count"[^>]*>0</);
+			expect(up).toContain('aria-pressed="false"');
+			expect(down).toContain('aria-pressed="false"');
+			expect(up).toContain(`aria-label="${m.board_react_up_label()}"`);
+			expect(up).not.toMatch(/\sdisabled(=|\s|>)/);
+		});
+
+		it('3 up and 1 down: the counts and their accessible names; mine 1 presses 👍 only', () => {
+			const body = draw({
+				posts: [{ ...post('p1', 'Pema', 'Hi'), reactions: { up: 3, down: 1, mine: 1 } }]
+			});
+			const up = button(body, 'up');
+			const down = button(body, 'down');
+			expect(up).toMatch(/data-testid="board-react-up-count"[^>]*>3</);
+			expect(down).toMatch(/data-testid="board-react-down-count"[^>]*>1</);
+			// Stable names; the visible count is each button's description.
+			expect(up).toContain(`aria-label="${m.board_react_up_label()}"`);
+			expect(down).toContain(`aria-label="${m.board_react_down_label()}"`);
+			expect(up).toContain('aria-describedby="board-react-up-count-p1"');
+			expect(up).toMatch(/<span id="board-react-up-count-p1"[^>]*>3</);
+			expect(down).toMatch(/<span id="board-react-down-count-p1"[^>]*>1</);
+			expect(up).toContain('aria-pressed="true"');
+			expect(down).toContain('aria-pressed="false"');
+		});
+
+		it('mine -1 presses 👎 only', () => {
+			const body = draw({
+				posts: [{ ...post('p1', 'Pema', 'Hi'), reactions: { up: 0, down: 1, mine: -1 } }]
+			});
+			expect(button(body, 'up')).toContain('aria-pressed="false"');
+			expect(button(body, 'down')).toContain('aria-pressed="true"');
+		});
+
+		it('posts postId and value (up or down) to ?/react, below the body and image, above Edit and Delete', () => {
+			const body = draw({
+				canPost: true,
+				posts: [
+					{
+						...post('p1', 'Pema', 'Hi'),
+						mine: true,
+						image: { id: '44444444-4444-4444-8444-444444444444', name: 'Photo.jpg' }
+					}
+				]
+			});
+			const form = body.match(/<form[^>]*action="\?\/react"[^>]*>[\s\S]*?<\/form>/)![0];
+			expect(form).toContain('name="postId" value="p1"');
+			expect(button(body, 'up')).toMatch(/name="value"[^>]*value="up"|value="up"[^>]*name="value"/);
+			expect(button(body, 'down')).toMatch(
+				/name="value"[^>]*value="down"|value="down"[^>]*name="value"/
+			);
+			const at = body.indexOf('data-testid="board-post-reactions"');
+			expect(body.indexOf('data-testid="board-post-body"')).toBeLessThan(at);
+			expect(body.indexOf('data-testid="board-post-image"')).toBeLessThan(at);
+			expect(at).toBeLessThan(body.indexOf('data-testid="board-post-actions"'));
+		});
+
+		it('the buttons sit in a labelled group, not a form landmark', () => {
+			const body = draw({ posts: [post('p1', 'Pema', 'Hi')] });
+			const form = body.match(/<form[^>]*action="\?\/react"[^>]*>/)![0];
+			expect(form).not.toContain('aria-label');
+			expect(body).toMatch(
+				new RegExp(
+					`role="group"[^>]*aria-label="${m.board_react_group_label({ author: 'Pema' })}"|aria-label="${m.board_react_group_label({ author: 'Pema' })}"[^>]*role="group"`
+				)
+			);
+		});
+
+		it('the reactions could not be read: both buttons are disabled', () => {
+			const body = draw({
+				reactionsError: true,
+				posts: [post('p1', 'Pema', 'Hi')]
+			});
+			expect(button(body, 'up')).toMatch(/\sdisabled(=|\s|>)/);
+			expect(button(body, 'down')).toMatch(/\sdisabled(=|\s|>)/);
 		});
 	});
 });

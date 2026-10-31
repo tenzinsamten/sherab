@@ -1447,5 +1447,12 @@
 	"board_error_title_required": "Gib einen Titel ein.",
 	"board_error_title_too_long": "Der Titel darf höchstens 120 Zeichen lang sein.",
 	"board_author_admin": "Sherab Admin",
-	"board_author_teacher": "Lehrkraft"
+	"board_author_teacher": "Lehrkraft",
+	"board_react_group_label": "Reaktionen auf den Beitrag von {author}",
+	"board_react_up_label": "Dieser Beitrag gefällt mir",
+	"board_react_down_label": "Dieser Beitrag gefällt mir nicht",
+	"board_react_error_invalid": "Diese Reaktion ist ungültig.",
+	"board_react_error_not_allowed": "Du kannst auf Beiträge der Pinnwand nicht reagieren.",
+	"board_react_error_not_found": "Dieser Beitrag wurde nicht gefunden. Vielleicht wurde er gelöscht.",
+	"board_react_error_failed": "Deine Reaktion konnte nicht gespeichert werden. Bitte versuche es noch einmal."
 }

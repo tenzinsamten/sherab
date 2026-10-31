@@ -507,3 +507,60 @@ test("a student sees no Edit or Delete on a parent's post", async ({ page }) => 
 	await expect(theirs.getByTestId('board-post-delete')).toHaveCount(0);
 	await expect(page.getByTestId('board-post-actions')).toHaveCount(0);
 });
+
+test('story 9: a student likes a post, switches to a dislike, then takes it back', async ({
+	page
+}) => {
+	await signIn(page, student);
+	await open(page, '/board');
+	const theirs = posts(page).filter({ hasText: message });
+	const postId = await theirs
+		.getByTestId('board-post-reactions')
+		.locator('input[name="postId"]')
+		.inputValue();
+	// Another reader's 👍, so the counts are everyone's, not only the student's.
+	check(
+		await service
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: teacher.id, value: 1 }),
+		'teacher reaction'
+	);
+	await open(page, '/board');
+	const up = theirs.getByTestId('board-react-up');
+	const down = theirs.getByTestId('board-react-down');
+	await expect(up).toHaveAccessibleName('Like this post');
+	await expect(down).toHaveAccessibleName('Dislike this post');
+	await expect(up).toHaveAccessibleDescription('1');
+	await expect(down).toHaveAccessibleDescription('0');
+	await expect(up).toHaveAttribute('aria-pressed', 'false');
+	await expect(down).toHaveAttribute('aria-pressed', 'false');
+
+	await up.click();
+	await expect(up).toHaveAttribute('aria-pressed', 'true');
+	await expect(up).toHaveAccessibleDescription('2');
+	await expect(theirs.getByTestId('board-react-up-count')).toHaveText('2');
+	// No toast for a reaction.
+	await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+
+	await down.click();
+	await expect(down).toHaveAttribute('aria-pressed', 'true');
+	await expect(up).toHaveAttribute('aria-pressed', 'false');
+	await expect(theirs.getByTestId('board-react-up-count')).toHaveText('1');
+	await expect(theirs.getByTestId('board-react-down-count')).toHaveText('1');
+
+	await down.click();
+	await expect(down).toHaveAttribute('aria-pressed', 'false');
+	await expect(theirs.getByTestId('board-react-down-count')).toHaveText('0');
+	await expect(theirs.getByTestId('board-react-up-count')).toHaveText('1');
+
+	// After a reload too.
+	await open(page, '/board');
+	await expect(theirs.getByTestId('board-react-up-count')).toHaveText('1');
+	await expect(theirs.getByTestId('board-react-down-count')).toHaveText('0');
+	expect(
+		check(
+			await service.from('board_post_reactions').select('user_id').eq('post_id', postId),
+			'read reactions'
+		)
+	).toEqual([{ user_id: teacher.id }]);
+});

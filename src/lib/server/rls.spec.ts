@@ -20579,4 +20579,223 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 			expect(insert.error).not.toBeNull();
 		}
 	});
+
+	/**
+	 * Story 9 (0065): thumbs up and down. Each reader reacts once per post;
+	 * only their own rows are readable, and the counts come from
+	 * board_reaction_counts().
+	 */
+	// Insert, or change the value of the row already there: the column grant
+	// allows updating value only, so a PostgREST upsert (which sets every
+	// posted column) is refused, as the app's react action knows.
+	async function react(member: Member, postId: string, value: 1 | -1) {
+		const inserted = await member.client
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: member.id, value })
+			.select('value');
+		if (inserted.error?.code !== '23505') return inserted;
+		return member.client
+			.from('board_post_reactions')
+			.update({ value })
+			.eq('post_id', postId)
+			.eq('user_id', member.id)
+			.select('value');
+	}
+
+	async function counts(client: Client, postId: string) {
+		const { data, error } = await client.rpc('board_reaction_counts', { p_ids: [postId] });
+		if (error) throw new Error(`board_reaction_counts failed: ${error.message}`);
+		return data ?? [];
+	}
+
+	it('Reactions: a student likes, likes again by update, switches, and un-reacts', async () => {
+		const postId = await postBy(granted);
+		const first = await react(student, postId, 1);
+		expect(first.error).toBeNull();
+		expect(first.data).toEqual([{ value: 1 }]);
+		expect(await counts(student.client, postId)).toEqual([
+			{ post_id: postId, up_count: 1, down_count: 0 }
+		]);
+
+		const switched = await react(student, postId, -1);
+		expect(switched.error).toBeNull();
+		expect(switched.data).toEqual([{ value: -1 }]);
+		expect(await counts(student.client, postId)).toEqual([
+			{ post_id: postId, up_count: 0, down_count: 1 }
+		]);
+
+		const removed = await student.client
+			.from('board_post_reactions')
+			.delete()
+			.eq('post_id', postId)
+			.eq('user_id', student.id)
+			.select('value');
+		expect(removed.error).toBeNull();
+		expect(removed.data).toEqual([{ value: -1 }]);
+		expect(await counts(student.client, postId)).toEqual([]);
+	});
+
+	it('Reactions: only 1 and -1 are stored, one per reader and post', async () => {
+		const postId = await postBy(granted);
+		const love = await student.client
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: student.id, value: 2 });
+		expect(love.error?.code).toBe('23514');
+		expect((await react(student, postId, 1)).error).toBeNull();
+		const twice = await student.client
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: student.id, value: 1 });
+		expect(twice.error?.code).toBe('23505');
+	});
+
+	it('Reactions: counts are 3 up and 1 down for every reader; each reads only their own rows', async () => {
+		const postId = await postBy(teacher);
+		for (const member of [admin, student, ungranted]) {
+			expect((await react(member, postId, 1)).error).toBeNull();
+		}
+		expect((await react(granted, postId, -1)).error).toBeNull();
+
+		for (const member of [admin, teacher, student, ungranted, granted]) {
+			expect(await counts(member.client, postId)).toEqual([
+				{ post_id: postId, up_count: 3, down_count: 1 }
+			]);
+		}
+
+		const own = await student.client
+			.from('board_post_reactions')
+			.select('user_id, value')
+			.eq('post_id', postId);
+		expect(own.data).toEqual([{ user_id: student.id, value: 1 }]);
+		const none = await teacher.client
+			.from('board_post_reactions')
+			.select('user_id')
+			.eq('post_id', postId);
+		expect(none.data).toEqual([]);
+	});
+
+	it('Reactions: non-readers can neither react nor count; a forged user_id is refused', async () => {
+		const postId = await postBy(granted);
+		expect((await react(student, postId, 1)).error).toBeNull();
+
+		for (const [who, member] of [
+			['pending parent', pendingParent],
+			['pending student', pendingStudent],
+			['rejected student', rejectedStudent]
+		] as const) {
+			const insert = await member.client
+				.from('board_post_reactions')
+				.insert({ post_id: postId, user_id: member.id, value: 1 });
+			expect(insert.error?.code, who).toBe('42501');
+			expect(await counts(member.client, postId), who).toEqual([]);
+		}
+
+		const anon = await signedOut.rpc('board_reaction_counts', { p_ids: [postId] });
+		expect(anon.data ?? []).toEqual([]);
+		expect(anon.error).not.toBeNull();
+		const anonInsert = await signedOut
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: student.id, value: 1 });
+		expect(anonInsert.error).not.toBeNull();
+
+		const forged = await ungranted.client
+			.from('board_post_reactions')
+			.insert({ post_id: postId, user_id: admin.id, value: -1 });
+		expect(forged.error?.code).toBe('42501');
+
+		// Someone else's row can be neither changed nor removed.
+		const changed = await ungranted.client
+			.from('board_post_reactions')
+			.update({ value: -1 })
+			.eq('post_id', postId)
+			.eq('user_id', student.id)
+			.select('value');
+		expect(changed.data ?? []).toEqual([]);
+		const removed = await ungranted.client
+			.from('board_post_reactions')
+			.delete()
+			.eq('post_id', postId)
+			.eq('user_id', student.id)
+			.select('value');
+		expect(removed.data ?? []).toEqual([]);
+		expect(await counts(admin.client, postId)).toEqual([
+			{ post_id: postId, up_count: 1, down_count: 0 }
+		]);
+	});
+
+	it('Reactions: only value can be updated (column grant)', async () => {
+		const postId = await postBy(granted);
+		const otherPost = await postBy(granted);
+		expect((await react(student, postId, 1)).error).toBeNull();
+		const moved = await student.client
+			.from('board_post_reactions')
+			.update({ post_id: otherPost } as never)
+			.eq('post_id', postId)
+			.eq('user_id', student.id);
+		expect(moved.error?.code).toBe('42501');
+		const upsert = await student.client
+			.from('board_post_reactions')
+			.upsert(
+				{ post_id: postId, user_id: student.id, value: -1 },
+				{ onConflict: 'post_id,user_id' }
+			);
+		expect(upsert.error?.code).toBe('42501');
+	});
+
+	it('Reactions: a reader who stops being one can no longer change their value', async () => {
+		const postId = await postBy(granted);
+		const { data: cls, error: classError } = await adminClient
+			.from('classes')
+			.insert({ name: name('Class'), code: `R${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (classError || !cls) throw new Error(`Failed to create class: ${classError?.message}`);
+		const kid = await newStudent(cls.id, 'approved');
+		const mum = await parent(true, false);
+		expect((await react(kid, postId, 1)).error).toBeNull();
+		expect((await react(mum, postId, 1)).error).toBeNull();
+
+		const { error: rejectError } = await adminClient
+			.from('profiles')
+			.update({ status: 'rejected' })
+			.eq('id', kid.id);
+		expect(rejectError).toBeNull();
+		const { error: pendingError } = await adminClient
+			.from('parents')
+			// A decided parent can't go back to pending; rejected ends is_parent() too.
+			.update({ status: 'rejected' })
+			.eq('id', mum.id);
+		expect(pendingError).toBeNull();
+
+		for (const [who, member] of [
+			['rejected student', kid],
+			['rejected parent', mum]
+		] as const) {
+			const changed = await member.client
+				.from('board_post_reactions')
+				.update({ value: -1 })
+				.eq('post_id', postId)
+				.eq('user_id', member.id)
+				.select('value');
+			expect(changed.data ?? [], who).toEqual([]);
+			const { data: stored } = await adminClient
+				.from('board_post_reactions')
+				.select('value')
+				.eq('post_id', postId)
+				.eq('user_id', member.id);
+			expect(stored, who).toEqual([{ value: 1 }]);
+		}
+	});
+
+	it('Reactions: deleting the post removes its reactions (cascade)', async () => {
+		const postId = await postBy(granted);
+		expect((await react(student, postId, 1)).error).toBeNull();
+		expect((await react(teacher, postId, -1)).error).toBeNull();
+		const { error } = await adminClient.from('board_posts').delete().eq('id', postId);
+		expect(error).toBeNull();
+		const { data } = await adminClient
+			.from('board_post_reactions')
+			.select('user_id')
+			.eq('post_id', postId);
+		expect(data).toEqual([]);
+	});
 });

@@ -1447,5 +1447,12 @@
 	"board_error_title_required": "Enter a title.",
 	"board_error_title_too_long": "The title can be at most 120 characters.",
 	"board_author_admin": "Sherab Admin",
-	"board_author_teacher": "Teacher"
+	"board_author_teacher": "Teacher",
+	"board_react_group_label": "Reactions to the post by {author}",
+	"board_react_up_label": "Like this post",
+	"board_react_down_label": "Dislike this post",
+	"board_react_error_invalid": "This reaction isn't valid.",
+	"board_react_error_not_allowed": "You can't react to posts on the board.",
+	"board_react_error_not_found": "This post can't be found. It may have been deleted.",
+	"board_react_error_failed": "Couldn't save your reaction. Please try again."
 }

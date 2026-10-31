@@ -28,6 +28,16 @@ import type { Actions, PageServerLoad } from './$types';
 const BOARD_PAGE_SIZE = 30;
 
 const INSUFFICIENT_PRIVILEGE = '42501';
+const UNIQUE_VIOLATION = '23505';
+const FOREIGN_KEY_VIOLATION = '23503';
+
+/** Story 9: a reader's own reaction, 1 (👍) or -1 (👎), null for none. */
+export type BoardReaction = 1 | -1;
+
+/** Story 9: a post's counts and the signed-in reader's own reaction. */
+export type BoardReactions = { up: number; down: number; mine: BoardReaction | null };
+
+const NO_REACTIONS: BoardReactions = { up: 0, down: 0, mine: null };
 
 /** Story 8: a body over this many characters of plain text, or blocks, shows "…see more". */
 const PREVIEW_MAX_CHARACTERS = 200;
@@ -75,7 +85,48 @@ export type BoardPost = {
 	files: BoardFile[];
 	/** Story 8: the body is longer than the 3-line preview ("…see more"). */
 	long: boolean;
+	/** Story 9: 👍 and 👎 counts, and the reader's own reaction. */
+	reactions: BoardReactions;
 };
+
+/**
+ * Story 9: the counts (board_reaction_counts, readers only) and the caller's
+ * own reactions (RLS shows each caller only their own rows) for the posts.
+ * A failed read is logged, and every post then shows zero counts and no
+ * reaction of its own; `failed` then disables the buttons, so a press can't
+ * remove a reaction the page could not show.
+ */
+async function loadReactions(
+	supabase: App.Locals['supabase'],
+	userId: string,
+	postIds: string[]
+): Promise<{ reactions: Map<string, BoardReactions>; failed: boolean }> {
+	const reactions = new Map<string, BoardReactions>();
+	if (postIds.length === 0) return { reactions, failed: false };
+	const [countsResult, mineResult] = await Promise.all([
+		supabase.rpc('board_reaction_counts', { p_ids: postIds }),
+		supabase
+			.from('board_post_reactions')
+			.select('post_id, value')
+			.eq('user_id', userId)
+			.in('post_id', postIds)
+	]);
+	if (countsResult.error || mineResult.error) {
+		console.error(
+			`Could not load board reactions. ${(countsResult.error ?? mineResult.error)?.message}`
+		);
+		return { reactions: new Map(), failed: true };
+	}
+	for (const row of countsResult.data ?? []) {
+		reactions.set(row.post_id, { up: row.up_count, down: row.down_count, mine: null });
+	}
+	for (const row of mineResult.data ?? []) {
+		if (row.value !== 1 && row.value !== -1) continue;
+		const entry = reactions.get(row.post_id) ?? { ...NO_REACTIONS };
+		reactions.set(row.post_id, { ...entry, mine: row.value });
+	}
+	return { reactions, failed: false };
+}
 
 /**
  * The school message board (spec-parent-message-board story 3, CAP-1 and
@@ -138,7 +189,8 @@ export const load: PageServerLoad = async ({
 			posts: [] as BoardPost[],
 			olderBefore: null,
 			paged: before !== null,
-			loadError: true
+			loadError: true,
+			reactionsError: false
 		};
 	}
 
@@ -149,14 +201,14 @@ export const load: PageServerLoad = async ({
 	];
 
 	// The names and the posts' images (story 8) and legacy files. A files error is logged there; the posts then show without them.
-	const [namesResult, filesResult] = await Promise.all([
+	// Story 9: and the posts' reactions.
+	const postIds = rows.map((row) => row.id);
+	const [namesResult, filesResult, { reactions, failed: reactionsError }] = await Promise.all([
 		authorIds.length > 0
 			? supabase.rpc('board_author_names', { p_ids: authorIds })
 			: Promise.resolve(null),
-		loadBoardFiles(
-			supabase,
-			rows.map((row) => row.id)
-		)
+		loadBoardFiles(supabase, postIds),
+		loadReactions(supabase, user.id, postIds)
 	]);
 
 	// Story 7: the name and role per author, shown through boardAuthorName.
@@ -183,7 +235,8 @@ export const load: PageServerLoad = async ({
 			mine: row.author_id === user.id,
 			image: filesResult.images.get(row.id) ?? null,
 			files: filesResult.files.get(row.id) ?? [],
-			long: isLongPost(content)
+			long: isLongPost(content),
+			reactions: reactions.get(row.id) ?? { ...NO_REACTIONS }
 		};
 	});
 
@@ -191,7 +244,16 @@ export const load: PageServerLoad = async ({
 		fetched.length > BOARD_PAGE_SIZE ? (rows[rows.length - 1]?.created_at ?? null) : null;
 
 	// `paged`: an older page (a valid `before`), which links back to the newest posts.
-	return { canPost, canModerate, posts, olderBefore, paged: before !== null, loadError: false };
+	return {
+		canPost,
+		canModerate,
+		posts,
+		olderBefore,
+		paged: before !== null,
+		loadError: false,
+		// Story 9: the reactions could not be read; their buttons are disabled.
+		reactionsError
+	};
 };
 
 /**
@@ -417,5 +479,85 @@ export const actions: Actions = {
 			return fail(500, { error: m.board_delete_error_failed() });
 		}
 		return { deleted: postId };
+	},
+
+	/**
+	 * Story 9: 👍 or 👎 on a post. Pressing the reader's current reaction
+	 * removes it; the other one switches to it. RLS lets a board reader write
+	 * only their own row, and only its value once it exists, so a switch is
+	 * an update of that value (a PostgREST upsert would set every column and
+	 * be refused). No toast and no push: the counts update on reload.
+	 */
+	react: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.board_error_not_signed_in() });
+		}
+		const form = await readTextForm(request, m.board_react_error_failed);
+		if ('refused' in form) return form.refused;
+		const { formData } = form;
+		const postId = formData.get('postId');
+		const rawValue = formData.get('value');
+		if (!isUuid(postId) || (rawValue !== 'up' && rawValue !== 'down')) {
+			return fail(400, { error: m.board_react_error_invalid() });
+		}
+		const value: BoardReaction = rawValue === 'up' ? 1 : -1;
+
+		const reactions = () => supabase.from('board_post_reactions');
+		const refused = (writeError: { code?: string; message: string }) => {
+			if (writeError.code === INSUFFICIENT_PRIVILEGE) {
+				return fail(403, { error: m.board_react_error_not_allowed() });
+			}
+			if (writeError.code === FOREIGN_KEY_VIOLATION) {
+				return fail(404, { error: m.board_react_error_not_found() });
+			}
+			console.error(`Could not react to board post ${postId}. ${writeError.message}`);
+			return fail(500, { error: m.board_react_error_failed() });
+		};
+		const updateValue = () =>
+			reactions().update({ value }).eq('post_id', postId).eq('user_id', user.id).select('value');
+
+		const { data: current, error: readError } = await reactions()
+			.select('value')
+			.eq('post_id', postId)
+			.eq('user_id', user.id)
+			.maybeSingle();
+		if (readError) return refused(readError);
+
+		if (current?.value === value) {
+			// Only this value: a switch made meanwhile in another tab is not removed.
+			const { data: removed, error: deleteError } = await reactions()
+				.delete()
+				.eq('post_id', postId)
+				.eq('user_id', user.id)
+				.eq('value', value)
+				.select('value');
+			if (deleteError) return refused(deleteError);
+			if (removed?.length) return { reacted: true };
+			// Changed or removed in another tab: set it to this value instead.
+		}
+
+		if (current) {
+			const { data, error: updateError } = await updateValue();
+			if (updateError) return refused(updateError);
+			if (data?.length) return { reacted: true };
+			// The row went in the meantime (removed in another tab): add it again.
+		}
+
+		const { error: insertError } = await reactions().insert({
+			post_id: postId,
+			user_id: user.id,
+			value
+		});
+		if (insertError?.code === UNIQUE_VIOLATION) {
+			// Added in the meantime (another tab): switch it instead.
+			const { data, error: updateError } = await updateValue();
+			if (updateError) return refused(updateError);
+			// Added and removed again meanwhile: a conflict, not a missing post.
+			if (!data?.length) return fail(409, { error: m.board_react_error_failed() });
+			return { reacted: true };
+		}
+		if (insertError) return refused(insertError);
+		return { reacted: true };
 	}
 };
