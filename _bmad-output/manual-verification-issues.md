@@ -3047,3 +3047,17 @@ Status: `open` · `draft fix` (code written, uncommitted, not verified) · `fixe
   motion, light only, Tailwind sources), checked against the code by a reviewer; `brand-guide.md`,
   `component-specs.md` and the UX `DESIGN.md` are marked superseded for the look. Found: red and
   green text on the grey `--muted` background are below 4.5:1 (4.41, 4.12); noted in the doc.
+
+- 2026-10-31: Message board (spec-parent-message-board), found in manual check by the user.
+  1. Posts have no title. The user wants a title on every post.
+  2. The post author shows as an email address instead of a name. Cause: `profiles.display_name`
+     falls back to the email when an account is created without a name (`handle_new_user`,
+     0001:143; admin-created teachers too, admin/teachers +page.server.ts:88), and
+     `board_author_names` returns `display_name` as is. Not fixed yet; to plan.
+  3. (same day) The board list should show only each post's title; the full post (body, files,
+     edit/delete) belongs on a details page opened by clicking the title. Planned as story 8,
+     after story 7 (titles) lands.
+  4. (same day, revises 3) No details page: the list shows title plus a clipped text preview, and
+     clicking expands the full post in place (like LinkedIn). Attachments change from up to 2 PDFs
+     to at most 1 image (JPEG/PNG/WebP, 5 MB), shown in the list. Story 8, after story 7.
+  5. (same day) Add thumbs up / thumbs down on each post. Story 9, after story 8.

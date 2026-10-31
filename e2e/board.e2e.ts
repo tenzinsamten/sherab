@@ -146,6 +146,8 @@ test('a granted parent posts; the student sees it and has no form', async ({ bro
 
 		const form = page.getByTestId('board-form');
 		await expect(form).toBeVisible();
+		// Story 7: a title is required.
+		await form.getByLabel('Title').fill(`Picnic ${tag}`);
 		const editor = form.locator('#content');
 		await expect(editor).toHaveAttribute('contenteditable', 'true');
 		await editor.click();
@@ -159,8 +161,10 @@ test('a granted parent posts; the student sees it and has no form', async ({ bro
 		const mine = posts(page).filter({ hasText: message });
 		await expect(mine).toHaveCount(1);
 		await expect(mine).toContainText(parentName);
+		await expect(mine.getByRole('heading', { name: `Picnic ${tag}` })).toBeVisible();
 		// The form is empty again.
 		await expect(form.locator('#content')).toHaveText('');
+		await expect(form.getByLabel('Title')).toHaveValue('');
 	} finally {
 		await parentContext.close();
 	}
@@ -174,6 +178,7 @@ test('a granted parent posts; the student sees it and has no form', async ({ bro
 		await expect(mine).toHaveCount(1);
 		await expect(mine).toContainText(parentName);
 		await expect(mine.locator('time[datetime]')).toBeVisible();
+		await expect(mine.getByTestId('board-post-title')).toHaveText(`Picnic ${tag}`);
 		await expect(page.getByTestId('board-form')).toHaveCount(0);
 	} finally {
 		await studentContext.close();
@@ -187,6 +192,7 @@ test('a parent posts with a PDF; the student sees it and opens the file', async 
 		await signIn(page, parent);
 		await open(page, '/board');
 		const form = page.getByTestId('board-form');
+		await form.getByLabel('Title').fill(`Flyer ${tag}`);
 		const editor = form.locator('#content');
 		await expect(editor).toHaveAttribute('contenteditable', 'true');
 		await editor.click();
@@ -240,6 +246,7 @@ test('too many or too large files are refused in the browser; a Word file by the
 	await signIn(page, parent);
 	await open(page, '/board');
 	const form = page.getByTestId('board-form');
+	await form.getByLabel('Title').fill(`Refused ${tag}`);
 	const editor = form.locator('#content');
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	await editor.click();
@@ -292,6 +299,7 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await signIn(page, parent);
 	await open(page, '/board');
 	const form = page.getByTestId('board-form');
+	await form.getByLabel('Title').fill(`Jacket ${tag}`);
 	const editor = form.locator('#content');
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	await editor.click();
@@ -333,6 +341,7 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await expect(editEditor).toHaveAttribute('contenteditable', 'true');
 	await expect(editEditor).toHaveText(editMessage);
 	await expect(editForm.locator(`#edit-language-${postId}`)).toHaveValue('bo');
+	await expect(editForm.getByTestId('board-edit-title')).toHaveValue(`Jacket ${tag}`);
 	// Cancel restores the view.
 	await editForm.getByRole('button', { name: `Cancel editing the post by ${parentName}` }).click();
 	await expect(editForm).toHaveCount(0);
@@ -343,6 +352,8 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await editEditor.click();
 	await page.keyboard.press('ControlOrMeta+a');
 	await page.keyboard.type(editedMessage);
+	// Story 7: the title is edited too.
+	await editForm.getByTestId('board-edit-title').fill(`Warm jacket ${tag}`);
 	await editForm.getByRole('button', { name: `Save the post by ${parentName}` }).click();
 	await expect(
 		page.locator('[data-sonner-toast]').getByText('Your post was updated.').first()
@@ -359,6 +370,7 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await expect(edited).toContainText(editedMessage);
 	await expect(edited).not.toContainText(editMessage);
 	await expect(edited.getByTestId('board-edit-form')).toHaveCount(0);
+	await expect(edited.getByTestId('board-post-title')).toHaveText(`Warm jacket ${tag}`);
 	await expect(edited.getByTestId('board-post-edited')).toHaveText('Edited');
 	// The file is unchanged by the edit.
 	await expect(edited.getByTestId('file-name')).toHaveText(`Map ${tag}.pdf`);

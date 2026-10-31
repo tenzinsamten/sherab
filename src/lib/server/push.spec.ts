@@ -551,8 +551,11 @@ function boardDoc(text: string) {
 function fakeBoardAdmin(options: {
 	targets: string[] | { error: { message: string } };
 	subscriptions: Subscription[];
-	post?: { content: unknown; author_id: string | null } | null;
+	post?: { content: unknown; author_id: string | null; title?: string | null } | null;
 	authorName?: string | null;
+	/** Story 7: the author's email and role (default a parent with their own email). */
+	authorEmail?: string;
+	authorRole?: string;
 	/** The author's profile read fails. */
 	authorError?: boolean;
 }) {
@@ -593,9 +596,11 @@ function fakeBoardAdmin(options: {
 			if (table === 'profiles')
 				return single(
 					AUTHOR,
-					options.authorName === undefined
-						? { display_name: 'Pema' }
-						: { display_name: options.authorName },
+					{
+						display_name: options.authorName === undefined ? 'Pema' : options.authorName,
+						email: options.authorEmail ?? 'pema@example.com',
+						role: options.authorRole ?? 'parent'
+					},
 					options.authorError ? { message: 'profiles down' } : null
 				);
 			if (table === 'push_subscriptions') {
@@ -632,7 +637,8 @@ function fakeBoardAdmin(options: {
 }
 
 describe('buildBoardPushMessage', () => {
-	const post = { id: POST, content: boardDoc('Picnic on Saturday'), authorName: 'Pema' };
+	const pema = { displayName: 'Pema', email: 'pema@example.com', role: 'parent' as const };
+	const post = { id: POST, content: boardDoc('Picnic on Saturday'), author: pema };
 
 	it('names the author, shows the text and opens the board', () => {
 		expect(buildBoardPushMessage(post, 'en')).toEqual({
@@ -653,12 +659,52 @@ describe('buildBoardPushMessage', () => {
 	});
 
 	it('says Former member when the author is gone', () => {
-		expect(buildBoardPushMessage({ ...post, authorName: null }, 'en').title).toBe(
+		expect(buildBoardPushMessage({ ...post, author: null }, 'en').title).toBe(
 			'New on the message board from Former member'
 		);
-		expect(buildBoardPushMessage({ ...post, authorName: '  ' }, 'de').title).toBe(
-			'Neuer Beitrag von Ehemaliges Mitglied an der Pinnwand'
+		expect(
+			buildBoardPushMessage({ ...post, author: { ...pema, displayName: '  ' } }, 'de').title
+		).toBe('Neuer Beitrag von Ehemaliges Mitglied an der Pinnwand');
+	});
+
+	it('story 7: a nameless admin is Sherab Admin, a nameless teacher Teacher; a real name wins', () => {
+		const admin = {
+			displayName: 'Admin@School.org ',
+			email: 'admin@school.org',
+			role: 'admin' as const
+		};
+		expect(buildBoardPushMessage({ ...post, author: admin }, 'en').title).toBe(
+			'New on the message board from Sherab Admin'
 		);
+		const teacher = { displayName: null, email: 't@school.org', role: 'teacher' as const };
+		expect(buildBoardPushMessage({ ...post, author: teacher }, 'en').title).toBe(
+			'New on the message board from Teacher'
+		);
+		expect(
+			buildBoardPushMessage({ ...post, author: { ...teacher, displayName: 'Dolma' } }, 'en').title
+		).toBe('New on the message board from Dolma');
+		const parent = { displayName: 'p@x.org', email: 'p@x.org', role: 'parent' as const };
+		expect(buildBoardPushMessage({ ...post, author: parent }, 'en').title).toBe(
+			'New on the message board from Former member'
+		);
+	});
+
+	it('story 7: the body starts with the post title, then the text, clipped as before', () => {
+		expect(buildBoardPushMessage({ ...post, title: 'Picnic' }, 'en').body).toBe(
+			'Picnic\nPicnic on Saturday'
+		);
+		const long = buildBoardPushMessage(
+			{ ...post, title: 'Picnic', content: boardDoc('word '.repeat(100)) },
+			'en'
+		).body;
+		expect(long.startsWith('Picnic\nword')).toBe(true);
+		expect(long.length).toBe(120);
+		expect(long.endsWith('…')).toBe(true);
+		// A 120-character title takes at most 60, so the post text still shows.
+		const longTitle = buildBoardPushMessage({ ...post, title: 't'.repeat(120) }, 'en').body;
+		expect(longTitle.startsWith(`${'t'.repeat(59)}…\nPicnic on Saturday`)).toBe(true);
+		// No title (a post from before titles): the text alone.
+		expect(buildBoardPushMessage({ ...post, title: null }, 'en').body).toBe('Picnic on Saturday');
 	});
 
 	it('collapses whitespace across blocks and line breaks', () => {
@@ -705,7 +751,7 @@ describe('buildBoardPushMessage: Tibetan', () => {
 		// སྒྲ is one stack of three code points; 130 of them pass the limit.
 		const text = 'སྒྲ'.repeat(130);
 		const body = buildBoardPushMessage(
-			{ id: POST, content: boardDoc(text), authorName: 'Pema' },
+			{ id: POST, content: boardDoc(text), author: null },
 			'bo'
 		).body;
 		const graphemes = [
@@ -777,6 +823,25 @@ describe('sendBoardPush', () => {
 			}
 		]);
 		expect(calls.homeworkLogged).toBe(0);
+	});
+
+	it('story 7: the author read uses the name rule, the body starts with the title', async () => {
+		const { admin } = fakeBoardAdmin({
+			targets: [STUDENT],
+			subscriptions: [subscription(STUDENT)],
+			post: { content: boardDoc('Bring food'), author_id: AUTHOR, title: 'Picnic' },
+			authorName: 'admin@school.org',
+			authorEmail: 'admin@school.org',
+			authorRole: 'admin'
+		});
+		const { send, sent } = fakeSend();
+
+		await sendBoardPush(POST, { config, admin, send });
+
+		expect(sent[0].message).toMatchObject({
+			title: 'New on the message board from Sherab Admin',
+			body: 'Picnic\nBring food'
+		});
 	});
 
 	it("writes each browser's notice in that browser's language", async () => {

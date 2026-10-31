@@ -36,6 +36,7 @@ function draw(data: Partial<Data>) {
 const createdAt = '2026-10-30T09:15:00.000000+00:00';
 const post = (id: string, authorName: string, text: string) => ({
 	id,
+	title: null as string | null,
 	authorName,
 	content: {
 		type: 'doc',
@@ -64,6 +65,32 @@ describe('board (+page.svelte)', () => {
 		expect(body).toContain(formatInstant(createdAt, true));
 		expect(body).toContain('Picnic on Saturday');
 		expect(body).toMatch(/class="rich-text[^"]*"[^>]*lang="bo"/);
+	});
+
+	it('story 7: the form has a required title of up to 120 characters above the editor', () => {
+		const body = draw({ canPost: true });
+		const input = body.match(/<input[^>]*name="title"[^>]*>/)![0];
+		expect(input).toContain('id="board-title"');
+		expect(input).toContain('required');
+		expect(input).toContain('maxlength="120"');
+		expect(body).toContain(`for="board-title"`);
+		expect(body).toContain(m.board_title_label());
+		expect(body.indexOf('name="title"')).toBeLessThan(body.indexOf('name="content"'));
+	});
+
+	it('story 7: a titled post shows its title as a heading above the author line', () => {
+		const body = draw({ posts: [{ ...post('p1', 'Pema', 'Bring food'), title: 'Picnic' }] });
+		const heading = body.match(/<h2[^>]*data-testid="board-post-title"[^>]*>([\s\S]*?)<\/h2>/);
+		expect(heading?.[1].trim()).toContain('Picnic');
+		expect(body.indexOf('data-testid="board-post-title"')).toBeLessThan(
+			body.indexOf('data-testid="board-post-author"')
+		);
+	});
+
+	it('story 7: a post from before titles shows no heading and still renders', () => {
+		const body = draw({ posts: [post('p1', 'Pema', 'Old news')] });
+		expect(body).not.toContain('data-testid="board-post-title"');
+		expect(body).toContain('Old news');
 	});
 
 	it('shows "Former member" when the load gave that name', () => {

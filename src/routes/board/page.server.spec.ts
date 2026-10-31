@@ -204,6 +204,7 @@ async function runLoad(
 		canModerate: boolean;
 		posts: {
 			id: string;
+			title: string | null;
 			authorName: string;
 			createdAt: string;
 			updatedAt: string;
@@ -231,7 +232,7 @@ describe('/board load', () => {
 	it('a reader who is not a poster (approved student): posts, no form', async () => {
 		const fake = fakeSupabase({
 			posts: { data: [row(1)], error: null },
-			names: { data: [{ id: 'a1', display_name: 'Pema' }], error: null }
+			names: { data: [{ id: 'a1', display_name: 'Pema', role: 'parent' }], error: null }
 		});
 		const data = await runLoad(fake);
 		expect(data.canPost).toBe(false);
@@ -280,7 +281,7 @@ describe('/board load', () => {
 		const fake = fakeSupabase();
 		await runLoad(fake);
 		expect(fake.postCalls).toEqual([
-			['select', 'id, author_id, content, content_language, created_at, updated_at'],
+			['select', 'id, author_id, title, content, content_language, created_at, updated_at'],
 			['order', 'created_at', { ascending: false }],
 			['order', 'id', { ascending: false }],
 			['limit', 31]
@@ -346,7 +347,7 @@ describe('/board load', () => {
 	it('one names call with the distinct non-null ids; unknown authors are "Former member"', async () => {
 		const fake = fakeSupabase({
 			posts: { data: [row(1, 'a1'), row(2, null), row(3, 'a1'), row(4, 'gone')], error: null },
-			names: { data: [{ id: 'a1', display_name: 'Pema' }], error: null }
+			names: { data: [{ id: 'a1', display_name: 'Pema', role: 'parent' }], error: null }
 		});
 		const data = await runLoad(fake);
 		const names = fake.rpcCalls.filter((c) => c.fn === 'board_author_names');
@@ -357,6 +358,46 @@ describe('/board load', () => {
 			'Pema',
 			m.board_former_member()
 		]);
+	});
+
+	it('story 7: a nameless admin is "Sherab Admin", a teacher "Teacher", others "Former member"; a real name wins', async () => {
+		const fake = fakeSupabase({
+			posts: {
+				data: [row(1, 'ad'), row(2, 't'), row(3, 'pa'), row(4, 'real'), row(5, null)],
+				error: null
+			},
+			names: {
+				data: [
+					{ id: 'ad', display_name: null, role: 'admin' },
+					{ id: 't', display_name: null, role: 'teacher' },
+					{ id: 'pa', display_name: null, role: 'parent' },
+					{ id: 'real', display_name: 'Pema', role: 'teacher' }
+				],
+				error: null
+			}
+		});
+		const data = await runLoad(fake);
+		expect(data.posts.map((p) => p.authorName)).toEqual([
+			m.board_author_admin(),
+			m.board_author_teacher(),
+			m.board_former_member(),
+			'Pema',
+			m.board_former_member()
+		]);
+	});
+
+	it('story 7: a post title is passed on; a post from before titles has none', async () => {
+		const fake = fakeSupabase({
+			posts: {
+				data: [
+					{ ...row(1), title: 'Picnic' },
+					{ ...row(2), title: null }
+				],
+				error: null
+			}
+		});
+		const data = await runLoad(fake);
+		expect(data.posts.map((p) => p.title)).toEqual(['Picnic', null]);
 	});
 
 	it('a names error: posts still load, bylines are "Former member", the error is logged', async () => {
@@ -398,7 +439,8 @@ function postEvent(
 	platform?: unknown
 ) {
 	const body = new FormData();
-	for (const [k, v] of Object.entries(fields)) body.set(k, v);
+	// Story 7: every post has a title unless the test sets (or removes) one.
+	for (const [k, v] of Object.entries({ title: 'Picnic', ...fields })) body.set(k, v);
 	return {
 		request: new Request('http://localhost/board?/post', { method: 'POST', body }),
 		platform,
@@ -432,12 +474,91 @@ describe('/board post action', () => {
 		expect(fake.inserted).toEqual([
 			{
 				author_id: 'u1',
+				title: 'Picnic',
 				content: JSON.parse(doc('Picnic on Saturday')),
 				content_language: 'bo'
 			}
 		]);
 		expect(fake.postCalls).toContainEqual(['select', 'id']);
 		expect(fake.postCalls).toContainEqual(['single']);
+	});
+
+	it('story 7: the title is trimmed and inserted', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'new' }, error: null } });
+		const result = await post(
+			postEvent(fake, { title: '  Picnic  ', content: doc('Hi'), contentLanguage: 'en' })
+		);
+		expect(result).toEqual({ posted: true, notAttached: [] });
+		expect(fake.inserted).toEqual([expect.objectContaining({ title: 'Picnic' })]);
+	});
+
+	it('story 7: a missing, empty or blank title: 400 "Enter a title.", nothing inserted', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'new' }, error: null } });
+		const missing = new FormData();
+		missing.set('content', doc('Hi'));
+		missing.set('contentLanguage', 'en');
+		const results = [
+			await post({
+				request: new Request('http://localhost/board?/post', { method: 'POST', body: missing }),
+				locals: { supabase: fake.supabase, safeGetSession: async () => signedIn }
+			} as never)
+		];
+		for (const title of ['', '   ']) {
+			results.push(
+				await post(postEvent(fake, { title, content: doc('Hi'), contentLanguage: 'en' }))
+			);
+		}
+		for (const result of results) {
+			expect(result).toMatchObject({
+				status: 400,
+				data: { error: m.board_error_title_required() }
+			});
+		}
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it('story 7: line breaks and tabs collapse to one space; control and format characters go', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'new' }, error: null } });
+		const result = await post(
+			postEvent(fake, {
+				title: ' Picnic\n\non\tSaturday\u200b\u0007 ',
+				content: doc('Hi'),
+				contentLanguage: 'en'
+			})
+		);
+		expect(result).toEqual({ posted: true, notAttached: [] });
+		expect(fake.inserted).toEqual([expect.objectContaining({ title: 'Picnic on Saturday' })]);
+	});
+
+	it('story 7: a title of only zero-width or control characters is required', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'new' }, error: null } });
+		for (const title of ['\u200b\u200d\ufeff', '\u0007\u0000', '\n\t\u2060']) {
+			const result = await post(
+				postEvent(fake, { title, content: doc('Hi'), contentLanguage: 'en' })
+			);
+			expect(result).toMatchObject({
+				status: 400,
+				data: { error: m.board_error_title_required() }
+			});
+		}
+		expect(fake.inserted).toEqual([]);
+	});
+
+	it('story 7: 120 characters pass, 121 are refused with 400', async () => {
+		const fake = fakeSupabase({ insert: { data: { id: 'new' }, error: null } });
+		const tooLong = await post(
+			postEvent(fake, { title: 'x'.repeat(121), content: doc('Hi'), contentLanguage: 'en' })
+		);
+		expect(tooLong).toMatchObject({
+			status: 400,
+			data: { error: m.board_error_title_too_long() }
+		});
+		expect(fake.inserted).toEqual([]);
+		// Tibetan stacks count as Postgres counts them (code points); 120 still pass.
+		for (const title of ['x'.repeat(120), 'ཀ'.repeat(120)]) {
+			const ok = await post(postEvent(fake, { title, content: doc('Hi'), contentLanguage: 'en' }));
+			expect(ok).toEqual({ posted: true, notAttached: [] });
+		}
 	});
 
 	it('empty body: 400 required', async () => {
@@ -517,7 +638,7 @@ function fileEvent(
 	headers: Record<string, string> = {}
 ) {
 	const body = new FormData();
-	for (const [k, v] of Object.entries(fields)) body.set(k, v);
+	for (const [k, v] of Object.entries({ title: 'Picnic', ...fields })) body.set(k, v);
 	for (const file of files) body.append('files', file);
 	return {
 		request: new Request('http://localhost/board?/post', { method: 'POST', body, headers }),
@@ -784,6 +905,7 @@ describe('/board edit action (story 5)', () => {
 	const edit = (event: never) => actions.edit(event) as Promise<unknown>;
 	const fields = (extra: Record<string, string> = {}) => ({
 		postId: POST_ID,
+		title: 'Picnic on Sunday',
 		content: doc('Picnic moved to Sunday'),
 		contentLanguage: 'de',
 		...extra
@@ -808,20 +930,27 @@ describe('/board edit action (story 5)', () => {
 		expect(fake.log).toEqual([]);
 	});
 
-	it('updates the body, its language and updated_at by id, with select id; files untouched', async () => {
+	it('updates the title, the body, its language and updated_at by id, with select id; files untouched', async () => {
 		const fake = fakeSupabase({ update: { data: [{ id: POST_ID }], error: null } });
 		const before = Date.now();
 		const result = await edit(formEvent(fake, 'edit', fields()));
 		expect(result).toEqual({ edited: POST_ID });
 		const update = fake.postCalls.find(([name]) => name === 'update')?.[1] as {
+			title: string;
 			content: unknown;
 			content_language: string;
 			updated_at: string;
 		};
 		expect(update.content).toEqual(JSON.parse(doc('Picnic moved to Sunday')));
 		expect(update.content_language).toBe('de');
+		expect(update.title).toBe('Picnic on Sunday');
 		expect(Date.parse(update.updated_at)).toBeGreaterThanOrEqual(before - 1000);
-		expect(Object.keys(update).sort()).toEqual(['content', 'content_language', 'updated_at']);
+		expect(Object.keys(update).sort()).toEqual([
+			'content',
+			'content_language',
+			'title',
+			'updated_at'
+		]);
 		expect(fake.postCalls).toContainEqual(['eq', 'id', POST_ID]);
 		expect(fake.postCalls).toContainEqual(['eq', 'author_id', 'u1']);
 		expect(fake.postCalls).toContainEqual(['select', 'id']);
@@ -831,6 +960,9 @@ describe('/board edit action (story 5)', () => {
 	it('empty, too large, not a document, bad language: 400 with the post messages', async () => {
 		const fake = fakeSupabase();
 		for (const [extra, message] of [
+			[{ title: '' }, m.board_error_title_required()],
+			[{ title: '   ' }, m.board_error_title_required()],
+			[{ title: 'x'.repeat(121) }, m.board_error_title_too_long()],
 			[{ content: doc('') }, m.board_error_content_required()],
 			[{ content: '' }, m.board_error_content_required()],
 			[{ content: doc('x'.repeat(MAX_CONTENT_BYTES + 1)) }, m.board_error_content_too_large()],
@@ -1091,6 +1223,7 @@ describe('/board push on a new post (story 6)', () => {
 		const edited = await actions.edit(
 			formEvent(fakeSupabase(), 'edit', {
 				postId: POST_ID,
+				title: 'Picnic',
 				content: doc('Picnic moved to Sunday'),
 				contentLanguage: 'en'
 			})

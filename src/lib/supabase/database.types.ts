@@ -159,18 +159,22 @@ export type Database = {
 					content_language: string;
 					created_at: string;
 					id: string;
+					/** Story 7 (0063): 1 to 120 characters, trimmed; null on posts from before titles. */
+					title: string | null;
 					updated_at: string;
 				};
-				/** Column grant (0061): author_id, content, content_language only. */
+				/** Column grant (0061, 0063): author_id, title, content, content_language only. */
 				Insert: {
 					author_id: string;
 					content: Json;
 					content_language?: string;
+					title?: string | null;
 				};
-				/** Column grant (0061): content, content_language, updated_at only. */
+				/** Column grant (0061, 0063): title, content, content_language, updated_at only. */
 				Update: {
 					content?: Json;
 					content_language?: string;
+					title?: string | null;
 					updated_at?: string;
 				};
 				Relationships: [
@@ -1721,8 +1725,15 @@ export type Database = {
 			};
 			board_author_names: {
 				Args: { p_ids: string[] };
-				/** Only ids that have written a board post; empty for a caller who is not a board reader. */
-				Returns: { id: string; display_name: string | null }[];
+				/**
+				 * Only ids that have written a board post; empty for a caller who is not a board reader.
+				 * Story 7 (0063): display_name is null when the stored name is empty or is the email.
+				 */
+				Returns: {
+					id: string;
+					display_name: string | null;
+					role: Database['public']['Enums']['user_role'];
+				}[];
 			};
 			set_parent_managed: {
 				Args: { p_student_id: string; p_on: boolean };

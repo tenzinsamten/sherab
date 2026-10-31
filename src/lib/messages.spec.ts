@@ -14,7 +14,8 @@ const SAME_ON_PURPOSE = [
 	'home_poster_hero', // "Class Tracker", the product tagline (user, 2026-10-24)
 	'syllabus_file_size_kb',
 	'syllabus_file_size_mb',
-	'credential_pin' // PIN
+	'credential_pin', // PIN
+	'board_author_admin' // "Sherab Admin", the school's admin account by name (user, 2026-10-31)
 ];
 
 const read = (locale: string): Record<string, unknown> =>

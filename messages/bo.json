@@ -1436,5 +1436,10 @@
 	"board_delete_error_not_allowed": "ཁྱེད་ཀྱིས་འཕྲིན་ཡིག་འདི་བསུབ་མི་ཆོག ཡང་ན་དེ་སྔོན་ནས་བསུབས་ཟིན།",
 	"board_delete_error_files": "འཕྲིན་ཡིག་གི་ཡིག་ཆ་བསུབ་མ་ཐུབ་པས་འཕྲིན་ཡིག་བཞག་ཡོད། སླར་འབད་རོགས།",
 	"board_delete_error_failed": "འཕྲིན་ཡིག་བསུབ་མ་ཐུབ། སླར་འབད་རོགས།",
-	"board_push_title": "{author} ནས་བརྡ་ཁྱབ་པང་ལེབ་ཐོག་གསར་པ།"
+	"board_push_title": "{author} ནས་བརྡ་ཁྱབ་པང་ལེབ་ཐོག་གསར་པ།",
+	"board_title_label": "ཁ་བྱང་།",
+	"board_error_title_required": "ཁ་བྱང་འབྲི་རོགས།",
+	"board_error_title_too_long": "ཁ་བྱང་ནི་ཡིག་འབྲུ་ ༡༢༠ ལས་མང་བ་མི་ཆོག",
+	"board_author_admin": "Sherab Admin",
+	"board_author_teacher": "དགེ་རྒན།"
 }

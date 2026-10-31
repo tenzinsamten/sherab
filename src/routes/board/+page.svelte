@@ -26,6 +26,7 @@
 		maxBoardFileSizeText,
 		maxBoardFilesText
 	} from '$lib/board-files';
+	import { MAX_BOARD_TITLE_LENGTH } from '$lib/board-author';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { createUnsavedGuard } from '$lib/unsaved.svelte';
@@ -214,6 +215,18 @@
 				use:unsaved.track
 			>
 				{#key formKey}
+					<!-- Story 7: a required title, the post's heading. -->
+					<div class="mb-4 flex min-w-0 flex-col gap-1.5">
+						<Label for="board-title">{m.board_title_label()}</Label>
+						<Input
+							id="board-title"
+							name="title"
+							type="text"
+							maxlength={MAX_BOARD_TITLE_LENGTH}
+							required
+							autocomplete="off"
+						/>
+					</div>
 					<ContentLanguageSelect id="contentLanguage" bind:value={contentLanguage} />
 					<RichTextEditor
 						id="content"
@@ -279,6 +292,15 @@
 				{@const canDelete = boardPost.mine || data.canModerate}
 				<li class={ui.card} data-testid="board-post">
 					<article class="min-w-0">
+						{#if boardPost.title}
+							<!-- Story 7: posts from before titles show no heading. -->
+							<h2
+								class="mb-1 text-lg leading-snug font-bold wrap-anywhere"
+								data-testid="board-post-title"
+							>
+								{boardPost.title}
+							</h2>
+						{/if}
 						<header class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 							<p class="font-bold wrap-anywhere" data-testid="board-post-author">
 								{boardPost.authorName}
@@ -302,6 +324,19 @@
 								data-testid="board-edit-form"
 							>
 								<input type="hidden" name="postId" value={boardPost.id} />
+								<div class="mb-4 flex min-w-0 flex-col gap-1.5">
+									<Label for="edit-title-{boardPost.id}">{m.board_title_label()}</Label>
+									<Input
+										id="edit-title-{boardPost.id}"
+										name="title"
+										type="text"
+										value={boardPost.title ?? ''}
+										maxlength={MAX_BOARD_TITLE_LENGTH}
+										required
+										autocomplete="off"
+										data-testid="board-edit-title"
+									/>
+								</div>
 								<ContentLanguageSelect
 									id="edit-language-{boardPost.id}"
 									bind:value={editLanguage}

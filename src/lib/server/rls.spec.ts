@@ -20319,7 +20319,7 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		for (const client of [student.client, ungranted.client, teacher.client]) {
 			const { data, error } = await client.rpc('board_author_names', { p_ids: ids });
 			expect(error).toBeNull();
-			expect(data).toEqual([{ id: author.id, display_name: authorName }]);
+			expect(data).toEqual([{ id: author.id, display_name: authorName, role: 'parent' }]);
 		}
 		for (const client of [pendingStudent.client, rejectedStudent.client, pendingParent.client]) {
 			const { data, error } = await client.rpc('board_author_names', { p_ids: ids });
@@ -20328,6 +20328,84 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		}
 		const anon = await signedOut.rpc('board_author_names', { p_ids: ids });
 		expect(anon.data ?? []).toEqual([]);
+	});
+
+	it('Story 7 author names: a name that is empty or the email comes back null, with the role', async () => {
+		const { data: profiles, error: readError } = await adminClient
+			.from('profiles')
+			.select('id, email')
+			.in('id', [admin.id, teacher.id]);
+		expect(readError).toBeNull();
+		const emailOf = (id: string) => profiles?.find((p) => p.id === id)?.email ?? '';
+		const nameless = await parent(true, true);
+		const named = await parent(true, true);
+		for (const [id, displayName] of [
+			// The email, in other case and with spaces: still "no name".
+			[admin.id, ` ${emailOf(admin.id).toUpperCase()} `],
+			[teacher.id, null],
+			[nameless.id, '  '],
+			[named.id, 'Pema']
+		] as const) {
+			const { error } = await adminClient
+				.from('profiles')
+				.update({ display_name: displayName })
+				.eq('id', id);
+			expect(error).toBeNull();
+		}
+		for (const member of [admin, teacher, nameless, named]) await postBy(member);
+
+		const { data, error } = await student.client.rpc('board_author_names', {
+			p_ids: [admin.id, teacher.id, nameless.id, named.id]
+		});
+		expect(error).toBeNull();
+		const byId = new Map((data ?? []).map((row) => [row.id, row]));
+		expect(byId.get(admin.id)).toEqual({ id: admin.id, display_name: null, role: 'admin' });
+		expect(byId.get(teacher.id)).toEqual({ id: teacher.id, display_name: null, role: 'teacher' });
+		expect(byId.get(nameless.id)).toEqual({ id: nameless.id, display_name: null, role: 'parent' });
+		expect(byId.get(named.id)).toEqual({ id: named.id, display_name: 'Pema', role: 'parent' });
+
+		// The stored names are untouched.
+		const { data: stored } = await adminClient
+			.from('profiles')
+			.select('display_name')
+			.eq('id', admin.id)
+			.single();
+		expect(stored?.display_name).toBe(` ${emailOf(admin.id).toUpperCase()} `);
+	});
+
+	it('Story 7 titles: a trimmed title of 1 to 120 characters, or none; anything else is 23514', async () => {
+		const withTitle = (title: string | null) =>
+			granted.client
+				.from('board_posts')
+				.insert({ author_id: granted.id, title, content: doc('x'), content_language: 'en' })
+				.select('id, title')
+				.single();
+
+		for (const title of ['Picnic', 'x'.repeat(120), 'ཀ'.repeat(120), null]) {
+			const { data, error } = await withTitle(title);
+			expect(error, String(title)).toBeNull();
+			expect(data?.title).toBe(title);
+		}
+		for (const title of ['x'.repeat(121), '', '  ', ' Picnic', 'Picnic ']) {
+			const { error } = await withTitle(title);
+			expect(error?.code, JSON.stringify(title)).toBe('23514');
+		}
+
+		// The author edits the title; the same check applies.
+		const postId = await postBy(granted);
+		const edited = await granted.client
+			.from('board_posts')
+			.update({ title: 'Picnic moved', updated_at: new Date().toISOString() })
+			.eq('id', postId)
+			.select('title');
+		expect(edited.error).toBeNull();
+		expect(edited.data).toEqual([{ title: 'Picnic moved' }]);
+		const tooLong = await granted.client
+			.from('board_posts')
+			.update({ title: 'x'.repeat(121) })
+			.eq('id', postId)
+			.select('title');
+		expect(tooLong.error?.code).toBe('23514');
 	});
 
 	it('Account deleted: the post stays with a null author', async () => {

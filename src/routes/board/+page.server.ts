@@ -9,6 +9,7 @@ import {
 	type ContentLanguage,
 	type RichTextDoc
 } from '$lib/rich-text';
+import { boardAuthorName, MAX_BOARD_TITLE_LENGTH } from '$lib/board-author';
 import type { BoardFile } from '$lib/board-files';
 import {
 	attachPostFiles,
@@ -19,6 +20,7 @@ import {
 } from '$lib/server/board-files';
 import { FORM_OVERHEAD_BYTES, isUuid, readFileForm } from '$lib/server/pdf-files';
 import { announceBoardPost } from '$lib/server/push';
+import type { UserRole } from '$lib/supabase/database.types';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Posts per page; a full page shows the "Older posts" link. */
@@ -43,6 +45,8 @@ function parseBefore(value: string | null): string | null {
 
 export type BoardPost = {
 	id: string;
+	/** Story 7: the post's heading; null on posts from before titles. */
+	title: string | null;
 	authorName: string;
 	content: RichTextDoc | null;
 	contentLanguage: ContentLanguage;
@@ -80,7 +84,7 @@ export const load: PageServerLoad = async ({
 
 	let postsQuery = supabase
 		.from('board_posts')
-		.select('id, author_id, content, content_language, created_at, updated_at');
+		.select('id, author_id, title, content, content_language, created_at, updated_at');
 	if (before) postsQuery = postsQuery.lt('created_at', before);
 
 	const [readerResult, posterResult, postsResult, { profile }] = await Promise.all([
@@ -138,19 +142,21 @@ export const load: PageServerLoad = async ({
 		)
 	]);
 
-	const names = new Map<string, string>();
+	// Story 7: the name and role per author, shown through boardAuthorName.
+	const authors = new Map<string, { displayName: string | null; role: UserRole }>();
 	if (namesResult) {
 		if (namesResult.error) {
 			console.error(`Could not load board author names. ${namesResult.error.message}`);
 		}
 		for (const row of namesResult.data ?? []) {
-			if (row.display_name) names.set(row.id, row.display_name);
+			authors.set(row.id, { displayName: row.display_name, role: row.role });
 		}
 	}
 
 	const posts: BoardPost[] = rows.map((row) => ({
 		id: row.id,
-		authorName: (row.author_id && names.get(row.author_id)) || m.board_former_member(),
+		title: row.title?.trim() || null,
+		authorName: boardAuthorName((row.author_id && authors.get(row.author_id)) || null),
 		content: readContent(row.content),
 		contentLanguage: readContentLanguage(row.content_language),
 		createdAt: row.created_at,
@@ -167,14 +173,33 @@ export const load: PageServerLoad = async ({
 };
 
 /**
- * The post body and its language, checked the same way for a new post and
- * an edit (story 5): a 400 with a localized message when either is not valid.
+ * The post title (story 7), body and language, checked the same way for a
+ * new post and an edit (story 5): a 400 with a localized message when any
+ * is not valid.
  */
 function readBody(
 	formData: FormData
 ):
-	| { ok: true; content: RichTextDoc; language: ContentLanguage }
+	| { ok: true; title: string; content: RichTextDoc; language: ContentLanguage }
 	| { ok: false; refused: ActionFailure<{ error: string }> } {
+	const rawTitle = formData.get('title');
+	// Line breaks and other whitespace runs become one space; control and
+	// format characters (zero-width ones too) are dropped, then trimmed.
+	const title =
+		typeof rawTitle === 'string'
+			? rawTitle
+					.replace(/\s+/gu, ' ')
+					.replace(/[\p{Cc}\p{Cf}]/gu, '')
+					.replace(/\s+/gu, ' ')
+					.trim()
+			: '';
+	if (!title) {
+		return { ok: false, refused: fail(400, { error: m.board_error_title_required() }) };
+	}
+	// Characters as Postgres counts them (code points), not UTF-16 units.
+	if ([...title].length > MAX_BOARD_TITLE_LENGTH) {
+		return { ok: false, refused: fail(400, { error: m.board_error_title_too_long() }) };
+	}
 	const content = parseContent(formData.get('content'));
 	if (!content.ok) {
 		return {
@@ -193,7 +218,7 @@ function readBody(
 	if (!isContentLanguage(language)) {
 		return { ok: false, refused: fail(400, { error: m.board_error_content_language() }) };
 	}
-	return { ok: true, content: content.value, language };
+	return { ok: true, title, content: content.value, language };
 }
 
 /** A form without files (edit, delete): the body and its fields, read with a size cap. */
@@ -220,7 +245,7 @@ export const actions: Actions = {
 		const { formData } = form;
 		const body = readBody(formData);
 		if (!body.ok) return body.refused;
-		const { content, language } = body;
+		const { title, content, language } = body;
 
 		// Story 4: the files are checked before anything is stored. A refused
 		// file inserts no post; the message is shown at the file field too.
@@ -232,7 +257,7 @@ export const actions: Actions = {
 		// The author is always the signed-in user, never a posted field.
 		const { data: inserted, error: insertError } = await supabase
 			.from('board_posts')
-			.insert({ author_id: user.id, content, content_language: language })
+			.insert({ author_id: user.id, title, content, content_language: language })
 			.select('id')
 			.single();
 
@@ -261,7 +286,8 @@ export const actions: Actions = {
 	},
 
 	/**
-	 * Story 5 (CAP-3): the author changes the body and its language in place.
+	 * Story 5 (CAP-3): the author changes the body and its language in place
+	 * (story 7: and the title).
 	 * RLS lets only the author, while still a poster, update the row; files
 	 * are not touched.
 	 */
@@ -283,6 +309,7 @@ export const actions: Actions = {
 		const { data, error: updateError } = await supabase
 			.from('board_posts')
 			.update({
+				title: body.title,
 				content: body.content,
 				content_language: body.language,
 				updated_at: new Date().toISOString()

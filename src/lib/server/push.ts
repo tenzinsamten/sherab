@@ -6,7 +6,8 @@ import { pickLocalized } from '$lib/localized-name';
 import { plainText, readContent } from '$lib/rich-text';
 import * as m from '$lib/paraglide/messages.js';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
-import type { Database } from '$lib/supabase/database.types';
+import type { Database, UserRole } from '$lib/supabase/database.types';
+import { boardAuthorName } from '$lib/board-author';
 
 /**
  * Homework push notifications (#92): who gets which notice is decided in SQL
@@ -44,6 +45,9 @@ const TITLE_MAX = 80;
 
 /** A board post's push body: its first words (story 6). */
 const BOARD_BODY_MAX = 120;
+
+/** Story 7: the post title's share of that body, so its text still shows. */
+const BOARD_TITLE_MAX = 60;
 
 type PushConfig = { publicKey: string; privateKey: string; subject: string };
 
@@ -497,18 +501,31 @@ async function askForNextBatch(
 
 /**
  * The board notice (story 6) in `locale`: the author in the title, the
- * post's first words as the body, opening the board.
+ * post's title (story 7) and first words as the body, opening the board.
+ * The author is named as on /board (boardAuthorName): a real name, else
+ * "Sherab Admin", "Teacher" or "Former member".
  */
 export function buildBoardPushMessage(
-	post: { id: string; content: unknown; authorName: string | null },
+	post: {
+		id: string;
+		title?: string | null;
+		content: unknown;
+		author: { displayName: string | null; email: string | null; role: UserRole } | null;
+	},
 	locale: PushLocale
 ): PushMessage {
 	const opt = { locale };
-	const author = post.authorName?.trim() || m.board_former_member({}, opt);
+	const author = boardAuthorName(post.author, locale);
 	const doc = readContent(post.content);
+	// The title gets at most half the body, so some post text always shows.
+	const title = post.title?.trim() ? clipGraphemes(post.title.trim(), BOARD_TITLE_MAX) : '';
+	const text = [title, doc ? plainText(doc) : '']
+		.filter((part) => part !== '')
+		// The title on a line of its own, then the body's first words.
+		.join('\n');
 	return {
 		title: clipGraphemes(m.board_push_title({ author }, opt), TITLE_MAX),
-		body: doc ? clipGraphemes(plainText(doc), BOARD_BODY_MAX) : '',
+		body: text ? clipGraphemes(text, BOARD_BODY_MAX) : '',
 		url: '/board',
 		tag: `board-${post.id}`,
 		lang: locale
@@ -539,7 +556,7 @@ export async function sendBoardPush(postId: string, deps: PushDeps = {}): Promis
 
 		const { data: post, error: postError } = await admin
 			.from('board_posts')
-			.select('id, author_id, content, content_language')
+			.select('id, author_id, title, content, content_language')
 			.eq('id', postId)
 			.maybeSingle();
 		if (postError || !post) {
@@ -549,21 +566,27 @@ export async function sendBoardPush(postId: string, deps: PushDeps = {}): Promis
 
 		// The body stays in the post's own language (content_language); only
 		// the title follows each browser's locale.
-		let authorName: string | null = null;
+		// Story 7: the name, email and role, so the author is named as on /board.
+		let author: { displayName: string | null; email: string | null; role: UserRole } | null = null;
 		if (post.author_id) {
-			const { data: author, error: authorError } = await admin
+			const { data: profile, error: authorError } = await admin
 				.from('profiles')
-				.select('display_name')
+				.select('display_name, email, role')
 				.eq('id', post.author_id)
 				.maybeSingle();
 			if (authorError) console.error('push: failed to read the post author', authorError.message);
-			authorName = author?.display_name ?? null;
+			if (profile) {
+				author = { displayName: profile.display_name, email: profile.email, role: profile.role };
+			}
 		}
 
 		const { result, delivered } = await sendBatch(
 			[...new Set(targets.map((row) => row.recipient_id))],
 			(_id, locale) =>
-				buildBoardPushMessage({ id: post.id, content: post.content, authorName }, locale),
+				buildBoardPushMessage(
+					{ id: post.id, title: post.title, content: post.content, author },
+					locale
+				),
 			{ maxSends: PUSH_BATCH, config, admin, send, rotate: deps.rotate }
 		);
 
