@@ -131,6 +131,7 @@ type HomeworkRow = {
 	overdue: boolean;
 	referenceLinks: { url: string; label: string | null }[];
 	className: string | null;
+	doneBy: { self: boolean; name?: string } | null;
 };
 
 type LoadResult = {
@@ -1103,6 +1104,106 @@ describe('parent child page: detail sections', () => {
 
 		expect(fake.rpc).toHaveBeenCalledWith('child_attendance', { p_student_id: CHILD });
 		expect(fake.rpc).toHaveBeenCalledWith('class_people', { p_class_id: 'k1' });
+	});
+
+	describe('marked-by labels (spec-parent-managed-homework story 5)', () => {
+		/** fullTables() with each row's recorded_by set (`by`; default the teacher). */
+		function markedTables(rows: (HistoryRow & { by?: string | null })[]): Record<string, Result> {
+			return {
+				...fullTables(),
+				homework_status_history: {
+					data: rows.map((r, i) => ({
+						id: String(i + 1).padStart(4, '0'),
+						instance_id: r.instance,
+						student_id: r.student,
+						status: r.status,
+						recorded_by: r.by === undefined ? 'tch' : r.by,
+						recorded_at: r.at
+					})),
+					error: null
+				}
+			};
+		}
+		const doneBy = (result: LoadResult) =>
+			Object.fromEntries(result.homework.done.map((h) => [h.instanceId, h.doneBy]));
+
+		it('you / the child (earliest done wins, any row order) / the other parent; reviewed keeps it', async () => {
+			const fake = fakeSupabase({
+				linked,
+				tables: markedTables([
+					{ instance: 'i1', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i3', student: CHILD, status: 'assigned', at: at(1) },
+					// Viewer's later done listed before the child's earlier one.
+					{
+						instance: 'i3',
+						student: CHILD,
+						status: 'done',
+						at: '2026-09-10T11:00:00Z',
+						by: VIEWER
+					},
+					{ instance: 'i3', student: CHILD, status: 'done', at: '2026-09-10T10:00:00Z', by: CHILD },
+					{ instance: 'i4', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i4', student: CHILD, status: 'done', at: at(5), by: VIEWER },
+					{ instance: 'i4', student: CHILD, status: 'reviewed', at: at(6), by: 'tch' },
+					{ instance: 'i7', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i7', student: CHILD, status: 'done', at: at(8), by: 'pB' }
+				]),
+				rpc: fullRpc,
+				actorNames: { pB: 'Pema' }
+			});
+			const result = await runLoad(fake);
+			expect(doneBy(result)).toEqual({
+				i3: { self: false, name: 'Dawa' },
+				i4: { self: true },
+				i7: { self: false, name: 'Pema' }
+			});
+			expect(result.homework.open.map((h) => [h.instanceId, h.doneBy])).toEqual([['i1', null]]);
+			// The child is named without a lookup; the other parent once.
+			const nameCalls = fake.rpc.mock.calls.filter(([fn]) => fn === 'actor_display_name');
+			expect(nameCalls).toEqual([
+				['actor_display_name', { p_student_id: CHILD, p_actor_id: 'pB' }]
+			]);
+		});
+
+		it('a teacher or an unknown name gets no label; one lookup per distinct other parent', async () => {
+			const fake = fakeSupabase({
+				linked,
+				tables: markedTables([
+					{ instance: 'i3', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i3', student: CHILD, status: 'done', at: at(10), by: 'tch' },
+					{ instance: 'i4', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i4', student: CHILD, status: 'done', at: at(5), by: 'pB' },
+					{ instance: 'i7', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i7', student: CHILD, status: 'done', at: at(8), by: 'pB' }
+				]),
+				rpc: fullRpc,
+				actorNames: { tch: null }
+			});
+			const result = await runLoad(fake);
+			expect(doneBy(result)).toEqual({ i3: null, i4: null, i7: null });
+			const ids = fake.rpc.mock.calls
+				.filter(([fn]) => fn === 'actor_display_name')
+				.map(([, args]) => (args as { p_actor_id: string }).p_actor_id)
+				.sort();
+			expect(ids).toEqual(['pB', 'tch']);
+		});
+
+		it('a failed name lookup: no label, the page still renders', async () => {
+			const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+			const fake = fakeSupabase({
+				linked,
+				tables: markedTables([
+					{ instance: 'i3', student: CHILD, status: 'assigned', at: at(1) },
+					{ instance: 'i3', student: CHILD, status: 'done', at: at(10), by: 'pB' }
+				]),
+				rpc: { ...fullRpc, actor_display_name: { data: null, error: { message: 'down' } } }
+			});
+			const result = await runLoad(fake);
+			expect(doneBy(result)).toEqual({ i3: null });
+			expect(result.errors.done).toBe(false);
+			expect(spy).toHaveBeenCalledWith('actor_display_name failed', 'down');
+			spy.mockRestore();
+		});
 	});
 
 	it('still enrolled: open homework from a class the child left is hidden', async () => {

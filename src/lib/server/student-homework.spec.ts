@@ -210,6 +210,22 @@ describe('loadStudentHomework', () => {
 		expect(result.pageCount).toBe(1);
 	});
 
+	it('story 5: doneBy only when asked (the parent page), never for the student', async () => {
+		const opts = {
+			filter: 'done' as const,
+			page: 1,
+			enrolledClassIds: new Set(['c1']),
+			today: TODAY
+		};
+		const student = await loadStudentHomework(fakeSupabase(tables), 'me', opts);
+		expect(student.items[0]).not.toHaveProperty('doneBy');
+		const parent = await loadStudentHomework(fakeSupabase(tables), 'me', {
+			...opts,
+			withDoneBy: true
+		});
+		expect(parent.items[0].doneBy).toBe('me');
+	});
+
 	it('counts homework finished since Monday', async () => {
 		const withRecent = {
 			...tables,

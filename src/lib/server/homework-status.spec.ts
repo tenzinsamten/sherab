@@ -81,6 +81,44 @@ describe('buildHomeworkProgress', () => {
 		expect(entry.reviewedAt).toBeNull();
 	});
 
+	it('doneBy is the recordedBy of the earliest done row, whatever the row order', () => {
+		const rows: HomeworkHistoryRow[] = [
+			row({ id: 'a', status: 'assigned', recordedBy: 'teacher-1' }),
+			row({
+				id: 'd2',
+				status: 'done',
+				recordedBy: 'parent-a',
+				recordedAt: '2026-09-08T11:00:00.000Z'
+			}),
+			row({
+				id: 'd1',
+				status: 'done',
+				recordedBy: 'student-1',
+				recordedAt: '2026-09-08T10:00:00.000Z'
+			}),
+			row({
+				id: 'r',
+				status: 'reviewed',
+				recordedBy: 'teacher-1',
+				recordedAt: '2026-09-09T00:00:00.000Z'
+			})
+		];
+
+		for (const ordered of [rows, [...rows].reverse()]) {
+			const entry = buildHomeworkProgress(ordered)['instance-1:student-1'];
+			expect(entry.doneAt).toBe('2026-09-08T10:00:00.000Z');
+			expect(entry.doneBy).toBe('student-1');
+		}
+	});
+
+	it('doneBy is null without a done row', () => {
+		const entry = buildHomeworkProgress([
+			row({ id: 'a', status: 'assigned' }),
+			row({ id: 'r', status: 'reviewed', recordedAt: '2026-09-09T00:00:00.000Z' })
+		])['instance-1:student-1'];
+		expect(entry.doneBy).toBeNull();
+	});
+
 	it('returns an empty object for no rows', () => {
 		expect(buildHomeworkProgress([])).toEqual({});
 	});
@@ -92,6 +130,7 @@ describe('isOverdue', () => {
 		studentId: 'student-1',
 		assignedAt: '2026-09-01T00:00:00.000Z',
 		doneAt: null,
+		doneBy: null,
 		reviewedAt: null
 	};
 

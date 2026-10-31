@@ -66,6 +66,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		studentId: user.id,
 		assignedAt: null,
 		doneAt: null,
+		doneBy: null,
 		reviewedAt: null
 	};
 	const today = new Date().toISOString().slice(0, 10);

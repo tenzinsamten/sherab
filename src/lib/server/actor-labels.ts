@@ -33,6 +33,34 @@ export async function actorLabels(
 	return labels;
 }
 
+/**
+ * spec-parent-managed-homework story 5 (CAP-4): "Marked done by ..." labels
+ * for a child's done items. The child is named from `child.name` without a
+ * lookup (none when the name is blank); the viewer is "you"; every other
+ * distinct id (another parent or a teacher) is looked up once by
+ * actorLabels(). Only another parent comes back named: a teacher, an unknown
+ * name or a failed lookup gets no label.
+ */
+export async function doneByLabels(
+	supabase: Client,
+	child: { id: string; name: string },
+	doneByIds: (string | null | undefined)[],
+	viewerId: string | null
+): Promise<Map<string, ActorLabel>> {
+	const ids = doneByIds.filter((id): id is string => Boolean(id));
+	const labels = await actorLabels(
+		supabase,
+		child.id,
+		ids.filter((id) => id !== child.id),
+		viewerId
+	);
+	const childName = child.name.trim();
+	if (ids.includes(child.id) && child.id !== viewerId && childName) {
+		labels.set(child.id, { self: false, name: childName });
+	}
+	return labels;
+}
+
 /** The key actorNames() uses for one (student, actor) pair. */
 export function actorKey(studentId: string, actorId: string): string {
 	return `${studentId}:${actorId}`;

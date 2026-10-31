@@ -13,7 +13,7 @@ import {
 	type BadgeProgress,
 	type StudentBadge
 } from '$lib/server/badges';
-import { actorLabels, type ActorLabel } from '$lib/server/actor-labels';
+import { actorLabels, doneByLabels, type ActorLabel } from '$lib/server/actor-labels';
 import { toHhMm } from '$lib/server/calendar';
 import { shapeTeamLeaderboard, type TeamRank } from '$lib/server/leaderboard';
 import { loadLinkedChild } from '$lib/server/linked-child';
@@ -111,11 +111,14 @@ function readPage(value: string | null): number {
 	return Math.max(1, Number(value));
 }
 
-/** A homework row on the parent page (read-only): the item plus its class name. */
+/**
+ * A homework row on the parent page: the item plus its class name and, for a
+ * done item, who marked it done (story 5; null = no label).
+ */
 export type ChildHomeworkItem = Pick<
 	StudentHomeworkItem,
 	'instanceId' | 'title' | 'contentLanguage' | 'dueDate' | 'status' | 'overdue' | 'referenceLinks'
-> & { className: string | null };
+> & { className: string | null; doneBy: ActorLabel | null };
 
 export type ChildAttendance = {
 	sessionDate: string;
@@ -337,7 +340,8 @@ export const load: PageServerLoad = async ({
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
-	const details = await loadChildDetails(supabase, child.id, classIds, {
+	const details = await loadChildDetails(supabase, child, classIds, {
+		viewerId,
 		enrollmentsError: Boolean(enrollmentsError),
 		donePage: readPage(url.searchParams.get('done'))
 	});
@@ -367,10 +371,11 @@ type Client = App.Locals['supabase'];
  */
 async function loadChildDetails(
 	supabase: Client,
-	childId: string,
+	child: { id: string; name: string },
 	classIds: string[],
-	opts: { enrollmentsError: boolean; donePage: number }
+	opts: { viewerId: string | null; enrollmentsError: boolean; donePage: number }
 ) {
+	const childId = child.id;
 	const today = todayInBerlin();
 	const enrolledClassIds = new Set(classIds);
 
@@ -394,7 +399,8 @@ async function loadChildDetails(
 			filter: 'done',
 			page: opts.donePage,
 			enrolledClassIds,
-			today
+			today,
+			withDoneBy: true
 		}),
 		supabase
 			.from('student_streaks')
@@ -429,6 +435,16 @@ async function loadChildDetails(
 	const classNames = new Map(classes.map((c) => [c.id, c.name]));
 	const classNamesError = opts.enrollmentsError || Boolean(classesResult.error);
 
+	// Story 5 (CAP-4): who marked each done item. The child and the viewer need
+	// no lookup; every other distinct id (parents and teachers alike) is looked
+	// up once, and a teacher comes back without a name, so no label.
+	const markers = await doneByLabels(
+		supabase,
+		child,
+		done.items.map((item) => item.doneBy),
+		opts.viewerId
+	);
+
 	const toChildItem = (item: StudentHomeworkItem): ChildHomeworkItem => ({
 		instanceId: item.instanceId,
 		title: item.title,
@@ -437,7 +453,8 @@ async function loadChildDetails(
 		status: item.status,
 		overdue: item.overdue,
 		referenceLinks: item.referenceLinks,
-		className: classNames.get(item.classId) ?? null
+		className: classNames.get(item.classId) ?? null,
+		doneBy: item.status !== 'assigned' && item.doneBy ? (markers.get(item.doneBy) ?? null) : null
 	});
 
 	// Skills: grouped per class (enrolled classes first, then any left).

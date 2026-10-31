@@ -50,6 +50,12 @@ export type StudentHomeworkItem = {
 	status: StudentHomeworkStatus;
 	overdue: boolean;
 	isRecurring: boolean;
+	/**
+	 * spec-parent-managed-homework story 5: who recorded the earliest done
+	 * row (null: not done). Set only when the caller asks (`withDoneBy`, the
+	 * parent child page), so student payloads never carry it.
+	 */
+	doneBy?: string | null;
 };
 
 export type InstanceRow = {
@@ -97,7 +103,8 @@ export function toItem(
 	instance: InstanceRow,
 	assignment: AssignmentRow,
 	entry: HomeworkStudentProgress,
-	today: string
+	today: string,
+	opts: { withDoneBy?: boolean } = {}
 ): StudentHomeworkItem {
 	return {
 		instanceId: instance.id,
@@ -111,7 +118,8 @@ export function toItem(
 		dueDate: instance.due_date,
 		status: statusOf(entry),
 		overdue: isOverdue(instance.due_date, entry, today),
-		isRecurring: assignment.recurrence_rule !== null
+		isRecurring: assignment.recurrence_rule !== null,
+		...(opts.withDoneBy ? { doneBy: entry.doneBy } : {})
 	};
 }
 
@@ -245,6 +253,8 @@ export async function loadStudentHomework(
 		today: string;
 		/** Only this class's homework (the student's class page, #46). */
 		classId?: string;
+		/** Story 5: set each item's `doneBy` (the parent child page only). */
+		withDoneBy?: boolean;
 	}
 ): Promise<StudentHomeworkList> {
 	// RLS scopes history to the caller's own rows; fetchAllHistoryRows pages
@@ -304,7 +314,9 @@ export async function loadStudentHomework(
 		.map((entry) => {
 			const instance = instanceById.get(entry.instanceId);
 			const assignment = instance && assignmentById.get(instance.assignment_id);
-			return instance && assignment ? toItem(instance, assignment, entry, opts.today) : null;
+			return instance && assignment
+				? toItem(instance, assignment, entry, opts.today, { withDoneBy: opts.withDoneBy })
+				: null;
 		})
 		.filter((item): item is StudentHomeworkItem => item !== null);
 

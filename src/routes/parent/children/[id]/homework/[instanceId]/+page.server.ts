@@ -4,6 +4,7 @@ import { localizedName } from '$lib/localized-name';
 import { todayInBerlin } from '$lib/berlin-date';
 import { HOMEWORK_MESSAGES, rowOr404 } from '$lib/server/class-access';
 import { loadHomeworkFiles } from '$lib/server/homework-files';
+import { doneByLabels } from '$lib/server/actor-labels';
 import { buildHomeworkProgress } from '$lib/server/homework-status';
 import { loadLinkedChild } from '$lib/server/linked-child';
 import { markHomeworkDone, STUDENT_ASSIGNMENT_COLUMNS, toItem } from '$lib/server/student-homework';
@@ -18,9 +19,14 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * RLS also lets a parent read a sibling's instances, so an instance without
  * a history row for *this* child is a 404.
  */
-export const load: PageServerLoad = async ({ params, parent, locals: { supabase } }) => {
+export const load: PageServerLoad = async ({
+	params,
+	parent,
+	locals: { supabase, safeGetSession }
+}) => {
 	const { parentStatus } = await parent();
 	const child = await loadLinkedChild(supabase, parentStatus, params.id);
+	const { user } = await safeGetSession();
 	if (!UUID_PATTERN.test(params.instanceId)) {
 		throw error(404, HOMEWORK_MESSAGES.notFound);
 	}
@@ -86,13 +92,18 @@ export const load: PageServerLoad = async ({ params, parent, locals: { supabase 
 		studentId: child.id,
 		assignedAt: null,
 		doneAt: null,
+		doneBy: null,
 		reviewedAt: null
 	};
 	const today = todayInBerlin();
+	const item = toItem(instance, assignment, entry, today);
+	// Story 5 (CAP-4): who marked it done, for the status line.
+	const markers = await doneByLabels(supabase, child, [entry.doneBy], user?.id ?? null);
 
 	return {
 		child,
-		item: toItem(instance, assignment, entry, today),
+		item,
+		doneBy: item.status !== 'assigned' && entry.doneBy ? (markers.get(entry.doneBy) ?? null) : null,
 		className: cls ? localizedName(cls) : null,
 		files: homeworkFiles.files.get(instance.assignment_id) ?? [],
 		archived: instance.archived_at !== null,

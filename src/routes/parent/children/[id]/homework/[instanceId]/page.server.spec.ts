@@ -21,6 +21,8 @@ function fakeSupabase(opts: {
 	linked?: unknown[];
 	tables?: Record<string, Result>;
 	insert?: Result;
+	/** Story 5: actor_display_name() per actor id (missing = null). */
+	actorName?: (actorId: string) => Result;
 }) {
 	const calls: { table: string; method: string; args: unknown[] }[] = [];
 	const inserted: unknown[] = [];
@@ -60,10 +62,12 @@ function fakeSupabase(opts: {
 		c.then = (resolve: (value: Result) => unknown) => resolve(result);
 		return c;
 	}
-	const rpc = vi.fn(async (fn: string) =>
+	const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) =>
 		fn === 'linked_children'
 			? { data: opts.linked ?? [], error: null }
-			: { data: null, error: null }
+			: fn === 'actor_display_name'
+				? (opts.actorName?.(String(args?.p_actor_id)) ?? { data: null, error: null })
+				: { data: null, error: null }
 	);
 	return {
 		calls,
@@ -135,6 +139,7 @@ type LoadResult = {
 	files: unknown[];
 	archived: boolean;
 	parentManaged: boolean;
+	doneBy: { self: boolean; name?: string } | null;
 	loadError: boolean;
 };
 
@@ -149,7 +154,7 @@ function runLoad(
 	return load({
 		params: { id, instanceId },
 		parent: async () => ({ parentStatus }),
-		locals: { supabase: fake.client }
+		locals: { supabase: fake.client, safeGetSession: async () => ({ user: { id: PARENT } }) }
 	} as unknown as Parameters<typeof load>[0]) as Promise<LoadResult>;
 }
 
@@ -273,6 +278,91 @@ describe('/parent/children/[id]/homework/[instanceId] load', () => {
 		expect(result.loadError).toBe(true);
 		expect(result.files).toEqual([]);
 		expect(result.item.title).toBe('Read page 4');
+		spy.mockRestore();
+	});
+});
+
+describe('/parent/children/[id]/homework/[instanceId] marked-by label (story 5)', () => {
+	function marked(rows: { status: string; by: string | null; at: string }[]): Result {
+		return {
+			data: rows.map((r, i) => ({
+				id: `h${i}`,
+				instance_id: INSTANCE,
+				student_id: CHILD,
+				status: r.status,
+				recorded_by: r.by,
+				recorded_at: r.at
+			})),
+			error: null
+		};
+	}
+	const assigned = { status: 'assigned', by: 't1', at: '2026-10-01T10:00:00Z' };
+	const doneAt = (by: string | null, at = '2026-10-02T10:00:00Z') => ({ status: 'done', by, at });
+	const names = (actorId: string): Result => ({
+		data: actorId === 'pB' ? 'Pema' : null,
+		error: null
+	});
+
+	it.each([
+		['the viewer', [assigned, doneAt(PARENT)], { self: true }],
+		['the child', [assigned, doneAt(CHILD)], { self: false, name: 'Dawa' }],
+		['the other parent', [assigned, doneAt('pB')], { self: false, name: 'Pema' }],
+		['a teacher', [assigned, doneAt('t1')], null],
+		[
+			'several done rows: the earliest (the child) wins, any order',
+			[assigned, doneAt(PARENT, '2026-10-02T11:00:00Z'), doneAt(CHILD, '2026-10-02T10:00:00Z')],
+			{ self: false, name: 'Dawa' }
+		],
+		[
+			'reviewed after the viewer marked it done',
+			[assigned, doneAt(PARENT), { status: 'reviewed', by: 't1', at: '2026-10-03T10:00:00Z' }],
+			{ self: true }
+		],
+		['an open item', [assigned], null]
+	])('%s', async (_label, rows, expected) => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: tables({ homework_status_history: marked(rows) }),
+			actorName: names
+		});
+		const result = await runLoad(fake);
+		expect(result.doneBy).toEqual(expected);
+		// Only the label reaches the browser, never the raw recorded_by id.
+		expect(result.item).not.toHaveProperty('doneBy');
+	});
+
+	it('a blank child name gives no label', async () => {
+		const fake = fakeSupabase({
+			linked: [{ ...approvedChild, name: '  ' }],
+			tables: tables({ homework_status_history: marked([assigned, doneAt(CHILD)]) }),
+			actorName: names
+		});
+		expect((await runLoad(fake)).doneBy).toBeNull();
+	});
+
+	it('only the other parent is looked up, once', async () => {
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: tables({ homework_status_history: marked([assigned, doneAt('pB')]) }),
+			actorName: names
+		});
+		await runLoad(fake);
+		expect(fake.rpc.mock.calls.filter(([fn]) => fn === 'actor_display_name')).toEqual([
+			['actor_display_name', { p_student_id: CHILD, p_actor_id: 'pB' }]
+		]);
+	});
+
+	it('a failed name lookup: no label, the page renders', async () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const fake = fakeSupabase({
+			linked: [approvedChild],
+			tables: tables({ homework_status_history: marked([assigned, doneAt('pB')]) }),
+			actorName: () => ({ data: null, error: { message: 'down' } })
+		});
+		const result = await runLoad(fake);
+		expect(result.doneBy).toBeNull();
+		expect(result.item.status).toBe('done');
+		expect(spy).toHaveBeenCalledWith('actor_display_name failed', 'down');
 		spy.mockRestore();
 	});
 });

@@ -1380,6 +1380,14 @@
 					{:else if item.status === 'done'}
 						<Badge variant="info">{m.student_homework_status_done()}</Badge>
 					{/if}
+					{#if item.status !== 'assigned' && item.doneBy}
+						<!-- spec-parent-managed-homework story 5: who marked it done. -->
+						<span class="{ui.muted} text-sm" data-testid="homework-done-by">
+							{item.doneBy.self
+								? m.child_homework_done_by_you()
+								: m.child_homework_done_by({ name: item.doneBy.name })}
+						</span>
+					{/if}
 				</p>
 				<p class="mt-1 {ui.muted}">
 					{item.className ?? m.student_class_former()} · {m.student_homework_due_label({

@@ -123,6 +123,14 @@
 						{m.student_homework_status_assigned()}
 					</Badge>
 				{/if}
+				{#if data.doneBy}
+					<!-- spec-parent-managed-homework story 5: who marked it done. -->
+					<span class="{ui.muted} ml-2 text-sm" data-testid="homework-done-by">
+						{data.doneBy.self
+							? m.child_homework_done_by_you()
+							: m.child_homework_done_by({ name: data.doneBy.name })}
+					</span>
+				{/if}
 			</p>
 			{#if canMark}
 				<MarkDoneForm

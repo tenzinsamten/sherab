@@ -1077,6 +1077,8 @@
 	"child_managed_error_failed": "Could not save this. Please try again.",
 	"child_managed_error_not_allowed": "Only a parent linked to this child can change this.",
 	"child_managed_error_mark_not_allowed": "You can't mark this homework done. Managing homework for this child may be off.",
+	"child_homework_done_by_you": "Marked done by you",
+	"child_homework_done_by": "Marked done by {name}",
 	"nav_homework": "Homework",
 	"parent_homework_intro": "Open homework for your children. Done and reviewed homework is on each child's Homework tab.",
 	"parent_homework_picker_label": "Show homework for",

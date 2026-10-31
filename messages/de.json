@@ -1077,6 +1077,8 @@
 	"child_managed_error_failed": "Das konnte nicht gespeichert werden. Bitte versuch es erneut.",
 	"child_managed_error_not_allowed": "Nur ein mit diesem Kind verbundenes Elternteil kann das ändern.",
 	"child_managed_error_mark_not_allowed": "Du kannst diese Hausaufgabe nicht als erledigt markieren. Die Verwaltung der Hausaufgaben für dieses Kind ist vielleicht ausgeschaltet.",
+	"child_homework_done_by_you": "Von dir als erledigt markiert",
+	"child_homework_done_by": "Von {name} als erledigt markiert",
 	"nav_homework": "Hausaufgaben",
 	"parent_homework_intro": "Offene Hausaufgaben deiner Kinder. Erledigte und geprüfte Hausaufgaben stehen im Tab Hausaufgaben des jeweiligen Kindes.",
 	"parent_homework_picker_label": "Hausaufgaben anzeigen für",

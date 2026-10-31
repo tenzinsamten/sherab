@@ -19,6 +19,7 @@ function renderPage(
 		archived?: boolean;
 		parentManaged?: boolean;
 		className?: string | null;
+		doneBy?: { self: true } | { self: false; name: string } | null;
 	} = {}
 ) {
 	return render(Page, {
@@ -45,6 +46,7 @@ function renderPage(
 				files: [{ id: 'f1', name: 'Worksheet.pdf', size: 300 * 1024 }],
 				archived: over.archived ?? false,
 				parentManaged: over.parentManaged ?? true,
+				doneBy: over.doneBy ?? null,
 				loadError: false
 			}
 		} as never
@@ -78,6 +80,18 @@ describe('parent homework detail (+page.svelte)', () => {
 		expect(status(renderPage({ status: 'reviewed' }))).toContain(
 			m.student_homework_status_reviewed()
 		);
+	});
+
+	it('story 5: the status line names who marked it done', () => {
+		const status = (body: string) =>
+			body.match(/<p[^>]*data-testid="homework-status"[\s\S]*?<\/p>/)?.[0] ?? '';
+		expect(status(renderPage({ status: 'done', doneBy: { self: true } }))).toContain(
+			m.child_homework_done_by_you()
+		);
+		expect(
+			status(renderPage({ status: 'reviewed', doneBy: { self: false, name: 'Pema' } }))
+		).toContain(m.child_homework_done_by({ name: 'Pema' }));
+		expect(renderPage({ status: 'done' })).not.toContain('data-testid="homework-done-by"');
 	});
 
 	it('the class name is plain text, with no /student link', () => {

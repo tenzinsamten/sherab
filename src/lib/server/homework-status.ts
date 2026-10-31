@@ -14,6 +14,11 @@ export type HomeworkStudentProgress = {
 	studentId: string;
 	assignedAt: string | null;
 	doneAt: string | null;
+	/**
+	 * spec-parent-managed-homework story 5 (CAP-4): `recorded_by` of the
+	 * earliest done row, the same row as `doneAt` (null: not done, or unknown).
+	 */
+	doneBy: string | null;
 	reviewedAt: string | null;
 };
 
@@ -44,6 +49,7 @@ export function buildHomeworkProgress(
 				studentId: row.studentId,
 				assignedAt: null,
 				doneAt: null,
+				doneBy: null,
 				reviewedAt: null
 			};
 			progress.set(key, entry);
@@ -54,6 +60,7 @@ export function buildHomeworkProgress(
 		}
 		if (row.status === 'done' && (!entry.doneAt || row.recordedAt < entry.doneAt)) {
 			entry.doneAt = row.recordedAt;
+			entry.doneBy = row.recordedBy;
 		}
 		if (row.status === 'reviewed' && (!entry.reviewedAt || row.recordedAt < entry.reviewedAt)) {
 			entry.reviewedAt = row.recordedAt;

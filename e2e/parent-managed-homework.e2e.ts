@@ -15,6 +15,9 @@ import { berlinToday, fixtureTeam, linkParent, service, signIn, type TestUser } 
  *
  * Story 4 (CAP-2 on /parent/homework): with the flag on, A marks an open
  * item done from the shared homework list and it leaves the list.
+ *
+ * Story 5 (CAP-4): after A marks an item done, A sees "Marked done by you"
+ * and B sees A's name, on the Done list and on the detail page.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -26,6 +29,7 @@ const openTitle = `MH open ${tag}`;
 const detailTitle = `MH detail ${tag}`;
 const detailBody = `Practise the alphabet song ${tag}`;
 const listTitle = `MH list ${tag}`;
+const parentAName = `MH Parent A ${tag}`;
 
 let teacher: TestUser;
 let parentA: TestUser;
@@ -100,6 +104,10 @@ test.beforeAll(async () => {
 				'approve parent'
 			);
 		}
+		check(
+			await service.from('profiles').update({ display_name: parentAName }).eq('id', parentA.id),
+			'name parent A'
+		);
 		classId = check(
 			await service
 				.from('classes')
@@ -338,6 +346,13 @@ test('A turns it on, B sees it on, A marks the item done, then turns it off', as
 		await expect(doneSection(pageA)).toContainText(openTitle);
 		// Done items never get the button.
 		await expect(doneSection(pageA).getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+		// Story 5: A sees "by you", B sees A's name.
+		const doneRow = (page: Page) => doneSection(page).locator('li', { hasText: openTitle });
+		await expect(doneRow(pageA).getByTestId('homework-done-by')).toHaveText('Marked done by you');
+		await open(pageB, 'homework');
+		await expect(doneRow(pageB).getByTestId('homework-done-by')).toHaveText(
+			`Marked done by ${parentAName}`
+		);
 
 		const { data: rows } = await service
 			.from('homework_status_history')
@@ -421,6 +436,11 @@ test('story 3: the detail page shows the full item to A and B; A marks it done t
 		await expect(pageA.getByText('Marked done.')).toBeVisible();
 		await expect(pageA.getByTestId('homework-status')).toContainText('Done');
 		await expect(pageA.getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+		// Story 5: the status line says who marked it, for A and for B.
+		await expect(pageA.getByTestId('homework-done-by')).toHaveText('Marked done by you');
+		await pageB.goto(`/parent/children/${child.id}/homework/${detailInstanceId}`);
+		await openDetail(pageB);
+		await expect(pageB.getByTestId('homework-done-by')).toHaveText(`Marked done by ${parentAName}`);
 
 		const { data: rows } = await service
 			.from('homework_status_history')

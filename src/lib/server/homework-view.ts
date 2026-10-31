@@ -240,6 +240,7 @@ export function buildAssignmentViews(
 							studentId,
 							assignedAt: null,
 							doneAt: null,
+							doneBy: null,
 							reviewedAt: null
 						};
 						return {
