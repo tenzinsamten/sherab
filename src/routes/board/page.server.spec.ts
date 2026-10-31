@@ -21,6 +21,13 @@ function fakeSupabase(
 		files?: Result;
 		fileInsert?: Result | (() => Result);
 		upload?: Result;
+		/** Story 5: the edit's update, the delete, and the storage removal. */
+		update?: Result;
+		remove?: Result;
+		del?: Result;
+		/** Story 5: the delete's author read, and the caller's profile role. */
+		target?: Result;
+		profile?: Result;
 	} = {}
 ) {
 	const rpcCalls: { fn: string; args?: unknown }[] = [];
@@ -36,7 +43,8 @@ function fakeSupabase(
 		board_author_names: options.names ?? { data: [], error: null }
 	};
 
-	function chain(result: Result) {
+	function chain(initial: Result) {
+		let result = initial;
 		const record =
 			(name: string) =>
 			(...args: unknown[]) => {
@@ -49,6 +57,24 @@ function fakeSupabase(
 			order: record('order'),
 			limit: record('limit'),
 			single: record('single'),
+			eq: record('eq'),
+			maybeSingle: () => {
+				postCalls.push(['maybeSingle']);
+				result = options.target ?? { data: { author_id: 'u1' }, error: null };
+				return c;
+			},
+			update: (values: unknown) => {
+				log.push('board_posts:update');
+				postCalls.push(['update', values]);
+				result = options.update ?? { data: [{ id: 'p' }], error: null };
+				return c;
+			},
+			delete: () => {
+				log.push('board_posts:delete');
+				postCalls.push(['delete']);
+				result = options.del ?? { data: [{ id: 'p' }], error: null };
+				return c;
+			},
 			insert: (row: unknown) => {
 				inserted.push(row);
 				log.push('board_posts:insert');
@@ -68,6 +94,14 @@ function fakeSupabase(
 		},
 		from: (table: string) => {
 			if (table === 'board_post_files') return filesChain();
+			if (table === 'profiles') {
+				const p = {
+					select: () => p,
+					eq: () => p,
+					maybeSingle: () => Promise.resolve(options.profile ?? { data: null, error: null })
+				};
+				return p;
+			}
 			if (table !== 'board_posts') throw new Error(`unexpected table ${table}`);
 			// A test sets either the list's result or the insert's.
 			return chain(options.posts ?? options.insert ?? { data: [], error: null });
@@ -80,8 +114,9 @@ function fakeSupabase(
 				},
 				remove: async (paths: string[]) => {
 					log.push(`storage:remove:${bucket}:${paths.join(',')}`);
-					return { data: paths.map((name) => ({ name })), error: null };
-				}
+					return options.remove ?? { data: paths.map((name) => ({ name })), error: null };
+				},
+				exists: async () => ({ data: true, error: null })
 			})
 		}
 	};
@@ -97,6 +132,7 @@ function fakeSupabase(
 		const c = {
 			select: record('select'),
 			in: record('in'),
+			eq: record('eq'),
 			order: record('order'),
 			insert: (row: unknown) => {
 				fileRows.push(row);
@@ -122,9 +158,15 @@ afterEach(() => {
 
 const consoleError = () => vi.spyOn(console, 'error').mockImplementation(() => {});
 
-function loadEvent(fake: ReturnType<typeof fakeSupabase>, search = '', session = signedIn) {
+function loadEvent(
+	fake: ReturnType<typeof fakeSupabase>,
+	search = '',
+	session = signedIn,
+	role: string | null = 'student'
+) {
 	return {
 		url: new URL(`http://localhost/board${search}`),
+		parent: async () => ({ profile: role ? { role } : null }),
 		locals: { supabase: fake.supabase, safeGetSession: async () => session }
 	} as never;
 }
@@ -138,14 +180,28 @@ function row(i: number, authorId: string | null = 'a1') {
 			content: [{ type: 'paragraph', content: [{ type: 'text', text: `Post ${i}` }] }]
 		},
 		content_language: 'en',
-		created_at: `2026-10-${String(30 - (i % 28)).padStart(2, '0')}T10:00:00.123456+00:00`
+		created_at: `2026-10-${String(30 - (i % 28)).padStart(2, '0')}T10:00:00.123456+00:00`,
+		updated_at: `2026-10-${String(30 - (i % 28)).padStart(2, '0')}T10:00:00.123456+00:00`
 	};
 }
 
-async function runLoad(fake: ReturnType<typeof fakeSupabase>, search = '', session = signedIn) {
-	return (await load(loadEvent(fake, search, session))) as {
+async function runLoad(
+	fake: ReturnType<typeof fakeSupabase>,
+	search = '',
+	session = signedIn,
+	role: string | null = 'student'
+) {
+	return (await load(loadEvent(fake, search, session, role))) as {
 		canPost: boolean;
-		posts: { id: string; authorName: string; createdAt: string; contentLanguage: string }[];
+		canModerate: boolean;
+		posts: {
+			id: string;
+			authorName: string;
+			createdAt: string;
+			updatedAt: string;
+			mine: boolean;
+			contentLanguage: string;
+		}[];
 		olderBefore: string | null;
 		paged: boolean;
 		loadError: boolean;
@@ -216,7 +272,7 @@ describe('/board load', () => {
 		const fake = fakeSupabase();
 		await runLoad(fake);
 		expect(fake.postCalls).toEqual([
-			['select', 'id, author_id, content, content_language, created_at'],
+			['select', 'id, author_id, content, content_language, created_at, updated_at'],
 			['order', 'created_at', { ascending: false }],
 			['order', 'id', { ascending: false }],
 			['limit', 31]
@@ -659,5 +715,320 @@ describe('/board post action with files (story 4)', () => {
 		const result = await post(fileEvent(fake, [pdf('Flyer.pdf')]));
 		expect(result).toEqual({ posted: true, notAttached: ['Flyer.pdf'] });
 		expect(fake.fileRows).toEqual([]);
+	});
+});
+
+/** Story 5 (CAP-3): who may edit and delete, and the edit and delete actions. */
+describe('/board load: edit and delete controls (story 5)', () => {
+	const rows = () => ({
+		data: [
+			{ ...row(1, 'u1'), updated_at: '2026-10-29T11:00:00.000000+00:00' },
+			row(2, 'a2'),
+			row(3, null)
+		],
+		error: null
+	});
+
+	it('mine is true only for the signed-in author; updatedAt is exposed', async () => {
+		const data = await runLoad(fakeSupabase({ posts: rows() }));
+		expect(data.posts.map((p) => p.mine)).toEqual([true, false, false]);
+		expect(data.posts[0].updatedAt).toBe('2026-10-29T11:00:00.000000+00:00');
+	});
+
+	it('canModerate for an admin or a teacher by profile role; not for a parent or student', async () => {
+		for (const [role, expected] of [
+			['admin', true],
+			['teacher', true],
+			['parent', false],
+			['student', false],
+			[null, false]
+		] as const) {
+			const data = await runLoad(fakeSupabase(), '', signedIn, role);
+			expect(data.canModerate).toBe(expected);
+		}
+	});
+
+	it('canModerate is given with a posts load error too', async () => {
+		consoleError();
+		const fake = fakeSupabase({ posts: { data: null, error: { message: 'boom' } } });
+		const data = await runLoad(fake, '', signedIn, 'teacher');
+		expect(data.canModerate).toBe(true);
+	});
+});
+
+function formEvent(
+	fake: ReturnType<typeof fakeSupabase>,
+	action: string,
+	fields: Record<string, string>,
+	session: unknown = signedIn
+) {
+	const body = new FormData();
+	for (const [k, v] of Object.entries(fields)) body.set(k, v);
+	return {
+		request: new Request(`http://localhost/board?/${action}`, { method: 'POST', body }),
+		locals: { supabase: fake.supabase, safeGetSession: async () => session }
+	} as never;
+}
+
+describe('/board edit action (story 5)', () => {
+	const edit = (event: never) => actions.edit(event) as Promise<unknown>;
+	const fields = (extra: Record<string, string> = {}) => ({
+		postId: POST_ID,
+		content: doc('Picnic moved to Sunday'),
+		contentLanguage: 'de',
+		...extra
+	});
+
+	it('not signed in: 401, nothing sent', async () => {
+		const fake = fakeSupabase();
+		const result = await edit(formEvent(fake, 'edit', fields(), { user: null }));
+		expect(result).toMatchObject({ status: 401, data: { error: m.board_error_not_signed_in() } });
+		expect(fake.log).toEqual([]);
+	});
+
+	it('a bad id: 400', async () => {
+		const fake = fakeSupabase();
+		for (const postId of ['', 'p1', "'; drop"]) {
+			const result = await edit(formEvent(fake, 'edit', fields({ postId })));
+			expect(result).toMatchObject({
+				status: 400,
+				data: { error: m.board_edit_error_invalid() }
+			});
+		}
+		expect(fake.log).toEqual([]);
+	});
+
+	it('updates the body, its language and updated_at by id, with select id; files untouched', async () => {
+		const fake = fakeSupabase({ update: { data: [{ id: POST_ID }], error: null } });
+		const before = Date.now();
+		const result = await edit(formEvent(fake, 'edit', fields()));
+		expect(result).toEqual({ edited: POST_ID });
+		const update = fake.postCalls.find(([name]) => name === 'update')?.[1] as {
+			content: unknown;
+			content_language: string;
+			updated_at: string;
+		};
+		expect(update.content).toEqual(JSON.parse(doc('Picnic moved to Sunday')));
+		expect(update.content_language).toBe('de');
+		expect(Date.parse(update.updated_at)).toBeGreaterThanOrEqual(before - 1000);
+		expect(Object.keys(update).sort()).toEqual(['content', 'content_language', 'updated_at']);
+		expect(fake.postCalls).toContainEqual(['eq', 'id', POST_ID]);
+		expect(fake.postCalls).toContainEqual(['eq', 'author_id', 'u1']);
+		expect(fake.postCalls).toContainEqual(['select', 'id']);
+		expect(fake.log).toEqual(['board_posts:update']);
+	});
+
+	it('empty, too large, not a document, bad language: 400 with the post messages', async () => {
+		const fake = fakeSupabase();
+		for (const [extra, message] of [
+			[{ content: doc('') }, m.board_error_content_required()],
+			[{ content: '' }, m.board_error_content_required()],
+			[{ content: doc('x'.repeat(MAX_CONTENT_BYTES + 1)) }, m.board_error_content_too_large()],
+			[{ content: '{nope' }, m.board_error_content_invalid()],
+			[{ contentLanguage: 'fr' }, m.board_error_content_language()]
+		] as const) {
+			const result = await edit(formEvent(fake, 'edit', fields(extra)));
+			expect(result).toMatchObject({ status: 400, data: { error: message } });
+		}
+		expect(fake.log).toEqual([]);
+	});
+
+	it('0 rows (not the author, grant revoked, or gone) or 42501: 403', async () => {
+		for (const update of [
+			{ data: [], error: null },
+			{ data: null, error: { code: '42501', message: 'rls' } }
+		]) {
+			const fake = fakeSupabase({ update });
+			const result = await edit(formEvent(fake, 'edit', fields()));
+			expect(result).toMatchObject({
+				status: 403,
+				data: { error: m.board_edit_error_not_allowed() }
+			});
+		}
+	});
+
+	it('any other error: 500, logged', async () => {
+		const spy = consoleError();
+		const fake = fakeSupabase({ update: { data: null, error: { code: 'XX000', message: 'x' } } });
+		const result = await edit(formEvent(fake, 'edit', fields()));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_edit_error_failed() } });
+		expect(spy).toHaveBeenCalledWith(`Could not edit board post ${POST_ID}. x`);
+	});
+});
+
+describe('/board delete action (story 5)', () => {
+	const del = (event: never) => actions.delete(event) as Promise<unknown>;
+	const PATH_A = `${POST_ID}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.pdf`;
+	const PATH_B = `${POST_ID}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf`;
+	const twoFiles = {
+		data: [{ object_path: PATH_A }, { object_path: PATH_B }],
+		error: null
+	};
+
+	it('not signed in: 401, nothing sent', async () => {
+		const fake = fakeSupabase({ files: twoFiles });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }, { user: null }));
+		expect(result).toMatchObject({ status: 401, data: { error: m.board_error_not_signed_in() } });
+		expect(fake.log).toEqual([]);
+		expect(fake.fileCalls).toEqual([]);
+	});
+
+	it('a bad id: 400, nothing sent', async () => {
+		const fake = fakeSupabase({ files: twoFiles });
+		for (const postId of ['', 'p1']) {
+			const result = await del(formEvent(fake, 'delete', { postId }));
+			expect(result).toMatchObject({
+				status: 400,
+				data: { error: m.board_delete_error_invalid() }
+			});
+		}
+		expect(fake.log).toEqual([]);
+		expect(fake.fileCalls).toEqual([]);
+	});
+
+	it("2 files: the post's objects are removed first, then the post", async () => {
+		const fake = fakeSupabase({ files: twoFiles, del: { data: [{ id: POST_ID }], error: null } });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toEqual({ deleted: POST_ID });
+		expect(fake.fileCalls).toEqual([
+			['select', 'object_path'],
+			['eq', 'post_id', POST_ID]
+		]);
+		expect(fake.log).toEqual([
+			`storage:remove:board-files:${PATH_A},${PATH_B}`,
+			'board_posts:delete'
+		]);
+		expect(fake.postCalls).toContainEqual(['eq', 'id', POST_ID]);
+		expect(fake.postCalls).toContainEqual(['select', 'id']);
+	});
+
+	it('a non-author, non-moderator on a post with files: 403, storage untouched', async () => {
+		for (const role of ['parent', 'student', null]) {
+			const fake = fakeSupabase({
+				files: twoFiles,
+				target: { data: { author_id: 'someone-else' }, error: null },
+				profile: { data: role ? { role } : null, error: null }
+			});
+			const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+			expect(result).toMatchObject({
+				status: 403,
+				data: { error: m.board_delete_error_not_allowed() }
+			});
+			expect(fake.log).toEqual([]);
+			expect(fake.fileCalls).toEqual([]);
+		}
+	});
+
+	it('the post is missing (gone, or not readable): 403, storage untouched', async () => {
+		const fake = fakeSupabase({ files: twoFiles, target: { data: null, error: null } });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 403 });
+		expect(fake.log).toEqual([]);
+		expect(fake.fileCalls).toEqual([]);
+	});
+
+	it("an admin or a teacher on someone else's post: files, then the post", async () => {
+		for (const role of ['admin', 'teacher']) {
+			const fake = fakeSupabase({
+				files: twoFiles,
+				target: { data: { author_id: 'someone-else' }, error: null },
+				profile: { data: { role }, error: null }
+			});
+			const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+			expect(result).toEqual({ deleted: POST_ID });
+			expect(fake.log).toEqual([
+				`storage:remove:board-files:${PATH_A},${PATH_B}`,
+				'board_posts:delete'
+			]);
+		}
+	});
+
+	it('the author read fails: 500, storage untouched', async () => {
+		consoleError();
+		const fake = fakeSupabase({
+			files: twoFiles,
+			target: { data: null, error: { message: 'boom' } }
+		});
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_delete_error_failed() } });
+		expect(fake.log).toEqual([]);
+	});
+
+	it('a body over the cap: 413 for edit and delete', async () => {
+		for (const action of ['edit', 'delete'] as const) {
+			const fake = fakeSupabase();
+			const body = new FormData();
+			body.set('postId', POST_ID);
+			const result = await (actions[action]({
+				request: new Request(`http://localhost/board?/${action}`, {
+					method: 'POST',
+					body,
+					headers: { 'content-length': String(MAX_CONTENT_BYTES + 128 * 1024) }
+				}),
+				locals: { supabase: fake.supabase, safeGetSession: async () => signedIn }
+			} as never) as Promise<unknown>);
+			expect(result).toMatchObject({ status: 413 });
+			expect(fake.log).toEqual([]);
+		}
+	});
+
+	it('no files: the post only', async () => {
+		const fake = fakeSupabase({ files: { data: [], error: null } });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toEqual({ deleted: POST_ID });
+		expect(fake.log).toEqual(['board_posts:delete']);
+	});
+
+	it('the removal fails: 500 and the post is kept', async () => {
+		consoleError();
+		const fake = fakeSupabase({
+			files: twoFiles,
+			remove: { data: null, error: { message: 'down' } }
+		});
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_delete_error_files() } });
+		expect(fake.log).not.toContain('board_posts:delete');
+	});
+
+	it('the removal is not confirmed (an object still there): 500 and the post is kept', async () => {
+		consoleError();
+		// Storage reports nothing removed and the object still exists.
+		const fake = fakeSupabase({ files: twoFiles, remove: { data: [], error: null } });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 500 });
+		expect(fake.log).not.toContain('board_posts:delete');
+	});
+
+	it("the files can't be read: 500 and the post is kept", async () => {
+		consoleError();
+		const fake = fakeSupabase({ files: { data: null, error: { message: 'boom' } } });
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_delete_error_files() } });
+		expect(fake.log).toEqual([]);
+	});
+
+	it('0 rows (another parent, or already gone) or 42501: 403', async () => {
+		for (const deleted of [
+			{ data: [], error: null },
+			{ data: null, error: { code: '42501', message: 'rls' } }
+		]) {
+			const fake = fakeSupabase({ files: { data: [], error: null }, del: deleted });
+			const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+			expect(result).toMatchObject({
+				status: 403,
+				data: { error: m.board_delete_error_not_allowed() }
+			});
+		}
+	});
+
+	it('any other error: 500, logged', async () => {
+		const spy = consoleError();
+		const fake = fakeSupabase({
+			files: { data: [], error: null },
+			del: { data: null, error: { code: 'XX000', message: 'x' } }
+		});
+		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
+		expect(result).toMatchObject({ status: 500, data: { error: m.board_delete_error_failed() } });
+		expect(spy).toHaveBeenCalledWith(`Could not delete board post ${POST_ID}. x`);
 	});
 });

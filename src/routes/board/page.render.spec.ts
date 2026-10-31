@@ -8,6 +8,7 @@ import Page from './+page.svelte';
 /** /board (spec-parent-message-board story 3): what the page draws from its data. */
 type Data = {
 	canPost: boolean;
+	canModerate: boolean;
 	posts: unknown[];
 	olderBefore: string | null;
 	paged: boolean;
@@ -20,6 +21,7 @@ function draw(data: Partial<Data>) {
 			params: {},
 			data: {
 				canPost: false,
+				canModerate: false,
 				posts: [],
 				olderBefore: null,
 				paged: false,
@@ -41,6 +43,8 @@ const post = (id: string, authorName: string, text: string) => ({
 	},
 	contentLanguage: 'bo',
 	createdAt,
+	updatedAt: createdAt,
+	mine: false,
 	files: [] as { id: string; name: string; size: number }[]
 });
 
@@ -123,5 +127,63 @@ describe('board (+page.svelte)', () => {
 		expect(body).toContain(formatFileSize(2048));
 		expect(body).toContain(m.homework_file_download_label({ name: 'Flyer.pdf' }));
 		expect(body).toContain(`aria-label="${m.board_file_list_label({ author: 'Pema' })}"`);
+	});
+
+	describe('edit and delete controls (story 5)', () => {
+		const controls = (body: string) => ({
+			edit: body.includes('data-testid="board-post-edit"'),
+			del: body.includes('data-testid="board-post-delete"')
+		});
+		const own = { ...post('p1', 'Pema', 'Mine'), mine: true };
+		const other = post('p2', 'Dolma', 'Theirs');
+
+		it('the author who is still a poster: Edit and Delete', () => {
+			expect(controls(draw({ canPost: true, posts: [own] }))).toEqual({ edit: true, del: true });
+		});
+
+		it('the author whose grant was revoked: Delete only', () => {
+			expect(controls(draw({ canPost: false, posts: [own] }))).toEqual({ edit: false, del: true });
+		});
+
+		it("an admin or a teacher on someone else's post: Delete only", () => {
+			expect(controls(draw({ canPost: true, canModerate: true, posts: [other] }))).toEqual({
+				edit: false,
+				del: true
+			});
+		});
+
+		it("a student or another parent on someone else's post: no controls", () => {
+			for (const canPost of [false, true]) {
+				const body = draw({ canPost, posts: [other] });
+				expect(controls(body)).toEqual({ edit: false, del: false });
+				expect(body).not.toContain('data-testid="board-post-actions"');
+			}
+		});
+
+		it('the buttons name the author; Delete posts the id to ?/delete', () => {
+			const body = draw({ canPost: true, posts: [own] });
+			expect(body).toContain(`aria-label="${m.board_edit_label({ author: 'Pema' })}"`);
+			expect(body).toContain(`aria-label="${m.board_delete_label({ author: 'Pema' })}"`);
+			expect(body).toContain('action="?/delete"');
+			expect(body).toContain('name="postId" value="p1"');
+			// The edit form only appears after Edit is pressed.
+			expect(body).not.toContain('data-testid="board-edit-form"');
+		});
+	});
+
+	describe('the "Edited" marker (story 5)', () => {
+		const at = (updatedAt: string) => draw({ posts: [{ ...post('p1', 'Pema', 'Hi'), updatedAt }] });
+
+		it('shows when updatedAt is over a minute after createdAt', () => {
+			const body = at('2026-10-30T09:16:01.000000+00:00');
+			expect(body).toContain('data-testid="board-post-edited"');
+			expect(body).toContain(m.board_edit_marker());
+		});
+
+		it('not when it is the same or within a minute', () => {
+			for (const updatedAt of [createdAt, '2026-10-30T09:16:00.000000+00:00']) {
+				expect(at(updatedAt)).not.toContain('data-testid="board-post-edited"');
+			}
+		});
 	});
 });

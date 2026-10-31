@@ -17,6 +17,7 @@ import {
 	loadBoardFiles,
 	readPostFiles,
 	readPostForm,
+	removePostObjects,
 	signedBoardFileUrl
 } from './board-files';
 import { MAX_CONTENT_BYTES } from '$lib/rich-text';
@@ -375,5 +376,64 @@ describe('signedBoardFileUrl', () => {
 			'storage:sign': broken()
 		});
 		expect(await signedBoardFileUrl(supabase, FILE, false)).toEqual({ problem: 'failed' });
+	});
+});
+
+describe('removePostObjects (story 5)', () => {
+	const OTHER_PATH = `${POST}/66666666-6666-4666-8666-666666666666.pdf`;
+
+	it("reads the post's object paths, then removes them from board-files: true", async () => {
+		const { supabase, calls } = fakeSupabase({
+			'board_post_files:select': ok([{ object_path: PATH }, { object_path: OTHER_PATH }])
+		});
+		expect(await removePostObjects(supabase, POST)).toBe(true);
+		expect(calls[0]).toMatchObject({
+			target: 'board_post_files',
+			selected: 'object_path',
+			filters: { post_id: POST }
+		});
+		expect(calls.filter((c) => c.op === 'remove').map((c) => c.values)).toEqual([
+			[PATH, OTHER_PATH]
+		]);
+	});
+
+	it('no files: true, nothing removed', async () => {
+		const { supabase, calls } = fakeSupabase({ 'board_post_files:select': ok([]) });
+		expect(await removePostObjects(supabase, POST)).toBe(true);
+		expect(writes(calls)).toEqual([]);
+	});
+
+	it('storage refuses: false, logged', async () => {
+		const spy = quiet();
+		const { supabase } = fakeSupabase({
+			'board_post_files:select': ok([{ object_path: PATH }]),
+			'storage:remove': broken()
+		});
+		expect(await removePostObjects(supabase, POST)).toBe(false);
+		expect(spy).toHaveBeenCalledWith(`board post ${POST}: files not removed`);
+	});
+
+	it('an object not reported removed and still there: false', async () => {
+		quiet();
+		const { supabase } = fakeSupabase({
+			'board_post_files:select': ok([{ object_path: PATH }]),
+			'storage:remove': ok([]),
+			'storage:exists': ok(true)
+		});
+		expect(await removePostObjects(supabase, POST)).toBe(false);
+	});
+
+	it('the rows cannot be read: false, nothing removed', async () => {
+		const spy = quiet();
+		const { supabase, calls } = fakeSupabase({ 'board_post_files:select': broken() });
+		expect(await removePostObjects(supabase, POST)).toBe(false);
+		expect(writes(calls)).toEqual([]);
+		expect(spy).toHaveBeenCalledWith(`board post ${POST}: files could not be read: broken`);
+	});
+
+	it('no uuid: false, nothing asked', async () => {
+		const { supabase, calls } = fakeSupabase({});
+		expect(await removePostObjects(supabase, 'nope')).toBe(false);
+		expect(calls).toEqual([]);
 	});
 });

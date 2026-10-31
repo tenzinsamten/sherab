@@ -5,7 +5,9 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
  * spec-parent-message-board story 3 (CAP-1, CAP-2 text only): a granted
  * parent posts on /board; a student signs in, sees the post with the
  * parent's name, and has no post form. Story 4: a post with a PDF file,
- * which the student opens through /files/board/[fileId].
+ * which the student opens through /files/board/[fileId]. Story 5: the
+ * author edits, then deletes a post with a PDF (its object goes too); a
+ * teacher deletes a parent's post; a student sees no controls.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -17,6 +19,9 @@ const flyerMessage = `Flyer for the picnic ${tag}`;
 const BUCKET = 'board-files';
 const MB5 = 5_242_880;
 const refusedMessage = `Refused files ${tag}`;
+const editMessage = `Bring a jacket ${tag}`;
+const editedMessage = `Bring a warm jacket ${tag}`;
+const moderatedMessage = `Unsuitable post ${tag}`;
 const docx = {
 	name: 'notes.docx',
 	mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -32,6 +37,7 @@ function pdf(name: string, size = 2048) {
 
 let parent: TestUser;
 let student: TestUser;
+let teacher: TestUser;
 const userIds: string[] = [];
 const team = fixtureTeam(tag);
 
@@ -40,7 +46,7 @@ function check<T>(result: { data: T; error: { message: string } | null }, what: 
 	return result.data;
 }
 
-async function createUser(role: 'parent' | 'student', key: string): Promise<TestUser> {
+async function createUser(role: 'parent' | 'student' | 'teacher', key: string): Promise<TestUser> {
 	const domain = role === 'student' ? 'students.internal.invalid' : 'example.test';
 	const email = `e2e-brd-${key}-${tag}@${domain}`;
 	const password = crypto.randomUUID();
@@ -81,6 +87,15 @@ test.beforeAll(async () => {
 			})
 			.eq('id', student.id),
 		'approve student'
+	);
+
+	teacher = await createUser('teacher', 't');
+	check(
+		await service
+			.from('profiles')
+			.update({ display_name: `BRD Teacher ${tag}` })
+			.eq('id', teacher.id),
+		'name teacher'
 	);
 });
 
@@ -266,4 +281,144 @@ test('too many or too large files are refused in the browser; a Word file by the
 	expect(posted).toHaveLength(1);
 	expect(await stored()).toBe(before);
 	await expect(posts(page).filter({ hasText: refusedMessage })).toHaveCount(0);
+});
+
+const confirmDelete = (page: Page) =>
+	page.getByRole('alertdialog', { name: 'Are you sure?' }).getByRole('button', { name: 'Delete' });
+
+test('the author edits a post with a PDF, then deletes it; its object goes too', async ({
+	page
+}) => {
+	await signIn(page, parent);
+	await open(page, '/board');
+	const form = page.getByTestId('board-form');
+	const editor = form.locator('#content');
+	await expect(editor).toHaveAttribute('contenteditable', 'true');
+	await editor.click();
+	await page.keyboard.type(editMessage);
+	// A non-default language, which the edit must keep.
+	await form.locator('#contentLanguage').selectOption('bo');
+	await form.locator('input[type="file"]').setInputFiles([pdf(`Map ${tag}.pdf`)]);
+	await form.getByRole('button', { name: 'Post' }).click();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('Your post is on the board.').first()
+	).toBeVisible();
+
+	const mine = posts(page).filter({ hasText: editMessage });
+	await expect(mine.getByTestId('file-name')).toHaveText(`Map ${tag}.pdf`);
+	const postId = await mine.locator('input[name="postId"]').first().inputValue();
+	const folder = async () =>
+		(check(await service.storage.from(BUCKET).list(postId), 'list objects') ?? []).length;
+	expect(await folder()).toBe(1);
+
+	// Posted over a minute ago, so the edit shows "Edited".
+	const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+	check(
+		await service
+			.from('board_posts')
+			.update({ created_at: fiveMinutesAgo, updated_at: fiveMinutesAgo })
+			.eq('id', postId),
+		'backdate post'
+	);
+	await open(page, '/board');
+	// By its id from here on: the edit changes its text.
+	const card = posts(page).filter({
+		has: page.locator(`input[name="postId"][value="${postId}"]`)
+	});
+	await expect(card.getByTestId('board-post-edited')).toHaveCount(0);
+
+	await card.getByRole('button', { name: `Edit the post by ${parentName}` }).click();
+	const editForm = card.getByTestId('board-edit-form');
+	const editEditor = editForm.locator(`#edit-content-${postId}`);
+	await expect(editEditor).toHaveAttribute('contenteditable', 'true');
+	await expect(editEditor).toHaveText(editMessage);
+	await expect(editForm.locator(`#edit-language-${postId}`)).toHaveValue('bo');
+	// Cancel restores the view.
+	await editForm.getByRole('button', { name: `Cancel editing the post by ${parentName}` }).click();
+	await expect(editForm).toHaveCount(0);
+	await expect(card).toContainText(editMessage);
+
+	await card.getByRole('button', { name: `Edit the post by ${parentName}` }).click();
+	await expect(editEditor).toHaveAttribute('contenteditable', 'true');
+	await editEditor.click();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type(editedMessage);
+	await editForm.getByRole('button', { name: `Save the post by ${parentName}` }).click();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('Your post was updated.').first()
+	).toBeVisible();
+
+	expect(
+		check(
+			await service.from('board_posts').select('content_language').eq('id', postId).single(),
+			'read edited post'
+		).content_language
+	).toBe('bo');
+
+	const edited = card;
+	await expect(edited).toContainText(editedMessage);
+	await expect(edited).not.toContainText(editMessage);
+	await expect(edited.getByTestId('board-edit-form')).toHaveCount(0);
+	await expect(edited.getByTestId('board-post-edited')).toHaveText('Edited');
+	// The file is unchanged by the edit.
+	await expect(edited.getByTestId('file-name')).toHaveText(`Map ${tag}.pdf`);
+	expect(await folder()).toBe(1);
+
+	await edited.getByRole('button', { name: `Delete the post by ${parentName}` }).click();
+	await confirmDelete(page).click();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('The post was deleted.').first()
+	).toBeVisible();
+	await expect(posts(page).filter({ hasText: editedMessage })).toHaveCount(0);
+
+	expect(
+		check(await service.from('board_posts').select('id').eq('id', postId), 'read post')
+	).toEqual([]);
+	expect(
+		check(await service.from('board_post_files').select('id').eq('post_id', postId), 'read files')
+	).toEqual([]);
+	expect(await folder()).toBe(0);
+});
+
+test("a teacher deletes a parent's post, and has no Edit on it", async ({ page }) => {
+	const inserted = check(
+		await service
+			.from('board_posts')
+			.insert({
+				author_id: parent.id,
+				content: {
+					type: 'doc',
+					content: [{ type: 'paragraph', content: [{ type: 'text', text: moderatedMessage }] }]
+				},
+				content_language: 'en'
+			})
+			.select('id')
+			.single(),
+		'insert post'
+	);
+
+	await signIn(page, teacher);
+	await open(page, '/board');
+	const theirs = posts(page).filter({ hasText: moderatedMessage });
+	await expect(theirs).toHaveCount(1);
+	await expect(theirs.getByTestId('board-post-edit')).toHaveCount(0);
+	await theirs.getByRole('button', { name: `Delete the post by ${parentName}` }).click();
+	await confirmDelete(page).click();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('The post was deleted.').first()
+	).toBeVisible();
+	await expect(posts(page).filter({ hasText: moderatedMessage })).toHaveCount(0);
+	expect(
+		check(await service.from('board_posts').select('id').eq('id', inserted.id), 'read post')
+	).toEqual([]);
+});
+
+test("a student sees no Edit or Delete on a parent's post", async ({ page }) => {
+	await signIn(page, student);
+	await open(page, '/board');
+	const theirs = posts(page).filter({ hasText: message });
+	await expect(theirs).toHaveCount(1);
+	await expect(theirs.getByTestId('board-post-edit')).toHaveCount(0);
+	await expect(theirs.getByTestId('board-post-delete')).toHaveCount(0);
+	await expect(page.getByTestId('board-post-actions')).toHaveCount(0);
 });

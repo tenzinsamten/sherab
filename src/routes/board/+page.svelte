@@ -3,6 +3,8 @@
 	import Info from '@lucide/svelte/icons/info';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import MessagesSquare from '@lucide/svelte/icons/messages-square';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
@@ -38,6 +40,8 @@
 	 * newest first for every reader, and a post form for admins, teachers and
 	 * granted parents. Errors come from the root layout's form-error toast.
 	 * Story 4: a post may carry up to 2 PDF files, listed under it.
+	 * Story 5: the author edits a post's body in place (while a poster) and
+	 * deletes it; an admin or a teacher deletes any post, after a question.
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -119,6 +123,67 @@
 		}
 		return guarded(input);
 	};
+
+	// Story 5: one post is edited at a time, in its card.
+	let editingId = $state<string | null>(null);
+	let editLanguage = $state<ContentLanguage>(DEFAULT_CONTENT_LANGUAGE);
+
+	function startEdit(id: string, language: ContentLanguage) {
+		editLanguage = language;
+		editingId = id;
+	}
+
+	/** Shows the success toast (and runs `done`) once the answer is applied. */
+	function withSuccess(submit: SubmitFunction, message: () => string, done?: () => void) {
+		const wrapped: SubmitFunction = async (input) => {
+			const after = await submit(input);
+			return async (opts) => {
+				if (after) await after(opts);
+				else await opts.update();
+				if (opts.result.type === 'success') {
+					showToast('success', message());
+					done?.();
+				}
+			};
+		};
+		return wrapped;
+	}
+
+	function submitEdit(id: string): SubmitFunction {
+		return unsaved.submit(
+			withSuccess(pending.submit(`edit:${id}`), m.board_edit_success, () => {
+				if (editingId === id) editingId = null;
+			})
+		);
+	}
+
+	function submitDelete(id: string, author: string, hasFiles: boolean): SubmitFunction {
+		return withSuccess(
+			pending.submit(`delete:${id}`, {
+				confirm: () =>
+					confirm.ask(
+						hasFiles
+							? m.board_delete_confirm({ author })
+							: m.board_delete_confirm_no_files({ author }),
+						m.board_delete_button(),
+						{
+							destructive: true
+						}
+					)
+			}),
+			m.board_delete_success,
+			() => {
+				if (editingId === id) editingId = null;
+			}
+		);
+	}
+
+	/** "Edited": the last change came over a minute after the post. */
+	function wasEdited(createdAt: string, updatedAt: string): boolean {
+		const created = Date.parse(createdAt);
+		const updated = Date.parse(updatedAt);
+		return !Number.isNaN(created) && !Number.isNaN(updated) && updated - created > 60_000;
+	}
 
 	function olderHref(before: string): string {
 		return `${resolve('/board')}?before=${encodeURIComponent(before)}`;
@@ -210,20 +275,125 @@
 			data-testid="board-posts"
 		>
 			{#each data.posts as boardPost (boardPost.id)}
+				{@const canEdit = boardPost.mine && data.canPost}
+				{@const canDelete = boardPost.mine || data.canModerate}
 				<li class={ui.card} data-testid="board-post">
 					<article class="min-w-0">
 						<header class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 							<p class="font-bold wrap-anywhere" data-testid="board-post-author">
 								{boardPost.authorName}
 							</p>
-							<time datetime={boardPost.createdAt} class="text-sm {ui.muted}">
-								{formatInstant(boardPost.createdAt, true)}
-							</time>
+							<p class="text-sm {ui.muted}">
+								<time datetime={boardPost.createdAt}>
+									{formatInstant(boardPost.createdAt, true)}
+								</time>
+								{#if boardPost.updatedAt && wasEdited(boardPost.createdAt, boardPost.updatedAt)}
+									<span aria-hidden="true">·</span>
+									<span data-testid="board-post-edited">{m.board_edit_marker()}</span>
+								{/if}
+							</p>
 						</header>
-						{#if boardPost.content}
-							<RichText content={boardPost.content} lang={boardPost.contentLanguage} />
+						{#if editingId === boardPost.id && canEdit}
+							<form
+								method="POST"
+								action="?/edit"
+								use:enhance={submitEdit(boardPost.id)}
+								use:unsaved.track
+								data-testid="board-edit-form"
+							>
+								<input type="hidden" name="postId" value={boardPost.id} />
+								<ContentLanguageSelect
+									id="edit-language-{boardPost.id}"
+									bind:value={editLanguage}
+								/>
+								<RichTextEditor
+									id="edit-content-{boardPost.id}"
+									name="content"
+									label={m.board_content_label()}
+									lang={editLanguage}
+									initial={boardPost.content}
+									required
+								/>
+								<div class="flex flex-wrap gap-2">
+									<Button
+										type="submit"
+										class="{ui.touch} gap-2"
+										aria-label={m.board_edit_save_label({ author: boardPost.authorName })}
+										aria-busy={pending.is(`edit:${boardPost.id}`) || undefined}
+										disabled={pending.busy}
+										data-testid="board-edit-save"
+									>
+										{#if pending.is(`edit:${boardPost.id}`)}
+											<LoaderCircle class="animate-spin" aria-hidden="true" />
+										{/if}
+										{m.board_edit_save()}
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										class={ui.touch}
+										aria-label={m.board_edit_cancel_label({ author: boardPost.authorName })}
+										disabled={pending.busy}
+										onclick={() => (editingId = null)}
+										data-testid="board-edit-cancel"
+									>
+										{m.board_edit_cancel()}
+									</Button>
+								</div>
+							</form>
+						{:else}
+							{#if boardPost.content}
+								<RichText content={boardPost.content} lang={boardPost.contentLanguage} />
+							{/if}
 						{/if}
 						<BoardFiles files={boardPost.files} author={boardPost.authorName} />
+						{#if (canEdit && editingId !== boardPost.id) || canDelete}
+							<div class="mt-3 flex flex-wrap gap-2" data-testid="board-post-actions">
+								{#if canEdit && editingId !== boardPost.id}
+									<Button
+										type="button"
+										variant="outline"
+										class="{ui.touch} gap-2"
+										aria-label={m.board_edit_label({ author: boardPost.authorName })}
+										disabled={pending.busy || editingId !== null}
+										onclick={() => startEdit(boardPost.id, boardPost.contentLanguage)}
+										data-testid="board-post-edit"
+									>
+										<Pencil aria-hidden="true" />
+										{m.board_edit_button()}
+									</Button>
+								{/if}
+								{#if canDelete}
+									<form
+										method="POST"
+										action="?/delete"
+										use:enhance={submitDelete(
+											boardPost.id,
+											boardPost.authorName,
+											boardPost.files.length > 0
+										)}
+									>
+										<input type="hidden" name="postId" value={boardPost.id} />
+										<Button
+											type="submit"
+											variant="outline"
+											class="{ui.touch} gap-2"
+											aria-label={m.board_delete_label({ author: boardPost.authorName })}
+											aria-busy={pending.is(`delete:${boardPost.id}`) || undefined}
+											disabled={pending.busy}
+											data-testid="board-post-delete"
+										>
+											{#if pending.is(`delete:${boardPost.id}`)}
+												<LoaderCircle class="animate-spin" aria-hidden="true" />
+											{:else}
+												<Trash2 aria-hidden="true" />
+											{/if}
+											{m.board_delete_button()}
+										</Button>
+									</form>
+								{/if}
+							</div>
+						{/if}
 					</article>
 				</li>
 			{/each}

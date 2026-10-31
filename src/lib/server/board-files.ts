@@ -16,6 +16,7 @@ import {
 	isUuid,
 	readFileForm,
 	readPdfUpload,
+	removeObjects,
 	removeOrLog,
 	signObject,
 	storeObject,
@@ -192,6 +193,34 @@ export async function loadBoardFiles(
 		files.set(row.post_id, list);
 	}
 	return { files, error: false };
+}
+
+/**
+ * Story 5 (CAP-3): removes the stored objects of a post's files, before the
+ * post is deleted (stored objects cannot be deleted from SQL, and the file
+ * rows cascade with the post). True only when every object is confirmed
+ * gone, or the post has no files; false (logged) when the rows cannot be
+ * read or storage does not confirm a removal, so the post is kept and no
+ * object is left without its row. The bucket's delete policy decides: the
+ * post's author, an admin or a teacher.
+ */
+export async function removePostObjects(supabase: Client, postId: string): Promise<boolean> {
+	if (!isUuid(postId)) return false;
+	const { data, error } = await supabase
+		.from('board_post_files')
+		.select('object_path')
+		.eq('post_id', postId);
+	if (error) {
+		console.error(`board post ${postId}: files could not be read: ${error.message}`);
+		return false;
+	}
+	const paths = (data ?? []).map((row) => row.object_path);
+	if (paths.length === 0) return true;
+	if (!(await removeObjects(supabase, STORE, paths))) {
+		console.error(`board post ${postId}: files not removed`);
+		return false;
+	}
+	return true;
 }
 
 /**
