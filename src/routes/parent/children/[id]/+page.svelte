@@ -1363,7 +1363,15 @@
 		{#each items as item (item.instanceId)}
 			<li class="py-3">
 				<p class="flex flex-wrap items-center gap-2">
-					<strong lang={item.contentLanguage} class="min-w-0 wrap-break-word">{item.title}</strong>
+					<!-- spec-parent-managed-homework story 3: the item's detail page. -->
+					<a
+						href={resolve('/parent/children/[id]/homework/[instanceId]', {
+							id: data.child.id,
+							instanceId: item.instanceId
+						})}
+						lang={item.contentLanguage}
+						class="{ui.link} min-w-0 font-semibold wrap-break-word">{item.title}</a
+					>
 					{#if item.overdue}
 						<Badge variant="alarm">{m.student_homework_overdue_label()}</Badge>
 					{/if}

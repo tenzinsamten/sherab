@@ -8,6 +8,10 @@ import { berlinToday, fixtureTeam, linkParent, service, signIn, type TestUser } 
  * sees it on and the buttons too. A marks an open item done (after the
  * confirm dialog): it moves to Done, recorded by A for the child. A turns
  * it off again and the card shows it off.
+ *
+ * Story 3 (CAP-3): from the Homework tab a parent opens an item's detail
+ * page and reads its body; B sees the same page; with the flag on A marks
+ * it done there and the status shows Done.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -16,6 +20,8 @@ const tag = crypto.randomUUID().slice(0, 8);
 const childName = `MH Kid ${tag}`;
 const className = `MH class ${tag}`;
 const openTitle = `MH open ${tag}`;
+const detailTitle = `MH detail ${tag}`;
+const detailBody = `Practise the alphabet song ${tag}`;
 
 let teacher: TestUser;
 let parentA: TestUser;
@@ -23,6 +29,8 @@ let parentB: TestUser;
 let child: TestUser;
 let classId: string;
 let instanceId: string;
+/** Story 3: a second open item, with a body, marked done on its detail page. */
+let detailInstanceId: string;
 /** Deletion order: the student first (a parent with links cannot be deleted). */
 const userIds: string[] = [];
 const team = fixtureTeam(tag);
@@ -171,6 +179,49 @@ test.beforeAll(async () => {
 			}),
 			'assign homework'
 		);
+
+		const detailAssignment = check(
+			await service
+				.from('homework_assignments')
+				.insert({
+					class_id: classId,
+					title: detailTitle,
+					skill_area: 'song',
+					whole_class: false,
+					created_by: teacher.id,
+					content_language: 'en',
+					content: {
+						type: 'doc',
+						content: [{ type: 'paragraph', content: [{ type: 'text', text: detailBody }] }]
+					}
+				})
+				.select('id')
+				.single(),
+			'create detail homework'
+		).id;
+		detailInstanceId = check(
+			await service
+				.from('homework_instances')
+				.insert({
+					assignment_id: detailAssignment,
+					class_id: classId,
+					period_start: due,
+					due_date: due
+				})
+				.select('id')
+				.single(),
+			'create detail instance'
+		).id;
+		check(
+			await service.from('homework_status_history').insert({
+				instance_id: detailInstanceId,
+				class_id: classId,
+				student_id: child.id,
+				status: 'assigned',
+				recorded_by: teacher.id
+			}),
+			'assign detail homework'
+		);
 	} catch (error) {
 		await cleanup().catch(() => undefined);
 		throw error;
@@ -189,6 +240,7 @@ async function open(page: Page, tab: 'overview' | 'homework') {
 
 const openSection = (page: Page) => page.locator('section', { has: page.locator('#open-heading') });
 const doneSection = (page: Page) => page.locator('section', { has: page.locator('#done-heading') });
+const openRow = (page: Page, title: string) => openSection(page).locator('li', { hasText: title });
 
 test('flag off: the Homework tab has no Mark done button', async ({ page }) => {
 	await signIn(page, parentA);
@@ -226,11 +278,13 @@ test('A turns it on, B sees it on, A marks the item done, then turns it off', as
 		await open(pageB, 'overview');
 		await expect(pageB.getByTestId('managed-status')).toHaveAttribute('data-on', 'true');
 		await open(pageB, 'homework');
-		await expect(openSection(pageB).getByRole('button', { name: 'Mark done' })).toHaveCount(1);
+		await expect(openRow(pageB, openTitle).getByRole('button', { name: 'Mark done' })).toHaveCount(
+			1
+		);
 
 		// A marks the open item done, after the confirm dialog.
 		await open(pageA, 'homework');
-		await openSection(pageA).getByRole('button', { name: 'Mark done' }).click();
+		await openRow(pageA, openTitle).getByRole('button', { name: 'Mark done' }).click();
 		const dialog = pageA.getByTestId('mark-done-confirm');
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Mark done' }).click();
@@ -239,7 +293,7 @@ test('A turns it on, B sees it on, A marks the item done, then turns it off', as
 		await expect(openSection(pageA)).not.toContainText(openTitle);
 		await expect(doneSection(pageA)).toContainText(openTitle);
 		// Done items never get the button.
-		await expect(pageA.getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+		await expect(doneSection(pageA).getByRole('button', { name: 'Mark done' })).toHaveCount(0);
 
 		const { data: rows } = await service
 			.from('homework_status_history')
@@ -256,5 +310,84 @@ test('A turns it on, B sees it on, A marks the item done, then turns it off', as
 	} finally {
 		await contextA.close();
 		await contextB.close();
+	}
+});
+
+async function openDetail(page: Page) {
+	await page.locator('main > [data-ui="new"][data-hydrated]').waitFor();
+}
+
+async function setManaged(on: boolean) {
+	check(
+		await service.from('profiles').update({ parent_managed: on }).eq('id', child.id),
+		'set parent_managed'
+	);
+}
+
+test('story 3: the detail page shows the full item to A and B; A marks it done there', async ({
+	browser
+}) => {
+	await setManaged(false);
+	const contextA = await browser.newContext();
+	const contextB = await browser.newContext();
+	try {
+		const pageA = await contextA.newPage();
+		await signIn(pageA, parentA);
+
+		// The flag is off: no Mark done.
+		await open(pageA, 'homework');
+		await openRow(pageA, detailTitle).getByRole('link', { name: detailTitle }).click();
+		await expect(pageA).toHaveURL(
+			new RegExp(`/parent/children/${child.id}/homework/${detailInstanceId}$`)
+		);
+		await openDetail(pageA);
+		await expect(pageA.getByRole('heading', { level: 1 })).toContainText(detailTitle);
+		await expect(pageA.getByText(detailBody)).toBeVisible();
+		await expect(pageA.getByTestId('homework-class')).toHaveText(className);
+		await expect(pageA.getByTestId('homework-class').getByRole('link')).toHaveCount(0);
+		await expect(pageA.getByTestId('homework-status')).toContainText('Not done yet');
+		await expect(pageA.getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+
+		// B (also linked) sees the same details at the same URL.
+		const pageB = await contextB.newPage();
+		await signIn(pageB, parentB);
+		await pageB.goto(`/parent/children/${child.id}/homework/${detailInstanceId}`);
+		await openDetail(pageB);
+		await expect(pageB.getByRole('heading', { level: 1 })).toContainText(detailTitle);
+		await expect(pageB.getByText(detailBody)).toBeVisible();
+
+		// A turns the flag on; the detail page now has Mark done.
+		await open(pageA, 'overview');
+		await pageA
+			.getByTestId('managed-card')
+			.getByRole('button', { name: 'I manage homework for this child' })
+			.click();
+		await expect(pageA.getByTestId('managed-status')).toHaveAttribute('data-on', 'true');
+		await open(pageA, 'homework');
+		await openRow(pageA, detailTitle).getByRole('link', { name: detailTitle }).click();
+		await openDetail(pageA);
+		await pageA.getByRole('button', { name: 'Mark done' }).click();
+		const dialog = pageA.getByTestId('mark-done-confirm');
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Mark done' }).click();
+		await expect(pageA.getByText('Marked done.')).toBeVisible();
+		await expect(pageA.getByTestId('homework-status')).toContainText('Done');
+		await expect(pageA.getByRole('button', { name: 'Mark done' })).toHaveCount(0);
+
+		const { data: rows } = await service
+			.from('homework_status_history')
+			.select('student_id, status, recorded_by')
+			.eq('instance_id', detailInstanceId)
+			.eq('status', 'done');
+		expect(rows).toEqual([{ student_id: child.id, status: 'done', recorded_by: parentA.id }]);
+
+		// The breadcrumb leads back to the child's Homework tab.
+		await pageA.getByTestId('page-breadcrumb').getByRole('link', { name: childName }).click();
+		await expect(pageA).toHaveURL(/tab=homework/);
+		await expect(doneSection(pageA)).toContainText(detailTitle);
+	} finally {
+		await contextA.close();
+		await contextB.close();
+		await setManaged(false);
 	}
 });

@@ -621,3 +621,7 @@
 - source_spec: `_bmad-output/specs/spec-parent-managed-homework/stories/1-parent-managed-flag-and-database-rule.md`
   summary: One homework item can get several `done` rows (parent A, parent B, the student), because homework_status_history has no unique key; decide whether to block repeats or pick one row for the story 5 "marked by" label.
   evidence: Unverified medium. Pre-existing since 0013 (only `assigned` is guarded by hand); settle it by checking how homework-view.ts / history-rows.ts and badge counts behave with two `done` rows for one instance.
+
+- source_spec: `_bmad-output/specs/spec-parent-managed-homework/stories/3-parent-homework-detail-page.md`
+  summary: Add one e2e "flag turned off mid-session" test proving a refused Mark done reloads page data (onfailure={invalidateAll}) on both the child page and the homework detail page.
+  evidence: No spec or e2e references onfailure or invalidateAll; dropping either would break nothing in the test suite (verification-gap, story 3 review).
