@@ -1083,7 +1083,7 @@
 	"parent_homework_no_children": "ད་དུང་ཆོག་མཆན་ཐོབ་པའི་ཕྲུ་གུ་མེད། ཕྲུ་གུ་ཆོག་མཆན་ཐོབ་རྗེས་ཁོང་གི་ནང་སྦྱོང་འདིར་མངོན་འོང་།",
 	"parent_homework_child_error": "{name} གི་ནང་སྦྱོང་འཇུག་མ་ཐུབ། ཤོག་ངོས་གསར་སྒྱུར་གནང་རོགས།",
 	"parent_homework_history_label": "བྱས་ཟིན་དང་ཞིབ་བཤེར་བྱས་ཟིན།",
-	"parent_homework_row_label": "{title}། {name}: {name} གི་ནང་སྦྱོང་ཡན་ལག་ཏུ་ཁ་ཕྱེ།",
+	"parent_homework_row_label": "{title}། {name}: ནང་སྦྱོང་གི་ཞིབ་ཕྲ་ཁ་ཕྱེ།",
 
 	"nav_parents": "ཕ་མ།",
 	"parents_section_label": "ཕ་མ།",

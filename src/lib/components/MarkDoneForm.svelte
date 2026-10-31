@@ -30,7 +30,8 @@
 		class: className = '',
 		focusAfter,
 		action = '?/markDone',
-		onfailure
+		onfailure,
+		childId
 	}: {
 		instanceId: string;
 		/** The homework's title, for the question. */
@@ -43,9 +44,14 @@
 		action?: string;
 		/** Runs after a refused save, before focus moves (e.g. reload the page data). */
 		onfailure?: () => unknown;
+		/** The child a parent marks for (/parent/homework); sent as `childId`. */
+		childId?: string;
 	} = $props();
 
-	let key = $derived(`done:${instanceId}`);
+	// A child's id keeps two siblings' rows for one shared item apart.
+	let key = $derived(
+		childId === undefined ? `done:${instanceId}` : `done:${instanceId}:${childId}`
+	);
 	let asking = $state(false);
 	let form: HTMLFormElement | undefined = $state();
 	let button: HTMLButtonElement | null = $state(null);
@@ -90,6 +96,9 @@
 
 <form bind:this={form} method="POST" {action} use:enhance={submit} class="min-w-0">
 	<input type="hidden" name="instanceId" value={instanceId} />
+	{#if childId !== undefined}
+		<input type="hidden" name="childId" value={childId} />
+	{/if}
 	<Button
 		bind:ref={button}
 		type="submit"

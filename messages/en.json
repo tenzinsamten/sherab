@@ -1083,7 +1083,7 @@
 	"parent_homework_no_children": "No approved children yet. Their homework shows here once a child is approved.",
 	"parent_homework_child_error": "Could not load {name}'s homework. Please refresh.",
 	"parent_homework_history_label": "Done and reviewed:",
-	"parent_homework_row_label": "{title}, {name}: open on {name}'s Homework tab",
+	"parent_homework_row_label": "{title}, {name}: open the homework details",
 
 	"nav_parents": "Parents",
 	"parents_section_label": "Parents",

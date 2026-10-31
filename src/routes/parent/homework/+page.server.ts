@@ -1,10 +1,17 @@
 import { localizedName, type LocalizedNames } from '$lib/localized-name';
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages.js';
 import { todayInBerlin } from '$lib/berlin-date';
 import type { HomeworkFile } from '$lib/homework-files';
 import { loadHomeworkFiles } from '$lib/server/homework-files';
-import { loadStudentHomework, type StudentHomeworkItem } from '$lib/server/student-homework';
-import type { PageServerLoad } from './$types';
+import {
+	loadStudentHomework,
+	markHomeworkDone,
+	type StudentHomeworkItem
+} from '$lib/server/student-homework';
+import type { Actions, PageServerLoad } from './$types';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An approved child in the picker. */
 export type HomeworkChild = { id: string; name: string };
@@ -24,6 +31,11 @@ export type ParentHomeworkItem = Pick<
 	files: HomeworkFile[];
 	childId: string;
 	childName: string;
+	/**
+	 * spec-parent-managed-homework story 4: the child is parent-managed, so
+	 * the row offers Mark done (false when the flags could not be read).
+	 */
+	childManaged: boolean;
 	/** null: the class name could not be read. */
 	className: string | null;
 };
@@ -52,7 +64,8 @@ function compareParentHomework(a: ParentHomeworkItem, b: ParentHomeworkItem): nu
 async function loadChildOpen(
 	supabase: Client,
 	child: HomeworkChild,
-	today: string
+	today: string,
+	childManaged: boolean
 ): Promise<{ items: ParentHomeworkItem[]; error: boolean }> {
 	const { data: enrollments, error: enrollmentsError } = await supabase
 		.from('class_enrollments')
@@ -73,6 +86,7 @@ async function loadChildOpen(
 		items: open.items.map((item) => ({
 			childId: child.id,
 			childName: child.name,
+			childManaged,
 			instanceId: item.instanceId,
 			assignmentId: item.assignmentId,
 			title: item.title,
@@ -88,11 +102,14 @@ async function loadChildOpen(
 }
 
 /**
- * #59: every approved child's open homework in one list (read-only). The
+ * #59: every approved child's open homework in one list. The
  * children come from linked_children() (approved only); `?child=` narrows
  * to one of them, anything else shows all. Each child is read separately,
  * so one child's failure shows an error line and the others still show.
  * Done and Reviewed stay on each child's Homework tab.
+ * spec-parent-managed-homework story 4: rows of a parent-managed child
+ * carry `childManaged` (one profiles read for the children in view) and
+ * get Mark done.
  */
 export const load: PageServerLoad = async ({ url, parent, locals: { supabase } }) => {
 	const { parentStatus, profile } = await parent();
@@ -114,8 +131,27 @@ export const load: PageServerLoad = async ({ url, parent, locals: { supabase } }
 	const selectedChild = children.some((c) => c.id === childParam) ? childParam : null;
 	const inView = selectedChild ? children.filter((c) => c.id === selectedChild) : children;
 
+	// One read of the parent-managed flags; a failure shows no Mark done.
+	const managed = new Set<string>();
+	if (inView.length > 0) {
+		const { data: flags, error: flagsError } = await supabase
+			.from('profiles')
+			.select('id, parent_managed')
+			.in(
+				'id',
+				inView.map((c) => c.id)
+			);
+		if (flagsError) {
+			console.error('parent homework: parent_managed read failed', flagsError.message);
+		} else {
+			for (const f of flags ?? []) if (f.parent_managed) managed.add(f.id);
+		}
+	}
+
 	const today = todayInBerlin();
-	const results = await Promise.all(inView.map((c) => loadChildOpen(supabase, c, today)));
+	const results = await Promise.all(
+		inView.map((c) => loadChildOpen(supabase, c, today, managed.has(c.id)))
+	);
 
 	const failedChildren = inView.filter((_, i) => results[i].error);
 	for (const c of failedChildren) {
@@ -139,4 +175,24 @@ export const load: PageServerLoad = async ({ url, parent, locals: { supabase } }
 		loadError: Boolean(linkedError),
 		filesError: homeworkFiles.error
 	};
+};
+
+export const actions: Actions = {
+	/**
+	 * spec-parent-managed-homework story 4 (CAP-2): Mark done on a row. The
+	 * child comes from the form (`childId`); markHomeworkDone records the
+	 * parent and RLS refuses it unless the child is parent-managed and
+	 * linked to the caller (42501 -> 403).
+	 */
+	markDone: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) throw redirect(303, '/login');
+		// A clone: markHomeworkDone reads the body (instanceId) itself.
+		const formData = await request.clone().formData();
+		const childId = String(formData.get('childId') ?? '');
+		if (!UUID_PATTERN.test(childId)) {
+			return fail(400, { error: m.student_homework_error_mark_failed() });
+		}
+		return markHomeworkDone({ request, supabase, user, studentId: childId });
+	}
 };

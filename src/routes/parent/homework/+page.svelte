@@ -1,22 +1,37 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatDay as formatIsoDay } from '$lib/format';
+	import { createPending } from '$lib/pending.svelte';
+	import { showToast } from '$lib/toast';
 	import ChildPicker from '$lib/components/ChildPicker.svelte';
 	import HomeworkFiles from '$lib/components/HomeworkFiles.svelte';
+	import MarkDoneForm from '$lib/components/MarkDoneForm.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { ui } from '$lib/ui/classes';
-	import type { PageProps } from './$types';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
-	 * #59: every approved child's open homework in one list, read-only.
+	 * #59: every approved child's open homework in one list.
 	 * `?child=` narrows to one child (picker with 2 or more children). Done
 	 * and Reviewed stay on each child's Homework tab, linked per child.
 	 * Mobile-first story 3: each item is a stacked row (child, title, overdue
 	 * pill, class and due date, links).
+	 * spec-parent-managed-homework story 4: a row's title opens its detail
+	 * page, and a parent-managed child's rows get Mark done (a refused save
+	 * reloads the data; a saved item leaves the list on that reload).
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const pending = createPending();
+
+	$effect(() => {
+		if (form && 'action' in form && form.action === 'markDone' && form.success) {
+			showToast('success', m.student_homework_mark_done_success());
+		}
+	});
 
 	const pageHref = resolve('/parent/homework');
 
@@ -91,7 +106,6 @@
 				</p>
 			{/each}
 
-			<!-- eslint-disable svelte/no-navigation-without-resolve -- childHomeworkHref() builds on resolve() and only adds ?tab=. -->
 			{#if data.items.length === 0}
 				{#if data.failedChildren.length < data.inView.length}
 					<p class={ui.muted}>{m.student_homework_empty()}</p>
@@ -103,7 +117,10 @@
 							<p class={ui.label}>{item.childName}</p>
 							<p class="flex flex-wrap items-center gap-2">
 								<a
-									href={childHomeworkHref(item.childId)}
+									href={resolve('/parent/children/[id]/homework/[instanceId]', {
+										id: item.childId,
+										instanceId: item.instanceId
+									})}
 									class="inline-flex min-h-11 min-w-0 items-center {ui.link}"
 									aria-label={m.parent_homework_row_label({
 										title: item.title,
@@ -125,6 +142,7 @@
 								<ul class="list-disc pl-5 wrap-anywhere">
 									{#each item.referenceLinks as link, i (i)}
 										<li>
+											<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an external reference link, not an app route. -->
 											<a href={link.url} target="_blank" rel="noopener noreferrer" class={ui.link}
 												>{link.label ?? link.url}</a
 											>
@@ -137,11 +155,27 @@
 								files={item.files}
 								label={m.homework_file_list_label({ title: item.title })}
 							/>
+							{#if item.childManaged}
+								<div class="mt-2">
+									<MarkDoneForm
+										instanceId={item.instanceId}
+										childId={item.childId}
+										title={item.title}
+										{pending}
+										variant="outline"
+										class="w-full md:w-auto"
+										action="?/markDone"
+										onfailure={invalidateAll}
+										focusAfter={() => document.getElementById('open-heading')}
+									/>
+								</div>
+							{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
 
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- childHomeworkHref() builds on resolve() and only adds ?tab=. -->
 			<p class="mt-2 flex flex-wrap items-center gap-x-1 {ui.muted}">
 				<span>{m.parent_homework_history_label()}</span>
 				{#each data.inView as child, i (child.id)}
