@@ -7,12 +7,23 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages.js';
 	import { formatInstant } from '$lib/format';
+	import BoardFiles from '$lib/components/BoardFiles.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ContentLanguageSelect from '$lib/components/ContentLanguageSelect.svelte';
 	import RichText from '$lib/components/RichText.svelte';
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { EmptyState } from '$lib/components/ui/empty-state/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import {
+		MAX_BOARD_FILE_BYTES,
+		MAX_FILES_PER_POST,
+		boardFileLimitMessage,
+		boardFileTooLargeMessage,
+		maxBoardFileSizeText,
+		maxBoardFilesText
+	} from '$lib/board-files';
 	import { createConfirm } from '$lib/confirm.svelte';
 	import { createPending } from '$lib/pending.svelte';
 	import { createUnsavedGuard } from '$lib/unsaved.svelte';
@@ -20,14 +31,15 @@
 	import { showToast } from '$lib/toast';
 	import { ui } from '$lib/ui/classes';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import type { PageProps } from './$types';
+	import type { ActionData, PageProps } from './$types';
 
 	/**
 	 * The school message board (spec-parent-message-board story 3): posts
 	 * newest first for every reader, and a post form for admins, teachers and
 	 * granted parents. Errors come from the root layout's form-error toast.
+	 * Story 4: a post may carry up to 2 PDF files, listed under it.
 	 */
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	let hydrated = $state(false);
 	onMount(() => {
@@ -44,20 +56,69 @@
 	const confirm = createConfirm();
 	const unsaved = createUnsavedGuard(confirm);
 
+	// Story 4: the optional PDF files. The server checks them before it
+	// inserts the post; too many or too large is refused here first, so a
+	// large post is not sent for nothing.
+	let localFileError = $state('');
+	let serverFileError = $derived(
+		form && 'fileError' in form && typeof form.fileError === 'string' ? form.fileError : ''
+	);
+	// A new answer from the server replaces the local message.
+	$effect(() => {
+		if (form) localFileError = '';
+	});
+	// Choosing other files hides the earlier message until the next answer.
+	let filesChanged = $state(false);
+	$effect(() => {
+		if (form) filesChanged = false;
+	});
+	let fileError = $derived(localFileError || (filesChanged ? '' : serverFileError));
+
+	function filesPicked() {
+		localFileError = '';
+		filesChanged = true;
+	}
+
 	const submitPost: SubmitFunction = async (input) => {
 		const after = await pending.submit('post')(input);
 		return async (opts) => {
 			if (after) await after(opts);
 			else await opts.update();
 			if (opts.result.type === 'success') {
-				showToast('success', m.board_post_success());
+				const notAttached = opts.result.data?.notAttached;
+				if (Array.isArray(notAttached) && notAttached.length > 0) {
+					showToast(
+						'warning',
+						m.board_file_not_attached({
+							names: notAttached.map((name) => `“${String(name)}”`).join(', ')
+						})
+					);
+				} else {
+					showToast('success', m.board_post_success());
+				}
 				contentLanguage = DEFAULT_CONTENT_LANGUAGE;
 				formKey += 1;
 				await tick();
 			}
 		};
 	};
-	const post = unsaved.submit(submitPost);
+	const guarded = unsaved.submit(submitPost);
+	const post: SubmitFunction = (input) => {
+		localFileError = '';
+		const chosen = input.formData
+			.getAll('files')
+			.filter((entry): entry is File => entry instanceof File && entry.size > 0);
+		if (chosen.length > MAX_FILES_PER_POST) {
+			localFileError = boardFileLimitMessage();
+		} else if (chosen.some((file) => file.size > MAX_BOARD_FILE_BYTES)) {
+			localFileError = boardFileTooLargeMessage();
+		}
+		if (localFileError) {
+			document.getElementById('board-files')?.focus();
+			return input.cancel();
+		}
+		return guarded(input);
+	};
 
 	function olderHref(before: string): string {
 		return `${resolve('/board')}?before=${encodeURIComponent(before)}`;
@@ -80,7 +141,13 @@
 	{#if data.canPost}
 		<section class={ui.card} aria-labelledby="board-form-heading" data-testid="board-form">
 			<h2 id="board-form-heading" class={ui.cardTitle}>{m.board_form_heading()}</h2>
-			<form method="POST" action="?/post" use:enhance={post} use:unsaved.track>
+			<form
+				method="POST"
+				action="?/post"
+				enctype="multipart/form-data"
+				use:enhance={post}
+				use:unsaved.track
+			>
 				{#key formKey}
 					<ContentLanguageSelect id="contentLanguage" bind:value={contentLanguage} />
 					<RichTextEditor
@@ -91,6 +158,28 @@
 						required
 					/>
 				{/key}
+				<div class="mb-4 flex min-w-0 flex-col gap-1.5">
+					<Label for="board-files">{m.board_file_label()}</Label>
+					<Input
+						id="board-files"
+						type="file"
+						name="files"
+						accept="application/pdf,.pdf"
+						multiple
+						class="py-2.5"
+						aria-describedby="board-files-hint{fileError ? ' board-files-error' : ''}"
+						aria-invalid={fileError ? 'true' : undefined}
+						onchange={filesPicked}
+					/>
+					<p id="board-files-hint" class="text-sm {ui.muted}">
+						{m.board_file_hint({ size: maxBoardFileSizeText(), count: maxBoardFilesText() })}
+					</p>
+					{#if fileError}
+						<p id="board-files-error" class={ui.error} role="alert" data-testid="file-error">
+							{fileError}
+						</p>
+					{/if}
+				</div>
 				<Button
 					type="submit"
 					class="{ui.touch} w-full gap-2 sm:w-auto"
@@ -134,6 +223,7 @@
 						{#if boardPost.content}
 							<RichText content={boardPost.content} lang={boardPost.contentLanguage} />
 						{/if}
+						<BoardFiles files={boardPost.files} author={boardPost.authorName} />
 					</article>
 				</li>
 			{/each}

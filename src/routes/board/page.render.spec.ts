@@ -2,6 +2,7 @@ import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { formatInstant } from '$lib/format';
+import { formatFileSize } from '$lib/pdf-files';
 import Page from './+page.svelte';
 
 /** /board (spec-parent-message-board story 3): what the page draws from its data. */
@@ -39,7 +40,8 @@ const post = (id: string, authorName: string, text: string) => ({
 		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
 	},
 	contentLanguage: 'bo',
-	createdAt
+	createdAt,
+	files: [] as { id: string; name: string; size: number }[]
 });
 
 describe('board (+page.svelte)', () => {
@@ -91,5 +93,35 @@ describe('board (+page.svelte)', () => {
 		expect(paged).toContain('href="/board"');
 		expect(draw({ posts: [], paged: true })).toContain('data-testid="board-newest"');
 		expect(draw({ posts: [post('p1', 'Pema', 'Hi')] })).not.toContain('data-testid="board-newest"');
+	});
+
+	it('the form is multipart with a PDF file input and its hint (story 4)', () => {
+		const body = draw({ canPost: true });
+		expect(body).toContain('enctype="multipart/form-data"');
+		expect(body).toMatch(/<input[^>]*type="file"[^>]*>/);
+		const input = body.match(/<input[^>]*type="file"[^>]*>/)![0];
+		expect(input).toContain('name="files"');
+		expect(input).toContain('multiple');
+		expect(input).toContain('accept="application/pdf,.pdf"');
+		expect(body).toContain(m.board_file_label());
+		expect(body).toContain('board-files-hint');
+	});
+
+	it("lists a post's files with open and download links (story 4)", () => {
+		const fileId = '44444444-4444-4444-8444-444444444444';
+		const body = draw({
+			posts: [
+				{ ...post('p1', 'Pema', 'Picnic'), files: [{ id: fileId, name: 'Flyer.pdf', size: 2048 }] },
+				{ ...post('p2', 'Dolma', 'No files'), files: [] }
+			]
+		});
+		expect(body.match(/data-testid="board-files"/g)).toHaveLength(1);
+		expect(body).toContain(`href="/files/board/${fileId}"`);
+		expect(body).toContain(`href="/files/board/${fileId}?download"`);
+		expect(body).toContain('download="Flyer.pdf"');
+		expect(body).toContain('Flyer.pdf');
+		expect(body).toContain(formatFileSize(2048));
+		expect(body).toContain(m.homework_file_download_label({ name: 'Flyer.pdf' }));
+		expect(body).toContain(`aria-label="${m.board_file_list_label({ author: 'Pema' })}"`);
 	});
 });

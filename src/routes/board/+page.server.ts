@@ -8,6 +8,13 @@ import {
 	type ContentLanguage,
 	type RichTextDoc
 } from '$lib/rich-text';
+import type { BoardFile } from '$lib/board-files';
+import {
+	attachPostFiles,
+	loadBoardFiles,
+	readPostFiles,
+	readPostForm
+} from '$lib/server/board-files';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Posts per page; a full page shows the "Older posts" link. */
@@ -36,13 +43,16 @@ export type BoardPost = {
 	content: RichTextDoc | null;
 	contentLanguage: ContentLanguage;
 	createdAt: string;
+	/** Its PDF files, oldest first (story 4). */
+	files: BoardFile[];
 };
 
 /**
  * The school message board (spec-parent-message-board story 3, CAP-1 and
- * CAP-2, text only). RLS on board_posts is the real barrier for reading and
- * posting; the reader check only turns a non-reader into a 403 page, and
- * `canPost` only decides whether the form renders.
+ * CAP-2; story 4 adds up to 2 PDF files per post). RLS on board_posts is
+ * the real barrier for reading and posting; the reader check only turns a
+ * non-reader into a 403 page, and `canPost` only decides whether the form
+ * renders.
  */
 export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
@@ -96,15 +106,24 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		...new Set(rows.map((row) => row.author_id).filter((id): id is string => id !== null))
 	];
 
+	// The names and (story 4) the posts' files, one query each. A files
+	// error is logged there; the posts then show without files.
+	const [namesResult, filesResult] = await Promise.all([
+		authorIds.length > 0
+			? supabase.rpc('board_author_names', { p_ids: authorIds })
+			: Promise.resolve(null),
+		loadBoardFiles(
+			supabase,
+			rows.map((row) => row.id)
+		)
+	]);
+
 	const names = new Map<string, string>();
-	if (authorIds.length > 0) {
-		const { data: nameRows, error: namesError } = await supabase.rpc('board_author_names', {
-			p_ids: authorIds
-		});
-		if (namesError) {
-			console.error(`Could not load board author names. ${namesError.message}`);
+	if (namesResult) {
+		if (namesResult.error) {
+			console.error(`Could not load board author names. ${namesResult.error.message}`);
 		}
-		for (const row of nameRows ?? []) {
+		for (const row of namesResult.data ?? []) {
 			if (row.display_name) names.set(row.id, row.display_name);
 		}
 	}
@@ -114,7 +133,8 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		authorName: (row.author_id && names.get(row.author_id)) || m.board_former_member(),
 		content: readContent(row.content),
 		contentLanguage: readContentLanguage(row.content_language),
-		createdAt: row.created_at
+		createdAt: row.created_at,
+		files: filesResult.files.get(row.id) ?? []
 	}));
 
 	const olderBefore =
@@ -131,7 +151,10 @@ export const actions: Actions = {
 			return fail(401, { error: m.board_error_not_signed_in() });
 		}
 
-		const formData = await request.formData();
+		// Story 4: the form may carry up to 2 PDF files, so it is read with a size cap.
+		const form = await readPostForm(request);
+		if ('refused' in form) return form.refused;
+		const { formData } = form;
 		const content = parseContent(formData.get('content'));
 		if (!content.ok) {
 			return fail(400, {
@@ -148,21 +171,33 @@ export const actions: Actions = {
 			return fail(400, { error: m.board_error_content_language() });
 		}
 
+		// Story 4: the files are checked before anything is stored. A refused
+		// file inserts no post; the message is shown at the file field too.
+		const files = await readPostFiles(formData);
+		if (!files.ok) {
+			return fail(400, { error: files.message, fileError: files.message });
+		}
+
 		// The author is always the signed-in user, never a posted field.
-		const { error: insertError } = await supabase
+		const { data: inserted, error: insertError } = await supabase
 			.from('board_posts')
 			.insert({ author_id: user.id, content: content.value, content_language: language })
 			.select('id')
 			.single();
 
-		if (insertError) {
-			if (insertError.code === INSUFFICIENT_PRIVILEGE) {
+		if (insertError || !inserted) {
+			if (insertError?.code === INSUFFICIENT_PRIVILEGE) {
 				return fail(403, { error: m.board_error_not_allowed() });
 			}
-			console.error(`Could not insert a board post. ${insertError.message}`);
+			console.error(`Could not insert a board post. ${insertError?.message ?? 'no row'}`);
 			return fail(500, { error: m.board_error_post_failed() });
 		}
 
-		return { posted: true };
+		// The post stays whatever happens to its files; the page names the
+		// ones that were not attached.
+		const notAttached =
+			files.files.length > 0 ? await attachPostFiles(supabase, user, inserted.id, files.files) : [];
+
+		return { posted: true, notAttached };
 	}
 };

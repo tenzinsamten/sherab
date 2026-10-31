@@ -1409,5 +1409,11 @@
 	"board_error_content_invalid": "This message can't be saved. Please try again.",
 	"board_error_content_language": "Choose a language for the message.",
 	"board_error_not_allowed": "You can't post on the board.",
-	"board_error_post_failed": "Couldn't post the message. Please try again."
+	"board_error_post_failed": "Couldn't post the message. Please try again.",
+	"board_file_label": "PDF files (optional)",
+	"board_file_hint": "PDF only, up to {size} each. At most {count} files per post.",
+	"board_file_list_label": "Files of the post by {author}",
+	"board_file_error_limit": "A post can have at most {count} files.",
+	"board_file_not_attached": "Your post is on the board, but these files were not attached: {names}. Delete the post and post it again with the files.",
+	"board_file_error_post_too_large": "The files are too large in all. A post can have at most {count} PDFs of up to {size} each."
 }

@@ -625,3 +625,6 @@
 - source_spec: `_bmad-output/specs/spec-parent-managed-homework/stories/3-parent-homework-detail-page.md`
   summary: Add one e2e "flag turned off mid-session" test proving a refused Mark done reloads page data (onfailure={invalidateAll}) on both the child page and the homework detail page.
   evidence: No spec or e2e references onfailure or invalidateAll; dropping either would break nothing in the test suite (verification-gap, story 3 review).
+- source_spec: `_bmad-output/specs/spec-parent-message-board/stories/4-pdf-attachments-on-posts.md`
+  summary: No browser test proves the board's "files not attached" warning toast shows (instead of the success toast) when a file fails to store or record.
+  evidence: The server spec pins `{posted: true, notAttached: [...]}`, but forcing a storage or row failure in e2e needs fault injection the board suite doesn't have yet (homework covers its equivalent at e2e/homework-files.e2e.ts:241-264).

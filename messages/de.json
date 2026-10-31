@@ -1409,5 +1409,11 @@
 	"board_error_content_invalid": "Diese Nachricht kann nicht gespeichert werden. Bitte erneut versuchen.",
 	"board_error_content_language": "Wähle eine Sprache für die Nachricht.",
 	"board_error_not_allowed": "Du kannst nicht auf der Pinnwand veröffentlichen.",
-	"board_error_post_failed": "Die Nachricht konnte nicht veröffentlicht werden. Bitte erneut versuchen."
+	"board_error_post_failed": "Die Nachricht konnte nicht veröffentlicht werden. Bitte erneut versuchen.",
+	"board_file_label": "PDF-Dateien (optional)",
+	"board_file_hint": "Nur PDF, je höchstens {size}. Höchstens {count} Dateien pro Beitrag.",
+	"board_file_list_label": "Dateien des Beitrags von {author}",
+	"board_file_error_limit": "Ein Beitrag kann höchstens {count} Dateien haben.",
+	"board_file_not_attached": "Dein Beitrag steht auf der Pinnwand, aber diese Dateien wurden nicht angehängt: {names}. Lösche den Beitrag und veröffentliche ihn erneut mit den Dateien.",
+	"board_file_error_post_too_large": "Die Dateien sind zusammen zu groß. Ein Beitrag kann höchstens {count} PDFs mit je höchstens {size} haben."
 }

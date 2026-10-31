@@ -118,6 +118,9 @@
 @source '../components/HomeworkFiles.svelte';
 @source '../components/JoinClassCard.svelte';
 @source '../components/PageTour.svelte';
+/* spec-parent-message-board: the board page and (story 4) its post files. */
+@source '../../routes/board/+page.svelte';
+@source '../components/BoardFiles.svelte';
 
 /* Sherab theme, mapped from the iX classic light theme and the Sherab
    overrides src/app.css held until story 10 (primary blue, navy frame, 0.25rem radius). */
