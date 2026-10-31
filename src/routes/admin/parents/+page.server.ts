@@ -12,6 +12,8 @@ type ChildStatus = 'pending' | 'approved' | 'rejected' | null;
 type ParentRow = {
 	id: string;
 	status: ParentStatus;
+	/** spec-parent-message-board story 2 (CAP-4): the board posting grant. */
+	can_post_board: boolean;
 	profiles: {
 		display_name: string | null;
 		email: string;
@@ -62,7 +64,7 @@ const LINK_COLUMNS =
  * two FK paths (id, reviewed_by), so the embed names its FK (PGRST201).
  */
 const PARENT_COLUMNS =
-	'id, status, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )';
+	'id, status, can_post_board, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )';
 
 const byName = (a: { name: string }, b: { name: string }) =>
 	a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -149,6 +151,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			name: r.profiles?.display_name || r.profiles?.email || '',
 			email: r.profiles?.email ?? '',
 			emailConfirmedAt: r.profiles?.email_confirmed_at ?? null,
+			canPostBoard: r.can_post_board === true,
 			children: (childrenByParent.get(r.id) ?? []).sort(byName)
 		}))
 		.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || byName(a, b));
@@ -190,5 +193,39 @@ export const actions: Actions = {
 		}
 
 		return { linkRemoved: true as const };
+	},
+
+	/**
+	 * spec-parent-message-board story 2 (CAP-4): turn board posting on or off
+	 * for one approved parent. parents_update_admin is the barrier: it refuses a
+	 * non-admin silently (0 rows), so 0 rows, like any error, is a refusal. The
+	 * status filter makes a pending or rejected parent 0 rows too.
+	 */
+	setBoardPosting: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const formData = await request.formData();
+		const parentId = String(formData.get('parentId') ?? '');
+		const onRaw = String(formData.get('on') ?? '');
+
+		const { user } = await safeGetSession();
+		if (!user) {
+			return fail(401, { error: m.requests_error_not_signed_in() });
+		}
+		if (!UUID_PATTERN.test(parentId) || (onRaw !== 'true' && onRaw !== 'false')) {
+			return fail(400, { error: m.parents_board_error_invalid() });
+		}
+		const on = onRaw === 'true';
+
+		const { data, error } = await supabase
+			.from('parents')
+			.update({ can_post_board: on })
+			.eq('id', parentId)
+			.eq('status', 'approved')
+			.select('id');
+		if (error || !data || data.length === 0) {
+			if (error) console.error('admin parents setBoardPosting failed', error.message);
+			return fail(403, { error: m.parents_board_error_failed() });
+		}
+
+		return { boardPosting: { parentId, on } };
 	}
 };

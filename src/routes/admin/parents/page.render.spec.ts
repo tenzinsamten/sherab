@@ -26,6 +26,7 @@ type Parent = {
 	email: string;
 	status: 'pending' | 'approved' | 'rejected';
 	emailConfirmedAt: string | null;
+	canPostBoard: boolean;
 	children: Child[];
 };
 
@@ -51,6 +52,7 @@ function parent(id: string, overrides: Partial<Parent> = {}): Parent {
 		email: `${id}@example.test`,
 		status: 'approved',
 		emailConfirmedAt: '2026-10-01T10:00:00Z',
+		canPostBoard: false,
 		children: [],
 		...overrides
 	};
@@ -166,6 +168,41 @@ describe('admin parents (+page.svelte)', () => {
 		const own = row(body, 'Own');
 		expect(own).toContain(m.parents_link_co_parent({ name: 'Admin' }));
 		expect(own).not.toContain('removeParentLink');
+	});
+
+	it('shows the board posting control only on approved rows, labelled for each state (CAP-4)', () => {
+		const body = renderPage({
+			parents: [
+				parent('off', { name: 'Dolma' }),
+				parent('on', { name: 'Karma', canPostBoard: true }),
+				parent('p', { name: 'Pema', status: 'pending', canPostBoard: true }),
+				parent('r', { name: 'Rinchen', status: 'rejected', canPostBoard: true })
+			],
+			pendingCount: 1
+		});
+		const off = row(body, 'Dolma');
+		expect(off).toContain(m.parents_board_cannot_post());
+		expect(off).toContain(m.parents_board_allow());
+		expect(off).toContain(`aria-label="${m.parents_board_allow_label({ parent: 'Dolma' })}"`);
+		expect(off).toContain('action="?/setBoardPosting"');
+		expect(off).toContain('name="parentId" value="off"');
+		expect(off).toContain('name="on" value="true"');
+		expect(off).not.toContain(m.parents_board_stop());
+
+		const on = row(body, 'Karma');
+		expect(on).toContain(m.parents_board_can_post());
+		expect(on).toContain(m.parents_board_stop());
+		expect(on).toContain(`aria-label="${m.parents_board_stop_label({ parent: 'Karma' })}"`);
+		expect(on).toContain('name="on" value="false"');
+		expect(on).not.toContain(m.parents_board_allow());
+
+		for (const name of ['Pema', 'Rinchen']) {
+			const r = row(body, name);
+			expect(r).not.toContain('data-testid="board-posting"');
+			expect(r).not.toContain('setBoardPosting');
+			expect(r).not.toContain(m.parents_board_can_post());
+			expect(r).not.toContain(m.parents_board_cannot_post());
+		}
 	});
 
 	it('links to Requests while a parent waits, and not otherwise', () => {

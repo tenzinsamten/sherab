@@ -26,6 +26,9 @@
 	 * parent (or that they registered the child), the link date and the
 	 * co-parent; a child with two parents, not the admin's own, offers Remove
 	 * for this parent's link, after a confirmation naming both.
+	 * spec-parent-message-board story 2 (CAP-4): an approved parent's status
+	 * cell shows whether they can post on the board, with one button that
+	 * turns it on or off (no confirmation: it is easy to reverse).
 	 */
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -39,6 +42,16 @@
 		untrack(() => {
 			if ('linkRemoved' in result && result.linkRemoved)
 				showToast('success', m.parents_link_removed_success());
+			if ('boardPosting' in result && result.boardPosting) {
+				const { parentId, on } = result.boardPosting;
+				const name = data.parents.find((p) => p.id === parentId)?.name ?? '';
+				showToast(
+					'success',
+					on
+						? m.parents_board_on_success({ parent: name })
+						: m.parents_board_off_success({ parent: name })
+				);
+			}
 		});
 	});
 
@@ -139,6 +152,48 @@
 											<Badge variant="warning">{m.requests_email_unconfirmed()}</Badge>
 										{/if}
 									</div>
+									{#if parent.status === 'approved'}
+										{@const boardKey = `setBoardPosting:${parent.id}`}
+										<div
+											class="mt-2 flex min-w-0 flex-col items-start gap-2"
+											data-testid="board-posting"
+											data-on={parent.canPostBoard}
+										>
+											<Badge variant={parent.canPostBoard ? 'success' : 'secondary'}>
+												{parent.canPostBoard
+													? m.parents_board_can_post()
+													: m.parents_board_cannot_post()}
+											</Badge>
+											<form
+												method="POST"
+												action="?/setBoardPosting"
+												use:enhance={pending.submit(boardKey)}
+											>
+												<input type="hidden" name="parentId" value={parent.id} />
+												<input
+													type="hidden"
+													name="on"
+													value={parent.canPostBoard ? 'false' : 'true'}
+												/>
+												<Button
+													type="submit"
+													variant={parent.canPostBoard ? 'outline' : 'default'}
+													class="{ui.touch} gap-2"
+													aria-label={parent.canPostBoard
+														? m.parents_board_stop_label({ parent: parent.name })
+														: m.parents_board_allow_label({ parent: parent.name })}
+													aria-busy={pending.is(boardKey) || undefined}
+													disabled={pending.busy}
+													data-testid="board-posting-toggle"
+												>
+													{#if pending.is(boardKey)}
+														<LoaderCircle class="animate-spin" aria-hidden="true" />
+													{/if}
+													{parent.canPostBoard ? m.parents_board_stop() : m.parents_board_allow()}
+												</Button>
+											</form>
+										</div>
+									{/if}
 								</td>
 								<td role="cell" class={td}>
 									<p class={cardLabel}>{m.parents_col_children()}</p>

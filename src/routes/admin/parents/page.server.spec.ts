@@ -114,9 +114,10 @@ const run = (locals: Parameters<typeof load>[0]['locals']) =>
 function parentRow(
 	id: string,
 	status: 'pending' | 'approved' | 'rejected',
-	profile: { display_name: string | null; email: string; email_confirmed_at: string | null }
+	profile: { display_name: string | null; email: string; email_confirmed_at: string | null },
+	can_post_board = false
 ) {
-	return { id, status, profiles: profile };
+	return { id, status, can_post_board, profiles: profile };
 }
 
 describe('admin parents +page.server.ts load', () => {
@@ -155,6 +156,7 @@ describe('admin parents +page.server.ts load', () => {
 					name: 'Dolma',
 					email: 'dolma@example.com',
 					emailConfirmedAt: '2026-01-01T00:00:00Z',
+					canPostBoard: false,
 					children: [child('c1', 'Anna', 'approved'), child('c2', 'Pema', 'pending')]
 				}
 			],
@@ -164,7 +166,7 @@ describe('admin parents +page.server.ts load', () => {
 		const parentsCall = calls.find((c) => c.table === 'parents');
 		const childrenCall = calls.find((c) => c.table === 'student_parents' && !c.eqArgs);
 		expect(parentsCall?.select).toBe(
-			'id, status, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )'
+			'id, status, can_post_board, profiles!parents_id_fkey ( display_name, email, email_confirmed_at )'
 		);
 		expect(childrenCall?.select).toBe(LINK_SELECT);
 		expect(childrenCall?.isArgs).toEqual(['removed_at', null]);
@@ -404,6 +406,27 @@ describe('admin parents +page.server.ts load', () => {
 		expect(childrenCall?.isArgs).toEqual(['removed_at', null]);
 	});
 
+	it("carries each parent's board posting grant (spec-parent-message-board story 2)", async () => {
+		const profile = (email: string) => ({ display_name: email, email, email_confirmed_at: 'x' });
+		const { locals } = fakeLocals({
+			parents: {
+				data: [
+					parentRow('on', 'approved', profile('a-on@example.com'), true),
+					parentRow('off', 'approved', profile('b-off@example.com'), false),
+					parentRow('pend', 'pending', profile('c-pend@example.com'), false)
+				],
+				error: null
+			}
+		});
+
+		const result = await run(locals);
+		if (!result) throw new Error('no result');
+		const byId = Object.fromEntries(
+			result.parents.map((p: { id: string; canPostBoard: boolean }) => [p.id, p.canPostBoard])
+		);
+		expect(byId).toEqual({ on: true, off: false, pend: false });
+	});
+
 	it('sets loadError and no rows when the parents query fails', async () => {
 		const { locals } = fakeLocals({ parents: { data: null, error: { message: 'boom' } } });
 
@@ -512,5 +535,118 @@ describe('admin parents removeParentLink action', () => {
 			status,
 			data: { error: message }
 		});
+	});
+});
+
+/** spec-parent-message-board story 2 (CAP-4): the setBoardPosting action. */
+describe('admin parents setBoardPosting action', () => {
+	type UpdateResult = { data: unknown; error: unknown };
+	function actionEvent(
+		fields: Record<string, string>,
+		updateResult: UpdateResult = { data: [{ id: PARENT }], error: null },
+		user: { id: string } | null = { id: ADMIN_ID }
+	) {
+		const calls: { table?: string; update?: unknown; eq: unknown[][]; select?: string } = {
+			eq: []
+		};
+		const from = vi.fn((table: string) => {
+			calls.table = table;
+			const chain = {
+				update: (values: unknown) => {
+					calls.update = values;
+					return chain;
+				},
+				eq: (...args: unknown[]) => {
+					calls.eq.push(args);
+					return chain;
+				},
+				select: async (columns: string) => {
+					calls.select = columns;
+					return updateResult;
+				}
+			};
+			return chain;
+		});
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const event = {
+			request: new Request('http://localhost/admin/parents?/setBoardPosting', {
+				method: 'POST',
+				body
+			}),
+			locals: { supabase: { from }, safeGetSession: async () => ({ user }) }
+		} as unknown as Parameters<typeof actions.setBoardPosting>[0];
+		return { event, from, calls };
+	}
+
+	it.each([
+		['true', true],
+		['false', false]
+	])('on=%s sets can_post_board to %s for that parent', async (raw, on) => {
+		const { event, calls } = actionEvent({ parentId: PARENT, on: raw });
+
+		expect(await actions.setBoardPosting(event)).toEqual({
+			boardPosting: { parentId: PARENT, on }
+		});
+		expect(calls).toEqual({
+			table: 'parents',
+			update: { can_post_board: on },
+			eq: [
+				['id', PARENT],
+				['status', 'approved']
+			],
+			select: 'id'
+		});
+	});
+
+	it.each([
+		[{ parentId: 'nope', on: 'true' }],
+		[{ parentId: PARENT, on: 'maybe' }],
+		[{ parentId: PARENT }]
+	])('refuses bad input %o with 400 and no update', async (fields) => {
+		const { event, from } = actionEvent(fields);
+
+		expect(await actions.setBoardPosting(event)).toMatchObject({
+			status: 400,
+			data: { error: "This board posting change isn't valid." }
+		});
+		expect(from).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['0 rows (a non-admin, refused by RLS)', { data: [], error: null }],
+		['no data', { data: null, error: null }],
+		['an error', { data: null, error: { message: 'boom', code: '42501' } }]
+	])('refuses on %s with 403', async (_label, result) => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { event } = actionEvent({ parentId: PARENT, on: 'true' }, result);
+
+		expect(await actions.setBoardPosting(event)).toMatchObject({
+			status: 403,
+			data: { error: "Couldn't change board posting. Please try again." }
+		});
+		logged.mockRestore();
+	});
+
+	it('only updates an approved parent: a pending or rejected one is 0 rows, so 403', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { event, calls } = actionEvent(
+			{ parentId: PARENT, on: 'true' },
+			{ data: [], error: null }
+		);
+
+		expect(await actions.setBoardPosting(event)).toMatchObject({ status: 403 });
+		expect(calls.eq).toContainEqual(['status', 'approved']);
+		logged.mockRestore();
+	});
+
+	it('refuses without a session, with no update', async () => {
+		const { event, from } = actionEvent({ parentId: PARENT, on: 'true' }, undefined, null);
+
+		expect(await actions.setBoardPosting(event)).toMatchObject({
+			status: 401,
+			data: { error: 'Not signed in.' }
+		});
+		expect(from).not.toHaveBeenCalled();
 	});
 });
