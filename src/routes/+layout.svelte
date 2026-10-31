@@ -128,9 +128,13 @@
 
 	// Story 2: the side nav (from 80em) and the bottom tab bar (below it),
 	// per role in the order of stack.md (src/lib/nav.ts).
+	// spec-parent-message-board story 3: no Board link while the parent
+	// shell belongs to a parent who is not approved (the board would 403).
+	let boardHidden = $derived(role === 'parent' && !data.parentApproved);
 	let navOptions = $derived({
 		pendingRequests: data.pendingRequestsCount,
-		unapprovedStudent
+		unapprovedStudent,
+		boardHidden
 	});
 	let sideItems = $derived(navItems(role, navOptions));
 	let tabs = $derived(tabItems(role, navOptions));

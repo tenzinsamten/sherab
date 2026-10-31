@@ -16,6 +16,7 @@ export type NavIcon =
 	| 'parents'
 	| 'teams'
 	| 'calendar'
+	| 'board'
 	| 'requests'
 	| 'leaderboard'
 	| 'homework'
@@ -54,6 +55,11 @@ export type NavOptions = {
 	pendingRequests?: number;
 	/** #100: a student not approved yet (pending or rejected) has no nav at all. */
 	unapprovedStudent?: boolean;
+	/**
+	 * spec-parent-message-board story 3: a parent who is not approved yet
+	 * can't read the board (is_board_reader() is false), so no Board link.
+	 */
+	boardHidden?: boolean;
 };
 
 /** One destination with both of its labels: the side nav's and the bar's short one. */
@@ -80,6 +86,8 @@ function destinations(opts: NavOptions) {
 		m.nav_calendar(),
 		'calendar'
 	);
+	// Message board (spec-parent-message-board story 3): every role.
+	const board = link('board', resolve('/board'), m.nav_board(), m.nav_board(), 'board');
 	const requests = link(
 		'requests',
 		resolve('/requests'),
@@ -127,6 +135,7 @@ function destinations(opts: NavOptions) {
 			),
 			teams: link('teams', resolve('/admin/teams'), m.nav_teams(), m.nav_teams(), 'teams'),
 			calendar,
+			board,
 			requests,
 			leaderboard,
 			help
@@ -142,6 +151,7 @@ function destinations(opts: NavOptions) {
 				'classes'
 			),
 			calendar,
+			board,
 			requests,
 			leaderboard,
 			help
@@ -157,15 +167,22 @@ function destinations(opts: NavOptions) {
 				'homework'
 			),
 			calendar,
+			board,
 			{ ...leaderboard, entry: { ...leaderboard.entry, label: m.nav_team_leaderboard() } }
 		],
 		parent: [
 			dashboard(resolve('/parent'), [resolve('/parent/children')]),
 			link('homework', resolve('/parent/homework'), m.nav_homework(), m.nav_homework(), 'homework'),
 			calendar,
+			board,
 			help
 		]
 	};
+}
+
+/** Drops Board when `boardHidden` is set (a parent not approved yet). */
+function withoutBoard(items: Destination[], opts: NavOptions): Destination[] {
+	return opts.boardHidden ? items.filter((d) => d.entry.id !== 'board') : items;
 }
 
 /** With the bar's short label (`nav_*` keys) in place of the side nav's. */
@@ -189,6 +206,7 @@ export function navItems(role: string | null | undefined, opts: NavOptions = {})
 			a.parents,
 			a.teams,
 			a.calendar,
+			a.board,
 			a.requests,
 			a.leaderboard,
 			a.help
@@ -196,12 +214,12 @@ export function navItems(role: string | null | undefined, opts: NavOptions = {})
 	}
 	if (role === 'teacher') {
 		const t = all.teacher;
-		return [t.dashboard, t.classes, t.calendar, t.requests, t.leaderboard, t.help].map(
+		return [t.dashboard, t.classes, t.calendar, t.board, t.requests, t.leaderboard, t.help].map(
 			(d) => d.entry
 		);
 	}
 	if (role === 'student' || role === 'parent') {
-		return all[role].map((d) => d.entry);
+		return withoutBoard(all[role], opts).map((d) => d.entry);
 	}
 	return [];
 }
@@ -222,7 +240,7 @@ export function tabItems(role: string | null | undefined, opts: NavOptions = {})
 				id: 'more',
 				label: m.nav_more(),
 				icon: 'more',
-				items: [a.teachers, a.parents, a.teams, a.leaderboard, a.help].map((d) => d.entry)
+				items: [a.teachers, a.parents, a.teams, a.leaderboard, a.board, a.help].map((d) => d.entry)
 			}
 		];
 	}
@@ -236,12 +254,12 @@ export function tabItems(role: string | null | undefined, opts: NavOptions = {})
 				id: 'more',
 				label: m.nav_more(),
 				icon: 'more',
-				items: [t.leaderboard, t.help].map((d) => d.entry)
+				items: [t.leaderboard, t.board, t.help].map((d) => d.entry)
 			}
 		];
 	}
 	if (role === 'student' || role === 'parent') {
-		return all[role].map(short);
+		return withoutBoard(all[role], opts).map(short);
 	}
 	return [];
 }

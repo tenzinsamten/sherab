@@ -6,7 +6,7 @@ const ids = (items: TabEntry[]) => items.map((item) => item.id);
 const labels = (items: TabEntry[]) => items.map((item) => item.label);
 
 describe('navItems: the side nav per role (stack.md)', () => {
-	it('admin: all nine, Help last', () => {
+	it('admin: all ten, Help last', () => {
 		expect(ids(navItems('admin'))).toEqual([
 			'dashboard',
 			'classes',
@@ -14,18 +14,20 @@ describe('navItems: the side nav per role (stack.md)', () => {
 			'parents',
 			'teams',
 			'calendar',
+			'board',
 			'requests',
 			'leaderboard',
 			'help'
 		]);
 	});
 
-	it('teacher: Dashboard, Classes, Calendar, Requests, Leaderboard, Help (#108)', () => {
+	it('teacher: Dashboard, Classes, Calendar, Board, Requests, Leaderboard, Help (#108)', () => {
 		const items = navItems('teacher');
 		expect(ids(items)).toEqual([
 			'dashboard',
 			'classes',
 			'calendar',
+			'board',
 			'requests',
 			'leaderboard',
 			'help'
@@ -40,18 +42,37 @@ describe('navItems: the side nav per role (stack.md)', () => {
 
 	it('student: Help is not in the nav (it is in the avatar menu); the long labels', () => {
 		const items = navItems('student');
-		expect(ids(items)).toEqual(['dashboard', 'classes', 'homework', 'calendar', 'leaderboard']);
+		expect(ids(items)).toEqual([
+			'dashboard',
+			'classes',
+			'homework',
+			'calendar',
+			'board',
+			'leaderboard'
+		]);
 		expect(labels(items)).toEqual([
 			m.nav_dashboard(),
 			m.nav_my_classes(),
 			m.nav_my_homework(),
 			m.nav_calendar(),
+			m.nav_board(),
 			m.nav_team_leaderboard()
 		]);
 	});
 
-	it('parent: Dashboard, Homework, Calendar, Help', () => {
-		expect(ids(navItems('parent'))).toEqual(['dashboard', 'homework', 'calendar', 'help']);
+	it('parent: Dashboard, Homework, Calendar, Board, Help', () => {
+		expect(ids(navItems('parent'))).toEqual(['dashboard', 'homework', 'calendar', 'board', 'help']);
+	});
+
+	it('spec-parent-message-board story 3: Board links to /board with its icon, for every role', () => {
+		for (const role of ['admin', 'teacher', 'student', 'parent']) {
+			expect(navItems(role).find((item) => item.id === 'board')).toMatchObject({
+				kind: 'link',
+				href: '/board',
+				label: m.nav_board(),
+				icon: 'board'
+			});
+		}
 	});
 
 	it('each role links to its own dashboard', () => {
@@ -85,10 +106,17 @@ describe('tabItems: the bottom bar per role, short labels', () => {
 		expect(more.kind).toBe('more');
 		if (more.kind !== 'more') return;
 		expect(more.label).toBe(m.nav_more());
-		expect(ids(more.items)).toEqual(['teachers', 'parents', 'teams', 'leaderboard', 'help']);
+		expect(ids(more.items)).toEqual([
+			'teachers',
+			'parents',
+			'teams',
+			'leaderboard',
+			'board',
+			'help'
+		]);
 	});
 
-	it('teacher: Dashboard, Classes, Calendar, Requests and More with Leaderboard, Help (#108)', () => {
+	it('teacher: Dashboard, Classes, Calendar, Requests and More with Leaderboard, Board, Help (#108)', () => {
 		const items = tabItems('teacher', { pendingRequests: 3 });
 		expect(ids(items)).toEqual(['dashboard', 'classes', 'calendar', 'requests', 'more']);
 		expect(items[3]).toMatchObject({ count: 3 });
@@ -97,24 +125,45 @@ describe('tabItems: the bottom bar per role, short labels', () => {
 		expect(more.kind).toBe('more');
 		if (more.kind !== 'more') return;
 		expect(more.label).toBe(m.nav_more());
-		expect(ids(more.items)).toEqual(['leaderboard', 'help']);
-		expect(more.items[1].kind).toBe('help');
+		expect(ids(more.items)).toEqual(['leaderboard', 'board', 'help']);
+		expect(more.items[2].kind).toBe('help');
 	});
 
 	it('student: the short keys, no Help', () => {
 		const items = tabItems('student');
-		expect(ids(items)).toEqual(['dashboard', 'classes', 'homework', 'calendar', 'leaderboard']);
+		expect(ids(items)).toEqual([
+			'dashboard',
+			'classes',
+			'homework',
+			'calendar',
+			'board',
+			'leaderboard'
+		]);
 		expect(labels(items)).toEqual([
 			m.nav_dashboard(),
 			m.nav_classes(),
 			m.nav_homework(),
 			m.nav_calendar(),
+			m.nav_board(),
 			m.nav_leaderboard()
 		]);
 	});
 
-	it('parent: Dashboard, Homework, Calendar, Help', () => {
-		expect(ids(tabItems('parent'))).toEqual(['dashboard', 'homework', 'calendar', 'help']);
+	it('parent: Dashboard, Homework, Calendar, Board, Help', () => {
+		expect(ids(tabItems('parent'))).toEqual(['dashboard', 'homework', 'calendar', 'board', 'help']);
+	});
+});
+
+describe('boardHidden (spec-parent-message-board story 3): a parent not approved yet', () => {
+	it('has no Board in the side nav or the bar', () => {
+		const opts = { boardHidden: true };
+		expect(ids(navItems('parent', opts))).toEqual(['dashboard', 'homework', 'calendar', 'help']);
+		expect(ids(tabItems('parent', opts))).toEqual(['dashboard', 'homework', 'calendar', 'help']);
+	});
+
+	it('without the flag the parent keeps Board', () => {
+		expect(ids(navItems('parent', { boardHidden: false }))).toContain('board');
+		expect(ids(tabItems('parent', { boardHidden: false }))).toContain('board');
 	});
 });
 

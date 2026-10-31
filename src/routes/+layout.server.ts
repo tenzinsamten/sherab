@@ -1,7 +1,7 @@
 import { MENU_COOKIE, MENU_COLLAPSED } from '$lib/menu';
 import { loadSickLeave } from '$lib/server/leave';
 import { loadClassJoinRequests } from '$lib/server/class-join';
-import { getCapabilities } from '$lib/server/capabilities';
+import { getCapabilities, isApprovedParent } from '$lib/server/capabilities';
 import { countDecidableDeletions } from '$lib/server/own-children';
 import { shapeNewBadges, type NewBadge } from '$lib/server/badges';
 import {
@@ -38,6 +38,7 @@ export const load: LayoutServerLoad = async ({
 			pendingRequestsCount: 0,
 			roles: [] as Role[],
 			activeRole: null as Role | null,
+			parentApproved: false,
 			menuExpanded,
 			newBadges: [] as NewBadge[],
 			loadError: false
@@ -172,6 +173,10 @@ export const load: LayoutServerLoad = async ({
 		pendingRequestsCount,
 		roles,
 		activeRole: active,
+		// spec-parent-message-board story 3: a parent who is not approved yet
+		// can't read the board, so their nav has no Board link (UX only; RLS
+		// and is_board_reader() are the barrier).
+		parentApproved: isApprovedParent(capabilities),
 		menuExpanded,
 		newBadges,
 		loadError: Boolean(error || countError)

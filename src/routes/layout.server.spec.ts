@@ -288,6 +288,17 @@ describe('root layout: roles and active role (B13 #68)', () => {
 		}
 	});
 
+	it('spec-parent-message-board story 3: parentApproved follows the parents row status', async () => {
+		for (const [parentStatus, approved] of [
+			['approved', true],
+			['pending', false],
+			[undefined, false]
+		] as const) {
+			const { result } = runLoad({ role: 'parent', parentStatus });
+			expect(await result).toMatchObject({ parentApproved: approved });
+		}
+	});
+
 	it('a teacher-parent defaults to the teacher role', async () => {
 		const { result } = runLoad({ role: 'teacher', parentStatus: 'approved' });
 		expect(await result).toMatchObject({ roles: ['teacher', 'parent'], activeRole: 'teacher' });

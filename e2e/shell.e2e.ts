@@ -173,11 +173,15 @@ test('phone nav: a teacher at 375px gets the bottom bar, no hamburger and no sid
 			expect(box.right).toBeLessThanOrEqual(375);
 		}
 
-		// More holds Leaderboard and Help; More is active on Leaderboard.
+		// More holds Leaderboard, Board and Help; More is active on Leaderboard.
 		await mainNav(page).getByRole('button', { name: 'More' }).click();
 		const sheet = page.getByRole('dialog', { name: 'More pages' });
 		await expect(sheet).toBeVisible();
-		await expect(sheet.locator('ul').locator(':is(a, button)')).toHaveText(['Leaderboard', 'Help']);
+		await expect(sheet.locator('ul').locator(':is(a, button)')).toHaveText([
+			'Leaderboard',
+			'Board',
+			'Help'
+		]);
 		await sheet.getByRole('link', { name: 'Leaderboard' }).click();
 		await expect(page).toHaveURL(/\/leaderboard$/);
 		await expect(sheet).toBeHidden();
@@ -216,7 +220,7 @@ test('teacher phone (#108): Classes lists the classes; on a class page Classes s
 	}
 });
 
-test('desktop (#108): a teacher at 1440px gets all six side nav items, each reachable', async ({
+test('desktop (#108): a teacher at 1440px gets all seven side nav items, each reachable', async ({
 	browser
 }) => {
 	const page = await newPage(browser, 1440);
@@ -228,6 +232,7 @@ test('desktop (#108): a teacher at 1440px gets all six side nav items, each reac
 			'Dashboard',
 			'Classes',
 			'Calendar',
+			'Board',
 			expect.stringMatching(/^Requests/),
 			'Leaderboard',
 			'Help'
@@ -235,6 +240,7 @@ test('desktop (#108): a teacher at 1440px gets all six side nav items, each reac
 		for (const [name, url] of [
 			['Classes', /\/teacher\/classes$/],
 			['Calendar', /\/calendar$/],
+			[/^Board$/, /\/board$/],
 			[/^Requests/, /\/requests$/],
 			['Leaderboard', /\/leaderboard$/],
 			['Dashboard', /\/teacher$/]
@@ -297,7 +303,14 @@ test('admin phone: Dashboard, Classes, Requests (count), Calendar; More holds th
 		const sheet = page.getByRole('dialog', { name: 'More pages' });
 		await expect(sheet).toBeVisible();
 		const entries = sheet.locator('ul').locator(':is(a, button)');
-		await expect(entries).toHaveText(['Teachers', 'Parents', 'Teams', 'Leaderboard', 'Help']);
+		await expect(entries).toHaveText([
+			'Teachers',
+			'Parents',
+			'Teams',
+			'Leaderboard',
+			'Board',
+			'Help'
+		]);
 
 		await sheet.getByRole('link', { name: 'Teams' }).click();
 		await expect(page).toHaveURL(/\/admin\/teams$/);
@@ -321,7 +334,7 @@ test('tablet: a parent gets the bottom bar at 820px and at 1180px (below 80em)',
 		await expect(page).toHaveURL(/\/parent$/);
 		await expect(bottomNav(page)).toBeVisible();
 		await expect(sideNav(page)).toBeHidden();
-		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Help']);
+		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Board', 'Help']);
 
 		// The side nav takes over from 80em (1280px) -- see the story's
 		// Implementation Notes on the 1180px row.
@@ -331,13 +344,13 @@ test('tablet: a parent gets the bottom bar at 820px and at 1180px (below 80em)',
 		await page.setViewportSize({ width: 1280, height: 820 });
 		await expect(sideNav(page)).toBeVisible();
 		await expect(bottomNav(page)).toBeHidden();
-		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Help']);
+		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Board', 'Help']);
 	} finally {
 		await page.context().close();
 	}
 });
 
-test('desktop: an admin at 1440px gets the side nav with all nine items; collapse survives a reload', async ({
+test('desktop: an admin at 1440px gets the side nav with all ten items; collapse survives a reload', async ({
 	browser
 }) => {
 	const page = await newPage(browser, 1440);
@@ -352,6 +365,7 @@ test('desktop: an admin at 1440px gets the side nav with all nine items; collaps
 			'Parents',
 			'Teams',
 			'Calendar',
+			'Board',
 			expect.stringMatching(/^Requests/),
 			'Leaderboard',
 			'Help'
@@ -388,10 +402,11 @@ test('desktop: an admin at 1440px gets the side nav with all nine items; collaps
 	}
 });
 
-// #108: the teacher's bar (four links and More) too.
-for (const [role, user, links] of [
-	['student', () => student, 5],
-	['teacher', () => teacher, 4]
+// #108: the teacher's bar (four links and More) too. Board (spec-parent-message-board
+// story 3) is a student tab, so the student's bar has six labels.
+for (const [role, user, links, labelCount] of [
+	['student', () => student, 6, 6],
+	['teacher', () => teacher, 4, 5]
 ] as const) {
 	for (const locale of ['en', 'de', 'bo']) {
 		test(`long labels: a ${role} at 375px in ${locale} sees every bar and header label in full, on at most two lines`, async ({
@@ -422,7 +437,7 @@ for (const [role, user, links] of [
 							};
 						})
 					);
-				expect(labels).toHaveLength(5);
+				expect(labels).toHaveLength(labelCount);
 				for (const label of labels) {
 					expect(label.clipped, `${label.text} clipped`).toBe(false);
 					expect(label.lines, `${label.text} lines`).toBeLessThanOrEqual(2);
@@ -550,7 +565,7 @@ test('multi-role login: the avatar menu lists both roles; picking one posts /rol
 		await menu.getByRole('menuitemradio', { name: 'Parent' }).click();
 		expect((await posted).postData()).toContain('role=parent');
 		await expect(page).toHaveURL(/\/parent$/);
-		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Help']);
+		expect(await navNames(page)).toEqual(['Dashboard', 'Homework', 'Calendar', 'Board', 'Help']);
 	} finally {
 		await page.context().close();
 	}

@@ -270,7 +270,7 @@ test('approval: the approver sees the username and no PIN; the same PIN opens th
 	await page.getByTestId('header-home').click();
 	await expect(page).toHaveURL(/\/student$/);
 	await expect(menuItems(page).filter({ hasText: 'My Homework' })).toHaveCount(1);
-	await expect(menuItems(page)).toHaveCount(5);
+	await expect(menuItems(page)).toHaveCount(6);
 	const accountMenu = await openAccountMenu(page);
 	await expect(accountMenu.getByRole('menuitem', { name: 'My Account' })).toHaveCount(1);
 	await page.keyboard.press('Escape');

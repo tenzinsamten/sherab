@@ -6,6 +6,7 @@ import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 import Ellipsis from '@lucide/svelte/icons/ellipsis';
 import GraduationCap from '@lucide/svelte/icons/graduation-cap';
 import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+import MessagesSquare from '@lucide/svelte/icons/messages-square';
 import Trophy from '@lucide/svelte/icons/trophy';
 import UserCheck from '@lucide/svelte/icons/user-check';
 import Users from '@lucide/svelte/icons/users';
@@ -20,6 +21,7 @@ export const navIcons: Record<NavIcon, Component<{ class?: string; 'aria-hidden'
 	parents: Users,
 	teams: UsersRound,
 	calendar: Calendar,
+	board: MessagesSquare,
 	requests: UserCheck,
 	leaderboard: Trophy,
 	homework: ClipboardList,
