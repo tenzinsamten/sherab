@@ -4,17 +4,18 @@ import {
 	isContentLanguage,
 	MAX_CONTENT_BYTES,
 	parseContent,
+	plainText,
 	readContent,
 	readContentLanguage,
 	type ContentLanguage,
 	type RichTextDoc
 } from '$lib/rich-text';
 import { boardAuthorName, MAX_BOARD_TITLE_LENGTH } from '$lib/board-author';
-import type { BoardFile } from '$lib/board-files';
+import type { BoardFile, BoardImage } from '$lib/board-files';
 import {
-	attachPostFiles,
+	attachPostImage,
 	loadBoardFiles,
-	readPostFiles,
+	readPostImage,
 	readPostForm,
 	removePostObjects
 } from '$lib/server/board-files';
@@ -27,6 +28,19 @@ import type { Actions, PageServerLoad } from './$types';
 const BOARD_PAGE_SIZE = 30;
 
 const INSUFFICIENT_PRIVILEGE = '42501';
+
+/** Story 8: a body over this many characters of plain text, or blocks, shows "…see more". */
+const PREVIEW_MAX_CHARACTERS = 200;
+const PREVIEW_MAX_BLOCKS = 3;
+
+/** Story 8: the body is longer than its 3-line preview, so it can be expanded. */
+function isLongPost(content: RichTextDoc | null): boolean {
+	if (!content) return false;
+	return (
+		content.content.length > PREVIEW_MAX_BLOCKS ||
+		[...plainText(content)].length > PREVIEW_MAX_CHARACTERS
+	);
+}
 
 /** An ISO 8601 timestamp with a time zone, as `created_at` comes back. */
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}(:?\d{2})?)$/;
@@ -55,13 +69,17 @@ export type BoardPost = {
 	updatedAt: string;
 	/** Story 5: the signed-in user wrote it (Edit while a poster, Delete always). */
 	mine: boolean;
-	/** Its PDF files, oldest first (story 4). */
+	/** Story 8: its image, shown through /files/board/[id]; null without one. */
+	image: BoardImage | null;
+	/** Legacy PDF files from before story 8, oldest first (story 4). */
 	files: BoardFile[];
+	/** Story 8: the body is longer than the 3-line preview ("…see more"). */
+	long: boolean;
 };
 
 /**
  * The school message board (spec-parent-message-board story 3, CAP-1 and
- * CAP-2; story 4 adds up to 2 PDF files per post). RLS on board_posts is
+ * CAP-2; story 8: one image per post, in place of story 4's PDFs). RLS on board_posts is
  * the real barrier for reading and posting; the reader check only turns a
  * non-reader into a 403 page, and `canPost` only decides whether the form
  * renders.
@@ -130,8 +148,7 @@ export const load: PageServerLoad = async ({
 		...new Set(rows.map((row) => row.author_id).filter((id): id is string => id !== null))
 	];
 
-	// The names and (story 4) the posts' files, one query each. A files
-	// error is logged there; the posts then show without files.
+	// The names and the posts' images (story 8) and legacy files. A files error is logged there; the posts then show without them.
 	const [namesResult, filesResult] = await Promise.all([
 		authorIds.length > 0
 			? supabase.rpc('board_author_names', { p_ids: authorIds })
@@ -153,17 +170,22 @@ export const load: PageServerLoad = async ({
 		}
 	}
 
-	const posts: BoardPost[] = rows.map((row) => ({
-		id: row.id,
-		title: row.title?.trim() || null,
-		authorName: boardAuthorName((row.author_id && authors.get(row.author_id)) || null),
-		content: readContent(row.content),
-		contentLanguage: readContentLanguage(row.content_language),
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-		mine: row.author_id === user.id,
-		files: filesResult.files.get(row.id) ?? []
-	}));
+	const posts: BoardPost[] = rows.map((row) => {
+		const content = readContent(row.content);
+		return {
+			id: row.id,
+			title: row.title?.trim() || null,
+			authorName: boardAuthorName((row.author_id && authors.get(row.author_id)) || null),
+			content,
+			contentLanguage: readContentLanguage(row.content_language),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+			mine: row.author_id === user.id,
+			image: filesResult.images.get(row.id) ?? null,
+			files: filesResult.files.get(row.id) ?? [],
+			long: isLongPost(content)
+		};
+	});
 
 	const olderBefore =
 		fetched.length > BOARD_PAGE_SIZE ? (rows[rows.length - 1]?.created_at ?? null) : null;
@@ -239,7 +261,7 @@ export const actions: Actions = {
 			return fail(401, { error: m.board_error_not_signed_in() });
 		}
 
-		// Story 4: the form may carry up to 2 PDF files, so it is read with a size cap.
+		// Story 8: the form may carry one image, so it is read with a size cap.
 		const form = await readPostForm(request);
 		if ('refused' in form) return form.refused;
 		const { formData } = form;
@@ -247,11 +269,11 @@ export const actions: Actions = {
 		if (!body.ok) return body.refused;
 		const { title, content, language } = body;
 
-		// Story 4: the files are checked before anything is stored. A refused
-		// file inserts no post; the message is shown at the file field too.
-		const files = await readPostFiles(formData);
-		if (!files.ok) {
-			return fail(400, { error: files.message, fileError: files.message });
+		// Story 8: the image is checked before anything is stored. A refused
+		// image inserts no post; the message is shown at the file field too.
+		const image = await readPostImage(formData);
+		if (!image.ok) {
+			return fail(400, { error: image.message, fileError: image.message });
 		}
 
 		// The author is always the signed-in user, never a posted field.
@@ -269,12 +291,13 @@ export const actions: Actions = {
 			return fail(500, { error: m.board_error_post_failed() });
 		}
 
-		// The post stays whatever happens to its files; the page names the
-		// ones that were not attached.
-		const notAttached =
-			files.files.length > 0 ? await attachPostFiles(supabase, user, inserted.id, files.files) : [];
+		// The post stays whatever happens to its image; the page warns when it
+		// was not attached.
+		const notAttached = image.image
+			? await attachPostImage(supabase, user, inserted.id, image.image)
+			: [];
 
-		// Story 6 (CAP-5): tell the other readers. After the files, so a reader
+		// Story 6 (CAP-5): tell the other readers. After the image, so a reader
 		// who opens the push sees them. Sent from a request of its own (started
 		// by the database), so it neither delays nor can fail this one. An edit
 		// or a delete never announces.

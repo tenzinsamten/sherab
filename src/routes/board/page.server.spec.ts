@@ -42,6 +42,8 @@ function fakeSupabase(
 	const inserted: unknown[] = [];
 	const fileCalls: Call[] = [];
 	const fileRows: unknown[] = [];
+	const uploadTypes: string[] = [];
+	const signCalls: { bucket: string; paths: string[]; seconds: number }[] = [];
 	// Every write in order, storage included (story 4).
 	const log: string[] = [];
 	const rpcResults: Record<string, Result> = {
@@ -115,9 +117,14 @@ function fakeSupabase(
 		},
 		storage: {
 			from: (bucket: string) => ({
-				upload: async (path: string) => {
+				upload: async (path: string, _body: unknown, opts: { contentType?: string }) => {
 					log.push(`storage:upload:${bucket}:${path}`);
+					uploadTypes.push(opts?.contentType ?? '');
 					return options.upload ?? { data: { path }, error: null };
+				},
+				createSignedUrls: async (paths: string[], seconds: number) => {
+					signCalls.push({ bucket, paths, seconds });
+					return { data: [], error: null };
 				},
 				remove: async (paths: string[]) => {
 					log.push(`storage:remove:${bucket}:${paths.join(',')}`);
@@ -153,7 +160,17 @@ function fakeSupabase(
 		};
 		return c;
 	}
-	return { supabase, rpcCalls, postCalls, inserted, fileCalls, fileRows, log };
+	return {
+		supabase,
+		rpcCalls,
+		postCalls,
+		inserted,
+		fileCalls,
+		fileRows,
+		log,
+		uploadTypes,
+		signCalls
+	};
 }
 
 const signedIn = { user: { id: 'u1' }, session: {} };
@@ -619,16 +636,21 @@ describe('/board post action', () => {
 });
 
 /**
- * Story 4: PDF files on posts. Post ids here are uuids, as the database
- * gives them; the files go to `<post_id>/` in board-files.
+ * Story 8 (story 4 before it): one image per post. Post ids here are
+ * uuids, as the database gives them; the image goes to `<post_id>/` in
+ * board-files.
  */
 const POST_ID = '33333333-3333-4333-8333-333333333333';
 const OTHER_ID = '66666666-6666-4666-8666-666666666666';
 
-function pdf(name: string, size = 1000): File {
+const JPEG_HEAD = [0xff, 0xd8, 0xff, 0xe0];
+const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const WEBP_HEAD = [0x52, 0x49, 0x46, 0x46, 0x10, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
+
+function image(name: string, size = 1000, head = JPEG_HEAD, type = 'image/jpeg'): File {
 	const bytes = new Uint8Array(size);
-	bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
-	return new File([bytes], name, { type: 'application/pdf' });
+	bytes.set(head);
+	return new File([bytes], name, { type });
 }
 
 function fileEvent(
@@ -639,15 +661,25 @@ function fileEvent(
 ) {
 	const body = new FormData();
 	for (const [k, v] of Object.entries({ title: 'Picnic', ...fields })) body.set(k, v);
-	for (const file of files) body.append('files', file);
+	for (const file of files) body.append('image', file);
 	return {
 		request: new Request('http://localhost/board?/post', { method: 'POST', body, headers }),
 		locals: { supabase: fake.supabase, safeGetSession: async () => signedIn }
 	} as never;
 }
 
-describe('/board load with files (story 4)', () => {
-	it("one files query for the page's posts; each post gets its files, oldest first", async () => {
+type LoadedPost = {
+	id: string;
+	image: unknown;
+	files: unknown[];
+	long: boolean;
+};
+
+describe('/board load with images (story 8)', () => {
+	const IMG = `${POST_ID}/77777777-7777-4777-8777-777777777777.jpg`;
+	const PDF = `${OTHER_ID}/88888888-8888-4888-8888-888888888888.pdf`;
+
+	it("one files query for the page's posts, nothing signed in the load; legacy PDFs stay files", async () => {
 		const fake = fakeSupabase({
 			posts: {
 				data: [
@@ -658,45 +690,48 @@ describe('/board load with files (story 4)', () => {
 			},
 			files: {
 				data: [
-					{ id: 'f1', post_id: POST_ID, file_name: 'Flyer.pdf', size_bytes: 2048 },
-					{ id: 'f2', post_id: POST_ID, file_name: 'Letter.pdf', size_bytes: 4096 }
+					{
+						id: 'f1',
+						post_id: POST_ID,
+						object_path: IMG,
+						file_name: 'Picnic.jpg',
+						size_bytes: 2048
+					},
+					{
+						id: 'f2',
+						post_id: OTHER_ID,
+						object_path: PDF,
+						file_name: 'Flyer.pdf',
+						size_bytes: 4096
+					}
 				],
 				error: null
 			}
 		});
-		const data = (await runLoad(fake)) as unknown as {
-			posts: { id: string; files: unknown[] }[];
-		};
-		expect(data.posts.map((p) => [p.id, p.files])).toEqual([
-			[
-				POST_ID,
-				[
-					{ id: 'f1', name: 'Flyer.pdf', size: 2048 },
-					{ id: 'f2', name: 'Letter.pdf', size: 4096 }
-				]
-			],
-			[OTHER_ID, []]
+		const data = (await runLoad(fake)) as unknown as { posts: LoadedPost[] };
+		expect(data.posts.map((p) => [p.id, p.image, p.files])).toEqual([
+			[POST_ID, { id: 'f1', name: 'Picnic.jpg' }, []],
+			[OTHER_ID, null, [{ id: 'f2', name: 'Flyer.pdf', size: 4096 }]]
 		]);
 		expect(fake.fileCalls).toEqual([
-			['select', 'id, post_id, file_name, size_bytes'],
+			['select', 'id, post_id, object_path, file_name, size_bytes'],
 			['in', 'post_id', [POST_ID, OTHER_ID]],
 			['order', 'created_at', { ascending: true }],
 			['order', 'id', { ascending: true }]
 		]);
+		// The page signs through /files/board/[fileId], fresh on each request.
+		expect(fake.signCalls).toEqual([]);
 	});
 
-	it('the files read fails: the posts still render without files, the error is logged', async () => {
+	it('the files read fails: the posts still render without image or files, logged', async () => {
 		const spy = consoleError();
 		const fake = fakeSupabase({
 			posts: { data: [{ ...row(1), id: POST_ID }], error: null },
 			files: { data: null, error: { message: 'boom' } }
 		});
-		const data = (await runLoad(fake)) as unknown as {
-			loadError: boolean;
-			posts: { id: string; files: unknown[] }[];
-		};
+		const data = (await runLoad(fake)) as unknown as { posts: LoadedPost[]; loadError: boolean };
 		expect(data.loadError).toBe(false);
-		expect(data.posts).toEqual([expect.objectContaining({ id: POST_ID, files: [] })]);
+		expect(data.posts).toEqual([expect.objectContaining({ id: POST_ID, image: null, files: [] })]);
 		expect(spy).toHaveBeenCalledWith('board files could not be read: boom');
 	});
 
@@ -705,42 +740,75 @@ describe('/board load with files (story 4)', () => {
 		await runLoad(fake);
 		expect(fake.fileCalls).toEqual([]);
 	});
+
+	it('long: over 200 characters of plain text, or more than 3 blocks', async () => {
+		const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+		const withBody = (id: string, blocks: unknown[]) => ({
+			...row(1),
+			id,
+			content: { type: 'doc', content: blocks }
+		});
+		const fake = fakeSupabase({
+			posts: {
+				data: [
+					withBody('short', [para('x'.repeat(50))]),
+					withBody('exact', [para('x'.repeat(200))]),
+					withBody('chars', [para('x'.repeat(500))]),
+					withBody('three', [para('a'), para('b'), para('c')]),
+					withBody('four', [para('a'), para('b'), para('c'), para('d')])
+				],
+				error: null
+			}
+		});
+		const data = (await runLoad(fake)) as unknown as { posts: LoadedPost[] };
+		expect(data.posts.map((p) => [p.id, p.long])).toEqual([
+			['short', false],
+			['exact', false],
+			['chars', true],
+			['three', false],
+			['four', true]
+		]);
+	});
 });
 
-describe('/board post action with files (story 4)', () => {
+describe('/board post action with an image (story 8)', () => {
 	const post = (event: never) => actions.post(event) as Promise<unknown>;
 	const inserted = { data: { id: POST_ID }, error: null };
 
-	it('2 PDFs: the post, then each object in <post_id>/ and its row', async () => {
+	it('a 2 MB JPEG: the post, then the object as <post_id>/<uuid>.jpg and its row', async () => {
 		const fake = fakeSupabase({ insert: inserted });
-		const result = await post(fileEvent(fake, [pdf('Flyer.pdf', 2048), pdf('Letter.pdf', 4096)]));
+		const result = await post(fileEvent(fake, [image('Picnic.jpg', 2 * 1024 * 1024)]));
 		expect(result).toEqual({ posted: true, notAttached: [] });
 		expect(fake.log.map((line) => line.replace(/^(storage:upload:[^:]*):.*$/, '$1'))).toEqual([
 			'board_posts:insert',
 			'storage:upload:board-files',
-			'board_post_files:insert',
-			'storage:upload:board-files',
 			'board_post_files:insert'
 		]);
-		for (const line of fake.log.filter((l) => l.startsWith('storage:upload'))) {
-			expect(line).toMatch(
-				new RegExp(`^storage:upload:board-files:${POST_ID}/[0-9a-f-]{36}\\.pdf$`)
-			);
-		}
+		expect(fake.log[1]).toMatch(
+			new RegExp(`^storage:upload:board-files:${POST_ID}/[0-9a-f-]{36}\\.jpg$`)
+		);
+		expect(fake.uploadTypes).toEqual(['image/jpeg']);
 		expect(fake.fileRows).toEqual([
 			expect.objectContaining({
 				post_id: POST_ID,
-				file_name: 'Flyer.pdf',
-				size_bytes: 2048,
-				created_by: 'u1'
-			}),
-			expect.objectContaining({
-				post_id: POST_ID,
-				file_name: 'Letter.pdf',
-				size_bytes: 4096,
+				file_name: 'Picnic.jpg',
+				size_bytes: 2 * 1024 * 1024,
 				created_by: 'u1'
 			})
 		]);
+	});
+
+	it('a PNG and a WebP: stored as .png and .webp with their detected types', async () => {
+		for (const [file, ext, type] of [
+			[image('a.png', 100, PNG_HEAD, 'image/png'), 'png', 'image/png'],
+			// The type sent does not count: the bytes are a WebP.
+			[image('b.webp', 100, WEBP_HEAD, 'application/octet-stream'), 'webp', 'image/webp']
+		] as const) {
+			const fake = fakeSupabase({ insert: inserted });
+			expect(await post(fileEvent(fake, [file]))).toEqual({ posted: true, notAttached: [] });
+			expect(fake.log[1]).toMatch(new RegExp(`\\.${ext}$`));
+			expect(fake.uploadTypes).toEqual([type]);
+		}
 	});
 
 	it('an empty file field: the post only', async () => {
@@ -750,35 +818,51 @@ describe('/board post action with files (story 4)', () => {
 		expect(fake.log).toEqual(['board_posts:insert']);
 	});
 
-	it('3 files: 400 with the limit; nothing stored, no post', async () => {
+	it('two files: 400 with the limit; nothing stored, no post', async () => {
 		const fake = fakeSupabase({ insert: inserted });
-		const result = await post(fileEvent(fake, [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')]));
+		const result = await post(fileEvent(fake, [image('a.jpg'), image('b.jpg')]));
 		expect(result).toMatchObject({
 			status: 400,
 			data: {
-				error: m.board_file_error_limit({ count: '2' }),
-				fileError: m.board_file_error_limit({ count: '2' })
+				error: m.board_image_error_limit(),
+				fileError: m.board_image_error_limit()
 			}
 		});
 		expect(fake.log).toEqual([]);
 	});
 
-	it('not a PDF, or over 5 MB: 400 naming the file; no post', async () => {
-		for (const bad of [new File(['PK'], 'notes.docx'), pdf('big.pdf', 5_242_881)]) {
+	it('PDF or GIF bytes, also named photo.jpg: 400 naming the types; no post', async () => {
+		const pdfBytes = [...new TextEncoder().encode('%PDF-1.7\n')];
+		const gifBytes = [...new TextEncoder().encode('GIF89a')];
+		for (const bad of [
+			image('flyer.pdf', 100, pdfBytes, 'application/pdf'),
+			image('anim.gif', 100, gifBytes, 'image/gif'),
+			image('photo.jpg', 100, pdfBytes, 'image/jpeg')
+		]) {
 			const fake = fakeSupabase({ insert: inserted });
-			const result = await post(fileEvent(fake, [pdf('a.pdf'), bad]));
+			const result = await post(fileEvent(fake, [bad]));
 			expect(result).toMatchObject({
 				status: 400,
-				data: { fileError: expect.stringContaining(bad.name) }
+				data: { error: m.board_image_error_type(), fileError: m.board_image_error_type() }
 			});
 			expect(fake.log).toEqual([]);
 		}
 	});
 
-	it('the content is checked before the files', async () => {
+	it('5,242,881 bytes: 400 too large; no post', async () => {
+		const fake = fakeSupabase({ insert: inserted });
+		const result = await post(fileEvent(fake, [image('big.jpg', 5_242_881)]));
+		expect(result).toMatchObject({
+			status: 400,
+			data: { fileError: m.board_image_error_too_large({ size: '5.0 MB' }) }
+		});
+		expect(fake.log).toEqual([]);
+	});
+
+	it('the content is checked before the image', async () => {
 		const fake = fakeSupabase({ insert: inserted });
 		const result = await post(
-			fileEvent(fake, [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')], {
+			fileEvent(fake, [image('a.jpg'), image('b.jpg')], {
 				content: '',
 				contentLanguage: 'en'
 			})
@@ -789,12 +873,17 @@ describe('/board post action with files (story 4)', () => {
 		});
 	});
 
-	it('a body over the cap: 413', async () => {
+	it('a body over the cap: 413 naming the limits', async () => {
 		const fake = fakeSupabase({ insert: inserted });
 		const result = await post(
-			fileEvent(fake, [pdf('a.pdf')], undefined, { 'content-length': String(20 * 1024 * 1024) })
+			fileEvent(fake, [image('a.jpg')], undefined, {
+				'content-length': String(20 * 1024 * 1024)
+			})
 		);
-		expect(result).toMatchObject({ status: 413 });
+		expect(result).toMatchObject({
+			status: 413,
+			data: { error: m.board_image_error_post_too_large({ size: '5.0 MB' }) }
+		});
 		expect(fake.log).toEqual([]);
 	});
 
@@ -812,39 +901,35 @@ describe('/board post action with files (story 4)', () => {
 		expect(fake.log).toEqual([]);
 	});
 
-	it('the post is refused (RLS): no file is stored', async () => {
+	it('the post is refused (RLS): no image is stored', async () => {
 		const fake = fakeSupabase({ insert: { data: null, error: { code: '42501', message: 'rls' } } });
-		const result = await post(fileEvent(fake, [pdf('a.pdf')]));
+		const result = await post(fileEvent(fake, [image('a.jpg')]));
 		expect(result).toMatchObject({ status: 403 });
 		expect(fake.log).toEqual(['board_posts:insert']);
 	});
 
-	it('a row insert fails (DB error or BF001): the object goes again, the post stays, notAttached names it', async () => {
+	it('the row insert fails (DB error or BF001): the object goes again, the post stays, notAttached', async () => {
 		for (const code of ['XX000', 'BF001']) {
 			consoleError();
-			let inserts = 0;
 			const fake = fakeSupabase({
 				insert: inserted,
-				fileInsert: () =>
-					(inserts += 1) === 1
-						? { data: [{ id: 'f1' }], error: null }
-						: { data: null, error: { code, message: 'no' } }
+				fileInsert: { data: null, error: { code, message: 'no' } }
 			});
-			const result = await post(fileEvent(fake, [pdf('Flyer.pdf'), pdf('Letter.pdf')]));
-			expect(result).toEqual({ posted: true, notAttached: ['Letter.pdf'] });
+			const result = await post(fileEvent(fake, [image('Picnic.jpg')]));
+			expect(result).toEqual({ posted: true, notAttached: ['Picnic.jpg'] });
 			expect(fake.log.at(-1)).toMatch(new RegExp(`^storage:remove:board-files:${POST_ID}/`));
 			vi.restoreAllMocks();
 		}
 	});
 
-	it('the store fails: the post stays, notAttached names it, no row', async () => {
+	it('the store fails: the post stays, notAttached, no row', async () => {
 		consoleError();
 		const fake = fakeSupabase({
 			insert: inserted,
 			upload: { data: null, error: { message: 'down' } }
 		});
-		const result = await post(fileEvent(fake, [pdf('Flyer.pdf')]));
-		expect(result).toEqual({ posted: true, notAttached: ['Flyer.pdf'] });
+		const result = await post(fileEvent(fake, [image('Picnic.jpg')]));
+		expect(result).toEqual({ posted: true, notAttached: ['Picnic.jpg'] });
 		expect(fake.fileRows).toEqual([]);
 	});
 });
@@ -1000,7 +1085,8 @@ describe('/board edit action (story 5)', () => {
 
 describe('/board delete action (story 5)', () => {
 	const del = (event: never) => actions.delete(event) as Promise<unknown>;
-	const PATH_A = `${POST_ID}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.pdf`;
+	// Story 8: an image, and a legacy PDF.
+	const PATH_A = `${POST_ID}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`;
 	const PATH_B = `${POST_ID}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf`;
 	const twoFiles = {
 		data: [{ object_path: PATH_A }, { object_path: PATH_B }],
@@ -1180,12 +1266,12 @@ describe('/board push on a new post (story 6)', () => {
 	const post = (event: never) => actions.post(event) as Promise<unknown>;
 	const inserted = { data: { id: POST_ID }, error: null };
 
-	it('a new post is announced with its id, after its files are attached', async () => {
+	it('a new post is announced with its id, after its image is attached', async () => {
 		const fake = fakeSupabase({ insert: inserted });
 		announceBoardPost.mockImplementationOnce(async () => {
 			fake.log.push('announce');
 		});
-		const result = await post(fileEvent(fake, [pdf('Flyer.pdf')]));
+		const result = await post(fileEvent(fake, [image('Flyer.jpg')]));
 		expect(result).toEqual({ posted: true, notAttached: [] });
 		expect(announceBoardPost).toHaveBeenCalledTimes(1);
 		expect(announceBoardPost).toHaveBeenCalledWith(POST_ID);

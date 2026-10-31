@@ -19844,7 +19844,14 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
 	});
 	const bucket = (client: Client | typeof adminClient) => client.storage.from(BUCKET);
-	const pathIn = (postId: string) => `${postId}/${crypto.randomUUID()}.pdf`;
+	// Story 8 (0064): one JPEG, PNG or WebP image per post.
+	const pathIn = (postId: string, ext = 'jpg') => `${postId}/${crypto.randomUUID()}.${ext}`;
+
+	function jpegBytes(size = 2048): ArrayBuffer {
+		const bytes = new Uint8Array(size);
+		bytes.set([0xff, 0xd8, 0xff, 0xe0]);
+		return bytes.buffer;
+	}
 
 	function pdfBytes(size = 2048): ArrayBuffer {
 		const bytes = new Uint8Array(size);
@@ -19893,11 +19900,13 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 	}
 
 	/** An upload by `client`; a path that was stored is always cleaned up. */
-	async function tryUpload(client: Client, path: string) {
-		const upload = await bucket(client).upload(path, pdfBytes(), {
-			contentType: 'application/pdf',
-			upsert: false
-		});
+	async function tryUpload(
+		client: Client,
+		path: string,
+		body: ArrayBuffer = jpegBytes(),
+		contentType = 'image/jpeg'
+	) {
+		const upload = await bucket(client).upload(path, body, { contentType, upsert: false });
 		if (!upload.error) storedPaths.push(path);
 		return upload;
 	}
@@ -19919,7 +19928,7 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 	const recordFile = (client: Client, postId: string, path: string) =>
 		client
 			.from('board_post_files')
-			.insert({ post_id: postId, object_path: path, file_name: 'Flyer.pdf', size_bytes: 2048 })
+			.insert({ post_id: postId, object_path: path, file_name: 'Photo.jpg', size_bytes: 2048 })
 			.select('id');
 
 	/** An uploaded and recorded file on `postId`, by its author. */
@@ -19961,14 +19970,44 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		if (storedPaths.length) await bucket(adminClient).remove(storedPaths);
 	});
 
-	it('the bucket is private, 5 MB, PDF only', async () => {
+	it('the bucket is private, 5 MB, JPEG, PNG and WebP only (story 8)', async () => {
 		const { data, error } = await adminClient.storage.getBucket(BUCKET);
 		expect(error).toBeNull();
-		expect(data).toMatchObject({
-			public: false,
-			file_size_limit: 5242880,
-			allowed_mime_types: ['application/pdf']
-		});
+		expect(data).toMatchObject({ public: false, file_size_limit: 5242880 });
+		expect([...(data?.allowed_mime_types ?? [])].sort()).toEqual([
+			'image/jpeg',
+			'image/png',
+			'image/webp'
+		]);
+	});
+
+	it('Story 8 types: .png and .webp upload; a PDF (by name or by type) and a GIF are refused', async () => {
+		for (const [ext, type] of [
+			['png', 'image/png'],
+			['webp', 'image/webp']
+		] as const) {
+			const postId = await postBy(granted);
+			const upload = await tryUpload(granted.client, pathIn(postId, ext), jpegBytes(), type);
+			expect(upload.error, ext).toBeNull();
+		}
+		const postId = await postBy(granted);
+		const pdfName = await tryUpload(granted.client, pathIn(postId, 'pdf'));
+		expect(pdfName.error).not.toBeNull();
+		const pdfType = await tryUpload(granted.client, pathIn(postId), pdfBytes(), 'application/pdf');
+		expect(pdfType.error).not.toBeNull();
+		const gif = await tryUpload(granted.client, pathIn(postId, 'gif'), jpegBytes(), 'image/gif');
+		expect(gif.error).not.toBeNull();
+		expect(await bucket(adminClient).list(postId)).toMatchObject({ data: [] });
+	});
+
+	it('Story 8 rows: a new .pdf or .gif object_path is refused by the table (23514)', async () => {
+		const legacy = await postBy(granted);
+		const { error } = await recordFile(granted.client, legacy, pathIn(legacy, 'pdf'));
+		expect(error?.code).toBe('23514');
+		expect(await fileRows(legacy)).toEqual([]);
+		const gifPost = await postBy(granted);
+		const gif = await recordFile(granted.client, gifPost, pathIn(gifPost, 'gif'));
+		expect(gif.error?.code).toBe('23514');
 	});
 
 	it('Reader roles: the admin, a teacher, an approved student and an approved parent read posts, files and objects', async () => {
@@ -19986,7 +20025,9 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 			expect(files.data, who).toEqual([{ id: file.id }]);
 			const download = await bucket(client).download(file.path);
 			expect(download.error, who).toBeNull();
-			expect(await download.data!.slice(0, 5).text(), who).toBe('%PDF-');
+			expect([...new Uint8Array(await download.data!.slice(0, 3).arrayBuffer())], who).toEqual([
+				0xff, 0xd8, 0xff
+			]);
 		}
 	});
 
@@ -20219,9 +20260,8 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		expect(del.data).toEqual([{ id: deletedId }]);
 	});
 
-	it('Third file: a post with 2 files refuses a third object upload and a third row with BF001', async () => {
+	it('Second image (story 8): a post with 1 image refuses a second object upload and a second row with BF001', async () => {
 		const postId = await postBy(teacher);
-		await fileOn(teacher, postId);
 		await fileOn(teacher, postId);
 		const path = pathIn(postId);
 		const upload = await tryUpload(teacher.client, path);
@@ -20229,7 +20269,7 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		expect((await bucket(adminClient).exists(path)).data).toBe(false);
 		const { error } = await recordFile(teacher.client, postId, path);
 		expect(error?.code).toBe('BF001');
-		expect(await fileRows(postId)).toHaveLength(2);
+		expect(await fileRows(postId)).toHaveLength(1);
 	});
 
 	it("File on another's post: a poster who is not the author cannot upload or record a file; nor can a student", async () => {
@@ -20255,7 +20295,7 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		const otherPost = await postBy(otherGranted);
 		const outside = await recordFile(granted.client, postId, pathIn(otherPost));
 		expect(outside.error?.code).toBe('42501');
-		const badName = await tryUpload(granted.client, `${postId}/Flyer.pdf`);
+		const badName = await tryUpload(granted.client, `${postId}/Photo.jpg`);
 		expect(badName.error).not.toBeNull();
 
 		const file = await fileOn(granted, postId);

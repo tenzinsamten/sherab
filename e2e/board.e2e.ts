@@ -4,10 +4,12 @@ import { fixtureTeam, service, signIn, type TestUser } from './fixtures';
 /**
  * spec-parent-message-board story 3 (CAP-1, CAP-2 text only): a granted
  * parent posts on /board; a student signs in, sees the post with the
- * parent's name, and has no post form. Story 4: a post with a PDF file,
- * which the student opens through /files/board/[fileId]. Story 5: the
- * author edits, then deletes a post with a PDF (its object goes too); a
- * teacher deletes a parent's post; a student sees no controls.
+ * parent's name, and has no post form. Story 8 (story 4 before it): a post
+ * with a JPEG image, which the student sees and opens full size; a long
+ * post expands in place. (A legacy PDF row can no longer be inserted, 0064;
+ * its download link is covered by page.render.spec.ts.)
+ * Story 5: the author edits, then deletes a post with an image (its object
+ * goes too); a teacher deletes a parent's post; a student sees no controls.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -17,22 +19,23 @@ const parentName = `BRD Parent ${tag}`;
 const message = `Picnic on Saturday ${tag}`;
 const flyerMessage = `Flyer for the picnic ${tag}`;
 const BUCKET = 'board-files';
-const MB5 = 5_242_880;
 const refusedMessage = `Refused files ${tag}`;
+const longMessage = `Long news ${tag} ` + 'The school trip starts early. '.repeat(15);
 const editMessage = `Bring a jacket ${tag}`;
 const editedMessage = `Bring a warm jacket ${tag}`;
 const moderatedMessage = `Unsuitable post ${tag}`;
-const docx = {
-	name: 'notes.docx',
-	mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-	buffer: Buffer.from('PK\u0003\u0004 not a pdf')
-};
-
-/** A file whose content starts like a PDF, `size` bytes long. */
-function pdf(name: string, size = 2048) {
+/** A file whose content starts like a JPEG, `size` bytes long. */
+function jpeg(name: string, size = 2048) {
 	const buffer = Buffer.alloc(size);
+	buffer.set([0xff, 0xd8, 0xff, 0xe0]);
+	return { name, mimeType: 'image/jpeg', buffer };
+}
+
+/** A file whose content starts like a PDF, sent under any name and type. */
+function pdfBytes(name: string, mimeType = 'application/pdf') {
+	const buffer = Buffer.alloc(2048);
 	buffer.write('%PDF-1.7\n');
-	return { name, mimeType: 'application/pdf', buffer };
+	return { name, mimeType, buffer };
 }
 
 let parent: TestUser;
@@ -185,26 +188,32 @@ test('a granted parent posts; the student sees it and has no form', async ({ bro
 	}
 });
 
-test('a parent posts with a PDF; the student sees it and opens the file', async ({ browser }) => {
+test('a parent posts with a JPEG; the student sees it and opens it full size', async ({
+	browser
+}) => {
 	const parentContext = await browser.newContext();
 	try {
 		const page = await parentContext.newPage();
 		await signIn(page, parent);
 		await open(page, '/board');
 		const form = page.getByTestId('board-form');
+		await expect(form.getByLabel('Image (optional)')).toHaveAttribute(
+			'accept',
+			'image/jpeg,image/png,image/webp'
+		);
 		await form.getByLabel('Title').fill(`Flyer ${tag}`);
 		const editor = form.locator('#content');
 		await expect(editor).toHaveAttribute('contenteditable', 'true');
 		await editor.click();
 		await page.keyboard.type(flyerMessage);
-		await form.locator('input[type="file"]').setInputFiles([pdf(`Flyer ${tag}.pdf`, 4096)]);
+		await form.locator('input[type="file"]').setInputFiles([jpeg(`Flyer ${tag}.jpg`, 4096)]);
 		await form.getByRole('button', { name: 'Post' }).click();
 
 		await expect(
 			page.locator('[data-sonner-toast]').getByText('Your post is on the board.').first()
 		).toBeVisible();
 		const mine = posts(page).filter({ hasText: flyerMessage });
-		await expect(mine.getByTestId('file-name')).toHaveText(`Flyer ${tag}.pdf`);
+		await expect(mine.getByTestId('board-post-image')).toHaveAttribute('alt', `Flyer ${tag}`);
 	} finally {
 		await parentContext.close();
 	}
@@ -215,32 +224,92 @@ test('a parent posts with a PDF; the student sees it and opens the file', async 
 		await signIn(page, student);
 		await open(page, '/board');
 		const mine = posts(page).filter({ hasText: flyerMessage });
-		const link = mine.getByTestId('file-name');
-		await expect(link).toHaveText(`Flyer ${tag}.pdf`);
-		await expect(mine.getByTestId('file-size')).toHaveText('4 KB');
-
+		const img = mine.getByTestId('board-post-image');
+		await expect(img).toHaveAttribute('loading', 'lazy');
+		// Through the endpoint, which signs a fresh link on each request.
+		const src = await img.getAttribute('src');
+		// SvelteKit renders it relative to the page ("./files/board/<id>").
+		expect(src).toMatch(/^(\.)?\/files\/board\/[0-9a-f-]{36}$/);
+		const link = mine.getByTestId('board-post-image-link');
+		// The same endpoint (the image keeps its server-rendered relative src).
 		const href = await link.getAttribute('href');
-		expect(href).toMatch(/^\/files\/board\/[0-9a-f-]{36}$/);
-		const redirect = await page.request.get(href!, { maxRedirects: 0 });
+		expect(new URL(href!, page.url()).href).toBe(new URL(src!, page.url()).href);
+		await expect(link).toHaveAttribute('target', '_blank');
+		await expect(link).toHaveAttribute(
+			'aria-label',
+			'Open the image full size (opens in a new tab)'
+		);
+		const redirect = await page.request.get(new URL(src!, page.url()).href, {
+			maxRedirects: 0
+		});
 		expect(redirect.status()).toBe(303);
-		expect(redirect.headers()['cache-control']).toBe('no-store');
 		const location = redirect.headers()['location'];
 		expect(location).toContain(`/storage/v1/object/sign/${BUCKET}/`);
+		expect(location).toMatch(/\.jpg\?token=/);
 		const file = await page.request.get(location);
 		expect(file.status()).toBe(200);
-		expect((await file.body()).subarray(0, 5).toString()).toBe('%PDF-');
-
-		const download = await page.request.get(`${href}?download`, { maxRedirects: 0 });
-		expect(download.status()).toBe(303);
-		expect(download.headers()['location']).toContain(
-			`download=${encodeURIComponent(`Flyer ${tag}.pdf`)}`
-		);
+		expect(file.headers()['content-type']).toBe('image/jpeg');
+		expect([...(await file.body()).subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 	} finally {
 		await studentContext.close();
 	}
 });
 
-test('too many or too large files are refused in the browser; a Word file by the server; no post', async ({
+test('a long post is clamped with "…see more", expands in place and collapses again', async ({
+	page
+}) => {
+	await signIn(page, parent);
+	await open(page, '/board');
+	const form = page.getByTestId('board-form');
+	await form.getByLabel('Title').fill(`Trip ${tag}`);
+	const editor = form.locator('#content');
+	await expect(editor).toHaveAttribute('contenteditable', 'true');
+	await editor.click();
+	await page.keyboard.type(longMessage);
+	await form.getByRole('button', { name: 'Post' }).click();
+	await expect(
+		page.locator('[data-sonner-toast]').getByText('Your post is on the board.').first()
+	).toBeVisible();
+
+	const card = posts(page).filter({ hasText: `Long news ${tag}` });
+	const body = card.getByTestId('board-post-body');
+	const more = card.getByTestId('board-post-more');
+	await expect(body).toHaveClass(/line-clamp-3/);
+	await expect(more).toHaveText('…see more');
+	await expect(more).toHaveAttribute('aria-expanded', 'false');
+	const bodyId = await body.getAttribute('id');
+	await expect(more).toHaveAttribute('aria-controls', bodyId!);
+	const clamped = (await body.boundingBox())!.height;
+
+	await more.click();
+	await expect(more).toHaveText('See less');
+	await expect(more).toHaveAttribute('aria-expanded', 'true');
+	await expect(body).not.toHaveClass(/line-clamp-3/);
+	expect((await body.boundingBox())!.height).toBeGreaterThan(clamped);
+
+	await more.click();
+	await expect(more).toHaveText('…see more');
+	await expect(body).toHaveClass(/line-clamp-3/);
+
+	// A click on the preview text expands it too.
+	await body.click();
+	await expect(more).toHaveAttribute('aria-expanded', 'true');
+
+	// Not remembered across loads.
+	await open(page, '/board');
+	await expect(
+		posts(page)
+			.filter({ hasText: `Long news ${tag}` })
+			.getByTestId('board-post-more')
+	).toHaveAttribute('aria-expanded', 'false');
+
+	// A short post has no button.
+	await expect(posts(page).filter({ hasText: message }).getByTestId('board-post-more')).toHaveCount(
+		0
+	);
+});
+
+test('a too-large image or a GIF is refused in the browser; PDF bytes named .jpg by the server; no post', async ({
 	page
 }) => {
 	await signIn(page, parent);
@@ -251,7 +320,7 @@ test('too many or too large files are refused in the browser; a Word file by the
 	await expect(editor).toHaveAttribute('contenteditable', 'true');
 	await editor.click();
 	await page.keyboard.type(refusedMessage);
-	const input = form.locator('input[type="file"][name="files"]');
+	const input = form.locator('input[type="file"][name="image"]');
 	const error = page.getByTestId('file-error');
 	const submit = form.getByRole('button', { name: 'Post' });
 	const stored = async () =>
@@ -263,28 +332,29 @@ test('too many or too large files are refused in the browser; a Word file by the
 		).length;
 	const before = await stored();
 
-	// Three files, or one over 5 MB: refused here, nothing posted.
+	// 6 MB, or a GIF: refused here, nothing posted.
 	const posted: string[] = [];
 	page.on('request', (request) => {
 		if (request.method() === 'POST' && request.url().includes('?/post')) posted.push(request.url());
 	});
-	await input.setInputFiles([pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')]);
+	await input.setInputFiles([jpeg('big.jpg', 6 * 1024 * 1024)]);
 	await submit.click();
-	await expect(error).toHaveText('A post can have at most 2 files.');
+	await expect(error).toHaveText('The image is larger than 5.0 MB. Choose a smaller one.');
 	await expect(input).toHaveAttribute('aria-invalid', 'true');
-	// Choosing other files clears the message.
-	await input.setInputFiles([pdf('big.pdf', MB5 + 1)]);
+	// Choosing another file clears the message.
+	await input.setInputFiles([
+		{ name: 'anim.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }
+	]);
 	await expect(error).toHaveCount(0);
 	await submit.click();
-	await expect(error).toHaveText('The file is too large. A PDF can be up to 5.0 MB.');
+	await expect(error).toHaveText('Choose a JPEG, PNG or WebP image.');
 	expect(posted).toEqual([]);
 	expect(await stored()).toBe(before);
 
-	// A Word file next to a PDF: checked by the server, no post.
-	await input.setInputFiles([pdf('a.pdf'), docx]);
+	// PDF bytes renamed photo.jpg: checked by the server, no post.
+	await input.setInputFiles([pdfBytes('photo.jpg', 'image/jpeg')]);
 	await submit.click();
-	await expect(error).toContainText('PDF files only.');
-	await expect(error).toContainText('notes.docx');
+	await expect(error).toHaveText('Choose a JPEG, PNG or WebP image.');
 	expect(posted).toHaveLength(1);
 	expect(await stored()).toBe(before);
 	await expect(posts(page).filter({ hasText: refusedMessage })).toHaveCount(0);
@@ -293,7 +363,7 @@ test('too many or too large files are refused in the browser; a Word file by the
 const confirmDelete = (page: Page) =>
 	page.getByRole('alertdialog', { name: 'Are you sure?' }).getByRole('button', { name: 'Delete' });
 
-test('the author edits a post with a PDF, then deletes it; its object goes too', async ({
+test('the author edits a post with an image, then deletes it; its object goes too', async ({
 	page
 }) => {
 	await signIn(page, parent);
@@ -306,14 +376,14 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await page.keyboard.type(editMessage);
 	// A non-default language, which the edit must keep.
 	await form.locator('#contentLanguage').selectOption('bo');
-	await form.locator('input[type="file"]').setInputFiles([pdf(`Map ${tag}.pdf`)]);
+	await form.locator('input[type="file"]').setInputFiles([jpeg(`Map ${tag}.jpg`)]);
 	await form.getByRole('button', { name: 'Post' }).click();
 	await expect(
 		page.locator('[data-sonner-toast]').getByText('Your post is on the board.').first()
 	).toBeVisible();
 
 	const mine = posts(page).filter({ hasText: editMessage });
-	await expect(mine.getByTestId('file-name')).toHaveText(`Map ${tag}.pdf`);
+	await expect(mine.getByTestId('board-post-image')).toHaveCount(1);
 	const postId = await mine.locator('input[name="postId"]').first().inputValue();
 	const folder = async () =>
 		(check(await service.storage.from(BUCKET).list(postId), 'list objects') ?? []).length;
@@ -372,11 +442,14 @@ test('the author edits a post with a PDF, then deletes it; its object goes too',
 	await expect(edited.getByTestId('board-edit-form')).toHaveCount(0);
 	await expect(edited.getByTestId('board-post-title')).toHaveText(`Warm jacket ${tag}`);
 	await expect(edited.getByTestId('board-post-edited')).toHaveText('Edited');
-	// The file is unchanged by the edit.
-	await expect(edited.getByTestId('file-name')).toHaveText(`Map ${tag}.pdf`);
+	// The image is unchanged by the edit.
+	await expect(edited.getByTestId('board-post-image')).toHaveCount(1);
 	expect(await folder()).toBe(1);
 
 	await edited.getByRole('button', { name: `Delete the post by ${parentName}` }).click();
+	await expect(page.getByRole('alertdialog', { name: 'Are you sure?' })).toContainText(
+		'Its image is deleted too.'
+	);
 	await confirmDelete(page).click();
 	await expect(
 		page.locator('[data-sonner-toast]').getByText('The post was deleted.').first()

@@ -19,12 +19,10 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import {
-		MAX_BOARD_FILE_BYTES,
-		MAX_FILES_PER_POST,
-		boardFileLimitMessage,
-		boardFileTooLargeMessage,
-		maxBoardFileSizeText,
-		maxBoardFilesText
+		BOARD_IMAGE_ACCEPT,
+		boardImageLimitMessage,
+		boardImageProblem,
+		maxBoardImageSizeText
 	} from '$lib/board-files';
 	import { MAX_BOARD_TITLE_LENGTH } from '$lib/board-author';
 	import { createConfirm } from '$lib/confirm.svelte';
@@ -40,7 +38,9 @@
 	 * The school message board (spec-parent-message-board story 3): posts
 	 * newest first for every reader, and a post form for admins, teachers and
 	 * granted parents. Errors come from the root layout's form-error toast.
-	 * Story 4: a post may carry up to 2 PDF files, listed under it.
+	 * Story 8: a post may carry one image, shown under a 3-line preview of
+	 * its body that "…see more" expands in place (posts from before story 8
+	 * may still list PDF files).
 	 * Story 5: the author edits a post's body in place (while a poster) and
 	 * deletes it; an admin or a teacher deletes any post, after a question.
 	 */
@@ -61,9 +61,9 @@
 	const confirm = createConfirm();
 	const unsaved = createUnsavedGuard(confirm);
 
-	// Story 4: the optional PDF files. The server checks them before it
-	// inserts the post; too many or too large is refused here first, so a
-	// large post is not sent for nothing.
+	// Story 8: the optional image. The server checks it before it inserts
+	// the post; a too-large or wrong file is refused here first, so a large
+	// post is not sent for nothing.
 	let localFileError = $state('');
 	let serverFileError = $derived(
 		form && 'fileError' in form && typeof form.fileError === 'string' ? form.fileError : ''
@@ -72,7 +72,7 @@
 	$effect(() => {
 		if (form) localFileError = '';
 	});
-	// Choosing other files hides the earlier message until the next answer.
+	// Choosing another file hides the earlier message until the next answer.
 	let filesChanged = $state(false);
 	$effect(() => {
 		if (form) filesChanged = false;
@@ -92,12 +92,7 @@
 			if (opts.result.type === 'success') {
 				const notAttached = opts.result.data?.notAttached;
 				if (Array.isArray(notAttached) && notAttached.length > 0) {
-					showToast(
-						'warning',
-						m.board_file_not_attached({
-							names: notAttached.map((name) => `“${String(name)}”`).join(', ')
-						})
-					);
+					showToast('warning', m.board_image_not_attached());
 				} else {
 					showToast('success', m.board_post_success());
 				}
@@ -111,19 +106,35 @@
 	const post: SubmitFunction = (input) => {
 		localFileError = '';
 		const chosen = input.formData
-			.getAll('files')
+			.getAll('image')
 			.filter((entry): entry is File => entry instanceof File && entry.size > 0);
-		if (chosen.length > MAX_FILES_PER_POST) {
-			localFileError = boardFileLimitMessage();
-		} else if (chosen.some((file) => file.size > MAX_BOARD_FILE_BYTES)) {
-			localFileError = boardFileTooLargeMessage();
+		if (chosen.length > 1) {
+			localFileError = boardImageLimitMessage();
+		} else if (chosen[0]) {
+			localFileError = boardImageProblem(chosen[0]) ?? '';
 		}
 		if (localFileError) {
-			document.getElementById('board-files')?.focus();
+			document.getElementById('board-image')?.focus();
 			return input.cancel();
 		}
 		return guarded(input);
 	};
+
+	// Story 8: the posts whose full body shows; not kept across loads.
+	let expanded = $state<Record<string, boolean>>({});
+
+	function toggleExpanded(id: string) {
+		expanded[id] = !expanded[id];
+	}
+
+	/** A click on a collapsed preview expands it, except on a link inside it. */
+	function previewClicked(event: MouseEvent, id: string) {
+		if (expanded[id]) return;
+		// Selecting text in the preview is not a click to expand it.
+		if (window.getSelection()?.toString()) return;
+		if (event.target instanceof Element && event.target.closest('a')) return;
+		expanded[id] = true;
+	}
 
 	// Story 5: one post is edited at a time, in its card.
 	let editingId = $state<string | null>(null);
@@ -237,23 +248,22 @@
 					/>
 				{/key}
 				<div class="mb-4 flex min-w-0 flex-col gap-1.5">
-					<Label for="board-files">{m.board_file_label()}</Label>
+					<Label for="board-image">{m.board_image_label()}</Label>
 					<Input
-						id="board-files"
+						id="board-image"
 						type="file"
-						name="files"
-						accept="application/pdf,.pdf"
-						multiple
+						name="image"
+						accept={BOARD_IMAGE_ACCEPT}
 						class="py-2.5"
-						aria-describedby="board-files-hint{fileError ? ' board-files-error' : ''}"
+						aria-describedby="board-image-hint{fileError ? ' board-image-error' : ''}"
 						aria-invalid={fileError ? 'true' : undefined}
 						onchange={filesPicked}
 					/>
-					<p id="board-files-hint" class="text-sm {ui.muted}">
-						{m.board_file_hint({ size: maxBoardFileSizeText(), count: maxBoardFilesText() })}
+					<p id="board-image-hint" class="text-sm {ui.muted}">
+						{m.board_image_hint({ size: maxBoardImageSizeText() })}
 					</p>
 					{#if fileError}
-						<p id="board-files-error" class={ui.error} role="alert" data-testid="file-error">
+						<p id="board-image-error" class={ui.error} role="alert" data-testid="file-error">
 							{fileError}
 						</p>
 					{/if}
@@ -376,11 +386,60 @@
 									</Button>
 								</div>
 							</form>
-						{:else}
-							{#if boardPost.content}
+						{:else if boardPost.content}
+							{@const open = !boardPost.long || expanded[boardPost.id] === true}
+							<!-- Story 8: a long body is clamped to 3 lines until "…see more";
+							     a click on the preview expands it too (the button is the
+							     keyboard's way). -->
+							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+							<div
+								id="board-post-body-{boardPost.id}"
+								class={open ? undefined : 'line-clamp-3 cursor-pointer'}
+								onclick={boardPost.long
+									? (event) => previewClicked(event, boardPost.id)
+									: undefined}
+								data-testid="board-post-body"
+								data-expanded={boardPost.long ? String(open) : undefined}
+							>
 								<RichText content={boardPost.content} lang={boardPost.contentLanguage} />
+							</div>
+							{#if boardPost.long}
+								<button
+									type="button"
+									class="{ui.link} inline-flex min-h-11 items-center"
+									aria-expanded={open}
+									aria-controls="board-post-body-{boardPost.id}"
+									onclick={() => toggleExpanded(boardPost.id)}
+									data-testid="board-post-more"
+								>
+									{open ? m.board_preview_less() : m.board_preview_more()}
+								</button>
 							{/if}
 						{/if}
+						{#if boardPost.image}
+							{@const imageHref = resolve('/files/board/[fileId]', {
+								fileId: boardPost.image.id
+							})}
+							<!-- Story 8: the post's image, through the endpoint that signs a fresh
+							     link on each request; opens full size in a new tab. -->
+							<a
+								href={imageHref}
+								target="_blank"
+								rel="noopener"
+								class="mt-3 block min-w-0"
+								aria-label={m.board_image_open_label()}
+								data-testid="board-post-image-link"
+							>
+								<img
+									src={imageHref}
+									alt={boardPost.title ?? m.board_image_alt_fallback()}
+									loading="lazy"
+									class="max-h-96 w-full rounded-md object-cover"
+									data-testid="board-post-image"
+								/>
+							</a>
+						{/if}
+						<!-- Legacy PDF files from before story 8. -->
 						<BoardFiles files={boardPost.files} author={boardPost.authorName} />
 						{#if (canEdit && editingId !== boardPost.id) || canDelete}
 							<div class="mt-3 flex flex-wrap gap-2" data-testid="board-post-actions">
@@ -405,7 +464,7 @@
 										use:enhance={submitDelete(
 											boardPost.id,
 											boardPost.authorName,
-											boardPost.files.length > 0
+											boardPost.image !== null || boardPost.files.length > 0
 										)}
 									>
 										<input type="hidden" name="postId" value={boardPost.id} />

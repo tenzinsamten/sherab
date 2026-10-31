@@ -72,6 +72,24 @@ afterEach(() => {
 const row = { data: { object_path: PATH, file_name: 'Flyer.pdf' }, error: null };
 
 describe('GET /files/board/[fileId]', () => {
+	it('story 8: an image row: 303 to a freshly signed link for its object, each request', async () => {
+		const IMAGE = '33333333-3333-4333-8333-333333333333/66666666-6666-4666-8666-666666666666.jpg';
+		const { supabase, asked } = fake({
+			data: { object_path: IMAGE, file_name: 'Picnic.jpg' },
+			error: null
+		});
+		for (let i = 0; i < 2; i += 1) {
+			const { response } = await get(FILE, supabase);
+			expect(response!.status).toBe(303);
+			expect(response!.headers.get('location')).toBe('https://s.example/x?token=t');
+			expect(response!.headers.get('cache-control')).toBe('no-store');
+		}
+		expect(asked.filter((a) => a.startsWith('sign:'))).toEqual([
+			`sign:board-files:${IMAGE}:60`,
+			`sign:board-files:${IMAGE}:60`
+		]);
+	});
+
 	it('a reader: 303 to a 60 s signed link, never cached', async () => {
 		const { supabase, asked } = fake(row);
 		const { response } = await get(FILE, supabase);

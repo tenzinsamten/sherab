@@ -46,7 +46,9 @@ const post = (id: string, authorName: string, text: string) => ({
 	createdAt,
 	updatedAt: createdAt,
 	mine: false,
-	files: [] as { id: string; name: string; size: number }[]
+	image: null as { id: string; name: string } | null,
+	files: [] as { id: string; name: string; size: number }[],
+	long: false
 });
 
 describe('board (+page.svelte)', () => {
@@ -126,19 +128,89 @@ describe('board (+page.svelte)', () => {
 		expect(draw({ posts: [post('p1', 'Pema', 'Hi')] })).not.toContain('data-testid="board-newest"');
 	});
 
-	it('the form is multipart with a PDF file input and its hint (story 4)', () => {
+	it('the form is multipart with one image input and its hint (story 8)', () => {
 		const body = draw({ canPost: true });
 		expect(body).toContain('enctype="multipart/form-data"');
-		expect(body).toMatch(/<input[^>]*type="file"[^>]*>/);
-		const input = body.match(/<input[^>]*type="file"[^>]*>/)![0];
-		expect(input).toContain('name="files"');
-		expect(input).toContain('multiple');
-		expect(input).toContain('accept="application/pdf,.pdf"');
-		expect(body).toContain(m.board_file_label());
-		expect(body).toContain('board-files-hint');
+		const inputs = body.match(/<input[^>]*type="file"[^>]*>/g)!;
+		expect(inputs).toHaveLength(1);
+		const input = inputs[0];
+		expect(input).toContain('name="image"');
+		expect(input).toContain('id="board-image"');
+		expect(input).not.toContain('multiple');
+		expect(input).toContain('accept="image/jpeg,image/png,image/webp"');
+		expect(body).toContain('for="board-image"');
+		expect(body).toContain(m.board_image_label());
+		expect(body).toContain('id="board-image-hint"');
+		expect(body).toContain(m.board_image_hint({ size: '5.0 MB' }));
 	});
 
-	it("lists a post's files with open and download links (story 4)", () => {
+	describe('the preview (story 8)', () => {
+		const long = { ...post('p1', 'Pema', 'x'.repeat(500)), long: true };
+
+		it('a long post: clamped to 3 lines, with "…see more" controlling the body', () => {
+			const body = draw({ posts: [long] });
+			const preview = body.match(/<div[^>]*data-testid="board-post-body"[^>]*>/)![0];
+			expect(preview).toContain('id="board-post-body-p1"');
+			expect(preview).toContain('line-clamp-3');
+			const button = body.match(
+				/<button[^>]*data-testid="board-post-more"[^>]*>([\s\S]*?)<\/button>/
+			)!;
+			expect(button[0]).toContain('aria-expanded="false"');
+			expect(button[0]).toContain('aria-controls="board-post-body-p1"');
+			expect(button[1].trim()).toBe(m.board_preview_more());
+		});
+
+		it('a short post: not clamped, no button', () => {
+			const body = draw({ posts: [post('p1', 'Pema', 'Short')] });
+			const preview = body.match(/<div[^>]*data-testid="board-post-body"[^>]*>/)![0];
+			expect(preview).not.toContain('line-clamp-3');
+			expect(body).not.toContain('data-testid="board-post-more"');
+		});
+	});
+
+	describe('the image (story 8)', () => {
+		const fileId = '44444444-4444-4444-8444-444444444444';
+		// Through the endpoint, which signs a fresh link on each request.
+		const url = `/files/board/${fileId}`;
+		const withImage = {
+			...post('p1', 'Pema', 'Picnic'),
+			title: 'Picnic',
+			image: { id: fileId, name: 'a.jpg' }
+		};
+
+		it('a lazy, rounded, full-width image under the preview, linking to its full size', () => {
+			const body = draw({ posts: [withImage], canModerate: true });
+			const img = body.match(/<img[^>]*data-testid="board-post-image"[^>]*>/)![0];
+			expect(img).toContain(`src="${url}"`);
+			expect(img).toContain('alt="Picnic"');
+			expect(img).toContain('loading="lazy"');
+			for (const cls of ['max-h-96', 'w-full', 'object-cover', 'rounded-md']) {
+				expect(img).toContain(cls);
+			}
+			const link = body.match(/<a[^>]*data-testid="board-post-image-link"[^>]*>/)![0];
+			expect(link).toContain(`href="${url}"`);
+			expect(link).toContain('target="_blank"');
+			expect(link).toContain('rel="noopener"');
+			expect(link).toContain(`aria-label="${m.board_image_open_label()}"`);
+			// Title, author line, preview, image, controls.
+			const order = [
+				'data-testid="board-post-title"',
+				'data-testid="board-post-author"',
+				'data-testid="board-post-body"',
+				'data-testid="board-post-image"',
+				'data-testid="board-post-actions"'
+			].map((marker) => body.indexOf(marker));
+			expect(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]))).toBe(true);
+		});
+
+		it('an untitled legacy post: alt "Image"; no image: no img', () => {
+			const body = draw({ posts: [{ ...withImage, title: null }] });
+			expect(body).toContain(`alt="${m.board_image_alt_fallback()}"`);
+			expect(draw({ posts: [post('p2', 'Dolma', 'Text')] })).not.toContain('<img');
+		});
+	});
+
+	it("lists a legacy post's PDF files with open and download links (story 4)", () => {
 		const fileId = '44444444-4444-4444-8444-444444444444';
 		const body = draw({
 			posts: [
