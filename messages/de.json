@@ -1435,5 +1435,6 @@
 	"board_delete_error_invalid": "Dieser Beitrag wurde nicht gefunden.",
 	"board_delete_error_not_allowed": "Du kannst diesen Beitrag nicht löschen, oder er wurde schon gelöscht.",
 	"board_delete_error_files": "Die Dateien des Beitrags konnten nicht gelöscht werden, daher bleibt der Beitrag. Bitte versuche es erneut.",
-	"board_delete_error_failed": "Der Beitrag konnte nicht gelöscht werden. Bitte versuche es erneut."
+	"board_delete_error_failed": "Der Beitrag konnte nicht gelöscht werden. Bitte versuche es erneut.",
+	"board_push_title": "Neuer Beitrag von {author} an der Pinnwand"
 }

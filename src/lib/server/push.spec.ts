@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	PUSH_BATCH,
 	PUSH_MAX_DEPTH,
+	announceBoardPost,
 	announceHomework,
+	buildBoardPushMessage,
 	buildPushMessage,
 	isPushEndpoint,
 	parseSubscription,
 	runHomeworkPush,
 	safeEqual,
+	sendBoardPush,
 	sendHomeworkPush,
 	type PushDeps,
 	type PushTarget
@@ -528,6 +532,486 @@ describe('announceHomework', () => {
 		} as unknown as NonNullable<PushDeps['admin']>;
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
 		await expect(announceHomework(INSTANCE, { config, admin })).resolves.toBeUndefined();
+		logged.mockRestore();
+	});
+});
+
+/**
+ * spec-parent-message-board story 6 (CAP-5): the board notice. Who is owed
+ * it (readers with a subscription, never the author, not twice) is decided
+ * by board_push_targets() and tested in rls.spec.ts.
+ */
+const POST = '30000000-0000-4000-8000-000000000001';
+const AUTHOR = '00000000-0000-4000-8000-000000000009';
+
+function boardDoc(text: string) {
+	return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
+}
+
+function fakeBoardAdmin(options: {
+	targets: string[] | { error: { message: string } };
+	subscriptions: Subscription[];
+	post?: { content: unknown; author_id: string | null } | null;
+	authorName?: string | null;
+	/** The author's profile read fails. */
+	authorError?: boolean;
+}) {
+	const calls = {
+		rpc: [] as { name: string; args: Record<string, unknown> }[],
+		deleted: [] as string[][],
+		logged: [] as { rows: Record<string, unknown>[]; options: unknown }[],
+		homeworkLogged: 0
+	};
+	const post =
+		options.post === undefined
+			? { content: boardDoc('Picnic on Saturday'), author_id: AUTHOR }
+			: options.post;
+	/** A row only when the query filters on `id` = `id`, as the real one would. */
+	const single = (id: string, data: unknown, error: { message: string } | null = null) => {
+		let matches = false;
+		const q = {
+			select: () => q,
+			eq: (column: string, value: unknown) => {
+				matches = column === 'id' && value === id;
+				return q;
+			},
+			maybeSingle: async () =>
+				error ? { data: null, error } : { data: matches ? data : null, error: null }
+		};
+		return q;
+	};
+	const admin = {
+		rpc: async (name: string, args: Record<string, unknown>) => {
+			calls.rpc.push({ name, args });
+			if (name !== 'board_push_targets') return { data: 1, error: null };
+			if (!Array.isArray(options.targets)) return { data: null, error: options.targets.error };
+			return { data: options.targets.map((recipient_id) => ({ recipient_id })), error: null };
+		},
+		from: (table: string) => {
+			if (table === 'board_posts')
+				return single(POST, post && { id: POST, content_language: 'en', ...post });
+			if (table === 'profiles')
+				return single(
+					AUTHOR,
+					options.authorName === undefined
+						? { display_name: 'Pema' }
+						: { display_name: options.authorName },
+					options.authorError ? { message: 'profiles down' } : null
+				);
+			if (table === 'push_subscriptions') {
+				return {
+					select: () => ({
+						in: (_column: string, ids: string[]) => ({
+							order: async () => ({
+								data: options.subscriptions.filter((s) => ids.includes(s.profile_id)),
+								error: null
+							})
+						})
+					}),
+					delete: () => ({
+						in: async (_column: string, ids: string[]) => {
+							calls.deleted.push(ids);
+							return { error: null };
+						}
+					})
+				};
+			}
+			if (table === 'board_push_log') {
+				return {
+					upsert: async (rows: Record<string, unknown>[], upsertOptions: unknown) => {
+						calls.logged.push({ rows, options: upsertOptions });
+						return { error: null };
+					}
+				};
+			}
+			calls.homeworkLogged++;
+			throw new Error(`unexpected table ${table}`);
+		}
+	};
+	return { admin: admin as unknown as NonNullable<PushDeps['admin']>, calls };
+}
+
+describe('buildBoardPushMessage', () => {
+	const post = { id: POST, content: boardDoc('Picnic on Saturday'), authorName: 'Pema' };
+
+	it('names the author, shows the text and opens the board', () => {
+		expect(buildBoardPushMessage(post, 'en')).toEqual({
+			title: 'New on the message board from Pema',
+			body: 'Picnic on Saturday',
+			url: '/board',
+			tag: `board-${POST}`,
+			lang: 'en'
+		});
+	});
+
+	it("writes the title in the browser's language", () => {
+		expect(buildBoardPushMessage(post, 'de').title).toBe('Neuer Beitrag von Pema an der Pinnwand');
+		const bo = buildBoardPushMessage(post, 'bo');
+		expect(bo.title).toBe('Pema ནས་བརྡ་ཁྱབ་པང་ལེབ་ཐོག་གསར་པ།');
+		expect(bo.body).toBe('Picnic on Saturday');
+		expect(bo.lang).toBe('bo');
+	});
+
+	it('says Former member when the author is gone', () => {
+		expect(buildBoardPushMessage({ ...post, authorName: null }, 'en').title).toBe(
+			'New on the message board from Former member'
+		);
+		expect(buildBoardPushMessage({ ...post, authorName: '  ' }, 'de').title).toBe(
+			'Neuer Beitrag von Ehemaliges Mitglied an der Pinnwand'
+		);
+	});
+
+	it('collapses whitespace across blocks and line breaks', () => {
+		const content = {
+			type: 'doc',
+			content: [
+				{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Picnic' }] },
+				{
+					type: 'paragraph',
+					content: [
+						{ type: 'text', text: 'on   Saturday' },
+						{ type: 'hardBreak' },
+						{ type: 'text', text: 'bring\tfood', marks: [{ type: 'bold' }] }
+					]
+				},
+				{
+					type: 'bulletList',
+					content: [
+						{
+							type: 'listItem',
+							content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Rice' }] }]
+						}
+					]
+				}
+			]
+		};
+		expect(buildBoardPushMessage({ ...post, content }, 'en').body).toBe(
+			'Picnic on Saturday bring food Rice'
+		);
+	});
+
+	it('clips a long post to about 120 characters with an ellipsis', () => {
+		const body = buildBoardPushMessage(
+			{ ...post, content: boardDoc('word '.repeat(100)) },
+			'en'
+		).body;
+		expect(body.length).toBe(120);
+		expect(body.endsWith('…')).toBe(true);
+	});
+});
+
+describe('buildBoardPushMessage: Tibetan', () => {
+	it('clips a long Tibetan post by whole characters, never splitting a stack', () => {
+		// སྒྲ is one stack of three code points; 130 of them pass the limit.
+		const text = 'སྒྲ'.repeat(130);
+		const body = buildBoardPushMessage(
+			{ id: POST, content: boardDoc(text), authorName: 'Pema' },
+			'bo'
+		).body;
+		const graphemes = [
+			...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(body)
+		].map((g) => g.segment);
+		expect(graphemes).toHaveLength(120);
+		expect(graphemes.at(-1)).toBe('…');
+		// Every kept character is the whole stack, not a broken-off part of it.
+		expect(graphemes.slice(0, -1).every((g) => g === 'སྒྲ')).toBe(true);
+		expect(body.slice(0, -1)).toBe(text.slice(0, body.length - 1));
+		// UTF-16 cutting would have stopped at a code unit, well inside 120 stacks.
+		expect(body.length).toBeGreaterThan(120);
+	});
+});
+
+describe('sendBoardPush', () => {
+	it('deletes a subscription the push service answers 404 for, and counts it', async () => {
+		const gone = subscription(STUDENT);
+		const { admin, calls } = fakeBoardAdmin({ targets: [STUDENT], subscriptions: [gone] });
+		const { send } = fakeSend({ [gone.endpoint]: 404 });
+
+		const result = await sendBoardPush(POST, { config, admin, send });
+
+		expect(result).toMatchObject({ recipients: 0, sent: 0, removed: 1, failed: 0 });
+		expect(calls.deleted).toEqual([[gone.id]]);
+		expect(calls.logged).toEqual([]);
+	});
+
+	it('an author name read error: the notice still goes out, from Former member', async () => {
+		const { admin } = fakeBoardAdmin({
+			targets: [STUDENT],
+			subscriptions: [subscription(STUDENT)],
+			authorError: true
+		});
+		const { send, sent } = fakeSend();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		const result = await sendBoardPush(POST, { config, admin, send });
+
+		expect(result).toMatchObject({ sent: 1, recipients: 1 });
+		expect(sent[0].message.title).toBe('New on the message board from Former member');
+		expect(logged).toHaveBeenCalledWith('push: failed to read the post author', 'profiles down');
+		logged.mockRestore();
+	});
+
+	it('sends one notice to each browser of each reader and logs them', async () => {
+		const readers = [STUDENT, SIBLING, PARENT];
+		const subscriptions = readers.map((id) => subscription(id));
+		const { admin, calls } = fakeBoardAdmin({ targets: readers, subscriptions });
+		const { send, sent } = fakeSend();
+
+		const result = await sendBoardPush(POST, { config, admin, send });
+
+		expect(result).toEqual({ recipients: 3, sent: 3, removed: 0, failed: 0, remaining: false });
+		expect(calls.rpc[0]).toEqual({ name: 'board_push_targets', args: { p_post_id: POST } });
+		expect(sent.map((s) => s.endpoint).sort()).toEqual(subscriptions.map((s) => s.endpoint).sort());
+		for (const { message } of sent) {
+			expect(message).toMatchObject({
+				title: 'New on the message board from Pema',
+				body: 'Picnic on Saturday',
+				url: '/board',
+				tag: `board-${POST}`
+			});
+		}
+		expect(calls.logged).toEqual([
+			{
+				rows: readers.map((recipient_id) => ({ post_id: POST, recipient_id })),
+				options: { onConflict: 'post_id,recipient_id', ignoreDuplicates: true }
+			}
+		]);
+		expect(calls.homeworkLogged).toBe(0);
+	});
+
+	it("writes each browser's notice in that browser's language", async () => {
+		const phone = subscription(STUDENT, { locale: 'bo' });
+		const laptop = subscription(STUDENT, { locale: 'en' });
+		const { admin } = fakeBoardAdmin({ targets: [STUDENT], subscriptions: [phone, laptop] });
+		const { send, sent } = fakeSend();
+
+		await sendBoardPush(POST, { config, admin, send });
+
+		const byEndpoint = Object.fromEntries(sent.map((s) => [s.endpoint, s.message]));
+		expect(byEndpoint[phone.endpoint]).toMatchObject({
+			title: 'Pema ནས་བརྡ་ཁྱབ་པང་ལེབ་ཐོག་གསར་པ།',
+			body: 'Picnic on Saturday',
+			lang: 'bo'
+		});
+		expect(byEndpoint[laptop.endpoint]).toMatchObject({ lang: 'en' });
+	});
+
+	it('nobody left (already logged, or only the author subscribed): nothing sent', async () => {
+		const { admin, calls } = fakeBoardAdmin({ targets: [], subscriptions: [subscription(AUTHOR)] });
+		const { send } = fakeSend();
+		const result = await sendBoardPush(POST, { config, admin, send });
+		expect(result).toMatchObject({ sent: 0, remaining: false });
+		expect(send).not.toHaveBeenCalled();
+		expect(calls.logged).toEqual([]);
+	});
+
+	it('does nothing while the feature is off', async () => {
+		const { admin, calls } = fakeBoardAdmin({
+			targets: [STUDENT],
+			subscriptions: [subscription(STUDENT)]
+		});
+		const { send } = fakeSend();
+		const result = await sendBoardPush(POST, { config: null, admin, send });
+		expect(result).toMatchObject({ sent: 0 });
+		expect(calls.rpc).toEqual([]);
+		expect(send).not.toHaveBeenCalled();
+	});
+
+	it('a targets read error: nothing sent, logged', async () => {
+		const { admin, calls } = fakeBoardAdmin({
+			targets: { error: { message: 'boom' } },
+			subscriptions: [subscription(STUDENT)]
+		});
+		const { send } = fakeSend();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const result = await sendBoardPush(POST, { config, admin, send });
+		expect(result).toMatchObject({ sent: 0, remaining: false });
+		expect(send).not.toHaveBeenCalled();
+		expect(calls.logged).toEqual([]);
+		expect(logged).toHaveBeenCalledWith('push: failed to read board targets', 'boom');
+		logged.mockRestore();
+	});
+
+	it('a post that is gone: nothing sent', async () => {
+		const { admin } = fakeBoardAdmin({
+			targets: [STUDENT],
+			subscriptions: [subscription(STUDENT)],
+			post: null
+		});
+		const { send } = fakeSend();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		expect(await sendBoardPush(POST, { config, admin, send })).toMatchObject({ sent: 0 });
+		expect(send).not.toHaveBeenCalled();
+		logged.mockRestore();
+	});
+
+	it('deletes a subscription the push service no longer knows, counts it and does not log it', async () => {
+		const gone = subscription(STUDENT);
+		const offline = subscription(PARENT);
+		const { admin, calls } = fakeBoardAdmin({
+			targets: [STUDENT, PARENT],
+			subscriptions: [gone, offline]
+		});
+		const { send } = fakeSend({ [gone.endpoint]: 410, [offline.endpoint]: 503 });
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		const result = await sendBoardPush(POST, { config, admin, send });
+
+		expect(result).toMatchObject({ recipients: 0, sent: 0, removed: 1, failed: 1 });
+		expect(calls.deleted).toEqual([[gone.id]]);
+		expect(calls.logged).toEqual([]);
+		logged.mockRestore();
+	});
+
+	it('sends whole recipients only, one batch, and reports that more is owed', async () => {
+		const many = Array.from(
+			{ length: PUSH_BATCH + 5 },
+			(_, i) => `20000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+		);
+		const { admin, calls } = fakeBoardAdmin({
+			targets: many,
+			subscriptions: many.map((id) => subscription(id))
+		});
+		const { send } = fakeSend();
+
+		const result = await sendBoardPush(POST, { config, admin, send, rotate: () => 0 });
+
+		expect(result).toMatchObject({ sent: PUSH_BATCH, recipients: PUSH_BATCH, remaining: true });
+		expect(calls.logged[0].rows).toHaveLength(PUSH_BATCH);
+	});
+
+	it('never throws', async () => {
+		const admin = {
+			rpc: async () => {
+				throw new Error('network down');
+			}
+		} as unknown as NonNullable<PushDeps['admin']>;
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		await expect(sendBoardPush(POST, { config, admin })).resolves.toMatchObject({ sent: 0 });
+		logged.mockRestore();
+	});
+});
+
+describe('runHomeworkPush: board', () => {
+	function crowd() {
+		const many = Array.from(
+			{ length: PUSH_BATCH + 5 },
+			(_, i) => `20000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+		);
+		return fakeBoardAdmin({ targets: many, subscriptions: many.map((id) => subscription(id)) });
+	}
+
+	it('sends one batch and asks for the next with depth + 1 while readers are left', async () => {
+		const { admin, calls } = crowd();
+		const { send } = fakeSend();
+		const result = await runHomeworkPush(
+			{ kind: 'board', instanceId: POST, depth: 2 },
+			{ config, admin, send }
+		);
+		expect(result.board).toMatchObject({ sent: PUSH_BATCH, remaining: true });
+		expect(result.overdue).toBeUndefined();
+		expect(calls.rpc.at(-1)).toEqual({
+			name: 'trigger_homework_push',
+			args: { p_kind: 'board', p_instance_id: POST, p_depth: 3 }
+		});
+	});
+
+	it('stops asking at the depth limit and says which post left readers unnotified', async () => {
+		const { admin, calls } = crowd();
+		const { send } = fakeSend();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		await runHomeworkPush(
+			{ kind: 'board', instanceId: POST, depth: PUSH_MAX_DEPTH },
+			{ config, admin, send }
+		);
+		expect(calls.rpc.map((c) => c.name)).toEqual(['board_push_targets']);
+		expect(logged).toHaveBeenCalledWith(
+			'push: board post readers left unnotified at the depth limit',
+			POST
+		);
+		logged.mockRestore();
+	});
+
+	it('never throws when asking for the next batch fails', async () => {
+		const { admin } = crowd();
+		const failing = {
+			...admin,
+			rpc: async (name: string, args: Record<string, unknown>) => {
+				if (name === 'trigger_homework_push') throw new Error('network down');
+				return admin.rpc(name as never, args as never);
+			}
+		} as unknown as NonNullable<PushDeps['admin']>;
+		const { send } = fakeSend();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const result = await runHomeworkPush(
+			{ kind: 'board', instanceId: POST },
+			{ config, admin: failing, send }
+		);
+		expect(result.board).toMatchObject({ sent: PUSH_BATCH, remaining: true });
+		expect(logged).toHaveBeenCalledWith(
+			'push: failed to ask for the next batch',
+			'Error: network down'
+		);
+		logged.mockRestore();
+	});
+
+	it('does not ask again when everyone was reached', async () => {
+		const { admin, calls } = fakeBoardAdmin({
+			targets: [STUDENT],
+			subscriptions: [subscription(STUDENT)]
+		});
+		const { send } = fakeSend();
+		const result = await runHomeworkPush(
+			{ kind: 'board', instanceId: POST },
+			{ config, admin, send }
+		);
+		expect(result).toEqual({ board: expect.objectContaining({ sent: 1, remaining: false }) });
+		expect(calls.rpc.map((c) => c.name)).toEqual(['board_push_targets']);
+	});
+
+	it('ignores a board request without a real post id', async () => {
+		const { admin, calls } = crowd();
+		const { send } = fakeSend();
+		for (const instanceId of ["x' or 1=1", undefined, 42]) {
+			expect(await runHomeworkPush({ kind: 'board', instanceId }, { config, admin, send })).toEqual(
+				{}
+			);
+		}
+		expect(calls.rpc).toEqual([]);
+		expect(send).not.toHaveBeenCalled();
+	});
+
+	it('the scheduled run never sends board notices', async () => {
+		const { admin, calls } = fakeAdmin({ targets: [], subscriptions: [] });
+		const { send } = fakeSend();
+		await runHomeworkPush(null, { config, admin, send, now: new Date('2026-10-10T07:00:00Z') });
+		expect(calls.rpc.map((c) => c.name)).not.toContain('board_push_targets');
+	});
+});
+
+describe('announceBoardPost', () => {
+	it('hands the new post to the database job', async () => {
+		const { admin, calls } = fakeBoardAdmin({ targets: [], subscriptions: [] });
+		await announceBoardPost(POST, { config, admin });
+		expect(calls.rpc).toEqual([
+			{ name: 'trigger_homework_push', args: { p_kind: 'board', p_instance_id: POST } }
+		]);
+	});
+
+	it('does nothing while the feature is off', async () => {
+		const { admin, calls } = fakeBoardAdmin({ targets: [], subscriptions: [] });
+		await announceBoardPost(POST, { config: null, admin });
+		expect(calls.rpc).toEqual([]);
+	});
+
+	it('never throws into the action that created the post', async () => {
+		const admin = {
+			rpc: async () => {
+				throw new Error('network down');
+			}
+		} as unknown as NonNullable<PushDeps['admin']>;
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		await expect(announceBoardPost(POST, { config, admin })).resolves.toBeUndefined();
 		logged.mockRestore();
 	});
 });

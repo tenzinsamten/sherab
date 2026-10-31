@@ -3,6 +3,7 @@ import { sendNotification } from 'web-push-neo';
 import { todayInBerlin } from '$lib/berlin-date';
 import { formatDay, num } from '$lib/format';
 import { pickLocalized } from '$lib/localized-name';
+import { plainText, readContent } from '$lib/rich-text';
 import * as m from '$lib/paraglide/messages.js';
 import { createSupabaseAdminClient } from '$lib/supabase/admin';
 import type { Database } from '$lib/supabase/database.types';
@@ -40,6 +41,9 @@ export const PUSH_MAX_DEPTH = 8;
 const PUSH_TTL_SECONDS = 2 * 24 * 60 * 60;
 
 const TITLE_MAX = 80;
+
+/** A board post's push body: its first words (story 6). */
+const BOARD_BODY_MAX = 120;
 
 type PushConfig = { publicKey: string; privateKey: string; subject: string };
 
@@ -116,6 +120,19 @@ export async function safeEqual(a: string, b: string): Promise<boolean> {
 
 function clip(text: string, max = TITLE_MAX): string {
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * As clip, but counting user-perceived characters, so a Tibetan stack or an
+ * emoji is never split before the ellipsis (board notices, story 6).
+ */
+function clipGraphemes(text: string, max: number): string {
+	const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)];
+	if (graphemes.length <= max) return text;
+	return `${graphemes
+		.slice(0, max - 1)
+		.map((g) => g.segment)
+		.join('')}…`;
 }
 
 /**
@@ -212,47 +229,33 @@ const emptyResult = (): PushResult => ({
 });
 
 /**
- * Sends one batch of the notices of `kind` that are still owed and logs
- * them, so calling again sends only what is left. Never throws: a failure
- * is logged and counted.
+ * The batch send shared by homework and board notices: one batch of whole
+ * recipients (`everyone`, each with at least one subscription), each browser
+ * getting `message` in its own language. Subscriptions the push service no
+ * longer knows are deleted. Returns the counts and who got the notice on at
+ * least one browser; the caller logs those. Never throws.
  */
-export async function sendHomeworkPush(
-	kind: PushKind,
-	options: { instanceId?: string; maxSends?: number } = {},
-	deps: PushDeps = {}
-): Promise<PushResult> {
+async function sendBatch(
+	everyone: string[],
+	message: (recipientId: string, locale: PushLocale) => PushMessage,
+	options: {
+		maxSends: number;
+		config: PushConfig;
+		admin: AdminClient;
+		send: typeof sendNotification;
+		rotate?: (count: number) => number;
+	}
+): Promise<{ result: PushResult; delivered: Set<string> }> {
+	const { maxSends, config, admin, send } = options;
 	const result = emptyResult();
-	const config = deps.config === undefined ? pushConfig() : deps.config;
-	const maxSends = options.maxSends ?? PUSH_BATCH;
-	if (!config || maxSends <= 0) return result;
-
-	const admin = deps.admin ?? createSupabaseAdminClient();
-	const send = deps.send ?? sendNotification;
-
-	const { data: targets, error: targetsError } = await admin.rpc('homework_push_targets', {
-		p_kind: kind,
-		p_instance_id: options.instanceId
-	});
-	if (targetsError) {
-		console.error('push: failed to read targets', targetsError.message);
-		return result;
-	}
-	if (!targets || targets.length === 0) return result;
-
-	const byRecipient = new Map<string, PushTarget[]>();
-	for (const row of targets) {
-		const rows = byRecipient.get(row.recipient_id);
-		if (rows) rows.push(row);
-		else byRecipient.set(row.recipient_id, [row]);
-	}
+	const delivered = new Set<string>();
 
 	// Every listed recipient has at least one subscription, so at most
 	// `maxSends` of them fit. Start somewhere else each time: a recipient
 	// whose sends keep failing must not hold up everyone behind them.
-	const everyone = [...byRecipient.keys()];
 	const start =
 		everyone.length > maxSends
-			? (deps.rotate ?? ((n) => Math.floor(Math.random() * n)))(everyone.length)
+			? (options.rotate ?? ((n) => Math.floor(Math.random() * n)))(everyone.length)
 			: 0;
 	const candidates = [...everyone.slice(start), ...everyone.slice(0, start)].slice(0, maxSends);
 
@@ -263,7 +266,7 @@ export async function sendHomeworkPush(
 		.order('created_at');
 	if (subscriptionsError) {
 		console.error('push: failed to read subscriptions', subscriptionsError.message);
-		return result;
+		return { result, delivered };
 	}
 
 	const byOwner = new Map<string, NonNullable<typeof subscriptions>>();
@@ -286,7 +289,6 @@ export async function sendHomeworkPush(
 	result.remaining = chosen.length < everyone.length;
 
 	const gone: string[] = [];
-	const delivered = new Set<string>();
 
 	await Promise.all(
 		chosen.flatMap((id) =>
@@ -296,11 +298,11 @@ export async function sendHomeworkPush(
 					result.removed++;
 					return;
 				}
-				const message = buildPushMessage(kind, byRecipient.get(id)!, sub.locale as PushLocale);
+				const payload = message(id, sub.locale as PushLocale);
 				try {
 					await send(
 						{ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-						JSON.stringify(message),
+						JSON.stringify(payload),
 						{
 							vapidDetails: config,
 							TTL: PUSH_TTL_SECONDS,
@@ -331,6 +333,49 @@ export async function sendHomeworkPush(
 		if (error) console.error('push: failed to delete old subscriptions', error.message);
 	}
 
+	return { result, delivered };
+}
+
+/**
+ * Sends one batch of the notices of `kind` that are still owed and logs
+ * them, so calling again sends only what is left. Never throws: a failure
+ * is logged and counted.
+ */
+export async function sendHomeworkPush(
+	kind: PushKind,
+	options: { instanceId?: string; maxSends?: number } = {},
+	deps: PushDeps = {}
+): Promise<PushResult> {
+	const config = deps.config === undefined ? pushConfig() : deps.config;
+	const maxSends = options.maxSends ?? PUSH_BATCH;
+	if (!config || maxSends <= 0) return emptyResult();
+
+	const admin = deps.admin ?? createSupabaseAdminClient();
+	const send = deps.send ?? sendNotification;
+
+	const { data: targets, error: targetsError } = await admin.rpc('homework_push_targets', {
+		p_kind: kind,
+		p_instance_id: options.instanceId
+	});
+	if (targetsError) {
+		console.error('push: failed to read targets', targetsError.message);
+		return emptyResult();
+	}
+	if (!targets || targets.length === 0) return emptyResult();
+
+	const byRecipient = new Map<string, PushTarget[]>();
+	for (const row of targets) {
+		const rows = byRecipient.get(row.recipient_id);
+		if (rows) rows.push(row);
+		else byRecipient.set(row.recipient_id, [row]);
+	}
+
+	const { result, delivered } = await sendBatch(
+		[...byRecipient.keys()],
+		(id, locale) => buildPushMessage(kind, byRecipient.get(id)!, locale),
+		{ maxSends, config, admin, send, rotate: deps.rotate }
+	);
+
 	const logRows = [...delivered].flatMap((id) =>
 		byRecipient.get(id)!.map((row) => ({
 			kind,
@@ -357,6 +402,8 @@ export type PushRunRequest = { kind?: unknown; instanceId?: unknown; depth?: unk
 
 export type PushRunResult = {
 	added?: PushResult;
+	/** Story 6: the notice for a board post just created. */
+	board?: PushResult;
 	overdue?: PushResult;
 	/** Null on every day but Saturday. */
 	dueSoon?: PushResult | null;
@@ -369,6 +416,10 @@ export type PushRunResult = {
  * While a batch leaves recipients over, it asks the database to call again
  * (`trigger_homework_push`), at most `PUSH_MAX_DEPTH` times.
  *
+ * `{ kind: 'board', instanceId }` (story 6): the notice for a board post
+ * just created, batched and continued the same way. The scheduled run never
+ * sends board notices.
+ *
  * Anything else is the scheduled run: Overdue to parents, and on a Saturday
  * (in Berlin) Due soon to students and parents, sharing one batch.
  */
@@ -376,6 +427,18 @@ export async function runHomeworkPush(
 	request: PushRunRequest,
 	deps: PushDeps = {}
 ): Promise<PushRunResult> {
+	if (request?.kind === 'board') {
+		const postId = request.instanceId;
+		if (typeof postId !== 'string' || !UUID.test(postId)) return {};
+		const board = await sendBoardPush(postId, deps);
+		if (board.remaining) {
+			const depth = requestDepth(request);
+			if (depth < PUSH_MAX_DEPTH) await askForNextBatch('board', postId, depth + 1, deps);
+			else console.error('push: board post readers left unnotified at the depth limit', postId);
+		}
+		return { board };
+	}
+
 	if (request?.kind === 'added') {
 		const instanceId = request.instanceId;
 		if (typeof instanceId !== 'string' || !UUID.test(instanceId)) return {};
@@ -404,6 +467,139 @@ export async function runHomeworkPush(
 			? await sendHomeworkPush('due_soon', { maxSends: PUSH_BATCH - used }, deps)
 			: null;
 	return { overdue, dueSoon };
+}
+
+function requestDepth(request: NonNullable<PushRunRequest>): number {
+	return typeof request.depth === 'number' && Number.isInteger(request.depth) && request.depth > 0
+		? request.depth
+		: 0;
+}
+
+/** Asks the database to call `/api/push/run` again for the next batch. */
+async function askForNextBatch(
+	kind: 'board',
+	instanceId: string,
+	depth: number,
+	deps: PushDeps
+): Promise<void> {
+	try {
+		const admin = deps.admin ?? createSupabaseAdminClient();
+		const { error } = await admin.rpc('trigger_homework_push', {
+			p_kind: kind,
+			p_instance_id: instanceId,
+			p_depth: depth
+		});
+		if (error) console.error('push: failed to ask for the next batch', error.message);
+	} catch (err) {
+		console.error('push: failed to ask for the next batch', String(err));
+	}
+}
+
+/**
+ * The board notice (story 6) in `locale`: the author in the title, the
+ * post's first words as the body, opening the board.
+ */
+export function buildBoardPushMessage(
+	post: { id: string; content: unknown; authorName: string | null },
+	locale: PushLocale
+): PushMessage {
+	const opt = { locale };
+	const author = post.authorName?.trim() || m.board_former_member({}, opt);
+	const doc = readContent(post.content);
+	return {
+		title: clipGraphemes(m.board_push_title({ author }, opt), TITLE_MAX),
+		body: doc ? clipGraphemes(plainText(doc), BOARD_BODY_MAX) : '',
+		url: '/board',
+		tag: `board-${post.id}`,
+		lang: locale
+	};
+}
+
+/**
+ * Sends one batch of the notice for board post `postId` to the subscribed
+ * readers still owed it (`board_push_targets`, 0062: never the author) and
+ * logs them in `board_push_log`, so calling again sends only what is left.
+ * Never throws: a failure is logged and counted.
+ */
+export async function sendBoardPush(postId: string, deps: PushDeps = {}): Promise<PushResult> {
+	const config = deps.config === undefined ? pushConfig() : deps.config;
+	if (!config) return emptyResult();
+	try {
+		const admin = deps.admin ?? createSupabaseAdminClient();
+		const send = deps.send ?? sendNotification;
+
+		const { data: targets, error: targetsError } = await admin.rpc('board_push_targets', {
+			p_post_id: postId
+		});
+		if (targetsError) {
+			console.error('push: failed to read board targets', targetsError.message);
+			return emptyResult();
+		}
+		if (!targets || targets.length === 0) return emptyResult();
+
+		const { data: post, error: postError } = await admin
+			.from('board_posts')
+			.select('id, author_id, content, content_language')
+			.eq('id', postId)
+			.maybeSingle();
+		if (postError || !post) {
+			console.error('push: failed to read the board post', postError?.message ?? 'no row');
+			return emptyResult();
+		}
+
+		// The body stays in the post's own language (content_language); only
+		// the title follows each browser's locale.
+		let authorName: string | null = null;
+		if (post.author_id) {
+			const { data: author, error: authorError } = await admin
+				.from('profiles')
+				.select('display_name')
+				.eq('id', post.author_id)
+				.maybeSingle();
+			if (authorError) console.error('push: failed to read the post author', authorError.message);
+			authorName = author?.display_name ?? null;
+		}
+
+		const { result, delivered } = await sendBatch(
+			[...new Set(targets.map((row) => row.recipient_id))],
+			(_id, locale) =>
+				buildBoardPushMessage({ id: post.id, content: post.content, authorName }, locale),
+			{ maxSends: PUSH_BATCH, config, admin, send, rotate: deps.rotate }
+		);
+
+		if (delivered.size > 0) {
+			const { error } = await admin.from('board_push_log').upsert(
+				[...delivered].map((recipient_id) => ({ post_id: postId, recipient_id })),
+				{ onConflict: 'post_id,recipient_id', ignoreDuplicates: true }
+			);
+			// Not logged means sent again on the next batch: say so loudly.
+			if (error) console.error('push: failed to log sent board notices', error.message);
+		}
+		return result;
+	} catch (err) {
+		console.error('push: board push failed', String(err));
+		return emptyResult();
+	}
+}
+
+/**
+ * Called after a board post is created (story 6). As announceHomework: the
+ * sending happens in a request of its own, started by the database. Nothing
+ * is sent while the feature or the Vault secrets are not set up. Never throws.
+ */
+export async function announceBoardPost(postId: string, deps: PushDeps = {}): Promise<void> {
+	const config = deps.config === undefined ? pushConfig() : deps.config;
+	if (!config) return;
+	try {
+		const admin = deps.admin ?? createSupabaseAdminClient();
+		const { error } = await admin.rpc('trigger_homework_push', {
+			p_kind: 'board',
+			p_instance_id: postId
+		});
+		if (error) console.error('push: failed to announce the board post', error.message);
+	} catch (err) {
+		console.error('push: failed to announce the board post', String(err));
+	}
 }
 
 /**

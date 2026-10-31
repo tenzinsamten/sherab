@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as m from '$lib/paraglide/messages.js';
 import { MAX_CONTENT_BYTES } from '$lib/rich-text';
+
+// Story 6: the push announcement, replaced by a spy.
+const { announceBoardPost } = vi.hoisted(() => ({
+	announceBoardPost: vi.fn<(postId: string) => Promise<void>>(async () => {})
+}));
+vi.mock('$lib/server/push', () => ({ announceBoardPost }));
+
 import { actions, load } from './+page.server';
 
 /**
@@ -154,6 +161,7 @@ const signedIn = { user: { id: 'u1' }, session: {} };
 // Each test's console.error spy starts fresh.
 afterEach(() => {
 	vi.restoreAllMocks();
+	announceBoardPost.mockClear();
 });
 
 const consoleError = () => vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -386,12 +394,14 @@ function doc(text: string) {
 function postEvent(
 	fake: ReturnType<typeof fakeSupabase>,
 	fields: Record<string, string>,
-	session: unknown = signedIn
+	session: unknown = signedIn,
+	platform?: unknown
 ) {
 	const body = new FormData();
 	for (const [k, v] of Object.entries(fields)) body.set(k, v);
 	return {
 		request: new Request('http://localhost/board?/post', { method: 'POST', body }),
+		platform,
 		locals: { supabase: fake.supabase, safeGetSession: async () => session }
 	} as never;
 }
@@ -1030,5 +1040,64 @@ describe('/board delete action (story 5)', () => {
 		const result = await del(formEvent(fake, 'delete', { postId: POST_ID }));
 		expect(result).toMatchObject({ status: 500, data: { error: m.board_delete_error_failed() } });
 		expect(spy).toHaveBeenCalledWith(`Could not delete board post ${POST_ID}. x`);
+	});
+});
+
+/** Story 6 (CAP-5): a new post is announced once; nothing else is. */
+describe('/board push on a new post (story 6)', () => {
+	const post = (event: never) => actions.post(event) as Promise<unknown>;
+	const inserted = { data: { id: POST_ID }, error: null };
+
+	it('a new post is announced with its id, after its files are attached', async () => {
+		const fake = fakeSupabase({ insert: inserted });
+		announceBoardPost.mockImplementationOnce(async () => {
+			fake.log.push('announce');
+		});
+		const result = await post(fileEvent(fake, [pdf('Flyer.pdf')]));
+		expect(result).toEqual({ posted: true, notAttached: [] });
+		expect(announceBoardPost).toHaveBeenCalledTimes(1);
+		expect(announceBoardPost).toHaveBeenCalledWith(POST_ID);
+		expect(fake.log.at(-1)).toBe('announce');
+		expect(fake.log.indexOf('board_post_files:insert')).toBeLessThan(fake.log.indexOf('announce'));
+	});
+
+	it('on Cloudflare the announcement runs after the reply', async () => {
+		const fake = fakeSupabase({ insert: inserted });
+		const waitUntil = vi.fn();
+		await post(
+			postEvent(fake, { content: doc('Hi'), contentLanguage: 'en' }, signedIn, {
+				ctx: { waitUntil }
+			})
+		);
+		expect(announceBoardPost).toHaveBeenCalledWith(POST_ID);
+		expect(waitUntil).toHaveBeenCalledTimes(1);
+	});
+
+	it('a refused or failed post is not announced', async () => {
+		const spy = consoleError();
+		for (const insert of [
+			{ data: null, error: { code: '42501', message: 'rls' } },
+			{ data: null, error: { code: 'XX000', message: 'x' } }
+		]) {
+			const fake = fakeSupabase({ insert });
+			await post(postEvent(fake, { content: doc('Hi'), contentLanguage: 'en' }));
+		}
+		await post(postEvent(fakeSupabase(), { content: doc(''), contentLanguage: 'en' }));
+		expect(announceBoardPost).not.toHaveBeenCalled();
+		spy.mockRestore();
+	});
+
+	it('an edit or a delete is never announced', async () => {
+		const edited = await actions.edit(
+			formEvent(fakeSupabase(), 'edit', {
+				postId: POST_ID,
+				content: doc('Picnic moved to Sunday'),
+				contentLanguage: 'en'
+			})
+		);
+		expect(edited).toEqual({ edited: POST_ID });
+		const deleted = await actions.delete(formEvent(fakeSupabase(), 'delete', { postId: POST_ID }));
+		expect(deleted).toEqual({ deleted: POST_ID });
+		expect(announceBoardPost).not.toHaveBeenCalled();
 	});
 });

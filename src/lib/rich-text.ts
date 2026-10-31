@@ -197,3 +197,18 @@ export function isContentLanguage(value: unknown): value is ContentLanguage {
 export function readContentLanguage(value: unknown): ContentLanguage {
 	return isContentLanguage(value) ? value : DEFAULT_CONTENT_LANGUAGE;
 }
+
+function blockText(block: RichTextBlock): string[] {
+	if (block.type === 'bulletList' || block.type === 'orderedList') {
+		return block.content.flatMap((item) => item.content.flatMap(blockText));
+	}
+	return [(block.content ?? []).map((node) => (node.type === 'text' ? node.text : ' ')).join('')];
+}
+
+/**
+ * The document's words without formatting, one space between blocks and for
+ * each line break, whitespace collapsed (a board post's push body, story 6).
+ */
+export function plainText(doc: RichTextDoc): string {
+	return doc.content.flatMap(blockText).join(' ').replace(/\s+/g, ' ').trim();
+}

@@ -20338,4 +20338,127 @@ describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
 		const { data } = await student.client.from('board_posts').select('author_id').eq('id', postId);
 		expect(data).toEqual([{ author_id: null }]);
 	});
+
+	/**
+	 * Story 6 (0062, CAP-5): board_push_targets(post). Subscriptions are
+	 * written with the service role: save_push_subscription() takes students
+	 * and parents only, and the targeting is what is under test here.
+	 */
+	async function subscribeAs(profileId: string) {
+		const { error } = await adminClient.from('push_subscriptions').insert({
+			profile_id: profileId,
+			endpoint: `https://fcm.googleapis.com/fcm/send/0062-${crypto.randomUUID()}`,
+			p256dh: 'B'.repeat(87),
+			auth: 'a'.repeat(22),
+			locale: 'en'
+		});
+		if (error) throw new Error(`Failed to subscribe: ${error.message}`);
+	}
+
+	async function boardTargets(postId: string, among: string[]) {
+		const { data, error } = await adminClient.rpc('board_push_targets', { p_post_id: postId });
+		if (error) throw new Error(`board_push_targets failed: ${error.message}`);
+		const ids = (data ?? []).map((row) => row.recipient_id);
+		// Ordered by recipient_id.
+		expect(ids).toEqual([...ids].sort());
+		return ids.filter((id) => among.includes(id)).sort();
+	}
+
+	it('Push targets: subscribed readers of each role, never the author, non-readers, the unsubscribed or the logged', async () => {
+		const a = await createSignedInUser('admin');
+		const t = await createSignedInUser('teacher');
+		const { data: cls, error: classError } = await adminClient
+			.from('classes')
+			.insert({ name: name('Class'), code: `P${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (classError || !cls) throw new Error(`Failed to create class: ${classError?.message}`);
+		const kid = await newStudent(cls.id, 'approved');
+		const quietKid = await newStudent(cls.id, 'approved');
+		const waitingKid = await newStudent(cls.id, 'pending');
+		const turnedAwayKid = await newStudent(cls.id, 'rejected');
+		const mum = await parent(true, false);
+		const waitingMum = await parent(false, true);
+		const loggedMum = await parent(true, false);
+		const author = await parent(true, true);
+
+		for (const id of [
+			a.id,
+			t.id,
+			kid.id,
+			waitingKid.id,
+			turnedAwayKid.id,
+			mum.id,
+			waitingMum.id,
+			loggedMum.id,
+			author.id
+		]) {
+			await subscribeAs(id);
+		}
+		const everyone = [
+			a.id,
+			t.id,
+			kid.id,
+			quietKid.id,
+			waitingKid.id,
+			turnedAwayKid.id,
+			mum.id,
+			waitingMum.id,
+			loggedMum.id,
+			author.id
+		];
+
+		const postId = await postBy(author);
+		expect(await boardTargets(postId, everyone)).toEqual(
+			[a.id, t.id, kid.id, mum.id, loggedMum.id].sort()
+		);
+
+		const { error: logError } = await adminClient
+			.from('board_push_log')
+			.insert({ post_id: postId, recipient_id: loggedMum.id });
+		expect(logError).toBeNull();
+		expect(await boardTargets(postId, everyone)).toEqual([a.id, t.id, kid.id, mum.id].sort());
+
+		// Logged for one post is still owed another post's notice.
+		const otherPost = await postBy(author);
+		expect(await boardTargets(otherPost, everyone)).toContain(loggedMum.id);
+
+		// A post by a teacher leaves that teacher out and includes the parent author.
+		const teacherPost = await postBy({ id: t.id, client: t.client });
+		const teacherTargets = await boardTargets(teacherPost, everyone);
+		expect(teacherTargets).not.toContain(t.id);
+		expect(teacherTargets).toContain(author.id);
+
+		// No post, no targets.
+		expect(await boardTargets(crypto.randomUUID(), everyone)).toEqual([]);
+
+		// Deleting the post drops its log rows.
+		const { error: deleteError } = await adminClient.from('board_posts').delete().eq('id', postId);
+		expect(deleteError).toBeNull();
+		const { data: left } = await adminClient
+			.from('board_push_log')
+			.select('recipient_id')
+			.eq('post_id', postId);
+		expect(left).toEqual([]);
+	});
+
+	it('Push targets: no signed-in user can call board_push_targets or read board_push_log', async () => {
+		const postId = await postBy(granted);
+		for (const client of [
+			student.client,
+			granted.client,
+			teacher.client,
+			admin.client,
+			signedOut
+		]) {
+			expect((await client.rpc('board_push_targets', { p_post_id: postId })).error).not.toBeNull();
+			const log = await client.from('board_push_log').select('post_id');
+			expect(log.data ?? []).toEqual([]);
+			expect(log.error).not.toBeNull();
+			const insert = await client
+				.from('board_push_log')
+				.insert({ post_id: postId, recipient_id: student.id });
+			expect(insert.error).not.toBeNull();
+		}
+	});
 });

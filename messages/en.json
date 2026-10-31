@@ -1435,5 +1435,6 @@
 	"board_delete_error_invalid": "This post can't be found.",
 	"board_delete_error_not_allowed": "You can't delete this post, or it was already deleted.",
 	"board_delete_error_files": "Couldn't delete the post's files, so the post was kept. Please try again.",
-	"board_delete_error_failed": "Couldn't delete the post. Please try again."
+	"board_delete_error_failed": "Couldn't delete the post. Please try again.",
+	"board_push_title": "New on the message board from {author}"
 }

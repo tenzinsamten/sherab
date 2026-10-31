@@ -61,6 +61,19 @@ describe('POST /api/push/run', () => {
 		expect(run).toHaveBeenCalledWith(body);
 	});
 
+	it('hands a board request (story 6) to the same run', async () => {
+		const body = { kind: 'board', instanceId: '30000000-0000-4000-8000-000000000001', depth: 2 };
+		const response = await call({ authorization: 'Bearer s3cret', body });
+		expect(response.status).toBe(200);
+		expect(run).toHaveBeenCalledWith(body);
+	});
+
+	it('refuses a board request without the secret', async () => {
+		const response = await call({ body: { kind: 'board', instanceId: 'x' } });
+		expect(response.status).toBe(401);
+		expect(run).not.toHaveBeenCalled();
+	});
+
 	it('on Cloudflare answers at once and keeps sending after the reply', async () => {
 		const waitUntil = vi.fn();
 		const response = await call({ authorization: 'Bearer s3cret', waitUntil });

@@ -18,6 +18,7 @@ import {
 	removePostObjects
 } from '$lib/server/board-files';
 import { FORM_OVERHEAD_BYTES, isUuid, readFileForm } from '$lib/server/pdf-files';
+import { announceBoardPost } from '$lib/server/push';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Posts per page; a full page shows the "Older posts" link. */
@@ -207,7 +208,7 @@ function readTextForm(request: Request, broken: () => string) {
 }
 
 export const actions: Actions = {
-	post: async ({ request, locals: { supabase, safeGetSession } }) => {
+	post: async ({ request, platform, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {
 			return fail(401, { error: m.board_error_not_signed_in() });
@@ -247,6 +248,14 @@ export const actions: Actions = {
 		// ones that were not attached.
 		const notAttached =
 			files.files.length > 0 ? await attachPostFiles(supabase, user, inserted.id, files.files) : [];
+
+		// Story 6 (CAP-5): tell the other readers. After the files, so a reader
+		// who opens the push sees them. Sent from a request of its own (started
+		// by the database), so it neither delays nor can fail this one. An edit
+		// or a delete never announces.
+		const announced = announceBoardPost(inserted.id);
+		if (platform?.ctx) platform.ctx.waitUntil(announced);
+		else await announced;
 
 		return { posted: true, notAttached };
 	},

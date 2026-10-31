@@ -223,6 +223,40 @@ export type Database = {
 					}
 				];
 			};
+			/** Story 6 (0062): board notices sent, per post and recipient. service_role only. */
+			board_push_log: {
+				Row: {
+					post_id: string;
+					recipient_id: string;
+					sent_at: string;
+				};
+				Insert: {
+					post_id: string;
+					recipient_id: string;
+					sent_at?: string;
+				};
+				Update: {
+					post_id?: string;
+					recipient_id?: string;
+					sent_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'board_push_log_post_id_fkey';
+						columns: ['post_id'];
+						isOneToOne: false;
+						referencedRelation: 'board_posts';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'board_push_log_recipient_id_fkey';
+						columns: ['recipient_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_days: {
 				Row: {
 					cancelled: boolean;
@@ -1680,6 +1714,11 @@ export type Database = {
 			is_parent_managing: { Args: { p_student_id: string }; Returns: boolean };
 			is_board_reader: { Args: never; Returns: boolean };
 			is_board_poster: { Args: never; Returns: boolean };
+			/** Story 6 (0062): subscribed board readers still owed a post's notice, author excluded. service_role only. */
+			board_push_targets: {
+				Args: { p_post_id: string };
+				Returns: { recipient_id: string }[];
+			};
 			board_author_names: {
 				Args: { p_ids: string[] };
 				/** Only ids that have written a board post; empty for a caller who is not a board reader. */

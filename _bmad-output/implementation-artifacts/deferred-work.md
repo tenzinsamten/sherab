@@ -628,3 +628,9 @@
 - source_spec: `_bmad-output/specs/spec-parent-message-board/stories/4-pdf-attachments-on-posts.md`
   summary: No browser test proves the board's "files not attached" warning toast shows (instead of the success toast) when a file fails to store or record.
   evidence: The server spec pins `{posted: true, notAttached: [...]}`, but forcing a storage or row failure in e2e needs fault injection the board suite doesn't have yet (homework covers its equivalent at e2e/homework-files.e2e.ts:241-264).
+- source_spec: `_bmad-output/specs/spec-parent-message-board/stories/6-push-on-a-new-post.md`
+  summary: Teachers and admins can't subscribe to push at all, so board pushes reach only students and approved parents; the opt-in copy still says "homework" notifications and there is no board-only opt-out.
+  evidence: `save_push_subscription()` (0037) refuses anyone but students and approved parents; SPEC success signal names a teacher receiving the push. Needs a decision on opening subscriptions to staff (function + UI switch) and on updated opt-in wording.
+- source_spec: `_bmad-output/specs/spec-parent-message-board/stories/6-push-on-a-new-post.md`
+  summary: Board push has no backstop: notices lost to a failed follow-up batch, a transient read error, a non-410 send failure, or the 180-recipient depth cap are never retried (the scheduled run skips board posts).
+  evidence: Same design as homework "added" pushes; a daily sweep of recent posts with remaining targets would close it. Depth-cap drops are now logged.
