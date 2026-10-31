@@ -1,0 +1,52 @@
+- id: "1"
+  title: Board database and RLS
+  description: >-
+    The database side of CAP-1 to CAP-4: post and post-file tables, the
+    private attachment bucket and its policies, and the parent posting grant,
+    with RLS per SPEC Constraints.
+  invoke_dev_with: >-
+    New migration 0061. Add tables, columns and functions to
+    src/lib/supabase/database.types.ts by hand; never regenerate it. RLS
+    tests in src/lib/server/rls.spec.ts cover every role for read, insert,
+    update, delete and storage, including pending users and parents without
+    the grant. Only admins write the grant; only authors update a post.
+- id: "2"
+  title: Admin posting grant
+  description: >-
+    CAP-4: on /admin/parents an admin turns posting on or off for each
+    approved parent; turning it off keeps that parent's earlier posts.
+- id: "3"
+  title: Board page with reading and posting
+  description: >-
+    CAP-1 and CAP-2 without files: a /board page lists posts newest first
+    for every approved role, with a post form for admins, teachers and
+    granted parents, and a board link in every role's navigation.
+  invoke_dev_with: >-
+    Reuse the homework rich-text editor and MAX_CONTENT_BYTES for the body.
+    All text in en, de, bo.
+- id: "4"
+  title: PDF attachments on posts
+  description: >-
+    CAP-2 files: posts carry up to 2 PDFs of 5 MB each, uploaded with the
+    post and shown to readers through signed URLs.
+  invoke_dev_with: >-
+    Reuse src/lib/server/pdf-files.ts helpers and the homework-file limits
+    in src/lib/homework-files.ts.
+- id: "5"
+  title: Edit and delete posts
+  description: >-
+    CAP-3: authors edit or delete their own posts; admins and teachers
+    delete any post but never edit it; deleting removes the post's stored
+    files.
+  invoke_dev_with: >-
+    Objects can't be deleted from SQL; remove storage objects before the
+    rows, as removeStoredFiles does for homework.
+- id: "6"
+  title: Push on a new post
+  description: >-
+    CAP-5: a new post sends one push to every subscribed browser except the
+    author's, opening /board; edits send nothing.
+  invoke_dev_with: >-
+    Extend src/lib/server/push.ts with a board kind and its own target
+    query; keep PUSH_BATCH batching and logging, and do nothing while the
+    VAPID variables are unset.

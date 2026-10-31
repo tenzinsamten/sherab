@@ -152,6 +152,77 @@ export type Database = {
 					}
 				];
 			};
+			board_posts: {
+				Row: {
+					author_id: string | null;
+					content: Json;
+					content_language: string;
+					created_at: string;
+					id: string;
+					updated_at: string;
+				};
+				/** Column grant (0061): author_id, content, content_language only. */
+				Insert: {
+					author_id: string;
+					content: Json;
+					content_language?: string;
+				};
+				/** Column grant (0061): content, content_language, updated_at only. */
+				Update: {
+					content?: Json;
+					content_language?: string;
+					updated_at?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'board_posts_author_id_fkey';
+						columns: ['author_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
+			board_post_files: {
+				Row: {
+					created_at: string;
+					created_by: string | null;
+					file_name: string;
+					id: string;
+					object_path: string;
+					post_id: string;
+					size_bytes: number;
+					updated_at: string;
+				};
+				/** Column grant (0061): post_id, object_path, file_name, size_bytes, created_by only. */
+				Insert: {
+					created_by?: string | null;
+					file_name: string;
+					object_path: string;
+					post_id: string;
+					size_bytes: number;
+				};
+				/** No update grant (0061): a file row is never changed. */
+				Update: {
+					[_ in never]: never;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'board_post_files_post_id_fkey';
+						columns: ['post_id'];
+						isOneToOne: false;
+						referencedRelation: 'board_posts';
+						referencedColumns: ['id'];
+					},
+					{
+						foreignKeyName: 'board_post_files_created_by_fkey';
+						columns: ['created_by'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
+			};
 			class_days: {
 				Row: {
 					cancelled: boolean;
@@ -901,6 +972,7 @@ export type Database = {
 			};
 			parents: {
 				Row: {
+					can_post_board: boolean;
 					created_at: string;
 					id: string;
 					reviewed_at: string | null;
@@ -908,6 +980,7 @@ export type Database = {
 					status: Database['public']['Enums']['parent_status'];
 				};
 				Insert: {
+					can_post_board?: boolean;
 					created_at?: string;
 					id: string;
 					reviewed_at?: string | null;
@@ -915,6 +988,7 @@ export type Database = {
 					status?: Database['public']['Enums']['parent_status'];
 				};
 				Update: {
+					can_post_board?: boolean;
 					created_at?: string;
 					id?: string;
 					reviewed_at?: string | null;
@@ -1604,6 +1678,13 @@ export type Database = {
 			is_parent: { Args: never; Returns: boolean };
 			is_parent_of: { Args: { p_student_id: string }; Returns: boolean };
 			is_parent_managing: { Args: { p_student_id: string }; Returns: boolean };
+			is_board_reader: { Args: never; Returns: boolean };
+			is_board_poster: { Args: never; Returns: boolean };
+			board_author_names: {
+				Args: { p_ids: string[] };
+				/** Only ids that have written a board post; empty for a caller who is not a board reader. */
+				Returns: { id: string; display_name: string | null }[];
+			};
 			set_parent_managed: {
 				Args: { p_student_id: string; p_on: boolean };
 				Returns: undefined;

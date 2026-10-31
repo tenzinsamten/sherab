@@ -19816,3 +19816,526 @@ describe.skipIf(!reachable)(
 		});
 	}
 );
+
+/**
+ * spec-parent-message-board story 1 (0061): the school board's tables, the
+ * posting grant, the author-name function and the `board-files` bucket, as
+ * each kind of caller (SPEC CAP-1 to CAP-4).
+ */
+describe.skipIf(!reachable)('message board (requires local Supabase)', () => {
+	type Client = ReturnType<typeof anonClient>;
+	type Member = { id: string; client: Client };
+	const BUCKET = 'board-files';
+	let admin: Member;
+	let teacher: Member;
+	let student: Member;
+	let pendingStudent: Member;
+	let rejectedStudent: Member;
+	let granted: Member;
+	let otherGranted: Member;
+	let ungranted: Member;
+	let pendingParent: Member;
+	const signedOut = anonClient();
+	const storedPaths: string[] = [];
+
+	const name = (label: string) => `0061 ${label} ${crypto.randomUUID().slice(0, 8)}`;
+	const doc = (text: string) => ({
+		type: 'doc',
+		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+	});
+	const bucket = (client: Client | typeof adminClient) => client.storage.from(BUCKET);
+	const pathIn = (postId: string) => `${postId}/${crypto.randomUUID()}.pdf`;
+
+	function pdfBytes(size = 2048): ArrayBuffer {
+		const bytes = new Uint8Array(size);
+		bytes.set(new TextEncoder().encode('%PDF-1.7\n'));
+		return bytes.buffer;
+	}
+
+	async function signIn(email: string, password: string): Promise<Client> {
+		const client = anonClient();
+		const { error } = await client.auth.signInWithPassword({ email, password });
+		if (error) throw new Error(`Failed to sign in: ${error.message}`);
+		return client;
+	}
+
+	async function parent(approved: boolean, canPost = false): Promise<Member> {
+		const p = approved ? await createApprovedParent() : await createPendingParent();
+		const { error } = await adminClient
+			.from('parents')
+			.update({ can_post_board: canPost })
+			.eq('id', p.id);
+		if (error) throw new Error(`Failed to set the grant: ${error.message}`);
+		return { id: p.id, client: await signIn(p.email, p.password) };
+	}
+
+	async function newStudent(
+		classId: string,
+		status: 'approved' | 'pending' | 'rejected'
+	): Promise<Member> {
+		const { id, error } = await signUpStudent({ classId, registrationName: name('Student') });
+		if (error || !id) throw new Error(`Failed to register student: ${error?.message}`);
+		if (status !== 'pending') {
+			const { error: decideError } = await adminClient
+				.from('profiles')
+				.update(status === 'approved' ? { status, team_id: await fixtureTeamId() } : { status })
+				.eq('id', id);
+			if (decideError) throw new Error(`Failed to decide student: ${decideError.message}`);
+		}
+		const password = crypto.randomUUID();
+		const { data, error: passwordError } = await adminClient.auth.admin.updateUserById(id, {
+			password
+		});
+		if (passwordError || !data.user?.email) {
+			throw new Error(`Failed to set student password: ${passwordError?.message}`);
+		}
+		return { id, client: await signIn(data.user.email, password) };
+	}
+
+	/** An upload by `client`; a path that was stored is always cleaned up. */
+	async function tryUpload(client: Client, path: string) {
+		const upload = await bucket(client).upload(path, pdfBytes(), {
+			contentType: 'application/pdf',
+			upsert: false
+		});
+		if (!upload.error) storedPaths.push(path);
+		return upload;
+	}
+
+	const insertPost = (client: Client, authorId: string, text = name('Post')) =>
+		client
+			.from('board_posts')
+			.insert({ author_id: authorId, content: doc(text), content_language: 'en' })
+			.select('id')
+			.single();
+
+	/** A post written by `author` through their own client. */
+	async function postBy(author: Member, text?: string) {
+		const { data, error } = await insertPost(author.client, author.id, text);
+		if (error || !data) throw new Error(`Failed to post: ${error?.message}`);
+		return data.id;
+	}
+
+	const recordFile = (client: Client, postId: string, path: string) =>
+		client
+			.from('board_post_files')
+			.insert({ post_id: postId, object_path: path, file_name: 'Flyer.pdf', size_bytes: 2048 })
+			.select('id');
+
+	/** An uploaded and recorded file on `postId`, by its author. */
+	async function fileOn(author: Member, postId: string) {
+		const path = pathIn(postId);
+		const upload = await tryUpload(author.client, path);
+		if (upload.error) throw new Error(`Failed to upload: ${upload.error.message}`);
+		const { data, error } = await recordFile(author.client, postId, path);
+		if (error || !data) throw new Error(`Failed to record file: ${error?.message}`);
+		return { id: data[0].id, path };
+	}
+
+	const postRows = async (postId: string) =>
+		(await adminClient.from('board_posts').select('id').eq('id', postId)).data ?? [];
+	const fileRows = async (postId: string) =>
+		(await adminClient.from('board_post_files').select('id').eq('post_id', postId)).data ?? [];
+
+	beforeAll(async () => {
+		const a = await createSignedInUser('admin');
+		const t = await createSignedInUser('teacher');
+		admin = { id: a.id, client: a.client };
+		teacher = { id: t.id, client: t.client };
+		const { data: cls, error } = await adminClient
+			.from('classes')
+			.insert({ name: name('Class'), code: `B${crypto.randomUUID().slice(0, 5).toUpperCase()}` })
+			.select('id')
+			.single();
+		if (error || !cls) throw new Error(`Failed to create class: ${error?.message}`);
+		student = await newStudent(cls.id, 'approved');
+		pendingStudent = await newStudent(cls.id, 'pending');
+		rejectedStudent = await newStudent(cls.id, 'rejected');
+		granted = await parent(true, true);
+		otherGranted = await parent(true, true);
+		ungranted = await parent(true, false);
+		pendingParent = await parent(false, true);
+	}, 60000);
+
+	afterAll(async () => {
+		if (storedPaths.length) await bucket(adminClient).remove(storedPaths);
+	});
+
+	it('the bucket is private, 5 MB, PDF only', async () => {
+		const { data, error } = await adminClient.storage.getBucket(BUCKET);
+		expect(error).toBeNull();
+		expect(data).toMatchObject({
+			public: false,
+			file_size_limit: 5242880,
+			allowed_mime_types: ['application/pdf']
+		});
+	});
+
+	it('Reader roles: the admin, a teacher, an approved student and an approved parent read posts, files and objects', async () => {
+		const postId = await postBy(granted);
+		const file = await fileOn(granted, postId);
+		for (const [who, client] of [
+			['admin', admin.client],
+			['teacher', teacher.client],
+			['approved student', student.client],
+			['approved ungranted parent', ungranted.client]
+		] as const) {
+			const posts = await client.from('board_posts').select('id, author_id').eq('id', postId);
+			expect(posts.data, who).toEqual([{ id: postId, author_id: granted.id }]);
+			const files = await client.from('board_post_files').select('id').eq('post_id', postId);
+			expect(files.data, who).toEqual([{ id: file.id }]);
+			const download = await bucket(client).download(file.path);
+			expect(download.error, who).toBeNull();
+			expect(await download.data!.slice(0, 5).text(), who).toBe('%PDF-');
+		}
+	});
+
+	it('Non-readers: a signed-out visitor, a pending student, a rejected student and a pending parent see no row, get no object and no author name', async () => {
+		const postId = await postBy(teacher);
+		const file = await fileOn(teacher, postId);
+		for (const [who, client] of [
+			['signed out', signedOut],
+			['pending student', pendingStudent.client],
+			['rejected student', rejectedStudent.client],
+			['pending parent', pendingParent.client]
+		] as const) {
+			const names = await client.rpc('board_author_names', { p_ids: [teacher.id] });
+			expect(names.data ?? [], who).toEqual([]);
+			const posts = await client.from('board_posts').select('id').eq('id', postId);
+			expect(posts.data ?? [], who).toEqual([]);
+			const files = await client.from('board_post_files').select('id').eq('post_id', postId);
+			expect(files.data ?? [], who).toEqual([]);
+			const download = await bucket(client).download(file.path);
+			expect(download.error, who).not.toBeNull();
+			expect(download.data, who).toBeNull();
+		}
+	});
+
+	it('Post by poster: the admin, a teacher and a granted parent post as themselves', async () => {
+		for (const [who, member] of [
+			['admin', admin],
+			['teacher', teacher],
+			['granted parent', granted]
+		] as const) {
+			const { data, error } = await insertPost(member.client, member.id);
+			expect(error, who).toBeNull();
+			expect(await postRows(data!.id), who).toHaveLength(1);
+		}
+	});
+
+	it('Post by non-poster: a student, an ungranted parent and a pending (granted) parent are refused', async () => {
+		for (const [who, member] of [
+			['student', student],
+			['ungranted parent', ungranted],
+			['pending parent with the flag', pendingParent]
+		] as const) {
+			const { error } = await insertPost(member.client, member.id);
+			expect(error?.code, who).toBe('42501');
+		}
+		const anon = await signedOut
+			.from('board_posts')
+			.insert({ author_id: admin.id, content: doc('x') });
+		expect(anon.error).not.toBeNull();
+	});
+
+	it('Forged author: a poster cannot post as someone else', async () => {
+		const { error } = await insertPost(teacher.client, granted.id);
+		expect(error?.code).toBe('42501');
+		const { error: parentError } = await insertPost(granted.client, admin.id);
+		expect(parentError?.code).toBe('42501');
+	});
+
+	it('Edit own post: the author changes the content; author_id and created_at cannot be changed', async () => {
+		const postId = await postBy(granted, 'Before');
+		const { data, error } = await granted.client
+			.from('board_posts')
+			.update({
+				content: doc('After'),
+				content_language: 'bo',
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', postId)
+			.select('content, content_language');
+		expect(error).toBeNull();
+		expect(data).toEqual([{ content: doc('After'), content_language: 'bo' }]);
+
+		const moved = await granted.client
+			.from('board_posts')
+			// Not in the typed Update: the column grant refuses it.
+			.update({ author_id: otherGranted.id } as never)
+			.eq('id', postId);
+		expect(moved.error?.code).toBe('42501');
+		const backdated = await granted.client
+			.from('board_posts')
+			.update({ created_at: '2000-01-01T00:00:00Z' } as never)
+			.eq('id', postId);
+		expect(backdated.error?.code).toBe('42501');
+	});
+
+	it("Edit another's post: the admin, a teacher and another granted parent update 0 rows", async () => {
+		const postId = await postBy(granted, 'Original');
+		for (const [who, client] of [
+			['admin', admin.client],
+			['teacher', teacher.client],
+			['other granted parent', otherGranted.client]
+		] as const) {
+			const { data, error } = await client
+				.from('board_posts')
+				.update({ content: doc('Hijacked') })
+				.eq('id', postId)
+				.select('id');
+			expect(error, who).toBeNull();
+			expect(data, who).toEqual([]);
+		}
+		const { data } = await adminClient
+			.from('board_posts')
+			.select('content')
+			.eq('id', postId)
+			.single();
+		expect(data?.content).toEqual(doc('Original'));
+	});
+
+	it('Delete: the author, the admin and a teacher delete a post, and its file rows go with it', async () => {
+		for (const [who, deleter] of [
+			['author', granted],
+			['admin', admin],
+			['teacher', teacher]
+		] as const) {
+			const postId = await postBy(granted);
+			await fileOn(granted, postId);
+			const { data, error } = await deleter.client
+				.from('board_posts')
+				.delete()
+				.eq('id', postId)
+				.select('id');
+			expect(error, who).toBeNull();
+			expect(data, who).toEqual([{ id: postId }]);
+			expect(await postRows(postId), who).toEqual([]);
+			expect(await fileRows(postId), who).toEqual([]);
+		}
+	});
+
+	it('Delete by other: another parent and a student delete 0 rows of posts and files', async () => {
+		const postId = await postBy(granted);
+		await fileOn(granted, postId);
+		for (const [who, client] of [
+			['other granted parent', otherGranted.client],
+			['ungranted parent', ungranted.client],
+			['student', student.client]
+		] as const) {
+			const files = await client
+				.from('board_post_files')
+				.delete()
+				.eq('post_id', postId)
+				.select('id');
+			expect(files.error, who).toBeNull();
+			expect(files.data, who).toEqual([]);
+			const posts = await client.from('board_posts').delete().eq('id', postId).select('id');
+			expect(posts.error, who).toBeNull();
+			expect(posts.data, who).toEqual([]);
+		}
+		expect(await postRows(postId)).toHaveLength(1);
+		expect(await fileRows(postId)).toHaveLength(1);
+	});
+
+	it('Grant change: the admin turns can_post_board on and off; it defaults to off', async () => {
+		const p = await createApprovedParent();
+		const flag = async () =>
+			(await adminClient.from('parents').select('can_post_board').eq('id', p.id).single()).data
+				?.can_post_board;
+		expect(await flag()).toBe(false);
+		const on = await admin.client
+			.from('parents')
+			.update({ can_post_board: true })
+			.eq('id', p.id)
+			.select('can_post_board');
+		expect(on.error).toBeNull();
+		expect(on.data).toEqual([{ can_post_board: true }]);
+		const off = await admin.client
+			.from('parents')
+			.update({ can_post_board: false })
+			.eq('id', p.id)
+			.select('can_post_board');
+		expect(off.error).toBeNull();
+		expect(await flag()).toBe(false);
+	});
+
+	it('Grant by non-admin: a parent and a teacher cannot change a parent flag', async () => {
+		const { data, error } = await ungranted.client
+			.from('parents')
+			.update({ can_post_board: true })
+			.eq('id', ungranted.id)
+			.select('id');
+		// parents_update_admin (0023/0051) refuses by filtering: no row changes.
+		expect(error).toBeNull();
+		expect(data).toEqual([]);
+		const byTeacher = await teacher.client
+			.from('parents')
+			.update({ can_post_board: true })
+			.eq('id', ungranted.id)
+			.select('id');
+		expect(byTeacher.error).toBeNull();
+		expect(byTeacher.data).toEqual([]);
+		const { data: row } = await adminClient
+			.from('parents')
+			.select('can_post_board')
+			.eq('id', ungranted.id)
+			.single();
+		expect(row?.can_post_board).toBe(false);
+	});
+
+	it('Grant revoked: old posts stay readable, new posts and files are refused, own delete still works', async () => {
+		const revoked = await parent(true, true);
+		const keptId = await postBy(revoked, 'Kept');
+		const deletedId = await postBy(revoked, 'To delete');
+		const { error: offError } = await admin.client
+			.from('parents')
+			.update({ can_post_board: false })
+			.eq('id', revoked.id);
+		expect(offError).toBeNull();
+
+		const read = await student.client.from('board_posts').select('id').eq('id', keptId);
+		expect(read.data).toEqual([{ id: keptId }]);
+
+		const { error } = await insertPost(revoked.client, revoked.id);
+		expect(error?.code).toBe('42501');
+
+		const path = pathIn(keptId);
+		const upload = await tryUpload(revoked.client, path);
+		expect(upload.error).not.toBeNull();
+		const row = await recordFile(revoked.client, keptId, path);
+		expect(row.error?.code).toBe('42501');
+
+		const edit = await revoked.client
+			.from('board_posts')
+			.update({ content: doc('Edited') })
+			.eq('id', keptId)
+			.select('id');
+		expect(edit.error).toBeNull();
+		expect(edit.data).toEqual([]);
+
+		const del = await revoked.client.from('board_posts').delete().eq('id', deletedId).select('id');
+		expect(del.error).toBeNull();
+		expect(del.data).toEqual([{ id: deletedId }]);
+	});
+
+	it('Third file: a post with 2 files refuses a third object upload and a third row with BF001', async () => {
+		const postId = await postBy(teacher);
+		await fileOn(teacher, postId);
+		await fileOn(teacher, postId);
+		const path = pathIn(postId);
+		const upload = await tryUpload(teacher.client, path);
+		expect(upload.error).not.toBeNull();
+		expect((await bucket(adminClient).exists(path)).data).toBe(false);
+		const { error } = await recordFile(teacher.client, postId, path);
+		expect(error?.code).toBe('BF001');
+		expect(await fileRows(postId)).toHaveLength(2);
+	});
+
+	it("File on another's post: a poster who is not the author cannot upload or record a file; nor can a student", async () => {
+		const postId = await postBy(granted);
+		for (const [who, member] of [
+			['admin', admin],
+			['teacher', teacher],
+			['other granted parent', otherGranted],
+			['never-granted approved parent', ungranted],
+			['student', student]
+		] as const) {
+			const path = pathIn(postId);
+			const upload = await tryUpload(member.client, path);
+			expect(upload.error, who).not.toBeNull();
+			const { error } = await recordFile(member.client, postId, path);
+			expect(error?.code, who).toBe('42501');
+		}
+		expect(await fileRows(postId)).toEqual([]);
+	});
+
+	it('Files: the author cannot point a row outside the post folder; non-authors cannot delete objects; the admin can', async () => {
+		const postId = await postBy(granted);
+		const otherPost = await postBy(otherGranted);
+		const outside = await recordFile(granted.client, postId, pathIn(otherPost));
+		expect(outside.error?.code).toBe('42501');
+		const badName = await tryUpload(granted.client, `${postId}/Flyer.pdf`);
+		expect(badName.error).not.toBeNull();
+
+		const file = await fileOn(granted, postId);
+		for (const client of [otherGranted.client, student.client]) {
+			const { data } = await bucket(client).remove([file.path]);
+			expect(data ?? []).toEqual([]);
+		}
+		expect((await bucket(adminClient).exists(file.path)).data).toBe(true);
+		const removed = await bucket(admin.client).remove([file.path]);
+		expect(removed.error).toBeNull();
+		expect((await bucket(adminClient).exists(file.path)).data).toBe(false);
+	});
+
+	it('Objects: the author and a teacher remove a stored object', async () => {
+		for (const [who, remover] of [
+			['author', granted],
+			['teacher', teacher]
+		] as const) {
+			const postId = await postBy(granted);
+			const file = await fileOn(granted, postId);
+			const { data, error } = await bucket(remover.client).remove([file.path]);
+			expect(error, who).toBeNull();
+			expect(
+				data?.map((o) => o.name),
+				who
+			).toEqual([file.path]);
+			expect((await bucket(adminClient).exists(file.path)).data, who).toBe(false);
+		}
+	});
+
+	it('File rows: the author, the admin and a teacher delete a file row directly', async () => {
+		for (const [who, deleter] of [
+			['author', granted],
+			['admin', admin],
+			['teacher', teacher]
+		] as const) {
+			const postId = await postBy(granted);
+			const file = await fileOn(granted, postId);
+			const { data, error } = await deleter.client
+				.from('board_post_files')
+				.delete()
+				.eq('id', file.id)
+				.select('id');
+			expect(error, who).toBeNull();
+			expect(data, who).toEqual([{ id: file.id }]);
+			expect(await fileRows(postId), who).toEqual([]);
+			expect(await postRows(postId), who).toHaveLength(1);
+		}
+	});
+
+	it('Author names: a reader gets the names of authors with posts only; a non-reader gets none', async () => {
+		const author = await parent(true, true);
+		const authorName = name('Author');
+		const { error: nameError } = await adminClient
+			.from('profiles')
+			.update({ display_name: authorName })
+			.eq('id', author.id);
+		expect(nameError).toBeNull();
+		await postBy(author);
+		const ids = [author.id, ungranted.id];
+		for (const client of [student.client, ungranted.client, teacher.client]) {
+			const { data, error } = await client.rpc('board_author_names', { p_ids: ids });
+			expect(error).toBeNull();
+			expect(data).toEqual([{ id: author.id, display_name: authorName }]);
+		}
+		for (const client of [pendingStudent.client, rejectedStudent.client, pendingParent.client]) {
+			const { data, error } = await client.rpc('board_author_names', { p_ids: ids });
+			expect(error).toBeNull();
+			expect(data).toEqual([]);
+		}
+		const anon = await signedOut.rpc('board_author_names', { p_ids: ids });
+		expect(anon.data ?? []).toEqual([]);
+	});
+
+	it('Account deleted: the post stays with a null author', async () => {
+		const gone = await parent(true, true);
+		const postId = await postBy(gone);
+		const { error } = await adminClient.auth.admin.deleteUser(gone.id);
+		expect(error).toBeNull();
+		const { data } = await student.client.from('board_posts').select('author_id').eq('id', postId);
+		expect(data).toEqual([{ author_id: null }]);
+	});
+});
